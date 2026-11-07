@@ -96,6 +96,9 @@ export interface ToolHostDeps {
     id?: number;
     filename?: string;
   }>;
+  /** chrome.downloads.cancel (browser.downloads.cancel) — stops an
+   *  in-progress download; absent dep → proto.unsupported. */
+  cancelDownload?(downloadId: number): Promise<unknown>;
   /** chrome.windows.getAll/create/update (browser.windows.*) — absent
    *  deps → proto.unsupported. */
   listWindows?(): Promise<Array<{
@@ -211,6 +214,7 @@ const SUPPORTED = new Set([
   "browser.page.history",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.downloads.cancel",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",
@@ -968,6 +972,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           await new Promise((r) => setTimeout(r, 500));
         }
+      }
+      case "browser.downloads.cancel": {
+        // Not tab-scoped: profile-wide downloads — cancelling can stop a
+        // download the USER started, which is why the risk classifier
+        // leaves this tool unclassified → always approval-gated.
+        if (!deps.cancelDownload) {
+          throw toolError("proto.unsupported", "download cancel requires the downloads permission");
+        }
+        const downloadId = args.downloadId;
+        if (typeof downloadId !== "number" || !Number.isInteger(downloadId) || downloadId < 0) {
+          throw toolError("proto.invalid", "browser.downloads.cancel requires args.downloadId (integer from browser.downloads.list)");
+        }
+        // chrome.downloads.cancel rejects when the id is unknown or the
+        // download is already terminal — the error propagates honestly
+        // instead of claiming a cancellation that never happened.
+        await deps.cancelDownload(downloadId);
+        return { downloadId, cancelled: true };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

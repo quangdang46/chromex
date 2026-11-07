@@ -318,6 +318,9 @@ const toolHostHandler = createToolHostHandler({
       });
       return { id, ...(filename ? { filename } : {}) };
     },
+    cancelDownload: async (downloadId) => {
+      await chrome.downloads.cancel(downloadId);
+    },
     listWindows: async () => {
       const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
       return wins

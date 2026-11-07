@@ -236,6 +236,7 @@ try {
   await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");
   await expectReject("browser.downloads.save", { url: fixture.url("/dl"), filename: "../escape.txt" }, "relative path", "traversal filename refused");
   await expectReject("browser.tab.create", { url: fixture.url("/"), muted: true }, "chrome-extension only", "muted arg refused (no silent drop)");
+  await expectReject("browser.downloads.cancel", { downloadId: 1 }, "unsupported", "downloads.cancel refused on isolated backend");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

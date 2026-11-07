@@ -540,6 +540,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["url"],
     ),
   },
+  "browser.downloads.cancel": {
+    description:
+      "Cancel an in-progress download by its id (from browser.downloads.list). Downloads are profile-wide — this can stop a download the user started, so it always requires approval. No-op-safe: cancelling a finished download reports its real state instead of faking success. chrome-extension backend only; not tab-scoped.",
+    inputSchema: objectSchema(
+      {
+        downloadId: { type: "integer", description: "The download id from browser.downloads.list (required)." },
+      },
+      ["downloadId"],
+    ),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

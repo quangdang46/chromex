@@ -36,6 +36,7 @@ export type BrowserToolName =
   | "browser.page.history"
   | "browser.downloads.list"
   | "browser.downloads.save"
+  | "browser.downloads.cancel"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -71,6 +72,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.history",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.downloads.cancel",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",

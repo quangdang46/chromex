@@ -586,6 +586,39 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("downloads.cancel validates the id and delegates to chrome.downloads.cancel", async () => {
+    const cancelled: number[] = [];
+    const d = deps({
+      cancelDownload: vi.fn(async (id: number) => {
+        cancelled.push(id);
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.downloads.cancel", { downloadId: 42 }))) as { cancelled?: boolean };
+    expect(res.cancelled).toBe(true);
+    expect(cancelled).toEqual([42]);
+
+    await expect(h(req("browser.downloads.cancel", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.downloads.cancel", { downloadId: "42" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.downloads.cancel", { downloadId: -1 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.downloads.cancel", { downloadId: 1.5 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    // dep absent → honest unsupported, never a fake cancel
+    const h2 = createToolHostHandler(deps({}));
+    await expect(h2(req("browser.downloads.cancel", { downloadId: 1 }))).rejects.toMatchObject({
+      code: "proto.unsupported",
+    });
+    // frameId meaningless on a profile-level tool
+    await expect(h(req("browser.downloads.cancel", { downloadId: 1, frameId: 2 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
   test("page.network maps the webRequest log; filters validated", async () => {
     const queries: unknown[] = [];
     const d = deps({

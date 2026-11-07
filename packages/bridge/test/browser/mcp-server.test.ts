@@ -287,6 +287,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
+  "browser.downloads.cancel": { downloadId: 42 },
   "browser.windows.list": {},
   "browser.windows.create": { url: "https://example.com", focused: false },
   "browser.windows.update": { windowId: 1, focused: true },
@@ -354,6 +355,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.page.upload",
           "browser.page.history",
           "browser.downloads.save",
+          "browser.downloads.cancel",
           "browser.windows.update",
         ].includes(internal)
           ? false

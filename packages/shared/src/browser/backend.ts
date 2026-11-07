@@ -73,6 +73,10 @@ export interface BrowserBackendCapabilities {
    *  profile's download dir. Extension: chrome.downloads. Playwright:
    *  context download event + saveAs into the isolated download dir. */
   downloadsSave?: boolean;
+  /** browser.downloads.cancel — stop an in-progress download by id.
+   *  chrome-extension only (chrome.downloads.cancel); playwright has
+   *  no per-download cancel API. */
+  downloadsCancel?: boolean;
   /** browser.windows.* — list/create/update browser windows
    *  (chrome-extension only; playwright has a single implicit window). */
   windowManagement?: boolean;
@@ -120,6 +124,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     pageHistory: true,
     downloadsList: true,
     downloadsSave: true,
+    downloadsCancel: true,
     networkInspection: true,
     windowManagement: true,
   },
