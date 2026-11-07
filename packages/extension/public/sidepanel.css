@@ -2683,6 +2683,50 @@ button.primary,
   min-width: 0;
 }
 
+.gateway-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gateway-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.gateway-state-badge.ready {
+  color: var(--accent-strong);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+
+.gateway-state-badge.connecting,
+.gateway-state-badge.starting {
+  color: #ffd36b;
+  border-color: rgba(255, 211, 107, 0.3);
+  background: var(--warn-soft);
+}
+
+.gateway-state-badge.unresponsive,
+.gateway-state-badge.disconnected,
+.gateway-state-badge.disabled {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

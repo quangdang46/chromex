@@ -318,6 +318,7 @@ import { createStreamingDeltaBuffer } from "./streaming-delta-buffer.js";
 import { renderUiIcon, type UiIconName } from "./ui-icons.js";
 
 type MainView = "chat" | "conference" | "interpreter" | "context" | "skills" | "plugins" | "workspace";
+type GatewayPanelState = "disabled" | "disconnected" | "connecting" | "ready" | "starting" | "unresponsive";
 const MAX_TRACE_ITEMS = 12;
 const COMPLETED_IMAGE_WORKFLOW_MESSAGE_RETENTION_MS = 60_000;
 const PARTIAL_IMAGE_WORKFLOW_MESSAGE_RETENTION_MS = 30 * 60_000;
@@ -952,6 +953,7 @@ const state = {
   pluginMcpSettingsSearchQuery: "",
   recentChats: [] as ConversationSummary[],
   gatewayTasks: {} as Record<string, { status: string; attention: string | null; backendId?: string | null }>,
+  gatewayState: "disabled" as GatewayPanelState,
   serverThreads: [] as CodexThreadSummary[],
   currentConversationId: "",
   threadId: "",
@@ -1234,8 +1236,12 @@ window.addEventListener("unhandledrejection", (event) => {
 async function refreshGatewayTasks(): Promise<void> {
   const result = await sendRuntimeMessage<{
     enabled?: boolean;
+    state?: string;
     tasks?: { taskId: string; status: string; attention: string | null; backendId?: string | null }[];
   }>({ type: "gateway.tasks" }).catch(() => null);
+  if (typeof result?.state === "string") {
+    state.gatewayState = result.state as GatewayPanelState;
+  }
   if (!result?.enabled || !Array.isArray(result.tasks)) {
     return;
   }
@@ -1280,6 +1286,15 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message.type === "ui.dictation.shortcut") {
     void handleDictationShortcutMessage(message);
+    return;
+  }
+
+  if (message.type === "gateway.state.changed") {
+    const nextState = typeof message.state === "string" ? (message.state as GatewayPanelState) : "";
+    if (nextState && nextState !== state.gatewayState) {
+      state.gatewayState = nextState;
+      render();
+    }
     return;
   }
 
@@ -3326,6 +3341,7 @@ function renderNow(): void {
           : `<header class="topbar">
         <span class="topbar-spacer" aria-hidden="true"></span>
         <div class="top-actions">
+          ${state.settings.gatewayMode ? renderGatewayStateBadge() : ""}
           ${renderTopQuickActions(quickInteractionLocked)}
           <span class="top-quick-separator" aria-hidden="true"></span>
           <button
@@ -4348,6 +4364,24 @@ function renderTopQuickActions(disabled = false): string {
       </button>
     </div>
   `;
+}
+
+function renderGatewayStateBadge(): string {
+  const strings = stringsForState();
+  const label =
+    state.gatewayState === "ready"
+      ? strings.status.gatewayConnected
+      : state.gatewayState === "connecting"
+        ? strings.status.gatewayConnecting
+        : state.gatewayState === "starting"
+          ? strings.status.gatewayStarting
+          : state.gatewayState === "unresponsive"
+            ? strings.status.gatewayUnresponsive
+            : state.gatewayState === "disconnected" || state.gatewayState === "disabled"
+              ? strings.status.gatewayDisconnected
+              : strings.status.gatewayStarting;
+  const title = `${strings.status.gatewayTitle}: ${label}`;
+  return `<span class="gateway-state-badge ${escapeAttribute(state.gatewayState)}" title="${escapeAttribute(title)}" aria-label="${escapeAttribute(title)}"><span class="gateway-state-dot" aria-hidden="true"></span>${escapeHtml(label)}</span>`;
 }
 
 function getCurrentPageComicActionLabel(): string {

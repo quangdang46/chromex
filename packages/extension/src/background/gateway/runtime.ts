@@ -70,6 +70,12 @@ async function build(): Promise<GatewayRuntime | null> {
       }
       return serverRequestHandler(method, payload);
     },
+    onStateChange: (state) => {
+      // Push backend health to the sidepanel (gateway-state badge).
+      void chrome.runtime
+        .sendMessage({ type: "gateway.state.changed", state })
+        .catch(() => undefined);
+    },
     onEvent: (env) => {
       if (env.kind === "event" && env.reliability === "durable" && env.stream === "task") {
         tasks.handleEvent(env as Parameters<TaskController["handleEvent"]>[0]);
