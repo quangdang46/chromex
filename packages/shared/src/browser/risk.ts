@@ -242,7 +242,8 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     case "browser.page.click":
     case "browser.page.submit":
     case "browser.page.hover":
-    case "browser.page.press": {
+    case "browser.page.press":
+    case "browser.page.drag": {
       const destructiveLabel = /submit|send|post|publish|delete|confirm|pay|purchase|order|transfer/i;
       const formMutating = t?.method ? t.method.toUpperCase() !== "GET" : false;
       if (t?.isDestructive || destructiveLabel.test(t?.label ?? "") || formMutating || !ctx.contextResolved) {

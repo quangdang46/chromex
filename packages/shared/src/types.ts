@@ -535,7 +535,8 @@ export type BrowserDomActionKind =
   | "navigate"
   | "hover"
   | "press"
-  | "upload";
+  | "upload"
+  | "drag";
 
 /** upload step payload — in-memory file bytes only (browser.page.upload).
  *  Local paths/native pickers are NOT expressible here; they stay
@@ -604,6 +605,11 @@ export interface BrowserDomActionStep {
   modifiers?: string[];
   /** upload: files to attach via DataTransfer (base64 bytes) */
   files?: BrowserDomUploadFile[];
+  /** drag: destination element — same target triple as the source
+   *  (targetRef/selector/label on this step). At least one must be set. */
+  dropTargetRef?: string;
+  dropSelector?: string;
+  dropLabel?: string;
   reason: string;
 }
 

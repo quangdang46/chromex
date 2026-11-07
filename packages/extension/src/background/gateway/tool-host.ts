@@ -120,6 +120,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.hover",
   "browser.page.press",
   "browser.page.upload",
+  "browser.page.drag",
   "browser.page.find",
 ]);
 
@@ -145,6 +146,7 @@ const SUPPORTED = new Set([
   "browser.page.screenshot",
   "browser.page.extract",
   "browser.page.upload",
+  "browser.page.drag",
   "browser.page.find",
   "browser.page.history",
   "browser.downloads.list",
@@ -873,6 +875,24 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
         direction: typeof args.direction === "string" ? args.direction : "down",
         ...(typeof args.amountPx === "number" ? { amountPx: args.amountPx } : {}),
       };
+    case "browser.page.drag": {
+      // Source uses the standard target triple; destination uses the
+      // toRef/toSelector/toLabel triple. At least one drop field is
+      // required — a drag with no destination is a caller bug.
+      if (!str(args.toRef) && !str(args.toSelector) && !str(args.toLabel)) {
+        throw toolError(
+          "proto.invalid",
+          "browser.page.drag requires a drop target: toRef, toSelector, or toLabel",
+        );
+      }
+      return {
+        ...base,
+        action: "drag",
+        ...(str(args.toRef) ? { dropTargetRef: str(args.toRef) } : {}),
+        ...(str(args.toSelector) ? { dropSelector: str(args.toSelector) } : {}),
+        ...(str(args.toLabel) ? { dropLabel: str(args.toLabel) } : {}),
+      };
+    }
     case "browser.page.navigate": {
       const url = str(args.url);
       if (!url) throw toolError("proto.invalid", "browser.page.navigate requires args.url");

@@ -74,6 +74,28 @@ describe("tool host (P1-09)", () => {
     expect(msg.steps[0]).toMatchObject({ action: "click", targetRef: "e1" });
   });
 
+  test("page.drag maps source + drop target onto a dom.perform step", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.drag", { ref: "e1", toRef: "e9" }));
+    const msg = d.sent[0].message as { type: string; steps: Array<Record<string, unknown>> };
+    expect(msg.type).toBe("page.dom.perform");
+    expect(msg.steps[0]).toMatchObject({
+      action: "drag",
+      targetRef: "e1",
+      dropTargetRef: "e9",
+    });
+    await expect(h(req("browser.page.drag", { ref: "e1" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await h(req("browser.page.drag", { selector: ".card", toSelector: ".lane" }));
+    expect(d.sent[1].message.steps[0]).toMatchObject({
+      action: "drag",
+      selector: ".card",
+      dropSelector: ".lane",
+    });
+  });
+
   test("page.fill passes text value; page.navigate passes url", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

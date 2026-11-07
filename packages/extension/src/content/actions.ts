@@ -339,6 +339,33 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         message = `Pressed ${step.key || "key"} ${actionTarget ? `on ${getElementLabel(actionTarget) || "the focused element"}` : "on the page"}.`;
         break;
       }
+      case "drag": {
+        // Destination resolves through the same ref/selector/label
+        // machinery as the source — refs stay snapshot-bound.
+        const dropStep: BrowserDomActionStep = {
+          action: "click",
+          reason: step.reason,
+          ...(step.dropTargetRef ? { targetRef: step.dropTargetRef } : {}),
+          ...(step.dropSelector ? { selector: step.dropSelector } : {}),
+          ...(step.dropLabel ? { label: step.dropLabel } : {}),
+        };
+        const dropTarget = resolveDomActionTargetDetailed(dropStep);
+        if (dropTarget.status === "ambiguous") {
+          return {
+            step,
+            ok: false,
+            code: "browser.ambiguous_target",
+            message: `${dropTarget.count} elements match the drop target; use a snapshot ref or a more specific selector/label`,
+          };
+        }
+        const dropElement = dropTarget.status === "resolved" ? dropTarget.element : null;
+        if (!dropElement) {
+          return { step, ok: false, message: "Drop target element was not found.", code: "browser.element_not_found" };
+        }
+        dispatchDragSequence(element, dropElement);
+        message = `Dragged ${getElementLabel(element) || "the source element"} onto ${getElementLabel(dropElement) || "the drop target"}.`;
+        break;
+      }
       case "upload": {
         // DataTransfer bytes path — synthetic but functional: page JS
         // sees real File objects on input.files. NOT a trusted gesture;
@@ -517,6 +544,58 @@ export function dispatchClickSequence(element: HTMLElement): void {
   element.dispatchEvent(new MouseEvent("mousedown", common));
   element.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mouseup", common));
+}
+
+/**
+ * drag: pointer-based move from source center to target center, then
+ * elementFromPoint-targeted up events. When the source is HTML5
+ * draggable, also fires the DragEvent sequence (dragstart →
+ * dragenter/dragover → drop → dragend) with a real DataTransfer so
+ * sortable lists and drop zones see it. All events UNTRUSTED —
+ * isTrusted=false; JS listeners observe them, trusted-gesture-gated
+ * drop handlers may still refuse.
+ */
+export function dispatchDragSequence(source: HTMLElement, target: HTMLElement): void {
+  const sourceRect = source.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const sx = sourceRect.left + sourceRect.width / 2;
+  const sy = sourceRect.top + sourceRect.height / 2;
+  const tx = targetRect.left + targetRect.width / 2;
+  const ty = targetRect.top + targetRect.height / 2;
+  const common = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+
+  dispatchHoverSequence(source);
+  source.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse", clientX: sx, clientY: sy }));
+  source.dispatchEvent(new MouseEvent("mousedown", { ...common, clientX: sx, clientY: sy }));
+
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    const x = sx + ((tx - sx) * i) / steps;
+    const y = sy + ((ty - sy) * i) / steps;
+    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? source;
+    under.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse", clientX: x, clientY: y }));
+    under.dispatchEvent(new MouseEvent("mousemove", { ...common, clientX: x, clientY: y }));
+  }
+
+  const dropUnder = (document.elementFromPoint(tx, ty) as HTMLElement | null) ?? target;
+  dropUnder.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse", buttons: 0, clientX: tx, clientY: ty }));
+  dropUnder.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0, clientX: tx, clientY: ty }));
+
+  // HTML5 drag-and-drop path — only when the source opted into it.
+  const dragSource = (source.closest("[draggable='true']") as HTMLElement | null) ?? (source.draggable ? source : null);
+  if (dragSource) {
+    try {
+      const dataTransfer = new DataTransfer();
+      const dragInit = { bubbles: true, cancelable: true, view: window, dataTransfer };
+      dragSource.dispatchEvent(new DragEvent("dragstart", dragInit));
+      dropUnder.dispatchEvent(new DragEvent("dragenter", dragInit));
+      dropUnder.dispatchEvent(new DragEvent("dragover", dragInit));
+      dropUnder.dispatchEvent(new DragEvent("drop", dragInit));
+      dragSource.dispatchEvent(new DragEvent("dragend", dragInit));
+    } catch {
+      // DataTransfer/DragEvent unavailable — pointer path already ran.
+    }
+  }
 }
 
 /** Normalize step.modifiers → KeyboardEventInit modifier flags. */
