@@ -57,6 +57,7 @@ export class GatewayClientError extends Error {
       | "starting"
       | "not_ready"
       | "unresponsive"
+      | "spawn_exited"
       | "protocol",
     readonly retryable = true,
   ) {
@@ -367,6 +368,16 @@ export interface EnsureGatewayOptions extends Omit<GatewayConnectOptions, "hello
   log?: (msg: string) => void;
 }
 
+type GatewaySpawnExit =
+  | { kind: "exit"; exitCode: number | null; signal: NodeJS.Signals | null }
+  | { kind: "spawn_error"; error: Error };
+
+function spawnExitDetail(exit: GatewaySpawnExit): string {
+  return exit.kind === "spawn_error"
+    ? `spawn failed: ${exit.error.message}`
+    : `exited during startup (code ${exit.exitCode ?? "?"}, signal ${exit.signal ?? "none"})`;
+}
+
 function resolveGatewayBin(override?: string | null): string | null {
   if (override === null) return null;
   if (override) return override;
@@ -405,6 +416,11 @@ export async function ensureGateway(
   const deadline = Date.now() + (opts.startupTimeoutMs ?? 15_000);
   const bin = resolveGatewayBin(opts.gatewayBin);
   let spawned = false;
+  // Set when the child WE spawned dies before we connect (chromex-1kz):
+  // exit code/signal or a spawn 'error'. Surfaced as `spawn_exited` on
+  // the next failed connect so "gateway died at boot" is distinguishable
+  // from "still starting" — no retry-until-deadline on a dead child.
+  let spawnExit: GatewaySpawnExit | null = null;
   let backoff = 250;
   let startLock: GatewayStartLock | null = null;
   let lockBypassed = false;
@@ -422,6 +438,20 @@ export async function ensureGateway(
         const retryable = err instanceof GatewayClientError ? err.retryable : true;
         const ownerAliveUnreachable =
           err instanceof GatewayClientError && err.code === "connect_failed";
+        // chromex-1kz: our spawned child died and no endpoint answers —
+        // fail fast with a typed error instead of polling a corpse until
+        // the deadline. Only for the no-live-owner codes: connect_failed
+        // means a DIFFERENT live gateway owns the endpoint, and
+        // auth/starting/unresponsive mean one answered — neither is
+        // explained by our child's death.
+        if (
+          spawnExit &&
+          (code === "endpoint_missing" || code === "endpoint_stale")
+        ) {
+          const detail = spawnExitDetail(spawnExit);
+          opts.log?.(`gateway ${detail}`);
+          throw new GatewayClientError(`gateway ${detail}`, "spawn_exited", false);
+        }
         if (!retryable || Date.now() >= deadline) {
           if (ownerAliveUnreachable && err instanceof GatewayClientError) {
             throw new GatewayClientError(
@@ -469,6 +499,14 @@ export async function ensureGateway(
                 },
               });
               child.unref();
+              // chromex-1kz: first terminal event wins — 'error' (spawn
+              // failure) precedes 'exit' when both fire.
+              child.once("error", (spawnErr) => {
+                spawnExit ??= { kind: "spawn_error", error: spawnErr };
+              });
+              child.once("exit", (exitCode, signal) => {
+                spawnExit ??= { kind: "exit", exitCode, signal };
+              });
               appendFileSync(
                 logPath,
                 `\n--- spawn ${new Date().toISOString()} pid=${child.pid ?? "?"} ---\n`,

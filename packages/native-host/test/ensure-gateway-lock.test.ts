@@ -432,23 +432,28 @@ describe("ensureGateway startup-lock contention", () => {
     await new Promise<void>((r) => server.close(() => r()));
   });
 
-  test("spawned gateway dies during boot (bind-fail analog) → typed error at deadline, spawn logged", async () => {
-    // §3.3.2 #7 host side: the gateway fails to come up (here: exits
-    // immediately, e.g. IPC bind failure). Host surfaces a typed error
-    // after the deadline and the child's stderr lands in gateway.log.
+  test("spawned gateway dies during boot (bind-fail analog) → spawn_exited fast, spawn logged", async () => {
+    // §3.3.2 #7 host side / chromex-1kz: the gateway fails to come up
+    // (here: exits immediately, e.g. IPC bind failure). Host surfaces a
+    // typed `spawn_exited` on the first poll after the child's exit —
+    // NOT a generic endpoint_missing at the deadline — and the child's
+    // stderr lands in gateway.log.
     const dyingBin = path.join(dir, "dying-gateway.mjs");
     await fs.writeFile(
       dyingBin,
       `console.error("bind failed: address already in use");\nprocess.exit(3);\n`,
     );
 
+    const started = Date.now();
     await expect(
       ensureGateway(dir, {
         hello: HELLO,
         gatewayBin: dyingBin,
-        startupTimeoutMs: 1_000,
+        startupTimeoutMs: 15_000,
       }),
-    ).rejects.toMatchObject({ code: "endpoint_missing" });
+    ).rejects.toMatchObject({ code: "spawn_exited", retryable: false });
+    // Fails fast on child death, not after the 15s deadline.
+    expect(Date.now() - started).toBeLessThan(10_000);
 
     const log = await fs.readFile(path.join(dir, "gateway.log"), "utf8");
     expect(log).toContain("--- spawn");

@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { ensureGateway } from "../src/index.js";
+import { ensureGateway, GatewayClientError } from "../src/index.js";
 
 const TOKEN = "c".repeat(64);
 
@@ -206,6 +206,68 @@ describe("ensureGateway", () => {
     // No spawn → no gateway.log, no hello.json.
     await expect(fs.access(path.join(dir, "gateway.log"))).rejects.toThrow();
     await expect(fs.access(path.join(dir, "hello.json"))).rejects.toThrow();
+  });
+
+  test("spawned gateway exits immediately → spawn_exited typed error, fast (chromex-1kz)", async () => {
+    // Bind-failure analog: the child dies before publishing an endpoint.
+    // ensureGateway must surface `spawn_exited` (retryable:false) on the
+    // first poll after the exit lands — not keep retrying connect until
+    // the startup deadline.
+    const dyingBin = path.join(dir, "dying-gateway.mjs");
+    await fs.writeFile(
+      dyingBin,
+      `console.error("bind failed: address already in use");\nprocess.exit(3);\n`,
+    );
+
+    const started = Date.now();
+    const err = await ensureGateway(dir, {
+      hello: HELLO,
+      gatewayBin: dyingBin,
+      startupTimeoutMs: 15_000,
+    }).then(
+      () => {
+        throw new Error("expected ensureGateway to reject");
+      },
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GatewayClientError);
+    expect(err).toMatchObject({ code: "spawn_exited", retryable: false });
+    expect((err as Error).message).toContain("code 3");
+    // Surfaced on child death (~one backoff), nowhere near the 15s deadline.
+    expect(Date.now() - started).toBeLessThan(10_000);
+
+    // The spawn itself was still recorded exactly once.
+    const log = await fs.readFile(path.join(dir, "gateway.log"), "utf8");
+    expect(log.match(/--- spawn/g)).toHaveLength(1);
+    expect(log).toContain("bind failed");
+  });
+
+  test("spawned gateway that stays alive but never publishes → endpoint_missing at deadline", async () => {
+    // Contrast case: a live child that simply hasn't published yet must
+    // NOT trip spawn_exited — ensureGateway keeps polling to the deadline.
+    const silentBin = path.join(dir, "silent-gateway.mjs");
+    await fs.writeFile(
+      silentBin,
+      `import fs from "node:fs";\n` +
+        `const home = process.env.CHROMEX_GATEWAY_HOME;\n` +
+        `setInterval(() => {}, 1000);\n` +
+        // self-terminate once the test removes the data dir
+        `setInterval(() => { try { fs.accessSync(home); } catch { process.exit(0); } }, 250).unref();\n`,
+    );
+
+    const started = Date.now();
+    await expect(
+      ensureGateway(dir, {
+        hello: HELLO,
+        gatewayBin: silentBin,
+        startupTimeoutMs: 1_000,
+      }),
+    ).rejects.toMatchObject({ code: "endpoint_missing" });
+
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(800);
+    expect(elapsed).toBeLessThan(5_000);
   });
 
   test("endpoint_missing with gatewayBin null retries until deadline", async () => {

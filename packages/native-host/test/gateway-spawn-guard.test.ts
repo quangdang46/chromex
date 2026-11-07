@@ -111,15 +111,16 @@ describe("gateway spawn guard", () => {
     expect(await spawnAttempts(dir)).toBe(0);
     await expect(fs.access(path.join(dir, "gateway.log"))).rejects.toThrow();
 
-    // Lock released → next call spawns (record-only bin dies instantly,
-    // so this still ends in endpoint_missing at the deadline).
+    // Lock released → next call spawns (record-only bin exits instantly,
+    // so chromex-1kz surfaces `spawn_exited` as soon as the exit lands —
+    // still proves the spawn happened exactly once).
     await expect(
       ensureGateway(dir, {
         hello: HELLO,
         gatewayBin: binPath,
         startupTimeoutMs: 900,
       }),
-    ).rejects.toMatchObject({ code: "endpoint_missing" });
+    ).rejects.toMatchObject({ code: "spawn_exited", retryable: false });
     expect(await spawnAttempts(dir)).toBe(1);
     const log = await fs.readFile(path.join(dir, "gateway.log"), "utf8");
     expect(log.match(/--- spawn/g)).toHaveLength(1);
@@ -147,15 +148,16 @@ describe("gateway spawn guard", () => {
       code: "endpoint_stale",
     });
 
-    // ensureGateway treats it as no-live-owner → spawns once, then keeps
-    // surfacing endpoint_stale (the file is never rewritten) at deadline.
+    // ensureGateway treats it as no-live-owner → spawns once; the
+    // record-only bin exits instantly, so chromex-1kz surfaces
+    // `spawn_exited` rather than endpoint_stale at the deadline.
     await expect(
       ensureGateway(dir, {
         hello: HELLO,
         gatewayBin: binPath,
         startupTimeoutMs: 900,
       }),
-    ).rejects.toMatchObject({ code: "endpoint_stale" });
+    ).rejects.toMatchObject({ code: "spawn_exited", retryable: false });
     expect(await spawnAttempts(dir)).toBe(1);
   });
 
