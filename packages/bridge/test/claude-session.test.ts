@@ -410,6 +410,37 @@ describe("ClaudeAgentProvider lifecycle (P3-02)", () => {
   });
 });
 
+describe("Claude steer/cancel ownership (P3-05)", () => {
+  test("after interrupt resolves, session accepts a new turn cleanly", async () => {
+    let turn = 0;
+    const { session } = makeSession((_uuid, q) => {
+      turn += 1;
+      if (turn === 1) return; // first turn hangs until interrupt
+      autoComplete(q.lastUuid, q);
+    });
+    const { events } = collect(session);
+    await session.startTurn({ ...INPUT, gatewayTurnId: "gt-a" } as never);
+    await new Promise((r) => setTimeout(r, 10));
+    await session.interrupt();
+    expect(events.some((e) => e.type === "turn.cancelled")).toBe(true);
+    // queue cleared, active turn dropped — next turn runs on same session
+    const res = await session.startTurn({ ...INPUT, gatewayTurnId: "gt-b" } as never);
+    expect(res.accepted).toBe(true);
+    await vi.waitFor(() => {
+      expect(
+        events.some((e) => e.type === "turn.completed" && (e as { turnId?: string }).turnId === "gt-b"),
+      ).toBe(true);
+    });
+    // stale events from turn gt-a must not appear after its terminal
+    const cancelledIdx = events.findIndex((e) => e.type === "turn.cancelled");
+    const lateA = events.slice(cancelledIdx + 1).filter(
+      (e) => (e as { turnId?: string }).turnId === "gt-a" && e.type !== "conversation.closed",
+    );
+    expect(lateA).toEqual([]);
+    await session.close();
+  });
+});
+
 describe("Claude MCP tool binding (P3-03)", () => {
   test("config.options.mcpServers → SDK mcpServers stdio config", async () => {
     const { session, getQuery } = makeSession(autoComplete, {
