@@ -132,7 +132,10 @@ export interface ToolCallOutcome {
   status: "completed" | "failed" | "cancelled" | "unknown";
   result?: unknown;
   error?: { code: string; message: string };
-  verified?: boolean;
+  /** semantic verdict from the host/backend — absent means unverified
+   *  (recorded "unknown" downstream), never optimistically true
+   *  (chromex-0fza). */
+  verified?: boolean | "unknown";
 }
 
 /** Minimal host channel: send a tool request to a registered host and
@@ -428,6 +431,17 @@ export interface ToolServerDeps {
   defaultTimeoutMs?: number;
 }
 
+/** chromex-0fza: the host/backend result may carry an honest semantic
+ *  verdict (`verified: true|false|"unknown"` — see BrowserActionResult /
+ *  content/verify.ts). Anything else means no verification ran; the
+ *  outcome stays undefined so tool.completed records "unknown" rather
+ *  than a blanket true. */
+function hostResultVerified(result: unknown): boolean | "unknown" | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const v = (result as { verified?: unknown }).verified;
+  return v === true || v === false || v === "unknown" ? v : undefined;
+}
+
 export class BrowserToolServer {
   /** toolCallId → outcome — duplicate-execution protection (§9.1). */
   private readonly outcomes = new Map<string, ToolCallOutcome>();
@@ -672,6 +686,7 @@ export class BrowserToolServer {
           // it cannot be undone — but the outcome must not record a
           // success for a tab this task does not own.
           const inScope = this.#noteTabScope(req, result);
+          const verified = hostResultVerified(result);
           // host.send resolves when browser.tool.result arrives (channel impl)
           this.pending.get(req.toolCallId)?.resolve(
             inScope
@@ -680,7 +695,7 @@ export class BrowserToolServer {
                   tool: req.tool,
                   status: "completed",
                   result,
-                  verified: true,
+                  ...(verified !== undefined ? { verified } : {}),
                 }
               : {
                   toolCallId: req.toolCallId,
@@ -749,9 +764,16 @@ export class BrowserToolServer {
     const p = this.pending.get(toolCallId);
     if (!p) return;
     const inScope = this.#noteTabScope(p.req, result);
+    const verified = hostResultVerified(result);
     p.resolve(
       inScope
-        ? { toolCallId, tool: "", status: "completed", result, verified: true }
+        ? {
+            toolCallId,
+            tool: "",
+            status: "completed",
+            result,
+            ...(verified !== undefined ? { verified } : {}),
+          }
         : {
             toolCallId,
             tool: "",

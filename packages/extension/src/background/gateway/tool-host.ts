@@ -17,13 +17,19 @@
  */
 
 import { SnapshotRegistry, urlOriginPath } from "@codex-sidepanel/shared";
-import type { BrowserDomActionResult, BrowserDomSnapshot } from "@codex-sidepanel/shared";
+import type {
+  BrowserDomActionResult,
+  BrowserDomSnapshot,
+  BrowserExpectCondition,
+} from "@codex-sidepanel/shared";
 
 import { chromexConsoleCollect } from "../../content/console-capture.js";
 
 export interface ToolHostDeps {
-  /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL */
-  captureVisibleTab?(windowId: number): Promise<string>;
+  /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL.
+   *  `opts.quality` (jpeg only) lets the screenshot path retry at lower
+   *  quality when the first capture exceeds the artifact byte cap. */
+  captureVisibleTab?(windowId: number, opts?: { quality?: number }): Promise<string>;
   /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
   createTab?(opts: { url?: string; active?: boolean }): Promise<chrome.tabs.Tab>;
   /** chrome.scripting.executeScript world:"MAIN" — runs `func` in the
@@ -593,6 +599,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
         }
         const step = domStepFor(tool, args);
+        // chromex-0fza: validate args.expect BEFORE dispatch — a
+        // malformed expectation must not run the action and then fail.
+        const expectCond = parseExpectCondition(args.expect);
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
           steps: [step],
@@ -602,11 +611,26 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           const code = typeof first?.code === "string" && first.code.startsWith("browser.") ? first.code : "browser.action_failed";
           throw toolError(code, first?.message ?? result.summary ?? "browser action failed");
         }
+        // chromex-0fza: optional args.expect postcondition — poll the
+        // content script briefly (same machinery as browser.page.wait)
+        // and let the explicit expectation override the generic
+        // before/after verdict: met → true, timed out → false,
+        // unreachable → keep the step verdict / "unknown".
+        let verified = first?.verified;
+        let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+        if (expectCond) {
+          const check = await runExpectCondition(deps, tabId, expectCond);
+          expectInfo = check;
+          if (check.met === true) verified = true;
+          else if (check.met === false) verified = false;
+          else verified = verified ?? "unknown";
+        }
         return {
           ok: true,
           summary: result.summary,
           step: first,
-          ...(first?.verified !== undefined ? { verified: first.verified } : {}),
+          ...(verified !== undefined ? { verified } : {}),
+          ...(expectInfo ? { expect: expectInfo } : {}),
           resolvedTabId: tabId,
         };
       }
@@ -669,6 +693,64 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
     }
     default:
       throw toolError("proto.unsupported", `no DOM mapping for ${tool}`);
+  }
+}
+
+/** chromex-0fza: post-action expectation budget — deliberately short;
+ *  this is a verification poll, not a wait tool. */
+const EXPECT_DEFAULT_TIMEOUT_MS = 2_000;
+const EXPECT_MAX_TIMEOUT_MS = 5_000;
+
+/** Parse args.expect into a BrowserExpectCondition. Returns null when
+ *  absent or empty; throws proto.invalid on a non-object payload. */
+function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw toolError("proto.invalid", "args.expect must be an object {selector?, text?, urlContains?, goneSelector?, timeoutMs?}");
+  }
+  const o = raw as Record<string, unknown>;
+  const selector = str(o.selector);
+  const text = str(o.text);
+  const urlContains = str(o.urlContains);
+  const goneSelector = str(o.goneSelector);
+  const timeoutMs =
+    typeof o.timeoutMs === "number" && Number.isFinite(o.timeoutMs)
+      ? Math.min(Math.max(Math.floor(o.timeoutMs), 0), EXPECT_MAX_TIMEOUT_MS)
+      : undefined;
+  const cond: BrowserExpectCondition = {
+    ...(selector ? { selector } : {}),
+    ...(text ? { text } : {}),
+    ...(urlContains ? { urlContains } : {}),
+    ...(goneSelector ? { goneSelector } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  };
+  return cond.selector || cond.text || cond.urlContains || cond.goneSelector ? cond : null;
+}
+
+/** Poll the content script for the expect conditions via page.dom.wait.
+ *  A satisfied poll → met:true; deadline → met:false (the declared
+ *  postcondition is absent — honest negative evidence); an
+ *  unreachable/failed poll → met:"unknown" (no evidence either way). */
+async function runExpectCondition(
+  deps: ToolHostDeps,
+  tabId: number,
+  cond: BrowserExpectCondition,
+): Promise<{ met: boolean | "unknown"; elapsedMs?: number }> {
+  const timeoutMs = cond.timeoutMs ?? EXPECT_DEFAULT_TIMEOUT_MS;
+  try {
+    const res = (await deps.sendToTab(tabId, {
+      type: "page.dom.wait",
+      ...(cond.selector ? { selector: cond.selector } : {}),
+      ...(cond.text ? { text: cond.text } : {}),
+      ...(cond.urlContains ? { urlContains: cond.urlContains } : {}),
+      ...(cond.goneSelector ? { selectorGone: cond.goneSelector } : {}),
+      timeoutMs,
+    })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number };
+    if (res?.ok === true) return { met: true, elapsedMs: res.elapsedMs ?? 0 };
+    if (res?.timedOut === true) return { met: false, elapsedMs: res.elapsedMs ?? timeoutMs };
+    return { met: "unknown" };
+  } catch {
+    return { met: "unknown" };
   }
 }
 

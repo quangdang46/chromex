@@ -80,6 +80,26 @@ export interface BrowserActionRequest {
   expectedStructuralFingerprint?: string;
 }
 
+/**
+ * Optional post-action expectation (chromex-0fza). Interaction tools
+ * (click/submit/navigate/fill/type/select/focus/hover/press/scroll/
+ * upload) accept `args.expect`; after dispatch the host/backend polls
+ * briefly for these conditions and reports an honest `verified`
+ * verdict. Every provided field must hold simultaneously.
+ */
+export interface BrowserExpectCondition {
+  /** CSS selector that must match at least one element */
+  selector?: string;
+  /** substring that must appear in the page's visible text */
+  text?: string;
+  /** substring that must appear in the page URL */
+  urlContains?: string;
+  /** CSS selector that must match NO element after the action */
+  goneSelector?: string;
+  /** poll budget in ms — clamped host-side (default ~2s, max 5s) */
+  timeoutMs?: number;
+}
+
 export interface BrowserObservation {
   urlChanged?: boolean;
   fingerprintChanged?: boolean;

@@ -14,6 +14,8 @@ export interface PageWaitConditions {
   textGone?: string;
   /** CSS selector that must match at least one element */
   selector?: string;
+  /** CSS selector that must match NO element (chromex-0fza expect.goneSelector) */
+  selectorGone?: string;
   /** substring that must appear in window.location.href */
   urlContains?: string;
 }
@@ -44,6 +46,17 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
     }
     if (!found) return false;
   }
+  if (conds.selectorGone) {
+    let present = true;
+    try {
+      present = document.querySelector(conds.selectorGone) !== null;
+    } catch {
+      // invalid selector: fail closed — the "gone" claim is unproven,
+      // same as an unsatisfiable `selector` condition.
+      present = true;
+    }
+    if (present) return false;
+  }
   if (conds.urlContains && !window.location.href.includes(conds.urlContains)) return false;
   return true;
 }
@@ -65,6 +78,7 @@ export async function waitForPageConditions(
     text: typeof conds.text === "string" ? conds.text : "",
     textGone: typeof conds.textGone === "string" ? conds.textGone : "",
     selector: typeof conds.selector === "string" ? conds.selector : "",
+    selectorGone: typeof conds.selectorGone === "string" ? conds.selectorGone : "",
     urlContains: typeof conds.urlContains === "string" ? conds.urlContains : "",
   };
   for (;;) {

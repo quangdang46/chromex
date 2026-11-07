@@ -661,3 +661,86 @@ describe("tool host error surfacing (§7.3 residual)", () => {
     });
   });
 });
+
+describe("tool host expect verification (chromex-0fza)", () => {
+  const performDeps = (waitResult: Record<string, unknown>, stepVerified?: boolean | "unknown") => {
+    const sentMsgs: Array<Record<string, unknown>> = [];
+    const d = deps({
+      sendToTab: vi.fn(async (_tabId: number, message: Record<string, unknown>) => {
+        sentMsgs.push(message);
+        if (message.type === "page.dom.wait") return waitResult;
+        return {
+          ok: true,
+          summary: "done",
+          results: [
+            {
+              step: message.steps?.[0],
+              ok: true,
+              message: "ok",
+              ...(stepVerified !== undefined ? { verified: stepVerified } : {}),
+            },
+          ],
+        };
+      }),
+    });
+    return Object.assign(d, { sentMsgs });
+  };
+
+  test("expect met → verified true; conditions forward to page.dom.wait", async () => {
+    const d = performDeps({ ok: true, matched: "conditions", elapsedMs: 30 });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.click", {
+        selector: ".go",
+        expect: { selector: ".done", text: "Saved", goneSelector: ".spin", urlContains: "/saved", timeoutMs: 900 },
+      }),
+    )) as { verified: boolean; expect: { met: boolean; elapsedMs: number } };
+    expect(res.verified).toBe(true);
+    expect(res.expect).toMatchObject({ met: true, elapsedMs: 30 });
+    const waitMsg = d.sentMsgs.find((m) => m.type === "page.dom.wait");
+    expect(waitMsg).toMatchObject({
+      type: "page.dom.wait",
+      selector: ".done",
+      text: "Saved",
+      selectorGone: ".spin",
+      urlContains: "/saved",
+      timeoutMs: 900,
+    });
+  });
+
+  test("expect timed out → verified false (declared postcondition absent)", async () => {
+    const d = performDeps({ ok: false, timedOut: true, elapsedMs: 2000 });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.submit", { selector: "form", expect: { text: "never appears" } }),
+    )) as { verified: boolean; expect: { met: boolean } };
+    expect(res.verified).toBe(false);
+    expect(res.expect.met).toBe(false);
+  });
+
+  test("expect poll unreachable → verified falls back to step verdict", async () => {
+    const d = performDeps({}, "unknown");
+    // make page.dom.wait reject
+    (d.sendToTab as ReturnType<typeof vi.fn>).mockImplementation(async (_t: number, m: Record<string, unknown>) => {
+      if (m.type === "page.dom.wait") throw new Error("no receiver");
+      return { ok: true, summary: "done", results: [{ step: m.steps?.[0], ok: true, message: "ok", verified: "unknown" }] };
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.click", { selector: ".x", expect: { selector: ".y" } }))) as {
+      verified: string;
+      expect: { met: string };
+    };
+    expect(res.verified).toBe("unknown");
+    expect(res.expect.met).toBe("unknown");
+  });
+
+  test("malformed expect → proto.invalid BEFORE the action dispatches", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.click", { selector: ".x", expect: "soon" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    expect(d.sent).toHaveLength(0);
+  });
+});
+

@@ -289,6 +289,7 @@ function chromexRuntimeMessageListener(
         ...(typeof message.text === "string" ? { text: message.text } : {}),
         ...(typeof message.textGone === "string" ? { textGone: message.textGone } : {}),
         ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+        ...(typeof message.selectorGone === "string" ? { selectorGone: message.selectorGone } : {}),
         ...(typeof message.urlContains === "string" ? { urlContains: message.urlContains } : {}),
       },
       timeoutMs,

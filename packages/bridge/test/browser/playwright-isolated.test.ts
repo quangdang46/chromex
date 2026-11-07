@@ -410,3 +410,59 @@ function stubPlaywright(pages: unknown[]) {
   };
   return { chromium: { launch: async () => browser } };
 }
+
+describe("PlaywrightIsolatedBackend expect verification (chromex-0fza)", () => {
+  test("expect postcondition → honest verified on click (chromex-0fza)", async () => {
+    const counts: Record<string, number> = { ".done": 1, ".spin": 0 };
+    const page = {
+      url: () => "https://x.example/saved",
+      locator: (sel: string) => ({
+        first: () => ({ click: async () => {} }),
+        count: async () => counts[sel] ?? 0,
+        innerText: async () => "all saved",
+      }),
+      waitForTimeout: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.click", {
+      selector: ".go",
+      expect: { selector: ".done", text: "saved", goneSelector: ".spin", urlContains: "/saved", timeoutMs: 200 },
+    })) as { clicked: boolean; verified: boolean; expect: { met: boolean } };
+    expect(res.clicked).toBe(true);
+    expect(res.verified).toBe(true);
+    expect(res.expect.met).toBe(true);
+  });
+
+  test("expect timeout → verified false; malformed expect → proto.invalid pre-dispatch", async () => {
+    let clicks = 0;
+    const page = {
+      url: () => "https://x.example/",
+      locator: (sel: string) => ({
+        first: () => ({
+          click: async () => {
+            clicks += 1;
+          },
+        }),
+        count: async () => 0,
+        innerText: async () => "nothing",
+      }),
+      waitForTimeout: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.click", {
+      selector: ".go",
+      expect: { selector: ".never", timeoutMs: 30 },
+    })) as { verified: boolean; expect: { met: boolean } };
+    expect(res.verified).toBe(false);
+    expect(res.expect.met).toBe(false);
+    expect(clicks).toBe(1);
+    await expect(
+      backend.execute("t1", "browser.page.click", { selector: ".go", expect: "soon" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(clicks).toBe(1); // malformed expect never dispatched
+  });
+});

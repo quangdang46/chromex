@@ -21,6 +21,7 @@ import {
   protocolError,
   type BrowserBackend,
   type BrowserBackendCapabilities,
+  type BrowserExpectCondition,
   type BrowserToolName,
 } from "@codex-sidepanel/shared";
 
@@ -167,6 +168,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (!PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS.has(tool)) {
       throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
+    // chromex-0fza: a malformed args.expect must fail BEFORE the action
+    // dispatches — #withExpect re-parses after the fact for the poll.
+    if (EXPECTABLE_TOOLS.has(tool)) parseExpectCondition(args.expect);
     switch (tool) {
       case "browser.tabs.list":
         return this.#tabsList(taskId);
@@ -177,7 +181,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.tab.create":
         return this.#tabCreate(taskId, args);
       case "browser.page.navigate":
-        return this.#navigate(taskId, args);
+        return this.#withExpect(taskId, args, await this.#navigate(taskId, args));
       case "browser.page.snapshot":
         return this.#snapshot(taskId, args);
       case "browser.page.get":
@@ -197,11 +201,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.scroll":
       case "browser.page.hover":
       case "browser.page.press":
-        return this.#domAction(taskId, tool, args);
+        return this.#withExpect(taskId, args, await this.#domAction(taskId, tool, args));
       case "browser.page.wait":
         return this.#wait(taskId, args);
       case "browser.page.upload":
-        return this.#upload(taskId, args);
+        return this.#withExpect(taskId, args, await this.#upload(taskId, args));
       case "browser.page.find":
         return this.#find(taskId, args);
       case "browser.page.history":
@@ -429,6 +433,66 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
   }
 
+  /** chromex-0fza: when args.expect is present, poll the page briefly
+   *  for the declared postcondition and attach an honest `verified`
+   *  verdict + `expect` evidence to the action result. */
+  async #withExpect(
+    taskId: string,
+    args: Record<string, unknown>,
+    result: unknown,
+  ): Promise<unknown> {
+    const cond = parseExpectCondition(args.expect);
+    if (!cond || !result || typeof result !== "object") return result;
+    const page = await this.#pageFor(taskId, args);
+    const started = Date.now();
+    const timeoutMs = Math.min(Math.max(cond.timeoutMs ?? EXPECT_DEFAULT_TIMEOUT_MS, 0), EXPECT_MAX_TIMEOUT_MS);
+    const met = await this.#pollExpect(page, cond, timeoutMs);
+    return {
+      ...(result as Record<string, unknown>),
+      verified: met === true ? true : met === false ? false : "unknown",
+      expect: { met, elapsedMs: Date.now() - started },
+    };
+  }
+
+  /** Poll until every expect condition holds or the deadline passes.
+   *  "unknown" only when the page itself became unreachable mid-poll. */
+  async #pollExpect(
+    page: PwPage,
+    cond: BrowserExpectCondition,
+    timeoutMs: number,
+  ): Promise<boolean | "unknown"> {
+    const deadline = Date.now() + timeoutMs;
+    try {
+      for (;;) {
+        if (await this.#expectConditionsMet(page, cond)) return true;
+        if (Date.now() >= deadline) return false;
+        await page.waitForTimeout(Math.min(EXPECT_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
+      }
+    } catch {
+      return "unknown";
+    }
+  }
+
+  async #expectConditionsMet(page: PwPage, cond: BrowserExpectCondition): Promise<boolean> {
+    // -1 marks an unresolvable selector — fail closed for both
+    // `selector` (needs >0) and `goneSelector` (needs exactly 0).
+    const count = async (sel: string): Promise<number> => {
+      try {
+        return await page.locator(sel).count();
+      } catch {
+        return -1;
+      }
+    };
+    if (cond.selector && (await count(cond.selector)) <= 0) return false;
+    if (cond.goneSelector && (await count(cond.goneSelector)) !== 0) return false;
+    if (cond.urlContains && !page.url().includes(cond.urlContains)) return false;
+    if (cond.text) {
+      const bodyText = await page.locator("body").innerText().catch(() => "");
+      if (!bodyText.includes(cond.text)) return false;
+    }
+    return true;
+  }
+
   async #wait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const started = Date.now();
@@ -644,6 +708,56 @@ function pressChord(key: string, modifiers: unknown): string {
   const order = ["Control", "Alt", "Shift", "Meta"];
   const prefix = order.filter((m) => mods.has(m)).join("+");
   return prefix ? `${prefix}+${key}` : key;
+}
+
+/** chromex-0fza: post-action expectation poll budget — a verification
+ *  poll, not a wait; same bounds as the extension host. */
+const EXPECT_DEFAULT_TIMEOUT_MS = 2_000;
+const EXPECT_MAX_TIMEOUT_MS = 5_000;
+const EXPECT_POLL_INTERVAL_MS = 100;
+/** Tools that accept args.expect — same set the extension host's
+ *  page.dom.perform default branch covers. */
+const EXPECTABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
+  "browser.page.navigate",
+  "browser.page.click",
+  "browser.page.focus",
+  "browser.page.type",
+  "browser.page.fill",
+  "browser.page.select",
+  "browser.page.submit",
+  "browser.page.scroll",
+  "browser.page.hover",
+  "browser.page.press",
+  "browser.page.upload",
+]);
+
+/** Parse args.expect (chromex-0fza). null when absent/empty; throws
+ *  proto.invalid on a malformed payload — same contract as the
+ *  extension host's parseExpectCondition. */
+function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw protocolError(
+      "proto.invalid",
+      "args.expect must be an object {selector?, text?, urlContains?, goneSelector?, timeoutMs?}",
+    );
+  }
+  const o = raw as Record<string, unknown>;
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v.length > 0 ? v : undefined;
+  const selector = str(o.selector);
+  const text = str(o.text);
+  const urlContains = str(o.urlContains);
+  const goneSelector = str(o.goneSelector);
+  const timeoutMs = typeof o.timeoutMs === "number" && Number.isFinite(o.timeoutMs) ? o.timeoutMs : undefined;
+  const cond: BrowserExpectCondition = {
+    ...(selector ? { selector } : {}),
+    ...(text ? { text } : {}),
+    ...(urlContains ? { urlContains } : {}),
+    ...(goneSelector ? { goneSelector } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  };
+  return cond.selector || cond.text || cond.urlContains || cond.goneSelector ? cond : null;
 }
 
 function boundText(text: string, max: number): { text: string; truncated: boolean } {
