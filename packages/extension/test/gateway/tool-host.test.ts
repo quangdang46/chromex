@@ -171,11 +171,173 @@ describe("tool host (P1-09)", () => {
     });
   });
 
-  test("page.upload → browser.gesture_required, never faked", async () => {
-    const h = createToolHostHandler(deps());
-    await expect(h(req("browser.page.upload", { ref: "e1" }))).rejects.toMatchObject({
-      code: "browser.gesture_required",
+  test("page.upload bytes path maps to dom.perform upload step with files", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.upload", {
+        ref: "e1",
+        files: [{ name: "a.txt", mimeType: "text/plain", base64: "aGk=" }],
+      }),
+    )) as { ok: boolean; resolvedTabId: number };
+    expect(res.ok).toBe(true);
+    const step = (d.sent[0].message as { steps: Array<Record<string, unknown>> }).steps[0];
+    expect(step).toMatchObject({
+      action: "upload",
+      targetRef: "e1",
+      files: [{ name: "a.txt", mimeType: "text/plain", base64: "aGk=" }],
     });
+  });
+
+  test("page.upload local paths / missing files → gesture_required / proto.invalid, never dispatched", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(
+      h(req("browser.page.upload", { ref: "e1", files: ["/tmp/secret.txt"] })),
+    ).rejects.toMatchObject({ code: "browser.gesture_required" });
+    await expect(
+      h(req("browser.page.upload", { ref: "e1", files: [{ path: "/tmp/x" }] })),
+    ).rejects.toMatchObject({ code: "browser.gesture_required" });
+    await expect(h(req("browser.page.upload", { ref: "e1" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(
+      h(req("browser.page.upload", { ref: "e1", files: [{ name: "x" }] })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(d.sent).toHaveLength(0);
+  });
+
+  test("page.wait conditional args forward to page.dom.wait on the scoped tab", async () => {
+    const sentMsgs: Array<Record<string, unknown>> = [];
+    const d = deps({
+      sendToTab: vi.fn(async (_tabId: number, message: Record<string, unknown>) => {
+        sentMsgs.push(message);
+        return { ok: true, matched: "conditions", elapsedMs: 12 };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.wait", { selector: ".done", timeoutMs: 5000, tabId: 7 }),
+    )) as { ok: boolean; elapsedMs: number; resolvedTabId: number };
+    expect(res).toMatchObject({ ok: true, elapsedMs: 12, resolvedTabId: 7 });
+    expect(sentMsgs[0]).toMatchObject({
+      type: "page.dom.wait",
+      selector: ".done",
+      timeoutMs: 5000,
+    });
+  });
+
+  test("page.wait content timeout → browser.timeout; bare ms stays a sleep", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async () => ({ ok: false, timedOut: true, elapsedMs: 10000 })),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.wait", { text: "never", timeoutMs: 10 }))).rejects.toMatchObject({
+      code: "browser.timeout",
+    });
+    const res = (await h(req("browser.page.wait", { ms: 1 }))) as { waitedMs: number };
+    expect(res.waitedMs).toBe(1);
+  });
+
+  test("page.find forwards text/regex/scope to page.dom.find and returns matches", async () => {
+    const sentMsgs: Array<Record<string, unknown>> = [];
+    const d = deps({
+      sendToTab: vi.fn(async (_tabId: number, message: Record<string, unknown>) => {
+        sentMsgs.push(message);
+        return {
+          ok: true,
+          scanned: 10,
+          truncated: false,
+          matches: [{ ref: "find-1", selector: "p", tagName: "p", role: "", text: "hello" }],
+        };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.find", { text: "hello", limit: 5, scopeSelector: "main", caseSensitive: true }),
+    )) as { ok: boolean; matches: unknown[]; resolvedTabId: number };
+    expect(res.ok).toBe(true);
+    expect(res.matches).toHaveLength(1);
+    expect(res.resolvedTabId).toBe(7);
+    expect(sentMsgs[0]).toMatchObject({
+      type: "page.dom.find",
+      text: "hello",
+      limit: 5,
+      scopeSelector: "main",
+      caseSensitive: true,
+    });
+  });
+
+  test("page.find without text/regex or with bad regex → proto.invalid", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.find", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.find", { regex: "([" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    expect(d.sent).toHaveLength(0);
+  });
+
+  test("page.history maps action to navigateHistory on the scoped tab", async () => {
+    const calls: Array<{ tabId: number; action: string }> = [];
+    const d = deps({
+      navigateHistory: vi.fn(async (tabId: number, action: "back" | "forward" | "reload") => {
+        calls.push({ tabId, action });
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.history", { action: "back" }))) as {
+      navigated: string;
+      resolvedTabId: number;
+    };
+    expect(res).toMatchObject({ navigated: "back", resolvedTabId: 7 });
+    expect(calls).toEqual([{ tabId: 7, action: "back" }]);
+    await expect(h(req("browser.page.history", { action: "sideways" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("page.history without dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.history", { action: "reload" }))).rejects.toMatchObject({
+      code: "proto.unsupported",
+    });
+  });
+
+  test("downloads.list maps chrome.downloads items; filters validated", async () => {
+    const queries: unknown[] = [];
+    const d = deps({
+      listDownloads: vi.fn(async (q: { state?: string; limit: number; startTime?: number }) => {
+        queries.push(q);
+        return [
+          {
+            id: 3,
+            state: "complete",
+            filename: "/Users/x/Downloads/a.pdf",
+            bytesReceived: 100,
+            totalBytes: 100,
+            startTime: "2026-01-01T00:00:00Z",
+          },
+        ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.downloads.list", { state: "complete", limit: 10, since: "2026-01-01T00:00:00Z" }),
+    )) as { downloads: Array<{ id?: number; filename: string; state: string }> };
+    expect(res.downloads[0]).toMatchObject({ id: 3, filename: "/Users/x/Downloads/a.pdf", state: "complete" });
+    expect(queries[0]).toMatchObject({ state: "complete", limit: 10 });
+    await expect(h(req("browser.downloads.list", { state: "bogus" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.downloads.list", { since: "not-a-date" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("downloads.list without dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.downloads.list"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
   test("page.screenshot captures + uploads artifact", async () => {

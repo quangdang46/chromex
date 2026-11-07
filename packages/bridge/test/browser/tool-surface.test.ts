@@ -21,6 +21,9 @@ describe("browser tool surface expansion (chromex-he2/nr8/cly)", () => {
       "browser.page.console",
       "browser.page.hover",
       "browser.page.press",
+      "browser.page.find",
+      "browser.page.history",
+      "browser.downloads.list",
     ] as const) {
       expect(BROWSER_TOOL_NAMES).toContain(tool);
       expect(internalToolName(mcpToolName(tool))).toBe(tool);
@@ -49,5 +52,21 @@ describe("browser tool surface expansion (chromex-he2/nr8/cly)", () => {
     expect(keyless.contextResolved).toBe(false);
     const hoverNoTarget = buildActionContext(req("browser.page.hover", {}));
     expect(hoverNoTarget.contextResolved).toBe(false);
+  });
+
+  it("find carries page-text egress; history needs no target; upload needs one", () => {
+    const find = buildActionContext(req("browser.page.find", { text: "hello", url: "https://x.test" }));
+    expect(find.agentEgress?.dataClass).toBe("page-text");
+    expect(find.contextResolved).toBe(true); // read tool
+
+    const history = buildActionContext(req("browser.page.history", { action: "back" }));
+    expect(history.contextResolved).toBe(true); // not in the mutating regex — tab-level nav
+
+    const uploadTargeted = buildActionContext(
+      req("browser.page.upload", { selector: "input[type=file]", files: [{ name: "a", base64: "eA==" }] }),
+    );
+    expect(uploadTargeted.contextResolved).toBe(true);
+    const uploadBare = buildActionContext(req("browser.page.upload", { files: [{ name: "a", base64: "eA==" }] }));
+    expect(uploadBare.contextResolved).toBe(false); // mutating without target → fail closed
   });
 });

@@ -218,6 +218,124 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
       backend.execute("t1", "browser.page.wait", { selector: ".never", timeoutMs: 30 }),
     ).rejects.toMatchObject({ code: "browser.timeout" });
   });
+
+  test("wait text condition polls body innerText and returns elapsedMs", async () => {
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      locator: (sel: string) => ({
+        count: async () => (sel === ".done" ? 1 : 0),
+        innerText: async () => (sel === "body" ? "loading… all done" : ""),
+      }),
+      waitForTimeout: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.wait", {
+      selector: ".done",
+      text: "all done",
+      urlContains: "x.example",
+      timeoutMs: 5000,
+    })) as { ok: boolean; matched: string; elapsedMs: number };
+    expect(res.ok).toBe(true);
+    expect(res.matched).toBe("conditions");
+    // plain ms wait keeps working without a condition
+    const plain = (await backend.execute("t1", "browser.page.wait", { ms: 5 })) as {
+      ok: boolean;
+      waitedMs: number;
+    };
+    expect(plain).toMatchObject({ ok: true, waitedMs: 5 });
+  });
+
+  test("page.history reload/back/forward dispatch to the page", async () => {
+    const calls: string[] = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      reload: async () => void calls.push("reload"),
+      goBack: async () => {
+        calls.push("back");
+        return { ok: true };
+      },
+      goForward: async () => null, // no forward history — honest moved:false
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const back = (await backend.execute("t1", "browser.page.history", { action: "back" })) as {
+      navigated: string;
+      moved: boolean;
+    };
+    expect(back).toMatchObject({ navigated: "back", moved: true });
+    const fwd = (await backend.execute("t1", "browser.page.history", { action: "forward" })) as {
+      moved: boolean;
+    };
+    expect(fwd.moved).toBe(false);
+    await backend.execute("t1", "browser.page.history", { action: "reload" });
+    expect(calls).toEqual(["back", "reload"]);
+    await expect(backend.execute("t1", "browser.page.history", { action: "sideways" })).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("page.find returns bounded matches via page.evaluate", async () => {
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      evaluate: async (_fn: unknown, arg: { text?: string; limit: number }) => {
+        expect(arg.text).toBe("hello");
+        expect(arg.limit).toBe(5);
+        return {
+          matches: [{ selector: "p.hello", tagName: "p", role: "", text: "hello world" }],
+          scanned: 3,
+          truncated: false,
+        };
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.find", { text: "hello", limit: 5 })) as {
+      ok: boolean;
+      matches: unknown[];
+    };
+    expect(res.ok).toBe(true);
+    expect(res.matches).toHaveLength(1);
+    await expect(backend.execute("t1", "browser.page.find", {})).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(backend.execute("t1", "browser.page.find", { regex: "([" })).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("page.upload accepts base64 file entries as setInputFiles buffers", async () => {
+    const setInputs: unknown[] = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      locator: () => ({
+        first: () => ({
+          setInputFiles: async (files: unknown) => void setInputs.push(files),
+        }),
+      }),
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.upload", {
+      selector: "input[type=file]",
+      files: [{ name: "a.txt", mimeType: "text/plain", base64: "aGk=" }],
+    })) as { uploaded: number };
+    expect(res.uploaded).toBe(1);
+    const files = setInputs[0] as Array<{ name: string; buffer: Buffer }>;
+    expect(files[0].name).toBe("a.txt");
+    expect(files[0].buffer.toString()).toBe("hi");
+    await expect(backend.execute("t1", "browser.page.upload", { selector: "input" })).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
 });
 
 /** Minimal playwright-core stub — only what the isolated backend touches. */

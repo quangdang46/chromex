@@ -110,6 +110,32 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     ).toBe(true);
   });
 
+  test("page.find/downloads.list are read; history is low mutation; upload is sensitive approval", () => {
+    expect(classifyActionRisk(ctx({ action: "browser.page.find" })).risk).toBe("read");
+    expect(classifyActionRisk(ctx({ action: "browser.downloads.list" })).risk).toBe("read");
+    expect(classifyActionRisk(ctx({ action: "browser.page.history" })).risk).toBe("low");
+
+    const up = classifyActionRisk(
+      ctx({ action: "browser.page.upload", target: { ref: "e1", tag: "input", inputType: "file" } }),
+    );
+    expect(up).toMatchObject({
+      risk: "data_entry_sensitive",
+      needsApproval: true,
+      kind: "data_entry_sensitive",
+      allowTaskEligible: false,
+    });
+    // financial origin still wins over the upload case.
+    const fin = classifyActionRisk(
+      ctx({
+        action: "browser.page.upload",
+        origin: "https://paypal.com",
+        url: "https://paypal.com/x",
+        target: { ref: "e1" },
+      }),
+    );
+    expect(fin.risk).toBe("financial");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

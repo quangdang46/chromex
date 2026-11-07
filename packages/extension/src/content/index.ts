@@ -276,7 +276,7 @@ function chromexRuntimeMessageListener(
         ...(typeof message.scopeSelector === "string" ? { scopeSelector: message.scopeSelector } : {}),
       }),
     );
-    return true;
+    return false;
   }
 
   if (message.type === "page.dom.wait") {

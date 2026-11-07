@@ -257,7 +257,13 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.wait": { selector: "#done", timeoutMs: 5000 },
   "browser.page.hover": { label: "menu" },
   "browser.page.press": { key: "Enter", modifiers: ["shift"] },
-  "browser.page.upload": { selector: "input[type=file]", files: ["/tmp/a.png"] },
+  "browser.page.upload": {
+    selector: "input[type=file]",
+    files: [{ name: "a.png", mimeType: "image/png", base64: "aGk=" }],
+  },
+  "browser.page.find": { text: "Sign in", limit: 10 },
+  "browser.page.history": { action: "back" },
+  "browser.downloads.list": { state: "complete", limit: 20 },
 };
 
 describe("tools/list schemas + descriptions (chromex-23y5)", () => {
@@ -301,7 +307,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
         `${internal} empty args rejected — check required fields`,
       ).toBe(
         // tools with required args legitimately reject {}
-        ["browser.page.navigate", "browser.page.press", "browser.page.upload"].includes(internal)
+        ["browser.page.navigate", "browser.page.press", "browser.page.upload", "browser.page.history"].includes(internal)
           ? false
           : true,
       );
@@ -319,9 +325,19 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
     expect(schemaValid(toolListEntry("browser.page.press").inputSchema, { key: "Enter" })).toBe(
       true,
     );
-    // upload requires selector + files
+    // upload requires files (selector/ref optional but files mandatory)
     expect(
-      schemaValid(toolListEntry("browser.page.upload").inputSchema, { files: ["/tmp/a"] }),
+      schemaValid(toolListEntry("browser.page.upload").inputSchema, { selector: "input" }),
+    ).toBe(false);
+    expect(
+      schemaValid(toolListEntry("browser.page.upload").inputSchema, {
+        files: [{ name: "a", base64: "eA==" }],
+      }),
+    ).toBe(true);
+    // history requires action enum
+    expect(schemaValid(toolListEntry("browser.page.history").inputSchema, {})).toBe(false);
+    expect(
+      schemaValid(toolListEntry("browser.page.history").inputSchema, { action: "sideways" }),
     ).toBe(false);
     // closed schema rejects unknown args
     expect(

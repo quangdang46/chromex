@@ -32,7 +32,7 @@ not sufficient.
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
 | Tab lifecycle: list/create/activate/close | ext tool-host | ✅ 4 tools (07cf2e4) | lifecycle completeness edge cases |
 | Page observation: snapshot/get/extract/screenshot/console | ext tool-host + content | ✅ console landed (07cf2e4) | no network, no a11y tree option, iframe=none, screenshot→image wiring (22wi) |
-| Page interaction: click/focus/type/fill/select/submit/scroll/navigate/wait/upload/hover/press | ext tool-host + content | ✅ 12 tools (07cf2e4) | conditional wait/history/find/upload-bytes/downloads in flight; dialogs need debugger decision (d7v) |
+| Page interaction: click/focus/type/fill/select/submit/scroll/navigate/wait/upload/hover/press/find/history + downloads.list | ext tool-host + content | ✅ 16 tools | conditional wait, history nav, page find, upload-bytes, downloads.list landed; dialogs need debugger decision (d7v); download initiation still hard-blocked |
 | Browser↔MCP tool surface for providers | bridge mcp-server + session-manager | ✅ wired per task | verify providers actually iterate tool calls E2E |
 | Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
 | Browser↔code feedback loop | composition | ⚠️ architecture only | **no E2E proof** — S1/S2 blocked on this |
