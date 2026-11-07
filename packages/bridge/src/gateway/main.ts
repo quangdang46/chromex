@@ -385,6 +385,8 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     });
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
+      agentEgressDestination: config.browser.agentEgressDestination,
+      sensitiveOrigins: config.browser.sensitiveOrigins,
       backendGate: (req) => {
         // §6.6: pinned backend vs tool requirement. tabIntent-bound
         // tasks (active_resolved/explicit) need the user's real tabs —
@@ -419,7 +421,24 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           browserInstanceId: task?.originBrowserInstanceId ?? task?.binding.browserInstanceId ?? null,
           backendId: task?.backend.backendId ?? "chrome-extension",
         });
-        if (res.kind !== "host") return null;
+        if (res.kind !== "host") {
+          // chromex-jtl: typed rejections reach the tool caller — a
+          // profile mismatch is wrong_profile, everything else no_host.
+          if (res.kind === "wrong_profile") {
+            return {
+              error: {
+                code: "browser.wrong_profile",
+                message: `no host serves profile ${res.expected} (registered: ${res.got})`,
+              },
+            };
+          }
+          return {
+            error: {
+              code: "browser.no_host",
+              message: `no browser host for task scope (${res.kind})`,
+            },
+          };
+        }
         const conn = ipc?.authedConnections().find(
           (c) => c.hostInstanceId !== "" && c.remoteAddress === res.hostInstanceId,
         );
@@ -554,11 +573,22 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         }
         return { verdict: "timeout" as const };
       },
-      allowTaskGranted: async (taskId, scope) => {
-        const rows = (store as { listApprovals?: (id: string) => Array<{ status: string; decision: { optionId: string; scope?: string } | null }> }).listApprovals?.(taskId) ?? [];
-        return rows.some(
-          (r) => r.status === "allowed" && r.decision?.optionId === "allow_task" && r.decision.scope === scope,
-        );
+      allowTaskGranted: async (taskId, scope, actionDigest) => {
+        const rows = (store as { listApprovals?: (id: string) => Array<{ status: string; request?: unknown; decision: { optionId: string; scope?: string } | null }> }).listApprovals?.(taskId) ?? [];
+        return rows.some((r) => {
+          if (
+            r.status !== "allowed" ||
+            r.decision?.optionId !== "allow_task" ||
+            r.decision.scope !== scope
+          ) {
+            return false;
+          }
+          // §4.8: the grant is bound to the approved action's digest —
+          // changed args/snapshot/url/egress invalidate reuse.
+          const grantedDigest = (r.request as { actionDigest?: unknown } | null | undefined)
+            ?.actionDigest;
+          return grantedDigest === actionDigest;
+        });
       },
       grantAllowTask: (taskId, scope) => {
         // grant is recorded by permission.respond → resolveApproval
@@ -796,6 +826,11 @@ async function handleGatewayRequest(
           hostInstanceId: ctx.conn.remoteAddress,
           connectionId: ctx.conn.remoteAddress,
           browserInstanceId: ctx.conn.browserInstanceId,
+          // NOTE: hello.profileId is the extension-installation id
+          // ("prof-…"), NOT the task profileId (provider key "codex"/…)
+          // — different namespaces; registering it would make every
+          // host look wrong_profile. Browser-profile isolation is
+          // already carried by browserInstanceId + connection.
         });
         ctx.conn.onClose(() => ctx.hostRegistry.unregisterByConnection(ctx.conn.remoteAddress));
       }
@@ -1119,6 +1154,8 @@ async function handleGatewayRequest(
         token: p.token,
         profileId: task.profileId,
         backendId: task.backend.backendId ?? "chrome-extension",
+        browserInstanceId:
+          task.originBrowserInstanceId ?? task.binding.browserInstanceId ?? null,
       });
       return outcome;
     }

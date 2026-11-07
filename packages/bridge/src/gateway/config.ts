@@ -10,7 +10,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { MAX_ENVELOPE_BYTES_HARD } from "@codex-sidepanel/shared";
+import {
+  MAX_ENVELOPE_BYTES_HARD,
+  type AgentEgressDestination,
+} from "@codex-sidepanel/shared";
 
 export interface GatewayProviderConfig {
   enabled: boolean;
@@ -55,6 +58,11 @@ export interface GatewayConfig {
     playwright: { enabledByUser: boolean };
     defaultTabScope: "active" | "selected" | "all";
     snapshot: { maxElements: number; maxTextChars: number };
+    /** §4.8 agentEgress.destination stamped on page-content tool calls —
+     *  all built-in providers are cloud, so "cloud-provider" is honest. */
+    agentEgressDestination: AgentEgressDestination;
+    /** origins whose page content always counts as sensitive (§4.8) */
+    sensitiveOrigins: string[];
     policy: {
       allowEvaluate: boolean;
       allowUpload: boolean;
@@ -118,6 +126,8 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
     playwright: { enabledByUser: false },
     defaultTabScope: "active",
     snapshot: { maxElements: 80, maxTextChars: 12_000 },
+    agentEgressDestination: "cloud-provider",
+    sensitiveOrigins: [],
     policy: {
       allowEvaluate: false,
       allowUpload: false,
@@ -285,6 +295,14 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
         maxElements: num(snap.maxElements, 1, 10_000, 80),
         maxTextChars: num(snap.maxTextChars, 100, 1_000_000, 12_000),
       },
+      agentEgressDestination: (
+        ["local-provider", "cloud-provider", "external-mcp", "logs-telemetry"] as const
+      ).includes(b.agentEgressDestination as never)
+        ? (b.agentEgressDestination as AgentEgressDestination)
+        : "cloud-provider",
+      sensitiveOrigins: Array.isArray(b.sensitiveOrigins)
+        ? b.sensitiveOrigins.filter((x): x is string => typeof x === "string")
+        : [],
       policy: {
         allowEvaluate: bool(pol.allowEvaluate, false),
         allowUpload: bool(pol.allowUpload, false),

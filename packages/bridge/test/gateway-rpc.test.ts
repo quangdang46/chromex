@@ -301,11 +301,26 @@ describe("gateway RPC surface (P1-07)", () => {
     };
     expect(denied.error?.code).toBe("browser.tool_not_allowed");
 
-    // read tool in scope → full dispatch through the host conn
+    // read tool in scope → agentEgress approval (§4.8: page text to a
+    // cloud provider is non-local egress) → allow_once → host dispatch
     const host = await hostConn();
-    const ok = (await call("t4", "browser.page.snapshot", mint(["browser.page.snapshot"]))) as {
+    const callP = call("t4", "browser.page.snapshot", mint(["browser.page.snapshot"])) as Promise<{
       status: string; result?: { hostResult?: boolean }; error?: { code: string };
+    }>;
+    const storeAny = gw!.store as unknown as {
+      taskEventsAfter: (id: string, seq: number) => { events: Array<{ payload?: { type?: string; request?: { requestId?: string } } }> };
     };
+    let egressRequestId: string | undefined;
+    for (let i = 0; i < 100 && !egressRequestId; i++) {
+      const ev = storeAny
+        .taskEventsAfter(tid, 0)
+        .events.find((e) => e.payload?.type === "permission.requested");
+      egressRequestId = ev?.payload?.request?.requestId;
+      if (!egressRequestId) await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(egressRequestId).toBeTruthy();
+    await rpc(s, "pr4", "permission.respond", { requestId: egressRequestId, optionId: "allow_once" });
+    const ok = await callP;
     expect(ok.status).toBe("completed");
     expect((ok.result as { hostResult?: boolean })?.hostResult).toBe(true);
     host.destroy();
