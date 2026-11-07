@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import "./cli.js";
+// NB: do NOT import "./cli.js" here — it side-effect-starts a legacy
+// NativeHostRelay that would race this file's own relay for stdin.
 import { GatewayModeRelay } from "./gateway-mode.js";
 import { NativeHostRelay } from "./relay.js";
 import { normalizeNativeHostPath } from "./relay.js";
