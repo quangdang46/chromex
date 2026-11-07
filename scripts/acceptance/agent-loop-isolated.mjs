@@ -148,6 +148,11 @@ try {
   const keyOut = await call("browser.page.extract", { tabId: kTab, selector: "#out" });
   assert(String(keyOut?.text ?? "").includes("key:a"), "press dispatched key 'a' to focused input");
 
+  // type = pressSequentially — per-char key events, last char wins the echo
+  await call("browser.page.type", { tabId: kTab, selector: "#k", value: "xy" });
+  const typeOut = await call("browser.page.extract", { tabId: kTab, selector: "#out" });
+  assert(String(typeOut?.text ?? "").includes("key:y"), "type fired per-char keydown (last 'y')");
+
   const up = await call("browser.page.upload", {
     tabId: kTab,
     selector: "#f",
