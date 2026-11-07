@@ -76,6 +76,16 @@ const PAGES = {
   "/tall": `<!doctype html><html><body>
 <h1>Tall Page</h1><div style="height:5000px">spacer</div><p id="bottom">bottom</p>
 </body></html>`,
+
+  // keyboard + file-input proof: echoes the last key pressed, shows
+  // uploaded file names — deterministic observable state for focus/press/upload.
+  "/keys": `<!doctype html><html><body>
+<h1>Keys Page</h1>
+<input id="k" onkeydown="document.getElementById('out').textContent='key:'+event.key" />
+<p id="out">none</p>
+<input id="f" type="file" onchange="document.getElementById('fname').textContent=(this.files[0]&&this.files[0].name)||'none'" />
+<p id="fname">none</p>
+</body></html>`,
 };
 
 export async function startFixtureServer() {

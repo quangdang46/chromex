@@ -1,0 +1,30 @@
+{
+  "scenario": "agent-loop-isolated",
+  "status": "PASS",
+  "summary": "provider-style tool iteration on headless chromium: form submitted + verified server-side; broken page reported honestly",
+  "notes": [
+    "ok — tab.create returned tabId=0",
+    "ok — snapshot observes the form page",
+    "ok — page.wait text=Submitted resolved",
+    "ok — extract verifies submit-ok page",
+    "ok — fixture server received POST /submit",
+    "ok — POST body carries name=Agent",
+    "ok — POST body carries plan field",
+    "ok — console captured the page error",
+    "ok — broken page honestly still reports 'broken' (no fake success)",
+    "ok — slow page observed while pending",
+    "ok — wait text=ready resolved after delay",
+    "ok — history back navigated to previous page",
+    "ok — back landed on /slow",
+    "ok — coordinate click hit the fixed-position button",
+    "ok — scroll moved viewport (scrollY=1200)",
+    "ok — page.find located \"coord-hit\" (1 matches)",
+    "ok — coordinate hover dispatched",
+    "ok — screenshot returned jpeg payload (8394 bytes)",
+    "ok — tab.close removed one tab (5→4)",
+    "ok — press dispatched key 'a' to focused input",
+    "ok — upload accepted one file",
+    "ok — file input shows uploaded name",
+    "ok — tabs.list sees 5 task tabs"
+  ]
+}

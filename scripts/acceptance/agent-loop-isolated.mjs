@@ -140,6 +140,23 @@ try {
   const nAfter = Array.isArray(tabsAfter) ? tabsAfter.length : tabsAfter?.tabs?.length ?? 0;
   assert(nAfter === nBefore - 1, `tab.close removed one tab (${nBefore}→${nAfter})`);
 
+  // ── Loop 8: focus + press + upload on the keys fixture ─────────────
+  const keys = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const kTab = keys?.tabId ?? keys?.id;
+  await call("browser.page.focus", { tabId: kTab, selector: "#k" });
+  await call("browser.page.press", { tabId: kTab, selector: "#k", key: "a" });
+  const keyOut = await call("browser.page.extract", { tabId: kTab, selector: "#out" });
+  assert(String(keyOut?.text ?? "").includes("key:a"), "press dispatched key 'a' to focused input");
+
+  const up = await call("browser.page.upload", {
+    tabId: kTab,
+    selector: "#f",
+    files: [{ name: "agent-note.txt", mimeType: "text/plain", base64: Buffer.from("hello from agent").toString("base64") }],
+  });
+  assert(up?.uploaded === 1, "upload accepted one file");
+  const fname = await call("browser.page.extract", { tabId: kTab, selector: "#fname" });
+  assert(String(fname?.text ?? "").includes("agent-note.txt"), "file input shows uploaded name");
+
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;
   assert(count >= 2, `tabs.list sees ${count} task tabs`);
