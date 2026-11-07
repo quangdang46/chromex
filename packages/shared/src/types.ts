@@ -593,6 +593,11 @@ export interface BrowserDomSnapshot {
   saltEpoch?: number;
   metadata: PageMetadata;
   elements: BrowserDomElementSnapshot[];
+  /** true when the page has more interactive elements than the snapshot
+   *  cap — elements[] is a prefix, not the whole page. totalInteractive
+   *  reports the untruncated count when known. */
+  truncated?: boolean;
+  totalInteractive?: number;
   capabilities?: {
     supportsDomAutomation: boolean;
     supportsVisualControlIndicator: boolean;

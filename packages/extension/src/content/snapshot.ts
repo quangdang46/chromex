@@ -29,7 +29,8 @@ import {
 
 export async function collectBrowserDomSnapshot(): Promise<BrowserDomSnapshot> {
   clearDomActionElementRefs();
-  const sources = collectInteractiveElements()
+  const allInteractive = collectInteractiveElements();
+  const sources = allInteractive
     .slice(0, 80)
     .map((element, index) => {
       const ref = `dom-${index + 1}`;
@@ -67,6 +68,9 @@ export async function collectBrowserDomSnapshot(): Promise<BrowserDomSnapshot> {
       domain: window.location.hostname,
     },
     elements,
+    ...(allInteractive.length > elements.length
+      ? { truncated: true, totalInteractive: allInteractive.length }
+      : {}),
     capabilities: {
       supportsDomAutomation: true,
       supportsVisualControlIndicator: true,
