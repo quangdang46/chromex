@@ -97,6 +97,17 @@ window.addEventListener('mouseup', (e) => {
 <script>setTimeout(() => document.getElementById('x').remove(), 500);</script>
 </body></html>`,
 
+  // fetch proof: fires an XHR on load, writes the response into the DOM
+  // — deterministic observable state for page.network inspection.
+  "/fetch": `<!doctype html><html><body>
+<h1>Fetch Page</h1><p id="out">pending</p>
+<script>
+fetch('/api/ping').then((r) => r.json()).then((j) => {
+  document.getElementById('out').textContent = 'pong:' + j.v;
+}).catch(() => { document.getElementById('out').textContent = 'fetch-failed'; });
+</script>
+</body></html>`,
+
   // keyboard + file-input proof: echoes the last key pressed, shows
   // uploaded file names — deterministic observable state for focus/press/upload.
   "/keys": `<!doctype html><html><body>
@@ -122,6 +133,12 @@ export async function startFixtureServer() {
         res.writeHead(200, { "content-type": "text/html" });
         res.end(PAGES["/submit-ok"]);
       });
+      return;
+    }
+    // JSON API hit by the /fetch page — page.network proof
+    if (url.pathname === "/api/ping") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ v: "ok" }));
       return;
     }
     // attachment download — Content-Disposition triggers a real

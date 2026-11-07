@@ -61,12 +61,16 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.upload",
   "browser.page.find",
   "browser.page.history",
+  "browser.page.network",
   "browser.downloads.list",
   "browser.downloads.save",
 ]);
 
 const MAX_CONSOLE_ENTRIES = 200;
 const MAX_CONSOLE_TEXT = 1000;
+const MAX_NETWORK_ENTRIES = 500;
+const MAX_URL_LEN = 2000;
+const MAX_MIME_LEN = 200;
 
 const MAX_EXTRACT_CHARS = 64 * 1024;
 const DEFAULT_NAV_TIMEOUT_MS = 30_000;
@@ -80,6 +84,19 @@ type PwBrowser = import("playwright-core").Browser;
 type PwBrowserContext = import("playwright-core").BrowserContext;
 type PwPage = import("playwright-core").Page;
 type PwDownload = import("playwright-core").Download;
+type PwRequest = import("playwright-core").Request;
+
+/** One observed network request — mirrors browser.page.network entries
+ *  on chrome-extension (metadata only, bodies never captured). */
+interface NetworkLogEntry {
+  method: string;
+  url: string;
+  type: string;
+  status?: number;
+  error?: string;
+  mimeType?: string;
+  ts: number;
+}
 
 /** One observed download on the isolated backend — mirrors the fields
  *  browser.downloads.list returns on chrome-extension. `path` is the
@@ -124,6 +141,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** taskId → observed downloads (context 'download' events + saveAs) */
   readonly #downloadLogs = new Map<string, DownloadLogEntry[]>();
   #downloadSeq = 0;
+  /** page → bounded network metadata buffer (request/response/failed) */
+  readonly #networkBuffers = new Map<PwPage, NetworkLogEntry[]>();
+  /** in-flight request → its log entry, for status/error/mime backfill */
+  readonly #pendingRequests = new Map<PwRequest, NetworkLogEntry>();
   #closed = false;
 
   constructor(opts: IsolatedBackendOptions = {}) {
@@ -184,7 +205,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // default: last page, or create one
     const last = pages[pages.length - 1];
     if (last) return last;
-    return context.newPage();
+    return this.#trackPage(await context.newPage());
   }
 
   /** Execute a browser tool on the isolated backend. Throws
@@ -244,6 +265,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#withExpect(taskId, args, await this.#upload(taskId, args));
       case "browser.page.find":
         return this.#find(taskId, args);
+      case "browser.page.network":
+        return this.#network(taskId, args);
       case "browser.page.history":
         return this.#history(taskId, args);
       case "browser.downloads.list":
@@ -306,7 +329,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (args.windowId !== undefined) {
       throw protocolError("proto.unsupported", "playwright-isolated has no windows; args.windowId is chrome-extension only");
     }
-    const page = await context.newPage();
+    const page = this.#trackPage(await context.newPage());
     this.#activePages.set(taskId, page);
     if (url) {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
@@ -421,6 +444,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return buf;
   }
 
+  /** Attach observation listeners at page birth so navigation-time
+   *  requests/console messages are captured — lazy attach would miss the
+   *  very first page load. */
+  #trackPage(page: PwPage): PwPage {
+    // fake pages in unit tests may not implement the event emitter API
+    if (typeof page.on !== "function") return page;
+    this.#ensureConsoleCapture(page);
+    this.#ensureNetworkCapture(page);
+    return page;
+  }
+
   async #console(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const buf = this.#ensureConsoleCapture(page);
@@ -431,6 +465,76 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const wanted = level === "warn" ? "warning" : level;
     const filtered = wanted ? buf.filter((e) => e.level === wanted) : buf;
     return { entries: filtered.slice(-limit), captured: true };
+  }
+
+  /** Lazily attach request/response/requestfailed capture to a page.
+   *  Entries appear on request fire; status/mime backfill when the
+   *  response (or failure) arrives — same metadata-only contract as the
+   *  extension's webRequest log. */
+  #ensureNetworkCapture(page: PwPage): NetworkLogEntry[] {
+    const existing = this.#networkBuffers.get(page);
+    if (existing) return existing;
+    const buf: NetworkLogEntry[] = [];
+    this.#networkBuffers.set(page, buf);
+    const push = (entry: NetworkLogEntry) => {
+      buf.push(entry);
+      if (buf.length > MAX_NETWORK_ENTRIES) buf.splice(0, buf.length - MAX_NETWORK_ENTRIES);
+    };
+    page.on("request", (req) => {
+      const entry: NetworkLogEntry = {
+        method: req.method(),
+        url: stripQuery(req.url()).slice(0, MAX_URL_LEN),
+        type: req.resourceType(),
+        ts: Date.now(),
+      };
+      push(entry);
+      this.#pendingRequests.set(req, entry);
+    });
+    page.on("response", (res) => {
+      const entry = this.#pendingRequests.get(res.request());
+      this.#pendingRequests.delete(res.request());
+      if (!entry) return;
+      entry.status = res.status();
+      const mime = res.headers()["content-type"];
+      if (mime) entry.mimeType = mime.split(";")[0]!.slice(0, MAX_MIME_LEN);
+    });
+    page.on("requestfailed", (req) => {
+      const entry = this.#pendingRequests.get(req);
+      this.#pendingRequests.delete(req);
+      if (!entry) return;
+      entry.error = (req.failure()?.errorText ?? "failed").slice(0, MAX_CONSOLE_TEXT);
+    });
+    return buf;
+  }
+
+  async #network(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const buf = this.#ensureNetworkCapture(page);
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+        : 50;
+    const status = typeof args.status === "string" ? args.status : "";
+    if (status && status !== "error" && !/^[245]xx$/.test(status)) {
+      throw protocolError("proto.invalid", "browser.page.network args.status must be error|2xx|4xx|5xx");
+    }
+    const urlContains = typeof args.urlContains === "string" ? args.urlContains : "";
+    const type = typeof args.type === "string" ? args.type : "";
+    const filtered = buf
+      .filter((e) => !urlContains || e.url.includes(urlContains))
+      .filter((e) => !type || e.type === type)
+      .filter((e) => {
+        if (!status) return true;
+        if (status === "error") return e.error !== undefined || (e.status === undefined && e.ts < Date.now());
+        if (e.status === undefined) return false;
+        const cls = `${Math.floor(e.status / 100)}xx`;
+        return status === cls;
+      })
+      // newest first — the extension returns newest-first too
+      .reverse()
+      .slice(0, limit)
+      .map((e) => ({ ...e }));
+    return { requests: filtered, captured: true };
   }
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
@@ -1047,7 +1151,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const log = await this.#ensureDownloadLog(taskId);
     const dir = this.#downloadDir();
     await mkdir(dir, { recursive: true });
-    const page = await context.newPage();
+    const page = this.#trackPage(await context.newPage());
     const started = Date.now();
     try {
       const dlPromise = page.waitForEvent("download", { timeout: DEFAULT_NAV_TIMEOUT_MS });

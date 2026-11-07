@@ -58,7 +58,6 @@ describe("mcp scope files", () => {
     const file = await writeMcpScopeFile(dir, { ...base, backendId: "playwright-isolated", allowedTools });
     const read = await readMcpScopeFile(file);
     expect(read?.allowedTools).toEqual(allowedTools);
-    expect(read?.allowedTools).not.toContain("browser.page.network");
   });
 });
 
@@ -69,14 +68,13 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
 
   test("playwright-isolated omits tools it cannot execute", () => {
     const tools = supportedToolsForBackend("playwright-isolated");
-    expect(tools).not.toContain("browser.page.network");
     expect(tools).not.toContain("browser.tab.duplicate");
     expect(tools).not.toContain("browser.windows.list");
     expect(tools).not.toContain("browser.windows.create");
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.update");
     expect(tools).not.toContain("browser.tab.discard");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 7);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 6);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

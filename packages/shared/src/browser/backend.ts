@@ -76,9 +76,10 @@ export interface BrowserBackendCapabilities {
   /** browser.windows.* — list/create/update browser windows
    *  (chrome-extension only; playwright has a single implicit window). */
   windowManagement?: boolean;
-  /** browser.page.network — chrome.webRequest metadata log: method,
-   *  sanitized url, status/error, mime, size. Bodies are NOT observable
-   *  at this tier — the capability is metadata inspection only. */
+  /** browser.page.network — request metadata log: method,
+   *  sanitized url, status/error, mime. Extension: chrome.webRequest.
+   *  Playwright: page request/response events. Bodies are NOT
+   *  observable at this tier — metadata inspection only. */
   networkInspection?: boolean;
 }
 
@@ -149,6 +150,9 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     pageHistory: true,
     downloadsList: true,
     downloadsSave: true,
+    // playwright page.on('request'/'response'/'requestfailed') captures
+    // the same metadata-only log — status/mime/size, never bodies.
+    networkInspection: true,
   },
   "playwright-cdp": {
     existingUserTabs: false,

@@ -482,12 +482,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.network": {
     description:
-      "List recent network requests for the task's tab — method, sanitized url (query/hash stripped), resource type, HTTP status or error, mime, timestamp. Metadata only: response bodies are NOT observable. In-memory log, newest first, dies with the extension service worker. chrome-extension backend only.",
+      "List recent network requests for the task's tab — method, sanitized url (query/hash stripped), resource type, HTTP status or error, mime, timestamp. Metadata only: response bodies are NOT observable. In-memory log, newest first, dies with the backend session. Resource-type names differ by backend (chrome.webRequest types on the extension, playwright resourceType on isolated).",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       limit: { type: "integer", description: "Max entries (1–200, default 50)." },
       urlContains: { type: "string", description: "Only requests whose sanitized URL contains this substring." },
-      type: { type: "string", description: "chrome.webRequest type filter, e.g. xhr, fetch, main_frame, document, image." },
+      type: { type: "string", description: "Resource-type filter — chrome-extension: webRequest types (xhr, fetch, main_frame, document, image); playwright-isolated: document, stylesheet, script, xhr, fetch, image, font, media, websocket, other." },
       status: { type: "string", enum: ["error", "2xx", "4xx", "5xx"], description: "Filter: failed requests or an HTTP status class." },
       frameId: FRAME_ID,
     }),

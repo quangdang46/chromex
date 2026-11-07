@@ -217,6 +217,18 @@ try {
   const listed = (dlList?.downloads ?? []).find((d) => String(d?.filename ?? "").endsWith("e2e-download.txt"));
   assert(!!listed && listed.state === "complete", "downloads.list reports the completed download");
 
+  // ── Loop 10: page.network observes the page's own /api/ping fetch ──
+  const fetchTab = await call("browser.tab.create", { url: fixture.url("/fetch"), active: false });
+  const fTab = fetchTab?.tabId ?? fetchTab?.id;
+  await call("browser.page.wait", { tabId: fTab, text: "pong:ok", timeoutMs: 8000 });
+  const net = await call("browser.page.network", { tabId: fTab, urlContains: "/api/ping" });
+  const ping = (net?.requests ?? [])[0];
+  assert(!!ping, "page.network captured the /api/ping request");
+  assert(ping.method === "GET" && ping.status === 200, `ping request metadata (status=${ping.status})`);
+  assert(String(ping.mimeType ?? "").includes("application/json"), "mimeType captured from response");
+  const netFiltered = await call("browser.page.network", { tabId: fTab, status: "2xx", type: "fetch" });
+  assert((netFiltered?.requests ?? []).some((r) => String(r.url).includes("/api/ping")), "status/type filters work");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   await expectReject("browser.page.evaluate", {}, "unsupported", "evaluate refused (no arbitrary JS)");
   await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
