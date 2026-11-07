@@ -134,7 +134,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const idx = Number(tabRef);
       const page = pages[idx];
       if (page) return page;
-      throw protocolError("browser.element_not_found", `no isolated tab ${String(tabRef)}`);
+      throw protocolError("browser.tab_not_found", `no isolated tab ${String(tabRef)}`);
     }
     // default: last page, or create one
     const last = pages[pages.length - 1];
@@ -186,12 +186,15 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #tabsList(taskId: string): Promise<unknown> {
     const context = await this.#contextFor(taskId);
+    const pages = context.pages();
+    // real titles — an empty string here would fake a loaded page state
+    const titles = await Promise.all(pages.map((p) => p.title().catch(() => "")));
     return {
-      tabs: context.pages().map((p, i) => ({
+      tabs: pages.map((p, i) => ({
         tabId: i,
         url: stripQuery(p.url()),
-        title: "",
-        active: i === context.pages().length - 1,
+        title: titles[i] ?? "",
+        active: i === pages.length - 1,
       })),
     };
   }
@@ -333,7 +336,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { satisfied: "timeout" };
       }
       if (Date.now() >= deadline) {
-        throw protocolError("browser.element_not_found", "wait condition not met before timeout");
+        throw protocolError("browser.timeout", "wait condition not met before timeout");
       }
       await page.waitForTimeout(100);
     }
