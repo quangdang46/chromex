@@ -303,6 +303,24 @@ export class SQLiteStore {
       );
   }
 
+  /** §4.4.1 idempotency: clientMessageId → existing turn. */
+  findTurnByClientMessageId(taskId: string, clientMessageId: string): TurnRecord | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM turns WHERE task_id = ? AND client_message_id = ?")
+      .get(taskId, clientMessageId) as TurnRow | undefined;
+    return row ? turnFromRow(row) : undefined;
+  }
+
+  /** First non-terminal turn for a task (queued or running). */
+  activeTurn(taskId: string): TurnRecord | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM turns WHERE task_id = ? AND status IN ('queued','running') ORDER BY created_at LIMIT 1",
+      )
+      .get(taskId) as TurnRow | undefined;
+    return row ? turnFromRow(row) : undefined;
+  }
+
   getTurn(turnId: string): TurnRecord | undefined {
     const row = this.db
       .prepare("SELECT * FROM turns WHERE turn_id = ?")

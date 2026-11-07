@@ -44,6 +44,12 @@ export class InMemoryStore {
     this.tasks.set(task.taskId, task);
   }
 
+  /** Same surface as SQLiteStore.createTask (conversation row is a
+   *  SQLite concern; memory store keeps tasks+turns only). */
+  createTask(task: TaskRecord): void {
+    this.putTask(task);
+  }
+
   getTask(taskId: string): TaskRecord | undefined {
     return this.tasks.get(taskId);
   }
@@ -54,6 +60,26 @@ export class InMemoryStore {
 
   putTurn(turn: TurnRecord): void {
     this.turns.set(turn.turnId, turn);
+  }
+
+  /** Same surface as SQLiteStore.upsertTurn. */
+  upsertTurn(turn: TurnRecord): void {
+    this.putTurn(turn);
+  }
+
+  /** §4.4.1 idempotency: clientMessageId → existing turn. */
+  findTurnByClientMessageId(taskId: string, clientMessageId: string): TurnRecord | undefined {
+    for (const t of this.turns.values()) {
+      if (t.taskId === taskId && t.clientMessageId === clientMessageId) return t;
+    }
+    return undefined;
+  }
+
+  /** First non-terminal turn for a task (queued or running). */
+  activeTurn(taskId: string): TurnRecord | undefined {
+    return [...this.turns.values()].find(
+      (t) => t.taskId === taskId && (t.status === "queued" || t.status === "running"),
+    );
   }
 
   getTurn(turnId: string): TurnRecord | undefined {

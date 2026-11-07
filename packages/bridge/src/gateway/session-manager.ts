@@ -1,0 +1,627 @@
+/**
+ * SessionManager + Task/Turn state machines — plan P1-06 / §5.2/§5.3/§4.4.1/§4.7.
+ *
+ * Three independent state machines (task / turn / conversation); the
+ * Gateway owns turn identity (`gatewayTurnId` = TurnRecord.turnId) and
+ * persists provider-derived events after normalizing them.
+ *
+ * Turn lifecycle (§4.4.1):
+ *   1a txn — user.message.created + turns row (queued, started_at NULL)
+ *   1b txn — turn.started + started_at BEFORE the provider call
+ *   provider events buffered until providerTurnId binds (adapter-side)
+ *   terminal event → turn status + checkpoint
+ *
+ * Attention (§4.7) is DERIVED — never stored.
+ */
+
+import type {
+  AgentEvent,
+  AgentSession,
+  DurableTaskEvent,
+  DurableTaskEventEnvelope,
+  PauseReason,
+  ProtocolError,
+  TaskAttention,
+  TaskRecord,
+  TaskStatus,
+  TurnRecord,
+  TurnStatus,
+} from "@codex-sidepanel/shared";
+import { EPHEMERAL_EVENT_TYPES } from "@codex-sidepanel/shared";
+
+import type { ProviderRegistry } from "../agents/registry.js";
+import type { GatewayConfig } from "./config.js";
+import { ulid } from "./ulid.js";
+
+// ---------- store surface (shared by InMemoryStore + SQLiteStore) ----------
+
+export interface SessionStore {
+  getTask(taskId: string): TaskRecord | undefined;
+  putTask(task: TaskRecord): void;
+  createTask(task: TaskRecord): void;
+  getTurn(turnId: string): TurnRecord | undefined;
+  upsertTurn(turn: TurnRecord): void;
+  listTurns(taskId?: string): TurnRecord[];
+  findTurnByClientMessageId(taskId: string, clientMessageId: string): TurnRecord | undefined;
+  activeTurn(taskId: string): TurnRecord | undefined;
+  appendTaskEvent(taskId: string, event: DurableTaskEvent): DurableTaskEventEnvelope;
+  taskEventsAfter(
+    taskId: string,
+    fromSeq: number,
+    maxEvents?: number,
+  ): { events: DurableTaskEventEnvelope[]; nextSeq: number; hasMore: boolean };
+  lastTaskSeq(taskId: string): number;
+}
+
+// ---------- attention (§4.7 — derived, never persisted) ----------
+
+export interface AttentionInput {
+  task: TaskRecord;
+  pendingApprovals: number;
+  /** seq of the last terminal turn event on this task's stream */
+  lastTurnTerminalSeq: number;
+  /** true when browser host is offline past reconnectGraceMs */
+  browserOffline?: boolean;
+}
+
+export function deriveAttention(input: AttentionInput): TaskAttention | null {
+  const { task, pendingApprovals, lastTurnTerminalSeq, browserOffline } = input;
+  if (pendingApprovals > 0) return "approval_pending";
+  if (task.binding.state === "needs_confirmation") return "needs_tab_confirmation";
+  if (browserOffline) return "browser_offline";
+  if (task.error) return "error";
+  // turn_finished: last turn terminal AND unread (lastReadSeq < terminalSeq)
+  if (lastTurnTerminalSeq > 0 && task.lastReadSeq < lastTurnTerminalSeq) {
+    return "turn_finished";
+  }
+  return null;
+}
+
+// ---------- state machines (§5.2) ----------
+
+const TASK_TRANSITIONS: Record<TaskStatus, ReadonlySet<TaskStatus>> = {
+  queued: new Set(["active", "paused", "cancelled", "failed"]),
+  active: new Set(["completed", "failed", "cancelled", "paused"]),
+  paused: new Set(["active", "cancelled", "failed"]),
+  completed: new Set(["active"]), // task.send reopens
+  failed: new Set(["active"]),
+  cancelled: new Set(["active"]), // task.reopen
+};
+
+const TURN_TRANSITIONS: Record<TurnStatus, ReadonlySet<TurnStatus>> = {
+  queued: new Set(["running", "cancelled", "failed"]),
+  running: new Set(["completed", "failed", "cancelled", "unknown"]),
+  completed: new Set(),
+  failed: new Set(),
+  cancelled: new Set(),
+  unknown: new Set(),
+};
+
+export class StateTransitionError extends Error {
+  constructor(kind: "task" | "turn", from: string, to: string) {
+    super(`invalid ${kind} transition ${from} → ${to}`);
+    this.name = "StateTransitionError";
+  }
+}
+
+export function transitionTask(task: TaskRecord, to: TaskStatus, pauseReason?: PauseReason): TaskRecord {
+  if (!TASK_TRANSITIONS[task.status].has(to)) {
+    throw new StateTransitionError("task", task.status, to);
+  }
+  const next: TaskRecord = { ...task, status: to, updatedAt: Date.now() };
+  if (to === "paused") {
+    if (!pauseReason) throw new Error("paused requires pauseReason");
+    next.pauseReason = pauseReason;
+  } else {
+    next.pauseReason = null;
+  }
+  return next;
+}
+
+export function transitionTurn(turn: TurnRecord, to: TurnStatus, patch: Partial<TurnRecord> = {}): TurnRecord {
+  if (!TURN_TRANSITIONS[turn.status].has(to)) {
+    throw new StateTransitionError("turn", turn.status, to);
+  }
+  return {
+    ...turn,
+    ...patch,
+    status: to,
+    ...(to !== "queued" && to !== "running" ? { endedAt: patch.endedAt ?? Date.now() } : {}),
+  };
+}
+
+// ---------- session manager ----------
+
+export interface LiveConversation {
+  session: AgentSession;
+  conversationKey: string;
+}
+
+export interface SendMessageInput {
+  clientMessageId: string;
+  content: import("@codex-sidepanel/shared").TurnInput["content"];
+  ctx?: import("@codex-sidepanel/shared").TurnInput["ctx"];
+}
+
+export interface SendMessageResult {
+  turnId: string;
+  /** true when queued behind a running turn */
+  queued: boolean;
+  /** true when clientMessageId was already seen (idempotent replay) */
+  duplicate: boolean;
+}
+
+export interface SessionManagerOptions {
+  store: SessionStore;
+  registry: ProviderRegistry;
+  config: GatewayConfig;
+  /** publish durable envelopes + ephemeral events to connected clients */
+  publish?: (taskId: string, event: AgentEvent | DurableTaskEventEnvelope, ephemeral: boolean) => void;
+  /** count pending approvals for attention derivation (default 0) */
+  pendingApprovals?: (taskId: string) => number;
+  /** override id generator (tests) */
+  newId?: () => string;
+  /** interrupt ownership timeout (§5.3) — default 30s */
+  interruptTimeoutMs?: number;
+}
+
+const INTERRUPT_TIMEOUT_MS = 30_000;
+const TASK_TERMINAL_EVENTS = new Set(["turn.completed", "turn.failed", "turn.cancelled", "turn.unknown"]);
+
+export class SessionManager {
+  private readonly conversations = new Map<string, LiveConversation>();
+  /** taskId → provider turn binding for the ACTIVE turn */
+  private readonly activeTurns = new Map<string, { turnId: string; providerTurnId: string | null }>();
+  private readonly unsubscribers = new Map<string, () => void>();
+  /** taskIds mid-cancel — suppresses auto-complete while interrupt drains */
+  private readonly cancelling = new Set<string>();
+
+  constructor(private readonly opts: SessionManagerOptions) {}
+
+  #id(): string {
+    return this.opts.newId?.() ?? ulid();
+  }
+
+  #publish(taskId: string, event: AgentEvent | DurableTaskEventEnvelope, ephemeral: boolean): void {
+    this.opts.publish?.(taskId, event, ephemeral);
+  }
+
+  // ---- task lifecycle ----
+
+  createTask(params: {
+    profileId: string;
+    providerId: TaskRecord["providerId"];
+    conversationKey?: string;
+    cwd: string;
+    title?: string | null;
+    model?: string | null;
+    modeId?: string | null;
+    thinkingOptionId?: string | null;
+    providerOptions?: Record<string, unknown> | null;
+    backend: TaskRecord["backend"];
+    tabIntent: TaskRecord["tabIntent"];
+    originBrowserInstanceId?: string | null;
+    binding?: TaskRecord["binding"];
+  }): TaskRecord {
+    const now = Date.now();
+    const taskId = this.#id();
+    const task: TaskRecord = {
+      taskId,
+      createdAt: now,
+      updatedAt: now,
+      status: "queued",
+      pauseReason: null,
+      title: params.title ?? null,
+      profileId: params.profileId,
+      providerId: params.providerId,
+      conversationKey: params.conversationKey ?? `conv-${taskId}`,
+      cwd: params.cwd,
+      model: params.model ?? null,
+      modeId: params.modeId ?? null,
+      thinkingOptionId: params.thinkingOptionId ?? null,
+      providerOptions: params.providerOptions ?? null,
+      backend: params.backend,
+      tabIntent: params.tabIntent,
+      originBrowserInstanceId: params.originBrowserInstanceId ?? null,
+      binding: params.binding ?? { browserInstanceId: params.originBrowserInstanceId ?? null, state: "none" },
+      lastSeq: 0,
+      lastReadSeq: 0,
+      error: null,
+    };
+    this.opts.store.createTask(task);
+    this.#persist(taskId, { type: "task.created", taskId, profileId: task.profileId, providerId: task.providerId, backend: task.backend });
+    this.#setTaskStatus(task, "active");
+    return this.opts.store.getTask(taskId)!;
+  }
+
+  // ---- conversation ----
+
+  async ensureConversation(task: TaskRecord): Promise<LiveConversation> {
+    const existing = this.conversations.get(task.conversationKey);
+    if (existing) return existing;
+
+    const target = this.opts.registry.resolve(task.profileId, {
+      provider: task.providerId,
+      ...(task.model !== undefined ? { model: task.model } : {}),
+      ...(task.modeId !== undefined ? { modeId: task.modeId } : {}),
+      ...(task.thinkingOptionId !== undefined ? { thinkingOptionId: task.thinkingOptionId } : {}),
+    });
+    if (!target) throw new Error(`no provider for profile ${task.profileId}`);
+
+    const session = await target.provider.createSession(
+      { ...target.config, provider: target.providerId },
+      { cwd: task.cwd },
+    );
+    const live: LiveConversation = { session, conversationKey: task.conversationKey };
+    this.conversations.set(task.conversationKey, live);
+
+    // route provider events → normalize → persist → publish
+    this.unsubscribers.set(
+      task.conversationKey,
+      session.subscribe((e) => this.#handleAgentEvent(task.taskId, e)),
+    );
+    return live;
+  }
+
+  // ---- turns ----
+
+  /**
+   * §4.4.1 + §5.3: serialize per task, persist-first.
+   * Returns queued=true when a turn is already running and
+   * tasks.queueWhileRunning allows queuing.
+   */
+  async sendMessage(taskId: string, input: SendMessageInput): Promise<SendMessageResult> {
+    const task = this.#requireTask(taskId);
+    const store = this.opts.store;
+
+    // idempotency: same clientMessageId → same turn, no re-dispatch
+    const dup = store.findTurnByClientMessageId(taskId, input.clientMessageId);
+    if (dup) return { turnId: dup.turnId, queued: dup.status === "queued", duplicate: true };
+
+    const now = Date.now();
+    const turnId = this.#id();
+
+    // 1a: user.message.created + queued turn row (started_at NULL)
+    const turn: TurnRecord = {
+      turnId,
+      taskId,
+      status: "queued",
+      clientMessageId: input.clientMessageId,
+      createdAt: now,
+      queuedAt: now,
+      startedAt: null,
+    };
+    store.upsertTurn(turn);
+    this.#persist(taskId, {
+      type: "user.message.created",
+      turnId,
+      message: {
+        gatewayTurnId: turnId,
+        clientMessageId: input.clientMessageId,
+        content: input.content,
+        ...(input.ctx ? { ctx: input.ctx } : {}),
+      },
+      clientMessageId: input.clientMessageId,
+    });
+
+    const running = store.activeTurn(taskId);
+    if (running && running.turnId !== turnId) {
+      // another turn occupies the slot
+      if (this.opts.config.tasks.queueWhileRunning) {
+        return { turnId, queued: true, duplicate: false };
+      }
+      store.upsertTurn(transitionTurn(turn, "failed", { error: busyError() }));
+      this.#persist(taskId, {
+        type: "turn.failed",
+        turnId,
+        error: busyError(),
+      } as DurableTaskEvent);
+      return { turnId, queued: false, duplicate: false };
+    }
+
+    return this.#dispatchTurn(task, turn, input);
+  }
+
+  /** Dequeue + run the next queued turn for a task (post-terminal drain). */
+  async #dispatchTurn(task: TaskRecord, turn: TurnRecord, input: SendMessageInput): Promise<SendMessageResult> {
+    const store = this.opts.store;
+    const live = await this.ensureConversation(task);
+
+    // 1b: turn.started + started_at BEFORE provider call (§4.4.1 step 5)
+    const started = transitionTurn(turn, "running", { startedAt: Date.now() });
+    store.upsertTurn(started);
+    this.#persist(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
+    if (task.status === "queued") {
+      this.#setTaskStatus(task, "active");
+    }
+
+    try {
+      const res = await live.session.startTurn({
+        gatewayTurnId: turn.turnId,
+        clientMessageId: turn.clientMessageId,
+        content: input.content,
+        ...(input.ctx ? { ctx: input.ctx } : {}),
+      });
+      this.activeTurns.set(task.taskId, {
+        turnId: turn.turnId,
+        providerTurnId: res.providerTurnId ?? null,
+      });
+      return { turnId: turn.turnId, queued: false, duplicate: false };
+    } catch (err) {
+      // startTurn rejected → turn.failed (§4.4.1)
+      const failed = transitionTurn(started, "failed", {
+        error: toProtocolError(err, "provider.turn_start_failed"),
+      });
+      store.upsertTurn(failed);
+      this.#persist(task.taskId, {
+        type: "turn.failed",
+        turnId: turn.turnId,
+        error: failed.error!,
+      } as DurableTaskEvent);
+      this.activeTurns.delete(task.taskId);
+      throw err;
+    }
+  }
+
+  async steer(taskId: string, input: SendMessageInput): Promise<{ status: "accepted" | "unavailable" }> {
+    const task = this.#requireTask(taskId);
+    const live = await this.ensureConversation(task);
+    if (!live.session.steer) return { status: "unavailable" };
+    const active = this.opts.store.activeTurn(taskId);
+    if (!active || active.status !== "running") return { status: "unavailable" };
+    return live.session.steer({
+      gatewayTurnId: active.turnId,
+      clientMessageId: input.clientMessageId,
+      content: input.content,
+      ...(input.ctx ? { ctx: input.ctx } : {}),
+    });
+  }
+
+  /**
+   * §5.3: adapter interrupt + ownership wait. Timeout → turn.unknown +
+   * task paused (never guess the turn stopped).
+   */
+  async interruptTurn(taskId: string, turnId?: string): Promise<void> {
+    const task = this.#requireTask(taskId);
+    const target = turnId ?? this.opts.store.activeTurn(taskId)?.turnId;
+    if (!target) return;
+    const live = this.conversations.get(task.conversationKey);
+    const timeoutMs = this.opts.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS;
+
+    const interrupted = live?.session.interrupt().then(() => true).catch(() => false);
+    const timeout = new Promise<false>((r) => setTimeout(() => r(false), timeoutMs).unref());
+    const ok = interrupted ? await Promise.race([interrupted, timeout]) : false;
+
+    const turn = this.opts.store.getTurn(target);
+    if (!turn || ["completed", "failed", "cancelled"].includes(turn.status)) return;
+
+    if (ok) {
+      // terminal event arrives via subscription; if it already did, turn is terminal
+      const after = this.opts.store.getTurn(target);
+      if (after && !["completed", "failed", "cancelled", "unknown"].includes(after.status)) {
+        // adapter resolved but no terminal event observed — mark unknown
+        this.#markTurnUnknown(taskId, target, "interrupt_no_terminal");
+      }
+      return;
+    }
+    this.#markTurnUnknown(taskId, target, "turn.interrupt_timeout");
+    this.#pauseTask(task, "provider_unavailable");
+  }
+
+  /** task.cancel: interrupt active turn + cancel queued turns + status. */
+  async cancelTask(taskId: string, reason = "user"): Promise<void> {
+    const task = this.#requireTask(taskId);
+    const store = this.opts.store;
+    this.cancelling.add(taskId);
+    try {
+      const active = store.activeTurn(taskId);
+      if (active?.status === "running") {
+        await this.interruptTurn(taskId, active.turnId);
+      }
+    } finally {
+      // keep the guard until status is written below
+    }
+    // queued turns → cancelled with started_at NULL (§5.2)
+    for (const t of store.listTurns(taskId)) {
+      if (t.status === "queued") {
+        store.upsertTurn(transitionTurn(t, "cancelled", { endedAt: Date.now(), stopReason: reason }));
+        this.#persist(taskId, { type: "turn.cancelled", turnId: t.turnId, reason } as DurableTaskEvent);
+      }
+    }
+    // any still-running turn the interrupt couldn't confirm → unknown
+    for (const t of store.listTurns(taskId)) {
+      if (t.status === "running") {
+        this.#markTurnUnknown(taskId, t.turnId, "task.cancel");
+      }
+    }
+    const fresh = this.#requireTask(taskId);
+    try {
+      if (["active", "paused", "queued"].includes(fresh.status)) {
+        this.#setTaskStatus(fresh, "cancelled");
+        this.#persist(taskId, { type: "task.cancelled", reason } as DurableTaskEvent);
+      }
+    } finally {
+      this.cancelling.delete(taskId);
+    }
+  }
+
+  // ---- provider event intake ----
+
+  #handleAgentEvent(taskId: string, event: AgentEvent): void {
+    const ephemeral = (EPHEMERAL_EVENT_TYPES as readonly string[]).includes(event.type);
+    if (ephemeral) {
+      this.#publish(taskId, event, true);
+      return;
+    }
+    // adapter-emitted turn.started is a duplicate of the Gateway's 1b
+    // persist — skip when the turn row already started.
+    if (event.type === "turn.started") {
+      const turn = this.opts.store.getTurn((event as { turnId: string }).turnId);
+      if (turn?.startedAt) {
+        this.#publish(taskId, event, false);
+        return;
+      }
+    }
+    const env = this.#persist(taskId, event as DurableTaskEvent);
+    this.#publish(taskId, env, false);
+    this.#afterPersistedEvent(taskId, event);
+  }
+
+  #afterPersistedEvent(taskId: string, event: AgentEvent): void {
+    if (!TASK_TERMINAL_EVENTS.has(event.type)) return;
+    const turnId = (event as { turnId?: string }).turnId;
+    if (!turnId) return;
+    const turn = this.opts.store.getTurn(turnId);
+    if (!turn || turn.status === "queued") return;
+
+    const statusMap: Record<string, TurnStatus> = {
+      "turn.completed": "completed",
+      "turn.failed": "failed",
+      "turn.cancelled": "cancelled",
+      "turn.unknown": "unknown",
+    };
+    const to = statusMap[event.type];
+    if (!to || turn.status === to || !TURN_TRANSITIONS[turn.status].has(to)) return;
+
+    const patch: Partial<TurnRecord> = { endedAt: Date.now() };
+    if (event.type === "turn.failed") {
+      patch.error = (event as { error?: ProtocolError }).error ?? null;
+      patch.stopReason = "provider_error";
+    }
+    if (event.type === "turn.cancelled") {
+      patch.stopReason = (event as { reason?: string }).reason ?? "interrupted";
+    }
+    if (event.type === "turn.unknown") {
+      patch.stopReason = (event as { reason?: string }).reason ?? "unknown";
+    }
+    this.opts.store.upsertTurn(transitionTurn(turn, to, patch));
+    this.activeTurns.delete(taskId);
+
+    // drain queue or complete task (§5.2: all turns terminal → completed)
+    const task = this.opts.store.getTask(taskId);
+    if (!task) return;
+    const queued = this.opts.store.listTurns(taskId).find((t) => t.status === "queued");
+    if (queued) {
+      void this.#resumeQueued(task, queued);
+      return;
+    }
+    if (task.status === "active" && !this.cancelling.has(taskId)) {
+      this.#setTaskStatus(task, "completed");
+      this.#persist(taskId, { type: "task.completed" } as DurableTaskEvent);
+    }
+  }
+
+  async #resumeQueued(task: TaskRecord, turn: TurnRecord): Promise<void> {
+    // Rebuild TurnInput from the durable user.message.created event —
+    // the prompt payload is persisted before dispatch (§5.6 durability).
+    const { events } = this.opts.store.taskEventsAfter(task.taskId, 0, 100_000);
+    const created = events.find(
+      (e) => e.type === "user.message.created" && e.payload.turnId === turn.turnId,
+    );
+    if (!created || created.type !== "user.message.created") return;
+    const msg = created.payload.message;
+    try {
+      await this.#dispatchTurn(task, turn, {
+        clientMessageId: msg.clientMessageId,
+        content: msg.content,
+        ...(msg.ctx ? { ctx: msg.ctx } : {}),
+      });
+    } catch {
+      // dispatch failure already persisted turn.failed; task stays active
+      // for the next queued turn or explicit user action.
+    }
+  }
+
+  // ---- internals ----
+
+  #requireTask(taskId: string): TaskRecord {
+    const task = this.opts.store.getTask(taskId);
+    if (!task) throw new Error(`task ${taskId} not found`);
+    return task;
+  }
+
+  #persist(taskId: string, event: DurableTaskEvent): DurableTaskEventEnvelope {
+    return this.opts.store.appendTaskEvent(taskId, event);
+  }
+
+  #setTaskStatus(task: TaskRecord, to: TaskStatus, pauseReason?: PauseReason): TaskRecord {
+    const next = transitionTask(task, to, pauseReason);
+    this.opts.store.putTask(next);
+    if (task.status !== to) {
+      this.#persist(task.taskId, {
+        type: "task.status_changed",
+        from: task.status,
+        to,
+        ...(pauseReason ? { pauseReason } : {}),
+      } as DurableTaskEvent);
+    }
+    return next;
+  }
+
+  #pauseTask(task: TaskRecord, reason: PauseReason): void {
+    if (task.status === "paused") return;
+    if (["completed", "failed", "cancelled"].includes(task.status)) return;
+    this.#setTaskStatus(task, "paused", reason);
+  }
+
+  #markTurnUnknown(taskId: string, turnId: string, reason: string): void {
+    const turn = this.opts.store.getTurn(turnId);
+    if (!turn) return;
+    if (TURN_TRANSITIONS[turn.status].has("unknown")) {
+      this.opts.store.upsertTurn(transitionTurn(turn, "unknown", { stopReason: reason }));
+    } else if (turn.status === "running") {
+      this.opts.store.upsertTurn({ ...turn, status: "unknown", endedAt: Date.now(), stopReason: reason });
+    }
+    this.#persist(taskId, { type: "turn.unknown", turnId, reason } as DurableTaskEvent);
+  }
+
+  /** Attention for snapshots/hello — derived per §4.7. */
+  attentionFor(taskId: string): TaskAttention | null {
+    const task = this.opts.store.getTask(taskId);
+    if (!task) return null;
+    return deriveAttention({
+      task,
+      pendingApprovals: this.opts.pendingApprovals?.(taskId) ?? 0,
+      lastTurnTerminalSeq: this.#lastTurnTerminalSeq(taskId),
+    });
+  }
+
+  #lastTurnTerminalSeq(taskId: string): number {
+    // §4.7: attention compares lastReadSeq against the seq of the last
+    // TERMINAL turn event on this task's durable stream. Scan is O(events)
+    // — acceptable until P1-11 adds a terminal-seq index.
+    const { events } = this.opts.store.taskEventsAfter(taskId, 0, 100_000);
+    let seq = 0;
+    for (const e of events) {
+      if (
+        e.type === "turn.completed" ||
+        e.type === "turn.failed" ||
+        e.type === "turn.cancelled" ||
+        e.type === "turn.unknown"
+      ) {
+        seq = e.seq;
+      }
+    }
+    return seq;
+  }
+}
+
+function busyError(): ProtocolError {
+  return {
+    code: "task.busy",
+    message: "another turn is running",
+    retryable: true,
+    requiresUserAction: false,
+    sideEffectState: "none",
+  } as ProtocolError;
+}
+
+function toProtocolError(err: unknown, code: string): ProtocolError {
+  return {
+    code: code as ProtocolError["code"],
+    message: err instanceof Error ? err.message : String(err),
+    retryable: true,
+    requiresUserAction: false,
+    sideEffectState: "unknown",
+  } as ProtocolError;
+}
