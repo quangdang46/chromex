@@ -152,6 +152,16 @@ try {
   const pos = await call("browser.page.get", { tabId: tTab });
   assert((pos?.scroll?.scrollY ?? 0) > 0, `scroll moved viewport (scrollY=${pos?.scroll?.scrollY})`);
 
+  // ── Loop 6b: drag — coordinate form and element form ───────────────
+  const drag = await call("browser.tab.create", { url: fixture.url("/drag"), active: false });
+  const dTab = drag?.tabId ?? drag?.id;
+  await call("browser.page.drag", { tabId: dTab, x: 40, y: 40, dropX: 360, dropY: 80 });
+  const dragOut1 = await call("browser.page.extract", { tabId: dTab, selector: "#out" });
+  assert(String(dragOut1?.text ?? "").includes("up@360,80"), "coordinate drag ended at drop point");
+  await call("browser.page.drag", { tabId: dTab, selector: "#src", toSelector: "#dst" });
+  const dragOut2 = await call("browser.page.extract", { tabId: dTab, selector: "#out" });
+  assert(/up@3\d\d,\d+/.test(String(dragOut2?.text ?? "")), "element drag ended inside #dst bounds");
+
   // ── Loop 7: find / hover / screenshot / tab activate+close ─────────
   const found = await call("browser.page.find", { tabId: cTab, text: "coord-hit" });
   const matchCount = Array.isArray(found?.matches) ? found.matches.length : found?.count ?? 0;

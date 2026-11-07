@@ -71,7 +71,6 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     const tools = supportedToolsForBackend("playwright-isolated");
     expect(tools).not.toContain("browser.downloads.list");
     expect(tools).not.toContain("browser.downloads.save");
-    expect(tools).not.toContain("browser.page.drag");
     expect(tools).not.toContain("browser.page.network");
     expect(tools).not.toContain("browser.tab.duplicate");
     expect(tools).not.toContain("browser.windows.list");
@@ -79,7 +78,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.update");
     expect(tools).not.toContain("browser.tab.discard");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 10);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 9);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

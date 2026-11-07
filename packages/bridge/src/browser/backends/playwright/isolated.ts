@@ -54,6 +54,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.wait",
   "browser.page.hover",
   "browser.page.press",
+  "browser.page.drag",
   "browser.page.upload",
   "browser.page.find",
   "browser.page.history",
@@ -214,6 +215,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.scroll":
       case "browser.page.hover":
       case "browser.page.press":
+      case "browser.page.drag":
         return this.#withExpect(taskId, args, await this.#domAction(taskId, tool, args));
       case "browser.page.wait":
         return this.#wait(taskId, args);
@@ -516,6 +518,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { hovered: true, x, y };
       }
     }
+    // Drag resolves its own targets — coordinate form has no selector,
+    // element form needs source + drop selectors (not the single-target
+    // #requireSelector path).
+    if (tool === "browser.page.drag") {
+      return this.#drag(page, args);
+    }
     // Page-level scroll needs no selector — window scroll is a valid
     // target (extension host parity). Handled before #requireSelector.
     if (tool === "browser.page.scroll") {
@@ -637,6 +645,64 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       default:
         throw protocolError("proto.unsupported", `unsupported dom action ${tool}`);
     }
+  }
+
+  /** browser.page.drag — mouse-based drag parity with the extension
+   *  host's pointer-move sequence: move → down → interpolated moves → up.
+   *  Element form resolves source/drop bounding-box centers; invisible
+   *  targets fail with retryable browser.element_not_visible, matching
+   *  the extension's pointer-reachability gate. */
+  async #drag(page: PwPage, args: Record<string, unknown>): Promise<unknown> {
+    const mouseDrag = async (sx: number, sy: number, dx: number, dy: number) => {
+      await page.mouse.move(sx, sy);
+      await page.mouse.down();
+      await page.mouse.move(dx, dy, { steps: 12 });
+      await page.mouse.up();
+    };
+    const coordFields = [args.x, args.y, args.dropX, args.dropY];
+    const coordCount = coordFields.filter((v) => v !== undefined && v !== null).length;
+    if (coordCount > 0) {
+      if (coordCount !== 4) {
+        throw protocolError("proto.invalid", "browser.page.drag coordinate drag requires x, y, dropX and dropY together");
+      }
+      const [x, y, dropX, dropY] = coordFields as [number, number, number, number];
+      if ([x, y, dropX, dropY].some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0)) {
+        throw protocolError("proto.invalid", "browser.page.drag coordinates must be non-negative finite viewport pixels");
+      }
+      if (
+        args.ref !== undefined || args.selector !== undefined || args.label !== undefined ||
+        args.toRef !== undefined || args.toSelector !== undefined || args.toLabel !== undefined
+      ) {
+        throw protocolError("proto.invalid", "browser.page.drag accepts coordinates or element targets, not both");
+      }
+      await mouseDrag(x, y, dropX, dropY);
+      return { dragged: true, x, y, dropX, dropY };
+    }
+    const srcSel = args.selector ?? args.ref;
+    const dstSel = args.toSelector ?? args.toRef;
+    if (typeof srcSel !== "string" || !srcSel || typeof dstSel !== "string" || !dstSel) {
+      throw protocolError(
+        "proto.invalid",
+        "browser.page.drag requires a source target (selector/ref) and a drop target (toSelector/toRef)",
+      );
+    }
+    const src = page.locator(srcSel).first();
+    const dst = page.locator(dstSel).first();
+    const sb = await src.boundingBox({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null);
+    const db = await dst.boundingBox({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null);
+    if (!sb) {
+      throw protocolError("browser.element_not_visible", "browser.page.drag source element is not visible");
+    }
+    if (!db) {
+      throw protocolError("browser.element_not_visible", "browser.page.drag drop target is not visible");
+    }
+    await mouseDrag(
+      sb.x + sb.width / 2,
+      sb.y + sb.height / 2,
+      db.x + db.width / 2,
+      db.y + db.height / 2,
+    );
+    return { dragged: true };
   }
 
   /** chromex-0fza: when args.expect is present, poll the page briefly
@@ -1003,6 +1069,7 @@ const EXPECTABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.scroll",
   "browser.page.hover",
   "browser.page.press",
+  "browser.page.drag",
   "browser.page.upload",
 ]);
 

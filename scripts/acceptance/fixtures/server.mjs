@@ -77,6 +77,20 @@ const PAGES = {
 <h1>Tall Page</h1><div style="height:5000px">spacer</div><p id="bottom">bottom</p>
 </body></html>`,
 
+  // mouse-drag proof: records the mouseup position — deterministic
+  // observable state for coordinate and element drags.
+  "/drag": `<!doctype html><html><body>
+<h1>Drag Page</h1>
+<div id="src" style="width:80px;height:80px;background:#cde">src</div>
+<div id="dst" style="position:fixed;left:300px;top:40px;width:120px;height:80px;background:#ecd">dst</div>
+<pre id="out">idle</pre>
+<script>
+window.addEventListener('mouseup', (e) => {
+  document.getElementById('out').textContent = 'up@' + Math.round(e.clientX) + ',' + Math.round(e.clientY);
+});
+</script>
+</body></html>`,
+
   // element removed from DOM after a delay — selectorGone wait proof
   "/vanish": `<!doctype html><html><body>
 <h1>Vanish Page</h1><div id="x">temporary</div><p id="after">stays</p>
