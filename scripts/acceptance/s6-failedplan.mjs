@@ -6,6 +6,7 @@
 // with the stale snapshotId must FAIL with browser.stale_snapshot →
 // fresh snapshot → click succeeds. Never fakes success.
 import { runScenario, sleep } from "./lib/harness.mjs";
+import process from "node:process";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
 const SCENARIO = "s6-failedplan";
@@ -100,5 +101,5 @@ await runScenario(
       await fixture.close();
     }
   },
-  { autoAnswer: "allow", gatewayProviders: [] },
+  { autoAnswer: "allow", gatewayProviders: [], headless: process.env.CHROMEX_ACCEPTANCE_HEADFUL !== "1" },
 );

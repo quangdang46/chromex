@@ -179,8 +179,13 @@ await runScenario(
 
       const pass =
         call2?.status === "completed" && completed.length >= 2 && started.length >= 2 && dedupBlocked;
-      // also verify no DUPLICATE completed for the same toolCallId
-      const ids = completed.map((e) => (e.payload ?? e).toolCallId).filter(Boolean);
+      // a dedup-rejected replay still writes tool.completed (outcome=failed,
+      // code=duplicate_tool_call) — that is evidence, not a second dispatch.
+      // "duplicate" means two completions that actually ran for one id.
+      const dispatched = completed.filter(
+        (e) => (e.payload ?? e).output?.error?.code !== "browser.duplicate_tool_call",
+      );
+      const ids = dispatched.map((e) => (e.payload ?? e).toolCallId).filter(Boolean);
       const dup = ids.length !== new Set(ids).size;
       return {
         status: pass && !dup ? "PASS" : "FAIL",
@@ -202,5 +207,5 @@ await runScenario(
       await fixture.close();
     }
   },
-  { autoAnswer: "allow", gatewayProviders: [] },
+  { autoAnswer: "allow", gatewayProviders: [], headless: process.env.CHROMEX_ACCEPTANCE_HEADFUL !== "1" },
 );

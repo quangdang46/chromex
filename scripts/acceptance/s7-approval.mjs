@@ -6,6 +6,7 @@
 // Part 1: deny → expect tool outcome failed/browser.approval_denied.
 // Part 2: approve (allow_once) → expect success + tab actually navigated.
 import { runScenario, sleep } from "./lib/harness.mjs";
+import process from "node:process";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
 const SCENARIO = "s7-approval";
@@ -193,5 +194,5 @@ await runScenario(
       await fixture.close();
     }
   },
-  { autoAnswer: "none", gatewayProviders: [] },
+  { autoAnswer: "none", gatewayProviders: [], headless: process.env.CHROMEX_ACCEPTANCE_HEADFUL !== "1" },
 );

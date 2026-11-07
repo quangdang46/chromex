@@ -12,7 +12,9 @@ import { realBrowserScenariosEnabled } from "./lib/harness.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Scenarios that run fully in-process/headless — no user Chrome, no
-// acceptance token required.
+// acceptance token required. s3/s5/s6/s7/s8 default to headless Chrome
+// for Testing (real extension + real NM host, no windows); they only
+// need the token when CHROMEX_ACCEPTANCE_HEADFUL=1 forces headful.
 const TOKENLESS = new Set([
   "agent-loop-isolated",
   "agent-loop-mcp-isolated",
@@ -20,6 +22,12 @@ const TOKENLESS = new Set([
   "gateway-host-routing",
   "native-host-relay",
   "content-script-isolated",
+  "extension-headless",
+  "s3-multitab",
+  "s5-interruption",
+  "s6-failedplan",
+  "s7-approval",
+  "s8-deliverable",
 ]);
 const ALL = [
   "agent-loop-isolated",
@@ -28,6 +36,7 @@ const ALL = [
   "gateway-host-routing",
   "native-host-relay",
   "content-script-isolated",
+  "extension-headless",
   "s1-build-feature",
   "s2-debug-live",
   "s3-multitab",

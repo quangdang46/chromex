@@ -180,7 +180,11 @@ describe("online image prompt extraction", () => {
 
   test("pings content scripts before injecting to avoid duplicate hover listeners", () => {
     const messageListener = contentSource.slice(contentSource.indexOf("function chromexRuntimeMessageListener"));
-    const ensureContentScript = getFunctionSource(backgroundSource, "ensureContentScript");
+    // ensureContentScript delegates the actual injection to
+    // injectContentScript — the ping-before-inject invariant spans both.
+    const ensureContentScript =
+      getFunctionSource(backgroundSource, "ensureContentScript") +
+      getFunctionSource(backgroundSource, "injectContentScript");
 
     expect(messageListener).toContain('message.type === "page.ping"');
     expect(messageListener).toContain("isActiveContentScriptInstance()");

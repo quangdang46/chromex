@@ -3453,33 +3453,70 @@ async function collectAutomaticDocumentAttachments(
   }
 }
 
+// Concurrent sendMessageToTab calls during page load all ping before the
+// content script registers its listener, see "no script", and each inject
+// another copy. Every injection leaves a delivery record behind, so Chrome
+// then fires each page.* message once per record — the agent's click ran
+// three times. Serialize injections per tab+frame and wait for the ping
+// to come alive before releasing the slot.
+const contentScriptInjectionInFlight = new Map<string, Promise<void>>();
+
 async function ensureContentScript(tabId: number, url?: string, frameId = 0): Promise<void> {
   if (await hasActiveContentScript(tabId, frameId)) {
     return;
+  }
+  const key = `${tabId}:${frameId}`;
+  const inFlight = contentScriptInjectionInFlight.get(key);
+  if (inFlight) {
+    await inFlight;
+    return;
+  }
+  const injection = injectContentScript(tabId, url, frameId).finally(() => {
+    contentScriptInjectionInFlight.delete(key);
+  });
+  contentScriptInjectionInFlight.set(key, injection);
+  await injection;
+}
+
+async function injectContentScript(tabId: number, url?: string, frameId: number): Promise<void> {
+  // The manifest content script registers at document_idle — callers that
+  // arrive during load ping before it exists and would inject a duplicate
+  // delivery record. Give it a grace window before paying for an injection.
+  const graceDeadline = Date.now() + 800;
+  while (Date.now() < graceDeadline) {
+    if (await hasActiveContentScript(tabId, frameId)) return;
+    await sleepMs(100);
   }
   // frameId 0 → top frame only (existing behavior). frameId > 0 → inject
   // just that frame: a subframe added before an extension reload has no
   // content script and would otherwise fail every frame-scoped call.
   const target =
     frameId > 0 ? { tabId, frameIds: [frameId] } : { tabId };
-  try {
-    await chrome.scripting.executeScript({
+  const doInject = () =>
+    chrome.scripting.executeScript({
       target,
       files: ["content.js"],
     });
+  try {
+    await doInject();
   } catch (error) {
     if (shouldAttemptTabOriginRecovery(url, error) && (await hasTabOriginPermission(url))) {
       try {
-        await chrome.scripting.executeScript({
-          target,
-          files: ["content.js"],
-        });
-        return;
+        await doInject();
       } catch (retryError) {
         throw toFriendlyPageAccessError(url, retryError);
       }
+    } else {
+      throw toFriendlyPageAccessError(url, error);
     }
-    throw toFriendlyPageAccessError(url, error);
+  }
+  // executeScript resolves before the script finishes registering its
+  // onMessage listener — without this wait the next caller pings too
+  // early, sees "no script", and injects a duplicate.
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    if (await hasActiveContentScript(tabId, frameId)) return;
+    await sleepMs(50);
   }
 }
 

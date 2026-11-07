@@ -698,7 +698,10 @@ export async function runScenario(
   fn,
   { needsBrowser = true, needsGateway = true, gatewayProviders = ["codex", "claude"], autoAnswer = "allow", headless } = {},
 ) {
-  requireAcceptanceToken();
+  // headless:true launches Chrome for Testing with no windows — the token
+  // gate exists to stop routine work opening browser UI, which headless
+  // never does. Callers must opt in explicitly per scenario.
+  if (headless !== true) requireAcceptanceToken();
   const evidence = new EvidenceWriter(scenario);
   await evidence.init();
   const t0 = Date.now();

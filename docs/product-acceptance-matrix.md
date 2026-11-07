@@ -16,12 +16,12 @@ not sufficient.
 |---|----------|---------------|----------------------------|
 | S1 | Build a web feature: understand → edit files → run app → drive UI → iterate → report | Real run: diff + test output + browser verification of the feature | **PASS** (2026-11-07, codex): navigate→snapshot→click→get→extract×3, 7/7 classified, `artifacts/acceptance/s1-build-feature/` |
 | S2 | Debug a live website: observe page → locate cause in code → fix → reproduce → verify | Real run on a logged-in tab with an actual bug | **PASS**: agent edited code, re-drove real browser, verified token end-to-end |
-| S3 | Multi-tab/multi-app work without scope bleed | Task A and B concurrently on different tabs; no cross-talk | **PASS**: two tasks held isolated tab scopes; cross-task tab access refused |
+| S3 | Multi-tab/multi-app work without scope bleed | Task A and B concurrently on different tabs; no cross-talk | **PASS** (headless Chromium, real ext): two tasks held isolated tab scopes; cross-task tab access refused (`browser.not_in_scope`) |
 | S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff (CAPTCHA/MFA → user) | Real run on a real web app | BLOCKED-by-design — requires real credentials/site; manual runbook: `docs/s4-manual-runbook.md` |
-| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicate actions | kill -9 style test + live run | **PARTIAL**→fixes landed + IPC proofs: `8409af2` ext auto-reconnect; `040b328`/`e5c8702` conn-level host routing (zombie conn); `371fe7a` durable toolCallId dedup; native-host self-heal (conn close → proactive reconnect + re-hello → ensureGateway respawn) proven tokenless in `native-host-relay` gateway-restart leg; IPC clients re-hello per connection; gateway auth token stable across restarts. Awaiting real-browser re-run on new dist |
-| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, continue; never fake success | Injected failure run | **PASS**: stale `snapshotId` rejected loudly (`element_not_found`), re-observe + retry succeeded |
-| S7 | Protection: sensitive actions (send/post/delete/pay) → contextual approval; denial is honored, never bypassed | Approval-flow run incl. deny path | **PASS**: deny→`browser.approval_denied`, allow→navigated, `hostAliveAfterApproval=true` |
-| S8 | Verifiable deliverable: diff, changed files, test results, browser evidence, known limits | Deliverable rendered in sidepanel | **PASS**: task.sync carries full tool evidence; sidepanel renders in real Chrome |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicate actions | kill -9 style test + live run | **PASS** (headless Chromium, real ext, 2026-11-08): gateway SIGKILL → respawn → extension host re-registered → calls completed; replayed toolCallId deduped (`browser.duplicate_tool_call`), no double dispatch. Fixes: `040b328`/`e5c8702` conn routing, `371fe7a` durable dedup, native-host self-heal + per-socket hello + stable token (`a953e3c`) |
+| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, continue; never fake success | Injected failure run | **PASS** (headless Chromium, real ext): stale `snapshotId` rejected loudly (`browser.stale_snapshot`), re-observe + retry succeeded |
+| S7 | Protection: sensitive actions (send/post/delete/pay) → contextual approval; denial is honored, never bypassed | Approval-flow run incl. deny path | **PASS** (headless Chromium, real ext): deny→`browser.approval_denied`, allow→navigated, permission.resolved×2 |
+| S8 | Verifiable deliverable: diff, changed files, test results, browser evidence, known limits | Deliverable rendered in sidepanel | **PASS** (headless Chromium, real ext): task.sync carries full tool evidence (started/completed/classified per call); sidepanel renders composer UI |
 
 Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.jsonl,task.sync.*.json,screenshots/}`. Harness: `scripts/acceptance/`.
 
@@ -29,7 +29,7 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 
 | Capability | Owner | Status | Gap / bead |
 |---|---|---|---|
-| Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | S5 fixes landed (reconnect, conn routing, durable dedup); real-browser re-verify pending; sidepanel close path unverified |
+| Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | S5 PASS headless real-ext: SIGKILL → respawn → host re-register → dedup verified; sidepanel close path unverified |
 | Provider abstraction codex/claude/acp | bridge agents | ✅ built | live ACP creds blocked (436) |
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
 | Tab lifecycle: list/create/activate/close/duplicate/update(pinned/muted/zoom)/discard | ext tool-host | ✅ 7 tools (07cf2e4, c42040d, cd8b05e, f04d70a) | lifecycle completeness edge cases |
@@ -81,6 +81,14 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   extension traffic** (conn close → proactive reconnect → ensureGateway
   respawns gateway → cached hello re-registers host → calls recover,
   sqlite store keeps task + durable events) (11 asserts)
+  `extension-headless` PASS — the BUILT extension loaded in headless
+  Chrome for Testing (new headless runs MV3 SWs): real service worker
+  registers as browser host over the acceptance NM manifest → MCP
+  browser.page.get / page.snapshot / tabs.list all complete through
+  MCP → gateway → native host → SW → content script (no windows, no
+  token). s3/s5/s6/s7/s8 now run the same headless path by default
+  (`CHROMEX_ACCEPTANCE_HEADFUL=1` + token restores headful); only
+  s1/s2 (live provider) stay token-gated
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)

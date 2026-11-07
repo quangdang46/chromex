@@ -1,0 +1,58 @@
+{
+  "scenario": "s7-approval",
+  "runId": "2026-11-07T21-20-49-742Z-36a60e",
+  "status": "PASS",
+  "summary": "deny→approval_denied, allow→navigated, permission.resolved×2",
+  "durationMs": 5311,
+  "details": {
+    "denied": true,
+    "allowed": true,
+    "navigated": true,
+    "finalUrl": "http://auth.localhost:50275/",
+    "tabsText": "{\"tabs\":[{\"id\":1848563551,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:50275/\",\"origin\":\"http://auth.localhost:50275\",\"active\":true,\"windowId\":1848563549,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
+    "hostAliveAfterApproval": true,
+    "resolvedCount": 2,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw6wr3cj-fo341n",
+      "tool": "browser.page.navigate",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "allowOutcome": {
+      "toolCallId": "rpc-mw6wr3jq-mutgea",
+      "tool": "browser.page.navigate",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "action": "navigate",
+            "url": "http://auth.localhost:50275/",
+            "reason": "gateway tool browser.page.navigate"
+          },
+          "ok": true,
+          "message": "Navigated the current page."
+        },
+        "resolvedTabId": 1848563551
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-07T21:20:53.519Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T21:20:53.540Z] task 01M6VY5G90QXY5S79BMQGBER6Y",
+    "[2026-11-07T21:20:53.580Z] browser.mcp scope acquired",
+    "[2026-11-07T21:20:53.681Z] gated target: http://auth.localhost:50275/",
+    "[2026-11-07T21:20:53.691Z] permission.requested id=appr-mw6wr3cn-d1rgv8 kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
+    "[2026-11-07T21:20:53.694Z] answered deny with optionId=deny",
+    "[2026-11-07T21:20:53.941Z] deny outcome={\"toolCallId\":\"rpc-mw6wr3cj-fo341n\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-07T21:20:54.345Z] second permission.requested id=appr-mw6wr3js-yv97fn options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
+    "[2026-11-07T21:20:54.347Z] answered allow with optionId=allow_once",
+    "[2026-11-07T21:20:54.467Z] allow outcome={\"toolCallId\":\"rpc-mw6wr3jq-mutgea\",\"tool\":\"browser.page.navigate\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"action\":\"navigate\",\"url\":\"http://auth.localhost:50275/\",\"reason\":\"gateway tool browser.page.navigate\"},\"ok\":true,\"message\":\"Nav",
+    "[2026-11-07T21:20:54.974Z] tabs.list → {\"tabs\":[{\"id\":1848563551,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:50275/\",\"origin\":\"http://auth.localhost:50275\",\"active\":true,\"windowId\":1848563549,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
+    "[2026-11-07T21:20:55.050Z] probe tabs.list → {\"toolCallId\":\"rpc-mw6wr4ef-5ui47a\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[]}}"
+  ]
+}

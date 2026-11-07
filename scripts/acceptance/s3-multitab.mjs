@@ -4,6 +4,7 @@
 // back only its own page, and cross-task tab access is refused
 // (browser.not_in_scope / failed), never silently redirected.
 import { runScenario, sleep } from "./lib/harness.mjs";
+import process from "node:process";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
 const SCENARIO = "s3-multitab";
@@ -122,5 +123,5 @@ await runScenario(
       await fixture.close();
     }
   },
-  { autoAnswer: "allow", gatewayProviders: [] },
+  { autoAnswer: "allow", gatewayProviders: [], headless: process.env.CHROMEX_ACCEPTANCE_HEADFUL !== "1" },
 );

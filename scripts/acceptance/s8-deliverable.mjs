@@ -3,6 +3,7 @@
 // the agent-authored deliverable card needs a live provider run (covered
 // by s1) — noted in result, not faked.
 import { runScenario, sleep } from "./lib/harness.mjs";
+import process from "node:process";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
 const SCENARIO = "s8-deliverable";
@@ -27,7 +28,15 @@ await runScenario(
       // generate durable evidence: navigate → snapshot → click → get
       const nav = await runner.browserToolCall(taskId, "browser.page.navigate", { url: fixture.url("/form") }, token, 60_000);
       const snap = await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
-      const click = await runner.browserToolCall(taskId, "browser.page.click", { label: "Next" }, token, 60_000);
+      // let the form paint before clicking — headless first-paint can lag
+      // a domcontentloaded navigate just enough to flake element_not_visible
+      await runner.browserToolCall(taskId, "browser.page.wait", { text: "Next", timeoutMs: 8000 }, token, 30_000).catch(() => {});
+      let click = await runner.browserToolCall(taskId, "browser.page.click", { label: "Next" }, token, 60_000);
+      if (click?.status === "failed" && /element_not_visible|stale_snapshot/.test(click?.error?.code ?? "")) {
+        // same recovery a real agent does: re-observe, then retry once
+        await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
+        click = await runner.browserToolCall(taskId, "browser.page.click", { label: "Next" }, token, 60_000);
+      }
       const get = await runner.browserToolCall(taskId, "browser.page.get", {}, token, 60_000);
       evidence.note(`calls: nav=${nav?.status} snap=${snap?.status} click=${click?.status} get=${get?.status}`);
       await evidence.screenshot(page, "s8-final-page");
@@ -81,5 +90,5 @@ await runScenario(
       await fixture.close();
     }
   },
-  { autoAnswer: "allow", gatewayProviders: [] },
+  { autoAnswer: "allow", gatewayProviders: [], headless: process.env.CHROMEX_ACCEPTANCE_HEADFUL !== "1" },
 );
