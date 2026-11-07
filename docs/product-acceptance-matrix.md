@@ -72,6 +72,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   host registry → browser.tool.request → typed result; proves tabScope
   payload, browserInstanceId scope isolation (browser.no_host),
   host-loss → stranded → re-registration recovery (21 asserts)
+  `native-host-relay` PASS — the REAL native-host process in gateway
+  mode, driven over actual Native Messaging stdio framing: extension
+  hello without token → host injects token + hostInstanceId +
+  browserInstanceId → MCP tool call round-trips browser.tool.request
+  down to the "extension" and back; kill → browser.no_host → respawn
+  → recovery (10 asserts)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)
