@@ -5,6 +5,7 @@ import {
   fenceBrowserToolResult,
   internalToolName,
   mcpToolName,
+  toolListEntry,
   UNTRUSTED_CONTENT_NOTE,
   UNTRUSTED_MARKER_PREFIX,
   untrustedContentMarkers,
@@ -182,5 +183,160 @@ describe("BrowserMcpServer (P1-09 §9.3)", () => {
     expect(parseErr.error.code).toBe(-32700);
     const nf = JSON.parse((await server.handleLine(rpc(9, "bogus/method")))!) as { error: { code: number } };
     expect(nf.error.code).toBe(-32601);
+  });
+});
+
+// ---- chromex-23y5: real inputSchema + steering descriptions ----
+
+type Schema = Record<string, unknown>;
+
+/** Minimal JSON-Schema subset validator — covers exactly the keywords
+ *  toolListEntry emits (type/enum/required/properties/items/anyOf/
+ *  additionalProperties). ajv is not a bridge dependency. */
+function schemaValid(schema: Schema, value: unknown): boolean {
+  if (Array.isArray(schema.anyOf)) {
+    return (schema.anyOf as Schema[]).some((s) => schemaValid(s, value));
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
+  switch (schema.type) {
+    case "object": {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+      const obj = value as Record<string, unknown>;
+      for (const key of (schema.required as string[] | undefined) ?? []) {
+        if (!(key in obj)) return false;
+      }
+      const props = (schema.properties ?? {}) as Record<string, Schema>;
+      for (const [key, nested] of Object.entries(obj)) {
+        const propSchema = props[key];
+        if (propSchema) {
+          if (!schemaValid(propSchema, nested)) return false;
+        } else if (schema.additionalProperties === false) {
+          return false;
+        }
+      }
+      return true;
+    }
+    case "array":
+      return (
+        Array.isArray(value) &&
+        value.every((item) => schemaValid((schema.items ?? {}) as Schema, item))
+      );
+    case "integer":
+      return Number.isInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "string":
+      return typeof value === "string";
+    case "boolean":
+      return typeof value === "boolean";
+    default:
+      return true;
+  }
+}
+
+/** One representative valid call per tool — mirrors the arg names the
+ *  extension tool-host and playwright backend actually read. */
+const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
+  "browser.tabs.list": {},
+  "browser.tab.activate": { tabId: 3 },
+  "browser.tab.close": { tabId: 3 },
+  "browser.tab.create": { url: "https://example.com", active: false },
+  "browser.page.snapshot": {},
+  "browser.page.get": { key: "text" },
+  "browser.page.extract": { selector: "main", maxChars: 4000 },
+  "browser.page.screenshot": { tabId: 1 },
+  "browser.page.console": { level: "error", limit: 50 },
+  "browser.page.click": { ref: "e12", snapshotId: "snap-1" },
+  "browser.page.focus": { selector: "#q" },
+  "browser.page.type": { ref: "e3", text: "hello" },
+  "browser.page.fill": { label: "Name", value: "x" },
+  "browser.page.select": { ref: "e4", value: "us" },
+  "browser.page.submit": { ref: "e5" },
+  "browser.page.scroll": { direction: "down", amountPx: 300 },
+  "browser.page.navigate": { url: "https://example.com" },
+  "browser.page.wait": { selector: "#done", timeoutMs: 5000 },
+  "browser.page.hover": { label: "menu" },
+  "browser.page.press": { key: "Enter", modifiers: ["shift"] },
+  "browser.page.upload": { selector: "input[type=file]", files: ["/tmp/a.png"] },
+};
+
+describe("tools/list schemas + descriptions (chromex-23y5)", () => {
+  it("every advertised tool has a real schema and a steering description", async () => {
+    const { server } = setup([...BROWSER_TOOL_NAMES]);
+    const list = JSON.parse((await server.handleLine(rpc(20, "tools/list")))!) as {
+      result: {
+        tools: Array<{
+          name: string;
+          description: string;
+          inputSchema: { type?: string; properties?: Record<string, unknown>; additionalProperties?: boolean };
+        }>;
+      };
+    };
+    expect(list.result.tools).toHaveLength(BROWSER_TOOL_NAMES.length);
+    for (const tool of list.result.tools) {
+      expect(tool.description.length, `${tool.name} missing description`).toBeGreaterThan(20);
+      expect(tool.description, `${tool.name} lost the untrusted-data warning`).toContain(
+        "untrusted",
+      );
+      expect(tool.inputSchema.type, `${tool.name} schema is not an object schema`).toBe("object");
+      expect(
+        tool.inputSchema.additionalProperties,
+        `${tool.name} still allows arbitrary args`,
+      ).toBe(false);
+      expect(typeof tool.inputSchema.properties).toBe("object");
+    }
+  });
+
+  it("each tool's inputSchema validates a representative call", () => {
+    for (const internal of BROWSER_TOOL_NAMES) {
+      const entry = toolListEntry(internal);
+      const args = SAMPLE_ARGS[internal];
+      expect(args, `missing SAMPLE_ARGS for ${internal}`).toBeDefined();
+      expect(
+        schemaValid(entry.inputSchema, args),
+        `${internal} sample args ${JSON.stringify(args)} rejected by its own schema`,
+      ).toBe(true);
+      expect(
+        schemaValid(entry.inputSchema, {}),
+        `${internal} empty args rejected — check required fields`,
+      ).toBe(
+        // tools with required args legitimately reject {}
+        ["browser.page.navigate", "browser.page.press", "browser.page.upload"].includes(internal)
+          ? false
+          : true,
+      );
+    }
+  });
+
+  it("required fields and closed schemas reject bad calls", () => {
+    // navigate requires url
+    expect(schemaValid(toolListEntry("browser.page.navigate").inputSchema, {})).toBe(false);
+    expect(
+      schemaValid(toolListEntry("browser.page.navigate").inputSchema, { url: "https://a.com" }),
+    ).toBe(true);
+    // press requires key
+    expect(schemaValid(toolListEntry("browser.page.press").inputSchema, {})).toBe(false);
+    expect(schemaValid(toolListEntry("browser.page.press").inputSchema, { key: "Enter" })).toBe(
+      true,
+    );
+    // upload requires selector + files
+    expect(
+      schemaValid(toolListEntry("browser.page.upload").inputSchema, { files: ["/tmp/a"] }),
+    ).toBe(false);
+    // closed schema rejects unknown args
+    expect(
+      schemaValid(toolListEntry("browser.page.click").inputSchema, { bogus: 1 }),
+    ).toBe(false);
+    // enum rejects bad direction
+    expect(
+      schemaValid(toolListEntry("browser.page.scroll").inputSchema, { direction: "sideways" }),
+    ).toBe(false);
+    // tabRef anyOf accepts number or numeric string (playwright)
+    expect(
+      schemaValid(toolListEntry("browser.page.get").inputSchema, { tabRef: "2" }),
+    ).toBe(true);
+    expect(
+      schemaValid(toolListEntry("browser.page.get").inputSchema, { tabRef: 2 }),
+    ).toBe(true);
   });
 });
