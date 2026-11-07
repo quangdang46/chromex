@@ -563,6 +563,15 @@ export class SQLiteStore {
     return row.n;
   }
 
+  approvalStatus(
+    approvalId: string,
+  ): "pending" | "allowed" | "denied" | "expired" | null {
+    const row = this.db
+      .prepare("SELECT status FROM approvals WHERE approval_id = ?")
+      .get(approvalId) as { status: string } | undefined;
+    return (row?.status as never) ?? null;
+  }
+
   /** Resolve a pending approval; idempotent — already-resolved is a no-op. */
   resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
     this.db

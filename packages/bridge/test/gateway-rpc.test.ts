@@ -59,7 +59,39 @@ async function authedConn(): Promise<net.Socket> {
     clientId: "c1",
     profileId: "p1",
     browserInstanceId: null,
-    hostInstanceId: "h1",
+    hostInstanceId: "",
+  });
+  return s;
+}
+
+/** Raw framed conn that also ANSWERS server→client requests with a
+ *  canned result — acts as the browser host for tool dispatch tests. */
+async function hostConn(): Promise<net.Socket> {
+  const ep = gw!.ipc.endpointPath();
+  const s = await connect(ep.path);
+  const token = gw!.ipc.tokenBytes.toString("hex");
+  await rpc(s, "hello", "hello", {
+    token, clientVersion: "test", protocolVersion: 1,
+    clientId: "host1", profileId: "p1", browserInstanceId: null, hostInstanceId: "h1",
+  });
+  // permanent frame reader: respond to server requests
+  let buf = Buffer.alloc(0);
+  s.on("data", (chunk: Buffer) => {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 4) return;
+      const len = buf.readUInt32LE(0);
+      if (buf.length < 4 + len) return;
+      const body = buf.subarray(4, 4 + len);
+      buf = buf.subarray(4 + len);
+      const env = JSON.parse(body.toString("utf8")) as { kind?: string; id?: string; method?: string };
+      if (env.kind === "request" && typeof env.id === "string") {
+        const resp = Buffer.from(JSON.stringify({ v: 1, kind: "response", id: env.id, result: { hostResult: true, method: env.method } }));
+        const header = Buffer.alloc(4);
+        header.writeUInt32LE(resp.length, 0);
+        s.write(Buffer.concat([header, resp]));
+      }
+    }
   });
   return s;
 }
@@ -202,4 +234,58 @@ describe("gateway RPC surface (P1-07)", () => {
     });
     s.destroy();
   });
+
+  test("browser.tool.call: token scope + hard blocks enforced", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "tools" })) as {
+      taskId: string;
+    };
+    const tid = created.taskId;
+
+    // mint a token with the gateway's own secret file
+    const { ToolTokenManager } = await import("../src/browser/tool-token.js");
+    const secretHex = (await fs.readFile(path.join(dir, "auth", "tool-secret"), "utf8")).trim();
+    const tokens = ToolTokenManager.forTest(secretHex);
+    const task = gw!.store.getTask(tid)!;
+    const mint = (allowedTools: string[]) =>
+      tokens.issue({
+        taskId: tid,
+        profileId: task.profileId,
+        backendId: task.backend.backendId,
+        allowedTools,
+      }).token;
+
+    const call = (id: string, tool: string, token: string) =>
+      rpc(s, id, "browser.tool.call", { taskId: tid, tool, args: {}, token });
+
+    // bad signature → auth failure surfaced as outcome error
+    const bad = (await call("t1", "browser.page.snapshot", "garbage.token")) as {
+      status: string; error?: { code: string };
+    };
+    expect(bad.status).toBe("failed");
+    expect(bad.error?.code).toBe("proto.auth_failed");
+
+    // hard-blocked tool → blocked even with scope
+    const blocked = (await call("t2", "browser.page.evaluate", mint(["browser.page.evaluate"]))) as {
+      status: string; error?: { code: string };
+    };
+    expect(blocked.error?.code).toBe("browser.tool_blocked");
+
+    // tool outside allowedTools → not_allowed
+    const denied = (await call("t3", "browser.page.fill", mint(["browser.page.snapshot"]))) as {
+      status: string; error?: { code: string };
+    };
+    expect(denied.error?.code).toBe("browser.tool_not_allowed");
+
+    // read tool in scope → full dispatch through the host conn
+    const host = await hostConn();
+    const ok = (await call("t4", "browser.page.snapshot", mint(["browser.page.snapshot"]))) as {
+      status: string; result?: { hostResult?: boolean }; error?: { code: string };
+    };
+    expect(ok.status).toBe("completed");
+    expect((ok.result as { hostResult?: boolean })?.hostResult).toBe(true);
+    host.destroy();
+    s.destroy();
+  }, 30_000);
 });

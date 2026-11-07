@@ -9,6 +9,7 @@
  * exist; SIGTERM/SIGINT initiate graceful drain.
  */
 
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -28,6 +29,7 @@ import {
   providerCatalogSchema,
   taskCreateSchema,
   taskIdSchema,
+  browserToolCallSchema,
   taskPurgeSchema,
   taskSendSchema,
   taskSnapshotChunkSchema,
@@ -59,6 +61,8 @@ import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
 import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
 import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
+import { ToolTokenManager } from "../browser/tool-token.js";
+import { BrowserToolServer } from "../browser/tool-server.js";
 import { NO_CAPABILITIES, protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
@@ -172,6 +176,80 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
 
     const snapshotChunks = new SnapshotChunkStore();
     const playwrightRuntime = new PlaywrightRuntimeManager();
+
+    // ---- browser tool server (P1-09) ----
+    // Signed tokens (dataDir/auth/tool-secret, 0600); dispatch goes to
+    // the first authed connection as the browser host until P2-03 lands
+    // real host affinity. Approval = durable permission.requested +
+    // approvals row; resolution via permission.respond (browser path
+    // handled in the router below). Full §4.8 engine is P2-04.
+    const toolTokens = await ToolTokenManager.create(dataDir);
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const toolServer = new BrowserToolServer({
+      tokens: toolTokens,
+      resolveHost: () => {
+        // host = authed conn whose hello declared a hostInstanceId
+        // (native host injects it; UI-only clients leave it empty)
+        const conn = ipc?.authedConnections().find((c) => c.hostInstanceId !== "");
+        if (!conn) return null;
+        return {
+          hostInstanceId: conn.remoteAddress,
+          send: (method, payload) => conn.request(method, payload, 15_000),
+          onDisconnect: (listener) => conn.onClose(() => listener("disconnect")),
+        };
+      },
+      requestApproval: async (tctx) => {
+        const approvalId = `appr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const actionDigest = createHash("sha256")
+          .update(JSON.stringify({ tool: tctx.tool, args: tctx.args }))
+          .digest("hex");
+        const storeAny = store as unknown as {
+          insertApproval?: (r: {
+            approvalId: string; taskId: string; turnId?: string;
+            request: unknown; actionDigest: string;
+            status: "pending" | "allowed" | "denied" | "expired"; createdAt: number;
+          }) => void;
+          appendTaskEvent?: (taskId: string, e: unknown) => unknown;
+          approvalStatus?: (id: string) => string | null;
+        };
+        storeAny.insertApproval?.({
+          approvalId,
+          taskId: tctx.taskId,
+          ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
+          request: { tool: tctx.tool, args: tctx.args },
+          actionDigest,
+          status: "pending",
+          createdAt: Date.now(),
+        });
+        storeAny.appendTaskEvent?.(tctx.taskId, {
+          type: "permission.requested",
+          ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
+          request: {
+            requestId: approvalId,
+            taskId: tctx.taskId,
+            ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
+            kind: "browser_action",
+            risk: "external_mutation",
+            summary: `Browser tool ${tctx.tool} requires approval`,
+            actionDigest,
+            details: { tool: tctx.tool },
+          },
+        });
+        // poll for resolution up to 60s (UI answers via permission.respond)
+        for (let i = 0; i < 240; i++) {
+          const st = storeAny.approvalStatus?.(approvalId);
+          if (st === "allowed") return "approved";
+          if (st === "denied" || st === "expired") return "denied";
+          await sleep(250);
+        }
+        return "timeout";
+      },
+      onOutcome: (outcome) => {
+        const storeAny = store as { appendTaskEvent?: (taskId: string, e: unknown) => unknown };
+        // outcome doesn't carry taskId — toolCallId prefix mcp-*; task
+        // resolution happens in the RPC handler which wraps execute()
+      },
+    });
     // config is mutable via config.update; the resolved object is
     // replaced (never mutated) so in-flight readers see a consistent
     // snapshot.
@@ -193,6 +271,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           registry,
           snapshotChunks,
           playwrightRuntime,
+          toolServer,
         });
       } catch (err) {
         if (err instanceof StaleFenceError) {
@@ -292,6 +371,7 @@ async function handleGatewayRequest(
     registry: ProviderRegistry;
     snapshotChunks: SnapshotChunkStore;
     playwrightRuntime: PlaywrightRuntimeManager;
+    toolServer: BrowserToolServer;
   },
 ): Promise<unknown> {
   switch (req.method) {
@@ -419,7 +499,31 @@ async function handleGatewayRequest(
     }
     case "permission.respond": {
       const p = parsePayload(permissionRespondSchema, req.payload) as z.infer<typeof permissionRespondSchema>;
-      return ctx.sessionManager.respondToPermission(p.requestId, p.optionId);
+      const result = await ctx.sessionManager.respondToPermission(p.requestId, p.optionId);
+      // browser-tool approvals live in the approvals table, not provider
+      // sessions — resolve the row directly (idempotent no-op if the
+      // provider path already handled it).
+      const storeAny = ctx.store as { approvalStatus?: (id: string) => string | null; resolveApproval?: (id: string, s: "allowed" | "denied" | "expired") => void };
+      if (storeAny.approvalStatus?.(p.requestId) === "pending") {
+        storeAny.resolveApproval?.(p.requestId, p.optionId === "deny" ? "denied" : "allowed");
+      }
+      return result;
+    }
+    case "browser.tool.call": {
+      const p = parsePayload(browserToolCallSchema, req.payload) as z.infer<typeof browserToolCallSchema>;
+      const task = ctx.store.getTask(p.taskId);
+      if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
+      const outcome = await ctx.toolServer.execute({
+        toolCallId: p.toolCallId ?? `rpc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        taskId: p.taskId,
+        ...(p.turnId ? { turnId: p.turnId } : {}),
+        tool: p.tool,
+        args: p.args ?? {},
+        token: p.token,
+        profileId: task.profileId,
+        backendId: task.backend.backendId ?? "chrome-extension",
+      });
+      return outcome;
     }
     case "task.sync": {
       const p = parsePayload(taskSyncSchema, req.payload) as z.infer<typeof taskSyncSchema>;

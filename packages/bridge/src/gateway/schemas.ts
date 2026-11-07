@@ -80,6 +80,15 @@ export const taskSnapshotChunkSchema = z.object({
   chunkIndex: z.number().int().min(0),
 });
 
+export const browserToolCallSchema = z.object({
+  taskId: z.string().min(1),
+  toolCallId: z.string().min(1).optional(),
+  turnId: z.string().optional(),
+  tool: z.string().min(1),
+  args: z.record(z.unknown()).optional(),
+  token: z.string().min(1),
+});
+
 export const taskPurgeSchema = z.object({
   taskId: z.string().min(1),
 });

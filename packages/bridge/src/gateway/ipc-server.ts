@@ -44,12 +44,17 @@ export type IpcRequestHandler = (
 export interface IpcConnection {
   readonly authed: boolean;
   readonly remoteAddress: string;
+  /** non-empty when the client's hello declared a host instance —
+   *  marks the browser host connection (P1-09 host selection). */
+  readonly hostInstanceId: string;
   send(envelope: Envelope): void;
   close(): void;
   /** Server-initiated request to this client (browser.tool.* etc).
    *  Resolves with the client's response `result`; rejects on error
    *  envelope, timeout, or disconnect. */
   request(method: string, payload?: unknown, timeoutMs?: number): Promise<unknown>;
+  /** fires once when this connection closes */
+  onClose(listener: () => void): void;
 }
 
 interface PendingServerRequest {
@@ -63,6 +68,7 @@ interface ConnState {
   authed: boolean;
   buffer: Buffer;
   helloSeen: boolean;
+  hostInstanceId: string;
   pending: Map<string, PendingServerRequest>;
 }
 
@@ -154,6 +160,14 @@ export class GatewayIpcServer {
   }
 
   /** Push an envelope to every authenticated connection. */
+  /** Authed client connections (hosts + UI clients share the socket;
+   *  host selection policy lives in the caller). */
+  authedConnections(): IpcConnection[] {
+    return [...this.connections]
+      .filter((c) => c.authed)
+      .map((c) => this.connFor(c));
+  }
+
   broadcast(envelope: Envelope): void {
     for (const c of this.connections) {
       if (c.authed) this.sendRaw(c, envelope);
@@ -176,6 +190,7 @@ export class GatewayIpcServer {
       authed: false,
       buffer: Buffer.alloc(0),
       helloSeen: false,
+      hostInstanceId: "",
       pending: new Map(),
     };
     this.connections.add(state);
@@ -301,6 +316,8 @@ export class GatewayIpcServer {
       }
       state.authed = true;
       state.helloSeen = true;
+      const hp = req.payload as { hostInstanceId?: unknown } | undefined;
+      if (typeof hp?.hostInstanceId === "string") state.hostInstanceId = hp.hostInstanceId;
     } else if (req.method === "hello") {
       this.sendResponse(state, req.id, null, protocolError("proto.invalid", "hello already completed"));
       return;
@@ -333,9 +350,13 @@ export class GatewayIpcServer {
     return {
       authed: state.authed,
       remoteAddress: state.socket.remoteAddress ?? "unknown",
+      hostInstanceId: state.hostInstanceId,
       send: (envelope) => this.sendRaw(state, envelope),
       close: () => state.socket.destroy(),
       request: (method, payload, timeoutMs) => this.requestOn(state, method, payload, timeoutMs),
+      onClose: (listener) => {
+        state.socket.once("close", listener);
+      },
     };
   }
 

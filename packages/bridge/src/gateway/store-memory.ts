@@ -188,6 +188,13 @@ export class InMemoryStore {
     return [...this.approvals.values()].filter((a) => a.taskId === taskId && a.status === "pending").length;
   }
 
+  approvalStatus(
+    approvalId: string,
+  ): "pending" | "allowed" | "denied" | "expired" | null {
+    const a = this.approvals.get(approvalId);
+    return a ? (a.status as never) : null;
+  }
+
   resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
     const a = this.approvals.get(approvalId);
     if (a && a.status === "pending") a.status = status;
