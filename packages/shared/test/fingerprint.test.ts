@@ -172,4 +172,29 @@ describe("SnapshotRegistry", () => {
     r.put({ ...meta("snap:old", "t1", old), tabId: 4 });
     expect(r.latestForTab(4)).toBeNull();
   });
+
+  test("latestForFrame scopes to the exact (tabId, frameId) pair", () => {
+    const r = new SnapshotRegistry();
+    const now = Date.now();
+    r.put({ ...meta("snap:top", "t1", now - 2000), tabId: 7, frameId: 0 });
+    r.put({ ...meta("snap:f3", "t1", now - 1000), tabId: 7, frameId: 3 });
+    r.put({ ...meta("snap:f9", "t1", now), tabId: 7, frameId: 9 });
+    expect(r.latestForFrame(7, 3)?.snapshotId).toBe("snap:f3");
+    expect(r.latestForFrame(7, 0)?.snapshotId).toBe("snap:top");
+    expect(r.latestForFrame(7, 5)).toBeNull();
+    // latestForTab still sees every frame's newest snapshot
+    expect(r.latestForTab(7)?.snapshotId).toBe("snap:f9");
+  });
+
+  test("invalidateFrame drops only that frame's snapshots", () => {
+    const r = new SnapshotRegistry();
+    const now = Date.now();
+    r.put({ ...meta("snap:top", "t1", now), tabId: 7, frameId: 0 });
+    r.put({ ...meta("snap:f3", "t1", now), tabId: 7, frameId: 3 });
+    r.put({ ...meta("snap:f3b", "t1", now), tabId: 8, frameId: 3 });
+    r.invalidateFrame(7, 3);
+    expect(r.get("snap:f3")).toBeNull();
+    expect(r.get("snap:top")).not.toBeNull();
+    expect(r.get("snap:f3b")).not.toBeNull();
+  });
 });

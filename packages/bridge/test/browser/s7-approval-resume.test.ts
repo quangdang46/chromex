@@ -127,4 +127,17 @@ describe("S7 approval resume (browser_action)", () => {
     expect(out.error?.code).toBe("browser.invalid_args");
     expect(sent).toHaveLength(0);
   });
+
+  test("malformed args.frameId is rejected before dispatch", async () => {
+    const { server, token, sent } = makeServer({ approvalVerdicts: ["approved"] });
+    for (const bad of ["3", -1, 1.5]) {
+      const out = await server.execute({
+        ...tabsListReq(token, `tc-bad-frame-${String(bad)}`),
+        args: { frameId: bad },
+      });
+      expect(out.status).toBe("failed");
+      expect(out.error?.code).toBe("browser.invalid_args");
+    }
+    expect(sent).toHaveLength(0);
+  });
 });

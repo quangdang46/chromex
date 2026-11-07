@@ -2,12 +2,14 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createToolHostHandler, type ToolHostDeps } from "../../src/background/gateway/tool-host.js";
 
-function deps(over: Partial<ToolHostDeps> = {}): ToolHostDeps & { sent: Array<{ tabId: number; message: Record<string, unknown> }> } {
-  const sent: Array<{ tabId: number; message: Record<string, unknown> }> = [];
+function deps(over: Partial<ToolHostDeps> = {}): ToolHostDeps & {
+  sent: Array<{ tabId: number; message: Record<string, unknown>; options?: { frameId?: number } }>;
+} {
+  const sent: Array<{ tabId: number; message: Record<string, unknown>; options?: { frameId?: number } }> = [];
   return {
     sent,
-    sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
-      sent.push({ tabId, message });
+    sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>, options?: { frameId?: number }) => {
+      sent.push({ tabId, message, options });
       if (message.type === "page.dom.snapshot") {
         return { metadata: { url: "https://x" }, elements: [{ ref: "e1", role: "button", label: "Go" }] };
       }
@@ -741,6 +743,83 @@ describe("tool host expect verification (chromex-0fza)", () => {
       code: "proto.invalid",
     });
     expect(d.sent).toHaveLength(0);
+  });
+
+  test("args.frameId routes page.* calls to the targeted frame", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.snapshot", { frameId: 3 }));
+    expect(d.sent[0].options).toEqual({ frameId: 3 });
+    await h(req("browser.page.click", { selector: ".x", frameId: 3 }));
+    expect(d.sent[1].options).toEqual({ frameId: 3 });
+    // absent → top frame (0)
+    await h(req("browser.page.snapshot"));
+    expect(d.sent[2].options).toEqual({ frameId: 0 });
+  });
+
+  test("frameId on a tab-level tool → proto.invalid, nothing dispatched", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.get", { frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screenshot", { frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.history", { action: "back", frameId: 2 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    expect(d.sent).toHaveLength(0);
+  });
+
+  test("non-integer/negative frameId → proto.invalid", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.snapshot", { frameId: "3" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.snapshot", { frameId: -1 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.snapshot", { frameId: 1.5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(d.sent).toHaveLength(0);
+  });
+
+  test("snapshotIds are per-frame: cross-frame snapshotId → stale_snapshot", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.snapshot") {
+          return {
+            snapshotId: "snap:frame3",
+            structuralFingerprint: "sfp1:aaa",
+            stateFingerprint: "tfp1:bbb",
+            saltEpoch: 1,
+            elements: [{ ref: "e1" }],
+          };
+        }
+        return { ok: true, results: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.snapshot", { frameId: 3 }));
+    // same frame → ok
+    await h(req("browser.page.click", { ref: "e1", snapshotId: "snap:frame3", frameId: 3 }));
+    // different frame → stale
+    await expect(
+      h(req("browser.page.click", { ref: "e1", snapshotId: "snap:frame3", frameId: 0 })),
+    ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
+    await expect(
+      h(req("browser.page.click", { ref: "e1", snapshotId: "snap:frame3" })),
+    ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
+  });
+
+  test("page.get lists frames with query/hash stripped", async () => {
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://app.example.com/page?token=secret" },
+        { frameId: 7, url: "https://cdn.example.com/widget.js?x=1#f", parentFrameId: 0 },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.get"))) as {
+      frames?: Array<{ frameId: number; url: string; parentFrameId?: number }>;
+    };
+    expect(res.frames).toEqual([
+      { frameId: 0, url: "https://app.example.com/page" },
+      { frameId: 7, url: "https://cdn.example.com/widget.js", parentFrameId: 0 },
+    ]);
   });
 });
 

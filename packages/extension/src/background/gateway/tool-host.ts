@@ -35,7 +35,12 @@ export interface ToolHostDeps {
   /** chrome.scripting.executeScript world:"MAIN" — runs `func` in the
    *  page's main world and resolves its return value (browser.page.console,
    *  chromex-nr8). `func` must be self-contained (serialized source). */
-  runInMainWorld?(tabId: number, func: (...fnArgs: unknown[]) => unknown, args?: unknown[]): Promise<unknown>;
+  runInMainWorld?(
+    tabId: number,
+    func: (...fnArgs: unknown[]) => unknown,
+    args?: unknown[],
+    frameIds?: number[],
+  ): Promise<unknown>;
   /** chrome.tabs.goBack/goForward/reload (browser.page.history) */
   navigateHistory?(tabId: number, action: "back" | "forward" | "reload"): Promise<unknown>;
   /** chrome.downloads.search (browser.downloads.list) — requires the
@@ -62,9 +67,19 @@ export interface ToolHostDeps {
     mimeType: string;
     dataBase64: string;
   }): Promise<{ artifactRef: string; sha256: string; bytes: number }>;
-  /** chrome.tabs.sendMessage with content-script ensure (index.ts helper) */
-  sendToTab(tabId: number, message: Record<string, unknown>): Promise<unknown>;
+  /** chrome.tabs.sendMessage with content-script ensure (index.ts helper).
+   *  options.frameId targets one frame; omitted/0 = top frame. */
+  sendToTab(
+    tabId: number,
+    message: Record<string, unknown>,
+    options?: { frameId?: number },
+  ): Promise<unknown>;
   getTab(tabId: number): Promise<chrome.tabs.Tab | undefined>;
+  /** chrome.webNavigation.getAllFrames — frame discovery for args.frameId.
+   *  Absent → page.get omits the frames list. */
+  listFrames?(
+    tabId: number,
+  ): Promise<Array<{ frameId: number; url: string; parentFrameId?: number }>>;
   queryTabs(): Promise<chrome.tabs.Tab[]>;
   activateTab(tabId: number): Promise<void>;
   closeTab(tabId: number): Promise<void>;
@@ -76,6 +91,28 @@ function toolError(code: string, message: string): Error {
   e.code = code;
   return e;
 }
+
+/** Tools whose work happens inside one frame's DOM — these accept
+ *  args.frameId. Tab-level tools (tabs.*, page.get/screenshot/history,
+ *  downloads) reject it. */
+const FRAME_SCOPED_TOOLS = new Set([
+  "browser.page.snapshot",
+  "browser.page.extract",
+  "browser.page.console",
+  "browser.page.click",
+  "browser.page.focus",
+  "browser.page.type",
+  "browser.page.fill",
+  "browser.page.select",
+  "browser.page.submit",
+  "browser.page.scroll",
+  "browser.page.navigate",
+  "browser.page.wait",
+  "browser.page.hover",
+  "browser.page.press",
+  "browser.page.upload",
+  "browser.page.find",
+]);
 
 const SUPPORTED = new Set([
   "browser.tabs.list",
@@ -185,6 +222,18 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
+/** args.frameId — which frame inside the tab a page.* call targets.
+ *  Absent → 0 (top frame). chrome.webNavigation frameIds are
+ *  non-negative integers; anything else is a caller bug. */
+function frameIdArg(args: Record<string, unknown>): number {
+  const v = args.frameId;
+  if (v === undefined || v === null) return 0;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+    throw toolError("proto.invalid", "args.frameId must be a non-negative integer");
+  }
+  return v;
+}
+
 /** §6.2 snapshot metadata: TTL 5min, LRU 32/task — used by P2-02
  *  stale/verify semantics. Registry is per-extension-install. */
 const snapshotRegistry = new SnapshotRegistry();
@@ -242,6 +291,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
     const tabScope = parseTabScope(payload);
     if (!SUPPORTED.has(tool)) {
       throw toolError("proto.unsupported", `browser tool ${tool} is not implemented in the extension host`);
+    }
+    // args.frameId selects a frame inside the tab (chrome.webNavigation
+    // frameIds; 0/absent = top). Only tools that execute inside a frame's
+    // DOM accept it — tab-level tools must reject it loudly rather than
+    // silently ignore a scope the caller asked for.
+    if (args.frameId !== undefined && args.frameId !== null && !FRAME_SCOPED_TOOLS.has(tool)) {
+      throw toolError("proto.invalid", `args.frameId is not supported for ${tool}`);
     }
 
     switch (tool) {
@@ -349,7 +405,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
             : 100;
         const level = str(args.level) ?? null;
-        const res = (await deps.runInMainWorld(tabId, chromexConsoleCollect, [limit, level])) as
+        const frameId = frameIdArg(args);
+        const res = (await deps.runInMainWorld!(tabId, chromexConsoleCollect, [limit, level], [frameId])) as
           | { installed?: boolean; entries?: unknown }
           | undefined;
         return {
@@ -362,26 +419,59 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const tab = await deps.getTab(tabId);
         if (!tab) throw toolError("browser.no_tab", `tab ${tabId} not found`);
-        return { id: tab.id, url: tab.url ?? "", title: tab.title ?? "", active: tab.active === true, resolvedTabId: tabId };
+        // Frame discovery for args.frameId: urls are stripped to
+        // origin+path (same privacy rule as tabs.list — query/hash can
+        // carry tokens). frameId 0 is always the top frame.
+        let frames: Array<{ frameId: number; url: string; parentFrameId?: number }> | undefined;
+        if (deps.listFrames) {
+          try {
+            frames = (await deps.listFrames(tabId)).map((f) => {
+              let safe = "";
+              try {
+                const u = new URL(f.url);
+                safe = `${u.origin}${u.pathname}`;
+              } catch {
+                safe = "";
+              }
+              return {
+                frameId: f.frameId,
+                url: safe,
+                ...(typeof f.parentFrameId === "number" ? { parentFrameId: f.parentFrameId } : {}),
+              };
+            });
+          } catch {
+            frames = undefined;
+          }
+        }
+        return {
+          id: tab.id,
+          url: tab.url ?? "",
+          title: tab.title ?? "",
+          active: tab.active === true,
+          resolvedTabId: tabId,
+          ...(frames ? { frames } : {}),
+        };
       }
       case "browser.page.snapshot": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        const snap = (await deps.sendToTab(tabId, { type: "page.dom.snapshot" })) as BrowserDomSnapshot;
+        const frameId = frameIdArg(args);
+        const snap = (await deps.sendToTab(tabId, { type: "page.dom.snapshot" }, { frameId })) as BrowserDomSnapshot;
         if (
           snap.snapshotId &&
           snap.structuralFingerprint &&
           snap.stateFingerprint &&
           typeof snap.saltEpoch === "number"
         ) {
-          // §6.2: a structural change on this tab stales every older
+          // §6.2: a structural change on this frame stales every older
           // snapshot's refs — drop them before registering the new one.
-          const prior = snapshotRegistry.latestForTab(tabId);
+          const prior = snapshotRegistry.latestForFrame(tabId, frameId);
           if (prior && prior.structuralFingerprint !== snap.structuralFingerprint) {
-            snapshotRegistry.invalidateTab(tabId);
+            snapshotRegistry.invalidateFrame(tabId, frameId);
           }
           snapshotRegistry.put({
             snapshotId: snap.snapshotId,
             tabId,
+            frameId,
             ...(req.taskId ? { taskId: req.taskId } : {}),
             structuralFingerprint: snap.structuralFingerprint,
             stateFingerprint: snap.stateFingerprint,
@@ -408,6 +498,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           return { ok: true, waitedMs: ms };
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const frameId = frameIdArg(args);
         const timeoutMs = Math.min(
           Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
           30_000,
@@ -419,7 +510,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
           ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
           timeoutMs,
-        })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
+        }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
         if (res?.ok !== true) {
           throw toolError(
             res?.timedOut === true ? "browser.timeout" : "browser.action_failed",
@@ -453,7 +544,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(args.caseSensitive === true ? { caseSensitive: true } : {}),
           limit,
           ...(str(args.scopeSelector) ? { scopeSelector: str(args.scopeSelector) } : {}),
-        })) as { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean };
+        }, { frameId: frameIdArg(args) })) as { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean };
         if (res?.ok !== true) {
           throw toolError("proto.invalid", "browser.page.find requires args.text or args.regex");
         }
@@ -556,11 +647,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
       case "browser.page.extract": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const frameId = frameIdArg(args);
         const maxChars = typeof args.maxChars === "number" ? Math.min(args.maxChars, 50_000) : 12_000;
         const res = (await deps.sendToTab(tabId, {
           type: "page.extract",
           maxChars,
-        })) as { text?: string; truncated?: boolean; url?: string; title?: string };
+        }, { frameId })) as { text?: string; truncated?: boolean; url?: string; title?: string };
         return {
           text: res.text ?? "",
           truncated: res.truncated === true,
@@ -572,6 +664,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       default: {
         // DOM action tools → single page.dom.perform step
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const frameId = frameIdArg(args);
         const snapId = str(args.snapshotId);
         if (snapId) {
           const meta = snapshotRegistry.get(snapId);
@@ -590,6 +683,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               "snapshot expired or belongs to another tab; call browser.page.snapshot again",
             );
           }
+          // Refs live in the frame that minted them — a snapshot from
+          // frame 3 cannot drive actions in the top frame.
+          if ((meta.frameId ?? 0) !== frameId) {
+            throw toolError(
+              "browser.stale_snapshot",
+              "snapshot was captured in a different frame; call browser.page.snapshot with the same args.frameId",
+            );
+          }
           if (meta.urlOriginPath) {
             const tab = await deps.getTab(tabId);
             const current = typeof tab?.url === "string" && tab.url ? urlOriginPath(tab.url) : null;
@@ -605,7 +706,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
           steps: [step],
-        })) as BrowserDomActionResult;
+        }, { frameId })) as BrowserDomActionResult;
         const first = result.results?.[0];
         if (!result.ok || first?.ok === false) {
           const code = typeof first?.code === "string" && first.code.startsWith("browser.") ? first.code : "browser.action_failed";
@@ -619,7 +720,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         let verified = first?.verified;
         let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
         if (expectCond) {
-          const check = await runExpectCondition(deps, tabId, expectCond);
+          const check = await runExpectCondition(deps, tabId, expectCond, frameId);
           expectInfo = check;
           if (check.met === true) verified = true;
           else if (check.met === false) verified = false;
@@ -735,6 +836,7 @@ async function runExpectCondition(
   deps: ToolHostDeps,
   tabId: number,
   cond: BrowserExpectCondition,
+  frameId = 0,
 ): Promise<{ met: boolean | "unknown"; elapsedMs?: number }> {
   const timeoutMs = cond.timeoutMs ?? EXPECT_DEFAULT_TIMEOUT_MS;
   try {
@@ -745,7 +847,7 @@ async function runExpectCondition(
       ...(cond.urlContains ? { urlContains: cond.urlContains } : {}),
       ...(cond.goneSelector ? { selectorGone: cond.goneSelector } : {}),
       timeoutMs,
-    })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number };
+    }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number };
     if (res?.ok === true) return { met: true, elapsedMs: res.elapsedMs ?? 0 };
     if (res?.timedOut === true) return { met: false, elapsedMs: res.elapsedMs ?? timeoutMs };
     return { met: "unknown" };

@@ -193,6 +193,8 @@ export interface SnapshotMeta {
   snapshotId: string;
   taskId?: string;
   tabId?: number;
+  /** frame the snapshot was captured in; 0/undefined = top frame */
+  frameId?: number;
   structuralFingerprint: string;
   stateFingerprint: string;
   saltEpoch: number;
@@ -249,10 +251,29 @@ export class SnapshotRegistry {
     }
   }
 
+  /** Drop snapshots bound to one frame of a tab (frame navigation /
+   *  structural change inside that frame only). */
+  invalidateFrame(tabId: number, frameId: number): void {
+    for (const [id, meta] of this.entries) {
+      if (meta.tabId === tabId && (meta.frameId ?? 0) === frameId) this.entries.delete(id);
+    }
+  }
+
   latestForTab(tabId: number, now = Date.now()): SnapshotMeta | null {
+    return this.#latest(tabId, undefined, now);
+  }
+
+  /** Latest snapshot for an exact (tabId, frameId) pair — iframe refs
+   *  are only valid inside the frame that minted them. */
+  latestForFrame(tabId: number, frameId: number, now = Date.now()): SnapshotMeta | null {
+    return this.#latest(tabId, frameId, now);
+  }
+
+  #latest(tabId: number, frameId: number | undefined, now: number): SnapshotMeta | null {
     let best: SnapshotMeta | null = null;
     for (const meta of this.entries.values()) {
       if (meta.tabId !== tabId) continue;
+      if (frameId !== undefined && (meta.frameId ?? 0) !== frameId) continue;
       if (now - meta.capturedAt > SNAPSHOT_TTL_MS) continue;
       if (!best || meta.capturedAt > best.capturedAt) best = meta;
     }

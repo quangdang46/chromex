@@ -569,6 +569,23 @@ export class BrowserToolServer {
         },
       });
     }
+    // Same contract for args.frameId — a malformed frame selector must
+    // not silently fall back to the top frame.
+    if (
+      req.args?.frameId !== undefined &&
+      req.args?.frameId !== null &&
+      (typeof req.args.frameId !== "number" || !Number.isInteger(req.args.frameId) || req.args.frameId < 0)
+    ) {
+      return this.finish({
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: {
+          code: "browser.invalid_args",
+          message: "args.frameId must be a non-negative integer",
+        },
+      });
+    }
     const explicitTabId = typeof req.args?.tabId === "number" ? req.args.tabId : null;
     // chromex-jtl: tabIds are namespaced by (profileId, backendId,
     // browserInstanceId) — the same numeric id under another profile or

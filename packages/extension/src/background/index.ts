@@ -228,12 +228,20 @@ const degradedReport = createDegradedReporter();
 // The runtime calls handler(method, payload); the tool host takes the
 // payload only, so dispatch on the method here.
 const toolHostHandler = createToolHostHandler({
-    sendToTab: async (tabId, message) => {
+    sendToTab: async (tabId, message, options) => {
       const tab = await chrome.tabs.get(tabId);
       if (!tab.id || !tab.url) throw new Error(`tab ${tabId} has no url`);
-      return sendMessageToTab(tab as chrome.tabs.Tab & { id: number; url: string }, message);
+      return sendMessageToTab(tab as chrome.tabs.Tab & { id: number; url: string }, message, options);
     },
     getTab: async (tabId) => chrome.tabs.get(tabId),
+    listFrames: async (tabId) => {
+      const frames = await chrome.webNavigation.getAllFrames({ tabId });
+      return (frames ?? []).map((f) => ({
+        frameId: f.frameId,
+        url: f.url ?? "",
+        ...(typeof f.parentFrameId === "number" ? { parentFrameId: f.parentFrameId } : {}),
+      }));
+    },
     queryTabs: async () => chrome.tabs.query({}),
     activateTab: async (tabId) => {
       await chrome.tabs.update(tabId, { active: true });
@@ -248,9 +256,9 @@ const toolHostHandler = createToolHostHandler({
         ...(url ? { url } : {}),
         ...(active !== undefined ? { active } : {}),
       }),
-    runInMainWorld: async (tabId, func, args) => {
+    runInMainWorld: async (tabId, func, args, frameIds) => {
       const [res] = await chrome.scripting.executeScript({
-        target: { tabId },
+        target: { tabId, ...(frameIds && frameIds.length > 0 ? { frameIds } : {}) },
         world: "MAIN",
         func: func as (...fnArgs: unknown[]) => unknown,
         args: args ?? [],

@@ -22,7 +22,8 @@
     "contextMenus",
     "nativeMessaging",
     "desktopCapture",
-    "downloads"
+    "downloads",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
