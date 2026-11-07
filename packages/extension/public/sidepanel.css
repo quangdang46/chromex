@@ -12450,6 +12450,20 @@ button.primary,
   background: #4c8dff;
 }
 
+.recent-chat-backend {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #9fb4d0;
+  background: rgba(76, 141, 255, 0.14);
+  border: 1px solid rgba(76, 141, 255, 0.35);
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+
 .composer-provider-select {
   appearance: none;
   -webkit-appearance: none;

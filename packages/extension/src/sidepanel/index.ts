@@ -945,7 +945,7 @@ const state = {
   skillSettingsSearchQuery: "",
   pluginMcpSettingsSearchQuery: "",
   recentChats: [] as ConversationSummary[],
-  gatewayTasks: {} as Record<string, { status: string; attention: string | null }>,
+  gatewayTasks: {} as Record<string, { status: string; attention: string | null; backendId?: string | null }>,
   serverThreads: [] as CodexThreadSummary[],
   currentConversationId: "",
   threadId: "",
@@ -1226,14 +1226,14 @@ window.addEventListener("unhandledrejection", (event) => {
 async function refreshGatewayTasks(): Promise<void> {
   const result = await sendRuntimeMessage<{
     enabled?: boolean;
-    tasks?: { taskId: string; status: string; attention: string | null }[];
+    tasks?: { taskId: string; status: string; attention: string | null; backendId?: string | null }[];
   }>({ type: "gateway.tasks" }).catch(() => null);
   if (!result?.enabled || !Array.isArray(result.tasks)) {
     return;
   }
   const next: typeof state.gatewayTasks = {};
   for (const t of result.tasks) {
-    next[t.taskId] = { status: t.status, attention: t.attention ?? null };
+    next[t.taskId] = { status: t.status, attention: t.attention ?? null, backendId: t.backendId ?? null };
   }
   state.gatewayTasks = next;
 }
@@ -3923,7 +3923,7 @@ function renderAppMenu(isPopup: boolean, disabled = false): string {
                       >
                         <span class="app-menu-icon list" aria-hidden="true">${renderAppMenuListIcon()}</span>
                         <span class="recent-chat-copy">
-                          <span class="app-menu-label">${escapeHtml(chat.title || labels.chat)}${renderGatewayAttentionBadge(chat.threadId)}</span>
+                          <span class="app-menu-label">${escapeHtml(chat.title || labels.chat)}${renderGatewayAttentionBadge(chat.threadId)}${renderGatewayBackendBadge(chat.threadId)}</span>
                         </span>
                         <span class="recent-chat-meta" aria-hidden="true">
                           ${renderRecentChatProgressIndicator(chat.busy)}
@@ -4128,6 +4128,15 @@ function getRecentChatDisplayItems(limit?: number) {
     locale: state.uiLocale || getBrowserUiLanguage(),
     ...(typeof limit === "number" ? { limit } : {}),
   });
+}
+
+function renderGatewayBackendBadge(threadId: string | undefined): string {
+  const backendId = threadId ? state.gatewayTasks[threadId]?.backendId : null;
+  if (!backendId || backendId === "chrome-extension") {
+    return "";
+  }
+  const label = backendId === "playwright-isolated" ? "Isolated" : backendId;
+  return `<span class="recent-chat-backend" data-backend="${escapeAttribute(backendId)}" title="Browser backend: ${escapeAttribute(label)}" aria-label="Browser backend ${escapeAttribute(label)}">${escapeHtml(label)}</span>`;
 }
 
 function renderGatewayAttentionBadge(threadId: string | undefined): string {
@@ -9836,7 +9845,7 @@ function renderWorkspaceDiagnostics(strings: ReturnType<typeof getUiStrings>): s
                   <button class="recent-chat ${chat.selected ? "selected" : ""}" data-chat-id="${chat.id}">
                     <span class="recent-chat-heading">
                       <strong>${escapeHtml(chat.title)}</strong>
-                      ${renderGatewayAttentionBadge(chat.threadId)}
+                      ${renderGatewayAttentionBadge(chat.threadId)}${renderGatewayBackendBadge(chat.threadId)}
                       ${renderRecentChatProgressIndicator(chat.busy)}
                     </span>
                     <span>${escapeHtml(chat.profileId)}</span>

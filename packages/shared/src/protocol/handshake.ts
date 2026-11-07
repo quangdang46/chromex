@@ -34,6 +34,8 @@ export interface HelloTaskSummary {
   activeTurnId?: string | null;
   /** whether the browser binding is still valid for the browserInstanceId just sent */
   browserBinding: BrowserBindingState;
+  /** pinned browser backend (P2-07 badge) — optional for older gateways */
+  backendId?: import("../browser/backend.js").BrowserBackendId;
 }
 
 export interface HelloResponse {

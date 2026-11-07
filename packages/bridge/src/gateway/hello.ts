@@ -107,6 +107,7 @@ export function buildHelloResponse(
     browserBinding: (t.binding.browserInstanceId === req.browserInstanceId
       ? t.binding.state
       : "needs_confirmation") as BrowserBindingState,
+    backendId: t.backend.backendId,
   }));
 
   const allowed = new Set(deps.config.browser.allowedBackends);

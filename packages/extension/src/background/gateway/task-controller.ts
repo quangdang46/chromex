@@ -32,6 +32,8 @@ export interface TaskView {
   lastReadSeq: number;
   attention: string | null;
   title: string | null;
+  /** pinned browser backend for the UI badge (P2-07) */
+  backendId?: string | null;
   updatedAt: number;
 }
 
@@ -88,6 +90,7 @@ export class TaskController {
       lastReadSeq: this.#cursors.lastReadSeqByTask[t.taskId] ?? existing?.lastReadSeq ?? 0,
       attention: null,
       title: existing?.title ?? null,
+      backendId: t.backendId ?? existing?.backendId ?? null,
       updatedAt: Date.now(),
     });
   }
@@ -214,9 +217,13 @@ export class TaskController {
       if (env.seq <= view.lastSeq && view.lastSeq > 0) return;
       view.lastSeq = Math.max(view.lastSeq, env.seq);
       view.updatedAt = Date.now();
-      const t = env.payload as { type?: string; to?: TaskStatus; attention?: string | null };
-      if (t.type === "task.status_changed" && t.to) view.status = t.to;
+      const t = env.payload as { type?: string; to?: unknown; attention?: string | null };
+      if (t.type === "task.status_changed" && typeof t.to === "string") view.status = t.to as TaskStatus;
       if (t.type === "task.attention_changed") view.attention = t.attention ?? null;
+      if (t.type === "task.backend_changed") {
+        const to = t.to as { backendId?: string } | undefined;
+        if (to?.backendId) view.backendId = to.backendId;
+      }
       if (t.type === "task.created") {
         // title may arrive later via task.get; keep null
       }

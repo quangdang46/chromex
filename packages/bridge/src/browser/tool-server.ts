@@ -151,6 +151,10 @@ export interface ToolServerDeps {
   tokens: ToolTokenManager;
   /** Resolve which host instance serves a task (minimal registry). */
   resolveHost(taskId: string): ToolHostChannel | null;
+  /** §6.6 gate: returns a failure outcome error when the task's pinned
+   *  backend cannot serve this call (mismatch/unavailable). Checked
+   *  after token+dedup+hard-block, before host resolution. */
+  backendGate?(req: ToolCallRequest): { code: string; message: string } | null;
   /** Approval hook — full §4.8 engine (P2-04). */
   requestApproval?(ctx: ToolApprovalRequest): Promise<ToolApprovalVerdict>;
   /** allow_task scope check — granted scopes persist for task lifetime. */
@@ -205,6 +209,12 @@ export class BrowserToolServer {
     // 3. Hard block.
     if (HARD_BLOCKED_TOOLS.has(req.tool)) {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.tool_blocked", message: "tool is hard-blocked" } });
+    }
+
+    // 3b. §6.6 backend gate — pinned backend vs tool requirements.
+    const gate = this.deps.backendGate?.(req);
+    if (gate) {
+      return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: gate });
     }
 
     // 4. Host resolution.
@@ -300,11 +310,19 @@ export class BrowserToolServer {
           });
         })
         .catch((err: unknown) => {
+          // backend channels (e.g. playwright-isolated) throw coded
+          // ProtocolErrors — preserve the code so callers see
+          // browser.backend_unavailable / backend_mismatch, not a
+          // generic host_error.
+          const coded =
+            err && typeof err === "object" && typeof (err as { code?: unknown }).code === "string"
+              ? (err as { code: string }).code
+              : "browser.host_error";
           this.pending.get(req.toolCallId)?.resolve({
             toolCallId: req.toolCallId,
             tool: req.tool,
             status: "failed",
-            error: { code: "browser.host_error", message: err instanceof Error ? err.message : String(err) },
+            error: { code: coded, message: err instanceof Error ? err.message : String(err) },
           });
         });
     });

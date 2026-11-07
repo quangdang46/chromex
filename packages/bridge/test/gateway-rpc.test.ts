@@ -135,12 +135,21 @@ describe("gateway RPC surface (P1-07)", () => {
     };
     expect(got.task.taskId).toBe(created.taskId);
 
-    // setBackend persists + emits backend_changed
+    // §6.6: pinning playwright-isolated while enabledByUser=false →
+    // backend_unavailable, no silent fallback.
+    await expect(
+      rpc(s, "sb0", "task.setBackend", {
+        taskId: created.taskId,
+        backend: { backendId: "playwright-isolated", pinnedBy: "user" },
+      }),
+    ).rejects.toMatchObject({ code: "browser.backend_unavailable" });
+
+    // setBackend persists + emits backend_changed (extension always allowed)
     const sb = (await rpc(s, "sb", "task.setBackend", {
       taskId: created.taskId,
-      backend: { backendId: "playwright-isolated", pinnedBy: "user" },
+      backend: { backendId: "chrome-extension", pinnedBy: "user" },
     })) as { backend: { backendId: string } };
-    expect(sb.backend.backendId).toBe("playwright-isolated");
+    expect(sb.backend.backendId).toBe("chrome-extension");
 
     // snapshot: inline (small) → has storage.kind inline
     const snap = (await rpc(s, "sn", "task.snapshot", { taskId: created.taskId })) as {

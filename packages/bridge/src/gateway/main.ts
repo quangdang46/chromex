@@ -73,6 +73,8 @@ import { DeltaCoalescer } from "./delta-coalescer.js";
 import { GatewayDiagnostics } from "./diagnostics.js";
 import { BrowserToolServer } from "../browser/tool-server.js";
 import { BrowserHostRegistry } from "../browser/host-registry.js";
+import { PlaywrightIsolatedBackend } from "../browser/backends/playwright/isolated.js";
+import { resolveBackendSelection, backendMismatchFor } from "../browser/backend-selection.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
 import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
 import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
@@ -329,12 +331,42 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       });
     };
     const hostRegistry = new BrowserHostRegistry();
+    // P2-07: isolated playwright backend — lazy playwright-core load;
+    // absent dep surfaces browser.backend_unavailable at execute time.
+    const playwrightBackend = new PlaywrightIsolatedBackend({
+      executablePath: async () => (await playwrightRuntime.readStatus()).browserExecutablePath || null,
+    });
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
+      backendGate: (req) => {
+        // §6.6: pinned backend vs tool requirement. tabIntent-bound
+        // tasks (active_resolved/explicit) need the user's real tabs —
+        // an isolated pin cannot serve them.
+        const task = store.getTask(req.taskId);
+        if (!task) return null;
+        const needsRealTab = task.tabIntent.scope !== "untitled";
+        const mismatch = backendMismatchFor(task.backend.backendId, needsRealTab);
+        if (mismatch) {
+          return { code: mismatch, message: `task pinned to ${task.backend.backendId} cannot serve tab-bound work` };
+        }
+        return null;
+      },
       resolveHost: (taskId) => {
         // §6.1 host registry: affinity + scope matching; stranded tabs
         // report no_host until a same-browserInstanceId host returns.
         const task = store.getTask(taskId);
+        // P2-07: playwright-isolated tasks dispatch to the isolated
+        // backend — no extension host involved, no user session.
+        if (task?.backend.backendId === "playwright-isolated") {
+          return {
+            hostInstanceId: "playwright-isolated",
+            send: async (_method, payload) => {
+              const p = payload as { tool?: string; args?: Record<string, unknown> };
+              return playwrightBackend.execute(taskId, p.tool as never, p.args ?? {});
+            },
+            onDisconnect: () => {},
+          };
+        }
         const res = hostRegistry.resolveHost({
           profileId: task?.profileId ?? "codex",
           browserInstanceId: task?.originBrowserInstanceId ?? task?.binding.browserInstanceId ?? null,
@@ -680,10 +712,13 @@ async function handleGatewayRequest(
         modeId: p.modeId ?? null,
         thinkingOptionId: p.thinkingOptionId ?? null,
         providerOptions: p.providerOptions ?? null,
-        backend: p.backend ?? {
-          backendId: cfg.browser.defaultBackend === "auto" ? "chrome-extension" : cfg.browser.defaultBackend,
-          pinnedBy: "default",
-        },
+        backend: resolveBackendSelection({
+          requested: p.backend ?? null,
+          defaultBackend: cfg.browser.defaultBackend,
+          allowedBackends: cfg.browser.allowedBackends,
+          playwrightEnabledByUser: cfg.browser.playwright.enabledByUser,
+          playwrightRuntimeAvailable: (await ctx.playwrightRuntime.readStatus()).available,
+        }).backend,
         tabIntent: (p.tabIntent as never) ?? { scope: "untitled" },
         originBrowserInstanceId: p.browserInstanceId ?? null,
       });
@@ -764,8 +799,19 @@ async function handleGatewayRequest(
       if (!p?.taskId || !p.backend || typeof p.backend !== "object") {
         throw invalidRequest("taskId + backend required");
       }
-      const backend = p.backend as Parameters<SessionManager["setBackend"]>[1];
-      const task = ctx.sessionManager.setBackend(p.taskId, backend);
+      const requested = p.backend as { backendId?: string; pinnedBy?: string };
+      const cfg = ctx.getConfig();
+      const validated = resolveBackendSelection({
+        requested: {
+          backendId: requested.backendId as never,
+          pinnedBy: (requested.pinnedBy as "user" | "policy" | "default" | undefined) ?? "user",
+        },
+        defaultBackend: cfg.browser.defaultBackend,
+        allowedBackends: cfg.browser.allowedBackends,
+        playwrightEnabledByUser: cfg.browser.playwright.enabledByUser,
+        playwrightRuntimeAvailable: (await ctx.playwrightRuntime.readStatus()).available,
+      }).backend;
+      const task = ctx.sessionManager.setBackend(p.taskId, validated);
       return { taskId: task.taskId, backend: task.backend };
     }
     case "turn.interrupt": {
