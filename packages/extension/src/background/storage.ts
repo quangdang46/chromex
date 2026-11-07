@@ -88,6 +88,11 @@ export async function getStoredSettings(): Promise<ExtensionSettings> {
     enabledCodexSkillIds: normalizeEnabledCodexSkillIds(settings.enabledCodexSkillIds),
     customSiteSuggestions: normalizeCustomSiteSuggestions(settings.customSiteSuggestions),
     customModels: normalizeCustomModels(settings.customModels),
+    // Gateway is the default transport; a stored `false` is always a stale
+    // auto-write from before the flag had UI — never a user choice. Legacy
+    // requires reinstalling the native host with --legacy-mode anyway, so
+    // honoring a stored false here could only produce a broken half-pair.
+    gatewayMode: true,
   };
 }
 

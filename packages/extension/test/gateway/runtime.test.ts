@@ -47,15 +47,20 @@ describe("GatewayRuntime flag gating (P1-08 dual-path)", () => {
     vi.unstubAllGlobals();
   });
 
-  test("gatewayMode off (default) → runtime is null; legacy path untouched", async () => {
+  test("stale stored gatewayMode:false is overridden → gateway runtime still builds", async () => {
     stubChrome({ "codex.sidepanel.settings": { ...DEFAULT_SETTINGS, gatewayMode: false } });
-    expect(await getGatewayRuntime()).toBeNull();
+    const rt = await getGatewayRuntime();
+    expect(rt).not.toBeNull();
+    await vi.waitFor(() => expect(rt!.state()).toBe("ready"), { timeout: 2000 });
+    resetGatewayRuntime();
   });
 
-  test("gatewayMode missing entirely → treated as off", async () => {
+  test("gatewayMode missing entirely → still treated as on (gateway is default)", async () => {
     const { gatewayMode: _omit, ...rest } = DEFAULT_SETTINGS;
     stubChrome({ "codex.sidepanel.settings": rest });
-    expect(await getGatewayRuntime()).toBeNull();
+    const rt = await getGatewayRuntime();
+    expect(rt).not.toBeNull();
+    resetGatewayRuntime();
   });
 
   test("gatewayMode on → runtime builds with identity + lazy client", async () => {
