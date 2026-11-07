@@ -16,6 +16,7 @@ type PendingBridgeRequest = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
+import { isSidecarMethod } from "./gateway/compat/legacy-methods.js";
 import { toFriendlyNativeHostErrorMessage } from "./native-host-errors.js";
 
 const NATIVE_HOST_NAME = "com.codex.sidepanel.bridge";
@@ -28,7 +29,11 @@ export class NativeBridgeClient {
   #port: chrome.runtime.Port | null = null;
   /** P1-08 dual-path: when the Gateway runtime is active (gatewayMode
    *  on), agent-domain requests go through it as Envelope RPCs; the
-   *  compat layer returns legacy-shaped results. null = legacy NM path. */
+   *  compat layer returns legacy-shaped results. Sidecar-domain
+   *  methods (LEGACY_SIDECAR_METHODS) bypass the
+   *  delegate and use the legacy NM port — the native host demuxes
+   *  them to its bridge sidecar child (chromex-rzf). null delegate =
+   *  legacy NM path for everything. */
   #gatewayDelegate: GatewayRequestDelegate | null = null;
   #lastDisconnectError: string | null = null;
   #pending = new Map<string, PendingBridgeRequest>();
@@ -48,7 +53,7 @@ export class NativeBridgeClient {
     params: Record<string, unknown> = {},
     options: BridgeRequestOptions = {},
   ): Promise<TResult> {
-    if (this.#gatewayDelegate) {
+    if (this.#gatewayDelegate && !isSidecarMethod(method)) {
       const delegate = this.#gatewayDelegate;
       const call = delegate.request(method, params);
       if (!options.timeoutMs || options.timeoutMs <= 0) {

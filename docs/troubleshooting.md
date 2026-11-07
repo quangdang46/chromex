@@ -63,24 +63,26 @@ corrupt JSON, delete `run/` and let the next `ensureGateway` respawn.
 ## `proto.unsupported` on a legacy method
 
 Symptom: a request fails with `proto.unsupported: legacy method <m> is
-served by the bridge sidecar, not the gateway`, or `route.plan` /
-`browser.action.plan retired`.
+served by the bridge sidecar, not the gateway`.
 
-Likely cause: the client sent a method the gateway does not own. Methods
-in `LEGACY_SIDECAR_METHODS` (`account.login.*`, `apps.list`,
+Likely cause: the client sent a method the gateway does not own.
+Methods in `LEGACY_SIDECAR_METHODS` (`apps.list`,
 `plugins.list`, `image.*`, `workspace.harness.read`, `runtime.config.*`,
-… — see `packages/bridge/src/gateway/compat.ts`) only work in legacy
-sidecar mode. `route.plan` / `browser.action.plan` need
-`features.legacySidecarPlanning` or `features.toolLoop` in `gateway.json`.
+… — see `packages/shared/src/protocol/sidecar.ts`) are routed by the
+extension to the legacy bridge sidecar automatically while gatewayMode
+is on; hitting this error means the request bypassed that routing (e.g.
+a non-extension client) or the native host is older than the extension.
+`route.plan` / `browser.action.plan` are served natively by the gateway
+on the codex provider.
 
-Diagnose: the error message names the method; check
-`isGatewayServed(method)` in
-`packages/extension/src/background/gateway/compat/legacy-methods.ts`
-for whether the extension should have routed it to the gateway at all.
+Diagnose: the error message names the method; check `isSidecarMethod`
+in `packages/extension/src/background/gateway/compat/legacy-methods.ts`
+for which transport should have carried it.
 
-Fix: update the client, or reinstall the native host in legacy mode
-(`install-native-host.mjs --legacy-mode`) if the feature only exists on
-the sidecar.
+Fix: update the client and the native host (`npm run build
+--workspace @codex-sidepanel/native-host` then reinstall). If the
+feature genuinely only exists on the legacy bridge, reinstall the
+native host in legacy mode (`install-native-host.mjs --legacy-mode`).
 
 ## `model.list` failed or model picker empty
 

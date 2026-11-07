@@ -30,6 +30,7 @@ export * from "./protocol/errors.js";
 export * from "./protocol/envelope.js";
 export * from "./protocol/handshake.js";
 export * from "./protocol/schemas.js";
+export * from "./protocol/sidecar.js";
 export * from "./browser/backend.js";
 export * from "./browser/identity.js";
 export * from "./browser/snapshot.js";

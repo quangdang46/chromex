@@ -8,13 +8,21 @@
  * supplies hostInstanceId + browserInstanceId (B6 mechanism).
  *
  * Flow:
- *  - NM stdin frame → JSON Envelope
- *    - kind "request"  → conn.request(method, payload) → response env → NM stdout
- *      - method "hello" gets token + host/browser ids injected first
- *    - kind "ack"      → conn.sendAck
+ *  - NM stdin frame → JSON
+ *    - Envelope (v:1 + kind) → Gateway IPC socket:
+ *      - kind "request"  → conn.request(method, payload) → response env → NM stdout
+ *        - method "hello" gets token + host/browser ids injected first
+ *      - kind "ack"      → conn.sendAck
+ *      - kind "response" → conn.sendEnvelope (extension answering a
+ *        server-initiated request, e.g. browser.tool.*)
+ *    - legacy BridgeRequest ({id,method,params}, no v/kind) → bridge
+ *      sidecar child (chromex-rzf dual-channel): the Gateway does not
+ *      serve non-agent domains, so they keep flowing to
+ *      bridge/dist/cli.js exactly like the pre-gateway relay.
  *  - Gateway events    → conn.onEvent → NM stdout (as-is)
- *  - Reconnect          → ensureGateway() again; the extension re-hellos
- *    with its lastSeqByTask cursors and pulls task.sync itself.
+ *  - Gateway connect   → LAZY: first Envelope message triggers
+ *    ensureGateway(); sidecar traffic never needs the gateway, so
+ *    runtime.config/image/voice keep working while it is down.
  */
 
 import { randomUUID } from "node:crypto";
@@ -35,6 +43,7 @@ import {
   readGatewayToken,
   type GatewayConnection,
 } from "./gateway-client.js";
+import { LegacyBridgeSidecar } from "./legacy-sidecar.js";
 
 export interface GatewayModeOptions {
   dataDir: string;
@@ -45,6 +54,8 @@ export interface GatewayModeOptions {
   onHello?: (hello: HelloResponse) => void;
   /** tests set false to avoid process.exit inside vitest */
   exitProcess?: boolean;
+  /** sidecar bridge entry override (tests); default resolveBridgeEntryPath() */
+  bridgeEntry?: string | null;
 }
 
 const HOST_INSTANCE_ID = randomUUID();
@@ -52,28 +63,28 @@ const HOST_INSTANCE_ID = randomUUID();
 export class GatewayModeRelay {
   readonly #decoder = new NativeMessageStreamDecoder();
   #conn: GatewayConnection | null = null;
+  #gatewayPromise: Promise<GatewayConnection> | null = null;
   #token: string | null = null;
   #browserInstanceId: string | null = null;
   #shuttingDown = false;
   readonly #opts: GatewayModeOptions;
+  readonly #sidecar: LegacyBridgeSidecar;
 
   constructor(opts: GatewayModeOptions) {
     this.#opts = opts;
+    this.#sidecar = new LegacyBridgeSidecar({
+      emit: (message) => this.#writeNativeMessage(message),
+      ...(opts.bridgeEntry !== undefined ? { bridgeEntry: opts.bridgeEntry } : {}),
+      ...(opts.log ? { log: opts.log } : {}),
+    });
   }
 
   async start(input: Readable): Promise<void> {
-    this.#token = await readGatewayToken(this.#opts.dataDir);
-    this.#browserInstanceId = await resolveBrowserInstanceId({ dataDir: this.#opts.dataDir });
-    // NO hello here: the server allows exactly one hello per connection
-    // and it must be the EXTENSION's (with host-injected token + ids).
-    this.#conn = await ensureGateway(this.#opts.dataDir, {
-      ...(this.#opts.gatewayBin !== undefined ? { gatewayBin: this.#opts.gatewayBin } : {}),
-      ...(this.#opts.startupTimeoutMs !== undefined
-        ? { startupTimeoutMs: this.#opts.startupTimeoutMs }
-        : {}),
-      ...(this.#opts.log ? { log: this.#opts.log } : {}),
-    });
-    this.#conn.onEvent((env) => this.#writeEnvelope(env));
+    // NO eager gateway connect and NO hello here: the server allows
+    // exactly one hello per connection and it must be the EXTENSION's
+    // (with host-injected token + ids). The gateway connection is
+    // established lazily on the first Envelope message so sidecar
+    // traffic works even while the gateway is down (chromex-rzf).
     this.#wireStdin(input);
     process.on("SIGTERM", () => this.#shutdown());
     process.on("SIGINT", () => this.#shutdown());
@@ -98,26 +109,50 @@ export class GatewayModeRelay {
     // NM "end" arrives via the Readable 'end' listener registered in start().
   }
 
+  /** Lazily establish the gateway connection on first Envelope traffic.
+   *  Rejections clear #gatewayPromise so a later message retries —
+   *  e.g. the gateway was still spawning when the first request landed. */
+  #ensureGatewayConn(): Promise<GatewayConnection> {
+    if (this.#conn && !this.#conn.isClosed) return Promise.resolve(this.#conn);
+    if (!this.#gatewayPromise) {
+      this.#gatewayPromise = this.#connectGateway().catch((err) => {
+        this.#gatewayPromise = null;
+        throw err;
+      });
+    }
+    return this.#gatewayPromise;
+  }
+
+  async #connectGateway(): Promise<GatewayConnection> {
+    this.#token = await readGatewayToken(this.#opts.dataDir);
+    this.#browserInstanceId = await resolveBrowserInstanceId({ dataDir: this.#opts.dataDir });
+    const conn = await ensureGateway(this.#opts.dataDir, {
+      ...(this.#opts.gatewayBin !== undefined ? { gatewayBin: this.#opts.gatewayBin } : {}),
+      ...(this.#opts.startupTimeoutMs !== undefined
+        ? { startupTimeoutMs: this.#opts.startupTimeoutMs }
+        : {}),
+      ...(this.#opts.log ? { log: this.#opts.log } : {}),
+    });
+    conn.onEvent((env) => this.#writeEnvelope(env));
+    this.#conn = conn;
+    return conn;
+  }
+
   async #handleMessage(raw: unknown): Promise<void> {
     if (typeof raw !== "object" || raw === null) return;
-    const env = raw as Envelope;
-    const conn = this.#conn;
-    if (!conn || conn.isClosed) {
-      this.#writeEnvelope({
-        v: 1,
-        kind: "response",
-        id: (env as { id?: string }).id ?? "?",
-        error: {
-          code: "gateway.unresponsive",
-          message: "gateway connection not established",
-          retryable: true,
-          requiresUserAction: false,
-          sideEffectState: "none",
-        },
-      } as Envelope);
+    // chromex-rzf dual-channel demux: legacy BridgeRequest shape
+    // ({id,method,params}, no v/kind) goes to the bridge sidecar
+    // child; Envelope-shaped messages go to the gateway.
+    if (isLegacyBridgeRequest(raw)) {
+      this.#sidecar.handleRequest(raw);
       return;
     }
+    const env = raw as Envelope;
     try {
+      const conn = await this.#ensureGatewayConn();
+      if (conn.isClosed) {
+        throw new GatewayClientError("gateway connection closed", "unresponsive");
+      }
       if (env.kind === "request") {
         const payload = this.#injectHostFields(env.method, env.payload);
         const result = await conn.request(env.method, payload);
@@ -173,6 +208,14 @@ export class GatewayModeRelay {
     };
   }
 
+  #writeNativeMessage(message: unknown): void {
+    try {
+      process.stdout.write(encodeNativeMessage(message));
+    } catch {
+      // oversized or stdout closed — shutdown handles it
+    }
+  }
+
   #writeEnvelope(env: Envelope): void {
     try {
       const body = JSON.stringify(env);
@@ -194,7 +237,17 @@ export class GatewayModeRelay {
   #shutdown(exitCode = 0): void {
     if (this.#shuttingDown) return;
     this.#shuttingDown = true;
+    this.#sidecar.shutdown();
     this.#conn?.close();
     if (this.#opts.exitProcess !== false) process.exit(exitCode);
   }
+}
+
+/** Legacy BridgeRequest ({id,method,params}) vs Envelope ({v:1,kind,...}).
+ *  Envelopes always carry `v`/`kind`; the legacy shape carries neither. */
+function isLegacyBridgeRequest(raw: unknown): raw is { id: string; method: string; params?: unknown } {
+  if (typeof raw !== "object" || raw === null) return false;
+  const m = raw as Record<string, unknown>;
+  if (m.v !== undefined || m.kind !== undefined) return false;
+  return typeof m.id === "string" && typeof m.method === "string";
 }

@@ -17,7 +17,11 @@ import os from "node:os";
 
 import { protocolError as perr } from "@codex-sidepanel/shared";
 
-import { mapMcpServerStatusResponse, mapSkills } from "../app-server-mappers.js";
+import { mapMcpServerStatusResponse, mapRateLimits, mapSkills } from "../app-server-mappers.js";
+
+// Canonical list lives in @codex-sidepanel/shared so the extension's
+// sidecar router and this reject-path share one source (chromex-rzf).
+export { LEGACY_SIDECAR_METHODS } from "@codex-sidepanel/shared";
 
 export interface CompatRewrite {
   method: string;
@@ -268,8 +272,53 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
     },
   },
   // ---- provider features (passthrough to schema-validated feature RPCs) ----
-  "account.status": { toRequest: (p) => ({ method: "provider.feature.codex.account.status", payload: p }), fromResult: (r) => r },
-  "account.rate_limits.read": { toRequest: (p) => ({ method: "provider.feature.codex.account.rate_limits", payload: p }), fromResult: (r) => r },
+  // account/read returns {account, requiresOpenaiAuth}; the sidecar
+  // contract is AccountStatus — derive authMode/codexAuthenticated here
+  // (mirrors AppServerCodexPlane.accountStatus; openAiApiKeyConfigured
+  // arrives pre-enriched by the provider's secret store).
+  "account.status": {
+    toRequest: (p) => ({ method: "provider.feature.codex.account.status", payload: p }),
+    fromResult: (r) => {
+      const rec = asRecord(r);
+      const raw = rec.account;
+      const account = raw && typeof raw === "object" ? asRecord(raw) : null;
+      const type = account?.type;
+      const authenticated = Boolean(account) || rec.requiresOpenaiAuth === false;
+      const planType =
+        type === "chatgpt" && typeof account?.planType === "string" && account.planType.trim()
+          ? account.planType.trim().toLowerCase()
+          : null;
+      return {
+        authMode: type === "chatgpt" ? "chatgpt" : type === "apiKey" ? "apikey" : null,
+        codexAuthenticated: authenticated,
+        multimodalAvailable: authenticated,
+        openAiApiKeyConfigured: rec.openAiApiKeyConfigured === true,
+        email: typeof account?.email === "string" ? account.email : null,
+        planType,
+      };
+    },
+  },
+  // login.start returns the app-server result verbatim ({authUrl,...} for
+  // OAuth, {stored:true} for apiKey — the provider intercepts apiKey).
+  "account.login.start": {
+    toRequest: (p) => ({ method: "provider.feature.codex.account.login.start", payload: p }),
+    fromResult: (r) => r,
+  },
+  // legacy contract returns {} for both cancel and logout.
+  "account.login.cancel": {
+    toRequest: (p) => ({ method: "provider.feature.codex.account.login.cancel", payload: p }),
+    fromResult: () => ({}),
+  },
+  "account.logout": {
+    toRequest: () => ({ method: "provider.feature.codex.account.logout", payload: {} }),
+    fromResult: () => ({}),
+  },
+  // account/rateLimits/read returns {rateLimits, rateLimitsByLimitId};
+  // the sidecar contract is the mapped CodexRateLimits shape.
+  "account.rate_limits.read": {
+    toRequest: (p) => ({ method: "provider.feature.codex.account.rate_limits", payload: p }),
+    fromResult: (r) => mapRateLimits(r as never),
+  },
   "goal.set": { toRequest: (p) => ({ method: "provider.feature.codex.goal.set", payload: p }), fromResult: (r) => r },
   "goal.get": { toRequest: (p) => ({ method: "provider.feature.codex.goal.get", payload: p }), fromResult: (r) => r },
   "goal.clear": { toRequest: (p) => ({ method: "provider.feature.codex.goal.clear", payload: p }), fromResult: (r) => r },
@@ -297,40 +346,4 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
   },
 };
 
-/** Methods the Gateway intentionally does NOT serve (sidecar domains). */
-export const LEGACY_SIDECAR_METHODS = new Set([
-  "account.login.start",
-  "account.login.cancel",
-  "account.logout",
-  "apps.list",
-  "plugins.list",
-  "mcp.servers.reload",
-  "skills.external.list",
-  "skills.archive.install",
-  "workspace.harness.read",
-  "runtime.config.read",
-  "runtime.config.update",
-  "image.generate.start",
-  "image.edit.start",
-  "image.edit.preview",
-  "image.asset.read",
-  "image.asset.delete",
-  "image.asset.folder",
-  "image.asset.folder.open",
-  "local.file.reveal",
-  "diagnostics.log.write",
-  "diagnostics.log.folder",
-  "diagnostics.log.folder.open",
-  "voice.session.start",
-  "voice.session.append_text",
-  "voice.session.append_audio",
-  "voice.session.stop",
-  "dictation.transcription.start",
-  "dictation.transcription.append_audio",
-  "dictation.transcription.stop",
-  "translation.api_key.save",
-  "translation.api_key.clear",
-  "translation.client_secret.create",
-  "profile.list",
-  "profile.select",
-]);
+

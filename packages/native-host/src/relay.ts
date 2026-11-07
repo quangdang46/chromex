@@ -18,7 +18,7 @@ export class NativeHostRelay {
 
   start(): void {
     const bridgeBaseEnv = mergeShellProviderEnv(process.env);
-    this.#bridge = spawn(process.execPath, [this.#resolveBridgeEntry()], {
+    this.#bridge = spawn(process.execPath, [resolveBridgeEntryPath()], {
       stdio: ["pipe", "pipe", "inherit"],
       env: createBridgeProcessEnv(bridgeBaseEnv),
     });
@@ -131,16 +131,20 @@ export class NativeHostRelay {
     this.#bridge?.kill();
     process.exit(exitCode);
   }
+}
 
-  #resolveBridgeEntry(): string {
-    const configuredBridgeEntry = normalizeNativeHostPath(process.env.BRIDGE_ENTRY ?? "");
-    if (configuredBridgeEntry) {
-      return configuredBridgeEntry;
-    }
-
-    const currentDir = dirname(fileURLToPath(import.meta.url));
-    return resolve(currentDir, "../../bridge/dist/cli.js");
+/** Bridge CLI entry shared by the legacy relay and the gateway-mode
+ *  sidecar child (chromex-rzf): BRIDGE_ENTRY override, else the
+ *  sibling package's dist/cli.js. */
+export function resolveBridgeEntryPath(override?: string | null): string {
+  const configured =
+    override !== undefined ? normalizeNativeHostPath(override ?? "") : normalizeNativeHostPath(process.env.BRIDGE_ENTRY ?? "");
+  if (configured) {
+    return configured;
   }
+
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  return resolve(currentDir, "../../bridge/dist/cli.js");
 }
 
 export function normalizeNativeHostPath(value: string): string {

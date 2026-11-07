@@ -10,10 +10,13 @@
  *
  * Agent-domain methods are served by the Gateway. Sidecar domains
  * (image/voice/dictation/translation/diagnostics/local.file/profile/
- * workspace/runtime.config) return `proto.unsupported` from the
- * Gateway — in full dual-path a second legacy bridge channel would
- * serve them; until then gatewayMode is for agent flows only.
+ * workspace/runtime.config) are NOT served by the Gateway — they are
+ * routed to the legacy bridge sidecar channel on the same native host
+ * (chromex-rzf). SIDECAR_METHODS below picks the transport; the
+ * extension never translates payloads.
  */
+
+import { LEGACY_SIDECAR_METHODS } from "@codex-sidepanel/shared";
 
 export const GATEWAY_SERVED_METHODS = new Set([
   // new contract
@@ -61,6 +64,9 @@ export const GATEWAY_SERVED_METHODS = new Set([
   "model.list",
   "account.status",
   "account.rate_limits.read",
+  "account.login.start",
+  "account.login.cancel",
+  "account.logout",
   "goal.set",
   "goal.get",
   "goal.clear",
@@ -71,6 +77,13 @@ export const GATEWAY_SERVED_METHODS = new Set([
   "mcp.oauth.login.start",
   "runtime.playwright.status",
   "runtime.playwright.install",
+  // planning RPCs run natively on the codex provider (chromex-pwu)
+  "route.plan",
+  "browser.action.plan",
+  // account login/logout via provider.feature.codex.account.* (chromex-pnk)
+  "account.login.start",
+  "account.login.cancel",
+  "account.logout",
 ]);
 
 export function isGatewayServed(method: string): boolean {
@@ -78,4 +91,18 @@ export function isGatewayServed(method: string): boolean {
     GATEWAY_SERVED_METHODS.has(method) ||
     method.startsWith("provider.feature.")
   );
+}
+
+/**
+ * Methods routed to the legacy bridge sidecar while gatewayMode is on.
+ * Exactly the shared LEGACY_SIDECAR_METHODS set — the Gateway's own
+ * reject-path (bridge gateway/main.ts) keys off the same list, so the
+ * two transports can never disagree about who owns a method.
+ * route.plan/browser.action.plan are NOT here: the Gateway serves
+ * them natively on the codex provider (chromex-pwu).
+ */
+export const SIDECAR_METHODS: ReadonlySet<string> = LEGACY_SIDECAR_METHODS;
+
+export function isSidecarMethod(method: string): boolean {
+  return SIDECAR_METHODS.has(method);
 }

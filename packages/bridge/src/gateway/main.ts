@@ -890,12 +890,26 @@ async function handleGatewayRequest(
         const optionId = String(p.optionId ?? "");
         const denied = optionId.toLowerCase() === "deny";
         // allow_task scope comes from the stored request details —
-        // the digest-bound scope, never client-supplied.
+        // the digest-bound scope, never client-supplied. Provider-
+        // mirrored approvals store the whole permission.requested
+        // AgentEvent, so details may sit one level down under `request`.
         const reqRow = storeAny.approvalRequest?.(p.requestId) as
-          | { details?: { allowTaskScope?: string } }
+          | {
+              taskId?: string;
+              turnId?: string;
+              details?: { allowTaskScope?: string };
+              request?: {
+                taskId?: string;
+                turnId?: string;
+                details?: { allowTaskScope?: string };
+              };
+            }
           | null
           | undefined;
-        const scope = optionId === "allow_task" ? reqRow?.details?.allowTaskScope : undefined;
+        const scope =
+          optionId === "allow_task"
+            ? (reqRow?.details?.allowTaskScope ?? reqRow?.request?.details?.allowTaskScope)
+            : undefined;
         storeAny.resolveApproval?.(
           p.requestId,
           denied ? "denied" : "allowed",
@@ -908,11 +922,15 @@ async function handleGatewayRequest(
         );
         // durable permission.resolved on the task stream — replayed
         // clients clear the approval card; the approvals table alone
-        // is not visible to task.sync consumers.
-        const reqTaskId = (storeAny.approvalRequest?.(p.requestId) as
-          | { taskId?: string }
-          | null
-          | undefined)?.taskId;
+        // is not visible to task.sync consumers. Browser-tool approvals
+        // store the request object (taskId at top level); provider-
+        // mirrored approvals store the permission.requested AgentEvent
+        // whose inner request.taskId is "" — recover via the turn row.
+        const reqTurnId = reqRow?.turnId ?? reqRow?.request?.turnId;
+        const reqTaskId =
+          reqRow?.taskId ||
+          reqRow?.request?.taskId ||
+          (reqTurnId ? ctx.store.getTurn(reqTurnId)?.taskId : undefined);
         if (reqTaskId) {
           const resolvedEnv = (
             ctx.store as {
