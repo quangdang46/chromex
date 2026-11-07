@@ -69,7 +69,7 @@ import {
 import { InMemoryStore } from "./store-memory.js";
 import { openGatewayDb, runIntegrityChecks } from "../store/db.js";
 import { SQLiteStore } from "../store/sqlite-store.js";
-import { runRecoveryScan, unresolvedBrowserToolCalls } from "../store/recovery.js";
+import { durableBrowserToolCalls, runRecoveryScan } from "../store/recovery.js";
 import { runRetentionSweep } from "../store/retention.js";
 import { runPruneSweep } from "./prune.js";
 import { APPROVAL_POST_TERMINAL_MS, ARTIFACT_TTL_MS } from "../store/retention.js";
@@ -702,12 +702,12 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
 
     // S5/§9.1: the dedup map above is in-memory — after a gateway
     // restart, durable tool.started/completed events are the only
-    // record of calls interrupted mid-flight. Seed them so a retried
-    // toolCallId hits duplicate protection instead of re-dispatching
-    // a possibly-executed action.
+    // record of calls that already ran. Seed them so retry behavior
+    // matches a live session: any repeated toolCallId hits duplicate
+    // protection instead of re-dispatching a possibly-executed action.
     if (db) {
-      for (const c of unresolvedBrowserToolCalls(db)) {
-        toolServer.seedInterrupted(c.toolCallId, c.tool);
+      for (const c of durableBrowserToolCalls(db)) {
+        toolServer.seedDurableOutcome(c.toolCallId, c.tool, c.last);
       }
     }
 

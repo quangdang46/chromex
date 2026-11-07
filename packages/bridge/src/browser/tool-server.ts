@@ -455,22 +455,33 @@ export class BrowserToolServer {
     this.deps = deps;
   }
 
-  /** Seed an interrupted outcome at startup (S5/§9.1): a call whose
-   *  durable record ends in tool.started or outcome "unknown" must not
-   *  silently re-dispatch on retry — the dedup map is empty after a
-   *  gateway restart, so durable events are the only memory. Retrying
-   *  with the same toolCallId hits duplicate_tool_call; a genuinely
-   *  new action uses a new toolCallId. */
-  seedInterrupted(toolCallId: string, tool: string): void {
+  /** Seed a durable outcome at startup (S5/§9.1): the dedup map is
+   *  empty after a gateway restart, so durable tool.started/completed
+   *  events are the only memory of calls that already ran. Seeding every
+   *  recorded toolCallId makes retry behavior identical to a live
+   *  session — any repeat hits duplicate_tool_call instead of
+   *  re-dispatching a possibly-executed action. Calls interrupted
+   *  mid-flight ("started"/"unknown") additionally record an honest
+   *  interrupted error. */
+  seedDurableOutcome(
+    toolCallId: string,
+    tool: string,
+    last: "started" | "completed" | "failed" | "cancelled" | "unknown",
+  ): void {
     if (this.outcomes.has(toolCallId)) return;
+    const interrupted = last === "started" || last === "unknown";
     this.outcomes.set(toolCallId, {
       toolCallId,
       tool,
-      status: "failed",
-      error: {
-        code: "browser.interrupted",
-        message: "previous attempt outcome unknown — gateway restarted mid-call; use a new toolCallId to retry",
-      },
+      status: interrupted ? "failed" : last,
+      ...(interrupted
+        ? {
+            error: {
+              code: "browser.interrupted",
+              message: "previous attempt outcome unknown — gateway restarted mid-call; use a new toolCallId to retry",
+            },
+          }
+        : {}),
       verified: "unknown",
     });
   }

@@ -161,20 +161,23 @@ export function runRecoveryScan(store: SQLiteStore, db: GatewayDb): RecoveryResu
   return result;
 }
 
-export interface UnresolvedBrowserToolCall {
+export interface DurableBrowserToolCall {
   toolCallId: string;
   tool: string;
   taskId: string;
+  /** "started" = tool.started with no completion; otherwise the last
+   *  tool.completed outcome ("completed" | "failed" | "cancelled" |
+   *  "unknown"). */
+  last: "started" | "completed" | "failed" | "cancelled" | "unknown";
 }
 
-/** Browser toolCallIds whose LAST durable event is tool.started or a
- *  tool.completed with outcome "unknown" — i.e. the call was
- *  interrupted by a gateway restart (or its outcome could not be
- *  confirmed). BrowserToolServer's dedup map is in-memory, so without
- *  seeding these a retried call would silently re-dispatch and could
- *  duplicate a side effect (S5 / §9.1). Last event wins: a later real
- *  completion clears the id. */
-export function unresolvedBrowserToolCalls(db: GatewayDb): UnresolvedBrowserToolCall[] {
+/** Every browser toolCallId present in the durable event stream, with
+ *  its LAST record — the in-memory dedup map in BrowserToolServer is
+ *  empty after a gateway restart, so without seeding these a retried
+ *  call would silently re-dispatch and could duplicate a side effect
+ *  (S5 / §9.1). Last event wins: a later real completion supersedes an
+ *  earlier interrupted record. */
+export function durableBrowserToolCalls(db: GatewayDb): DurableBrowserToolCall[] {
   const rows = db
     .prepare(
       `SELECT task_id, payload_json FROM events
@@ -206,7 +209,15 @@ export function unresolvedBrowserToolCalls(db: GatewayDb): UnresolvedBrowserTool
       /* skip malformed */
     }
   }
-  return [...last.entries()]
-    .filter(([, v]) => v.kind === "started" || v.outcome === "unknown")
-    .map(([toolCallId, v]) => ({ toolCallId, tool: v.tool, taskId: v.taskId }));
+  return [...last.entries()].map(([toolCallId, v]) => ({
+    toolCallId,
+    tool: v.tool,
+    taskId: v.taskId,
+    last:
+      v.kind === "started"
+        ? "started"
+        : v.outcome === "completed" || v.outcome === "failed" || v.outcome === "cancelled"
+          ? v.outcome
+          : "unknown",
+  }));
 }
