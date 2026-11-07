@@ -824,7 +824,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.page.upload requires args.files[]");
     }
     const files = raw.map((entry) => {
-      if (typeof entry === "string") return entry;
+      // Bytes-only contract — same as the extension host: local paths
+      // would let the agent exfiltrate arbitrary files into a page.
+      if (typeof entry === "string") {
+        throw protocolError("proto.invalid", "browser.page.upload accepts {name, mimeType, base64} files only — local paths are refused");
+      }
       const o = (entry ?? {}) as Record<string, unknown>;
       if (typeof o.base64 === "string" && o.base64.length > 0) {
         return {
@@ -833,8 +837,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           buffer: Buffer.from(o.base64, "base64"),
         };
       }
-      if (typeof o.path === "string" && o.path) return o.path;
-      throw protocolError("proto.invalid", "upload file entries require {name, mimeType, base64} or a path");
+      throw protocolError("proto.invalid", "upload file entries require {name, mimeType, base64}");
     });
     await page.locator(selector).first().setInputFiles(files as never);
     return { uploaded: files.length };
