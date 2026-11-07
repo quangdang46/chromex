@@ -160,3 +160,53 @@ export function runRecoveryScan(store: SQLiteStore, db: GatewayDb): RecoveryResu
   void taskEventsForTurn; // reserved for milestone checks in later beads
   return result;
 }
+
+export interface UnresolvedBrowserToolCall {
+  toolCallId: string;
+  tool: string;
+  taskId: string;
+}
+
+/** Browser toolCallIds whose LAST durable event is tool.started or a
+ *  tool.completed with outcome "unknown" — i.e. the call was
+ *  interrupted by a gateway restart (or its outcome could not be
+ *  confirmed). BrowserToolServer's dedup map is in-memory, so without
+ *  seeding these a retried call would silently re-dispatch and could
+ *  duplicate a side effect (S5 / §9.1). Last event wins: a later real
+ *  completion clears the id. */
+export function unresolvedBrowserToolCalls(db: GatewayDb): UnresolvedBrowserToolCall[] {
+  const rows = db
+    .prepare(
+      `SELECT task_id, payload_json FROM events
+       WHERE stream='task' AND type IN ('tool.started','tool.completed')
+       ORDER BY seq`,
+    )
+    .all() as Array<{ task_id: string; payload_json: string }>;
+  const last = new Map<
+    string,
+    { kind: "started" | "done"; outcome: string | undefined; tool: string; taskId: string }
+  >();
+  for (const r of rows) {
+    try {
+      const p = JSON.parse(r.payload_json) as {
+        type?: string;
+        toolCallId?: string;
+        tool?: string;
+        source?: string;
+        outcome?: string;
+      };
+      if (p.source !== "browser" || !p.toolCallId) continue;
+      const tool = p.tool ?? "unknown";
+      if (p.type === "tool.started") {
+        last.set(p.toolCallId, { kind: "started", outcome: undefined, tool, taskId: r.task_id });
+      } else if (p.type === "tool.completed") {
+        last.set(p.toolCallId, { kind: "done", outcome: p.outcome, tool, taskId: r.task_id });
+      }
+    } catch {
+      /* skip malformed */
+    }
+  }
+  return [...last.entries()]
+    .filter(([, v]) => v.kind === "started" || v.outcome === "unknown")
+    .map(([toolCallId, v]) => ({ toolCallId, tool: v.tool, taskId: v.taskId }));
+}

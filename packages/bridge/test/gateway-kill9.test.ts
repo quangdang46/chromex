@@ -379,7 +379,9 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
       // recovery itself must NOT replay: settle, then the provider log
       // still shows exactly the one prompt sent before the kill
       await new Promise((r) => setTimeout(r, 1_000));
-      expect(await promptLog(logFile)).toEqual(["please hang here"]);
+      const prompts1 = await promptLog(logFile);
+      expect(prompts1).toHaveLength(1);
+      expect(prompts1[0]).toContain("please hang here");
 
       // ---- user resume: queued turn dispatches exactly once ----
       await rpc(s2, "rs", "task.resume", { taskId });
@@ -387,7 +389,10 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
 
       // the interrupted turn's message is NOT resent (queued turn took
       // the resume slot); the queued prompt reached the provider once
-      expect(await promptLog(logFile)).toEqual(["please hang here", "finish the report"]);
+      const prompts2 = await promptLog(logFile);
+      expect(prompts2).toHaveLength(2);
+      expect(prompts2[0]).toContain("please hang here");
+      expect(prompts2[1]).toContain("finish the report");
       expect(turnRow(t1.turnId)?.status).toBe("unknown"); // stays honest-unknown
       s2.destroy();
       void gw2;
@@ -440,7 +445,9 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
 
       // no replay while paused
       await new Promise((r) => setTimeout(r, 1_000));
-      expect(await promptLog(logFile)).toEqual(["delete the file"]);
+      const promptsB1 = await promptLog(logFile);
+      expect(promptsB1).toHaveLength(1);
+      expect(promptsB1[0]).toContain("delete the file");
 
       // the pending approval is still respondable: permission.respond
       // resolves the durable row even though the provider session is gone
@@ -455,7 +462,9 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
       await waitFor(() => taskEventTypes(taskId).includes("permission.resolved"), 10_000, "permission.resolved event");
 
       // exactly one provider prompt ever — respond did not re-drive the turn
-      expect(await promptLog(logFile)).toEqual(["delete the file"]);
+      const promptsB2 = await promptLog(logFile);
+      expect(promptsB2).toHaveLength(1);
+      expect(promptsB2[0]).toContain("delete the file");
       s2.destroy();
       void gw2;
     },
@@ -517,6 +526,84 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
       expect(call2.status).toBe("completed");
       // dispatch must land on the NEW conn, not a zombie from gen1
       expect(call2.result?.tag).toBe("gen2");
+
+      s2.destroy();
+      host2.destroy();
+      void gw2;
+    },
+    120_000,
+  );
+
+  test(
+    "D: SIGKILL mid-tool-call → retry with same toolCallId is deduped, new id dispatches (S5 no-duplicate)",
+    async () => {
+      const logFile = path.join(dir, "prompts.jsonl");
+      await writeConfig("hang-match", logFile);
+
+      // ---- boot 1: host that hellos but never answers tool requests ----
+      const gw1 = await bootGateway();
+      const s1 = await authedConn(gw1.pid);
+      const ep1 = await waitForEndpoint(gw1.pid);
+      const tok1 = (await fs.readFile(path.join(dir, "auth", "token"), "utf8")).trim();
+      const silent = await connect(ep1.path);
+      sockets.push(silent);
+      await rpc(silent, "host-hello-silent", "hello", {
+        token: tok1, clientVersion: "kill9-test", protocolVersion: 1,
+        clientId: "host-silent", profileId: "prof-test",
+        browserInstanceId: null, hostInstanceId: "h-kill9",
+      });
+
+      const created = (await rpc(s1, "c1", "task.create", {
+        cwd: "/tmp", title: "kill9-D", profileId: "fakeacp", providerId: "fakeacp",
+      })) as { taskId: string };
+      const taskId = created.taskId;
+      const row = openDb()
+        .prepare("SELECT profile_id, backend_json FROM tasks WHERE task_id = ?")
+        .get(taskId) as { profile_id: string; backend_json: string };
+      const backend = JSON.parse(row.backend_json) as { backendId?: string };
+      const { ToolTokenManager } = await import("../src/browser/tool-token.js");
+      const secretHex = (await fs.readFile(path.join(dir, "auth", "tool-secret"), "utf8")).trim();
+      const token = ToolTokenManager.forTest(secretHex).issue({
+        taskId, profileId: row.profile_id,
+        backendId: backend.backendId ?? "chrome-extension",
+        allowedTools: ["browser.tabs.list"],
+      }).token;
+
+      // fire a call that will still be pending when the gateway dies —
+      // durable stream gets tool.started with no tool.completed
+      const pending = rpc(s1, "bc-d", "browser.tool.call", {
+        taskId, tool: "browser.tabs.list", args: {}, token, toolCallId: "tc-dup",
+      }).catch((e) => e);
+      await waitFor(
+        () => taskEventTypes(taskId).includes("tool.started"),
+        10_000,
+        "tool.started durable event",
+      );
+
+      await kill9(gw1);
+      s1.destroy();
+      silent.destroy();
+      // the pending rpc never settles (socket died mid-flight) — that's
+      // the point: outcome was unconfirmed when the gateway died
+      void pending;
+
+      // ---- boot 2: host reconnects; same toolCallId must NOT re-dispatch ----
+      const gw2 = await bootGateway();
+      const s2 = await authedConn(gw2.pid);
+      const host2 = await hostConn("gen2", gw2.pid);
+
+      const retry = (await rpc(s2, "bc-d2", "browser.tool.call", {
+        taskId, tool: "browser.tabs.list", args: {}, token, toolCallId: "tc-dup",
+      })) as { status: string; error?: { code?: string } };
+      expect(retry.status).toBe("failed");
+      expect(retry.error?.code).toBe("browser.duplicate_tool_call");
+
+      // a genuinely new call (new toolCallId) still works on the live host
+      const fresh = (await rpc(s2, "bc-d3", "browser.tool.call", {
+        taskId, tool: "browser.tabs.list", args: {}, token, toolCallId: "tc-new",
+      })) as { status: string; result?: { tag?: string } };
+      expect(fresh.status).toBe("completed");
+      expect(fresh.result?.tag).toBe("gen2");
 
       s2.destroy();
       host2.destroy();

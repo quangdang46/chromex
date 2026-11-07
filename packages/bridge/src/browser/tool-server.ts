@@ -455,6 +455,26 @@ export class BrowserToolServer {
     this.deps = deps;
   }
 
+  /** Seed an interrupted outcome at startup (S5/§9.1): a call whose
+   *  durable record ends in tool.started or outcome "unknown" must not
+   *  silently re-dispatch on retry — the dedup map is empty after a
+   *  gateway restart, so durable events are the only memory. Retrying
+   *  with the same toolCallId hits duplicate_tool_call; a genuinely
+   *  new action uses a new toolCallId. */
+  seedInterrupted(toolCallId: string, tool: string): void {
+    if (this.outcomes.has(toolCallId)) return;
+    this.outcomes.set(toolCallId, {
+      toolCallId,
+      tool,
+      status: "failed",
+      error: {
+        code: "browser.interrupted",
+        message: "previous attempt outcome unknown — gateway restarted mid-call; use a new toolCallId to retry",
+      },
+      verified: "unknown",
+    });
+  }
+
   async execute(req: ToolCallRequest): Promise<ToolCallOutcome> {
     const now = this.deps.now?.() ?? Date.now();
 
