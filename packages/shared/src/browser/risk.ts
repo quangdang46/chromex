@@ -262,6 +262,28 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     case "browser.page.focus":
       return verdict("low", { reason: "focus is low-risk" });
 
+    case "browser.tab.duplicate": {
+      // Cloning a tab reloads its URL — same exposure as tab.create to
+      // the resolved target. Unresolved contexts fail closed.
+      const dest = ctx.url || "";
+      let ok = false;
+      try {
+        const u = new URL(dest);
+        ok = (u.protocol === "http:" || u.protocol === "https:") && ctx.contextResolved;
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        return verdict("low", { reason: "duplicate resolved http(s) tab" });
+      }
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "tab.duplicate target unresolved",
+      });
+    }
+
     case "browser.tab.create": {
       // Opening a tab is a mutation (new page load, possible egress), so
       // it is never `read`. Blank or resolved http(s) targets are low;

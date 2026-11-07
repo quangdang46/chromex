@@ -32,6 +32,9 @@ export interface ToolHostDeps {
   captureVisibleTab?(windowId: number, opts?: { quality?: number }): Promise<string>;
   /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
   createTab?(opts: { url?: string; active?: boolean; windowId?: number }): Promise<chrome.tabs.Tab>;
+  /** chrome.tabs.duplicate — clone a tab preserving its session
+   *  (browser.tab.duplicate); absent dep → proto.unsupported. */
+  duplicateTab?(tabId: number): Promise<chrome.tabs.Tab>;
   /** chrome.scripting.executeScript world:"MAIN" — runs `func` in the
    *  page's main world and resolves its return value (browser.page.console,
    *  chromex-nr8). `func` must be self-contained (serialized source). */
@@ -146,6 +149,7 @@ const SUPPORTED = new Set([
   "browser.tab.activate",
   "browser.tab.close",
   "browser.tab.create",
+  "browser.tab.duplicate",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.console",
@@ -436,6 +440,39 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           tabId: tab.id,
           resolvedTabId: tab.id,
           id: tab.id,
+          url: safeUrl,
+          origin,
+          title: tab.title ?? "",
+          active: tab.active === true,
+        };
+      }
+      case "browser.tab.duplicate": {
+        // Clones a scoped tab with its session — the agent can fork a
+        // page to experiment without losing the original state. The new
+        // tab enters this task's scope via openedTabId harvest.
+        if (!deps.duplicateTab) {
+          throw toolError("proto.unsupported", "tab duplication is not available on this host");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const tab = await deps.duplicateTab(tabId);
+        if (typeof tab.id !== "number") {
+          throw toolError("browser.action_failed", "chrome.tabs.duplicate returned no tab id");
+        }
+        let safeUrl = "";
+        let origin = "";
+        try {
+          const u = new URL(tab.url ?? "about:blank");
+          origin = u.origin;
+          safeUrl = `${u.origin}${u.pathname}`;
+        } catch {
+          safeUrl = "";
+        }
+        return {
+          openedTabId: tab.id,
+          tabId: tab.id,
+          resolvedTabId: tab.id,
+          id: tab.id,
+          duplicatedFromTabId: tabId,
           url: safeUrl,
           origin,
           title: tab.title ?? "",

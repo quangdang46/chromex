@@ -576,6 +576,42 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("tab.duplicate clones a scoped tab, returns scope ids, strips query/hash", async () => {
+    const duped: number[] = [];
+    const d = deps({
+      duplicateTab: vi.fn(async (tabId: number) => {
+        duped.push(tabId);
+        return {
+          id: 88,
+          url: "https://example.com/app?session=abc#frag",
+          title: "Cloned",
+          active: false,
+        } as chrome.tabs.Tab;
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tab.duplicate", { tabId: 9 }))) as {
+      openedTabId: number;
+      resolvedTabId: number;
+      duplicatedFromTabId: number;
+      url: string;
+      origin: string;
+    };
+    expect(duped).toEqual([9]);
+    expect(res.openedTabId).toBe(88);
+    expect(res.resolvedTabId).toBe(88);
+    expect(res.duplicatedFromTabId).toBe(9);
+    expect(res.url).toBe("https://example.com/app");
+    expect(res.origin).toBe("https://example.com");
+  });
+
+  test("tab.duplicate without dep → proto.unsupported; foreign tab rejected", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.tab.duplicate", { tabId: 9 }))).rejects.toMatchObject({
+      code: "proto.unsupported",
+    });
+  });
+
   test("page.console runs the MAIN-world collector on the scoped tab (chromex-nr8)", async () => {
     const calls: Array<{ tabId: number; funcName: string; args: unknown[] | undefined }> = [];
     const d = deps({

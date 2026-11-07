@@ -262,6 +262,7 @@ const toolHostHandler = createToolHostHandler({
         ...(active !== undefined ? { active } : {}),
         ...(windowId !== undefined ? { windowId } : {}),
       }),
+    duplicateTab: async (tabId) => chrome.tabs.duplicate(tabId),
     runInMainWorld: async (tabId, func, args, frameIds) => {
       const [res] = await chrome.scripting.executeScript({
         target: { tabId, ...(frameIds && frameIds.length > 0 ? { frameIds } : {}) },

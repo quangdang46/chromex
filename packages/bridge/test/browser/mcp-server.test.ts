@@ -258,6 +258,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.tab.activate": { tabId: 3 },
   "browser.tab.close": { tabId: 3 },
   "browser.tab.create": { url: "https://example.com", active: false },
+  "browser.tab.duplicate": { tabId: 3 },
   "browser.page.snapshot": {},
   "browser.page.get": { key: "text" },
   "browser.page.extract": { selector: "main", maxChars: 4000 },
