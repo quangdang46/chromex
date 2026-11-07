@@ -191,6 +191,13 @@ export class GatewayConnection {
     });
   }
 
+  /** Forward an envelope verbatim (e.g. extension's response to a
+   *  server-initiated request). Used only for kind:"response". */
+  sendEnvelope(envelope: Envelope): void {
+    if (this.closed) return;
+    this.writeRaw(envelope);
+  }
+
   sendAck(stream: "task" | "gateway", seq: number, taskId?: string): void {
     this.writeRaw(
       stream === "task"
@@ -246,7 +253,9 @@ export class GatewayConnection {
             p.resolve((env as { result?: unknown }).result);
           }
         }
-      } else if (env.kind === "event" || env.kind === "ack") {
+      } else if (env.kind === "event" || env.kind === "ack" || env.kind === "request") {
+        // request = server→client call (browser.tool.*) — relay to
+        // the extension; its response comes back as kind:"response".
         for (const l of this.eventListeners) l(env);
       }
     }

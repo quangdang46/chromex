@@ -169,6 +169,27 @@ describe("GatewayClient (P1-08)", () => {
     expect((ack as { seq?: number }).seq).toBe(12);
   });
 
+  test("server-initiated request is answered via onRequest", async () => {
+    const port = createFakePort();
+    stubChrome(port);
+    autoHello(port);
+    const onRequest = vi.fn(async (method: string) => ({ echoed: method }));
+    const client = new GatewayClient({
+      hello: async () => ({ protocolVersion: 1 as const, clientId: "c", profileId: "p", browserInstanceId: null, hostInstanceId: "", lastSeqByTask: {}, lastSeqByGateway: 0 }),
+      onRequest,
+    });
+    await client.connect();
+    // simulate server pushing browser.tool.request
+    port.emit({ v: 1, kind: "request", id: "srv-1", method: "browser.tool.request", payload: { tool: "x" } } as PortMessage);
+    await vi.waitFor(() => expect(onRequest).toHaveBeenCalledWith("browser.tool.request", { tool: "x" }));
+    await vi.waitFor(() => {
+      const last = port.postMessage.mock.calls.at(-1)?.[0] as Envelope;
+      expect(last.kind).toBe("response");
+      expect((last as { id?: string }).id).toBe("srv-1");
+      expect((last as { result?: { echoed?: string } }).result?.echoed).toBe("browser.tool.request");
+    });
+  });
+
   test("request timeout rejects", async () => {
     vi.useFakeTimers();
     const port = createFakePort();

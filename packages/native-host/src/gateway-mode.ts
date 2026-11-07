@@ -124,6 +124,9 @@ export class GatewayModeRelay {
         this.#writeEnvelope({ v: 1, kind: "response", id: env.id, result } as Envelope);
       } else if (env.kind === "ack") {
         conn.sendAck(env.stream, env.seq, env.stream === "task" ? env.taskId : undefined);
+      } else if (env.kind === "response") {
+        // extension answering a server-initiated request (browser.tool.*)
+        conn.sendEnvelope(env);
       }
       // gateway→extension event envelopes never arrive from the client
     } catch (err) {

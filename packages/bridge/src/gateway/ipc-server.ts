@@ -46,6 +46,16 @@ export interface IpcConnection {
   readonly remoteAddress: string;
   send(envelope: Envelope): void;
   close(): void;
+  /** Server-initiated request to this client (browser.tool.* etc).
+   *  Resolves with the client's response `result`; rejects on error
+   *  envelope, timeout, or disconnect. */
+  request(method: string, payload?: unknown, timeoutMs?: number): Promise<unknown>;
+}
+
+interface PendingServerRequest {
+  resolve: (v: unknown) => void;
+  reject: (e: Error) => void;
+  timer: NodeJS.Timeout;
 }
 
 interface ConnState {
@@ -53,6 +63,7 @@ interface ConnState {
   authed: boolean;
   buffer: Buffer;
   helloSeen: boolean;
+  pending: Map<string, PendingServerRequest>;
 }
 
 const HEADER_BYTES = 4;
@@ -165,10 +176,18 @@ export class GatewayIpcServer {
       authed: false,
       buffer: Buffer.alloc(0),
       helloSeen: false,
+      pending: new Map(),
     };
     this.connections.add(state);
     socket.on("data", (chunk) => this.onData(state, chunk));
-    socket.on("close", () => this.connections.delete(state));
+    socket.on("close", () => {
+      this.connections.delete(state);
+      for (const [, p] of state.pending) {
+        clearTimeout(p.timer);
+        p.reject(new Error("connection closed"));
+      }
+      state.pending.clear();
+    });
     socket.on("error", () => this.connections.delete(state));
   }
 
@@ -208,10 +227,51 @@ export class GatewayIpcServer {
       await this.handleRequest(state, envelope);
       return;
     }
-    // responses/acks/events from client: only ack is meaningful; ignore rest
+    // client→server response: resolves a server-initiated request
+    if (envelope.kind === "response") {
+      const pending = state.pending.get(envelope.id);
+      if (pending) {
+        state.pending.delete(envelope.id);
+        clearTimeout(pending.timer);
+        if ("error" in envelope && envelope.error) {
+          const pe = envelope.error;
+          pending.reject(Object.assign(new Error(`${pe.code}: ${pe.message ?? ""}`), { code: pe.code }));
+        } else {
+          pending.resolve((envelope as { result?: unknown }).result);
+        }
+      }
+      return;
+    }
+    // acks/events from client: ack is meaningful; durable events are
+    // persisted server-side already — ignore inbound event envelopes.
     if (envelope.kind === "ack") {
       /* routed to store layer in later beads */
     }
+  }
+
+  /** Server-initiated request on an authed connection. */
+  requestOn(
+    state: ConnState,
+    method: string,
+    payload: unknown,
+    timeoutMs = 30_000,
+  ): Promise<unknown> {
+    if (state.socket.destroyed) return Promise.reject(new Error("connection closed"));
+    const id = `srv-${randomBytes(8).toString("hex")}`;
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (state.pending.delete(id)) reject(new Error(`client request ${method} timed out`));
+      }, timeoutMs);
+      state.pending.set(id, { resolve, reject, timer });
+      const envelope: Envelope = {
+        v: 1,
+        kind: "request",
+        id,
+        method,
+        ...(payload !== undefined ? { payload } : {}),
+      };
+      this.sendRaw(state, envelope);
+    });
   }
 
   private async handleRequest(
@@ -275,6 +335,7 @@ export class GatewayIpcServer {
       remoteAddress: state.socket.remoteAddress ?? "unknown",
       send: (envelope) => this.sendRaw(state, envelope),
       close: () => state.socket.destroy(),
+      request: (method, payload, timeoutMs) => this.requestOn(state, method, payload, timeoutMs),
     };
   }
 

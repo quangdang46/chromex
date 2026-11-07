@@ -33,6 +33,9 @@ export interface GatewayClientOptions {
   hello: () => Promise<Omit<HelloRequest, "clientVersion"> & { clientVersion?: string }>;
   onStateChange?: (state: GatewayConnectionState) => void;
   onEvent?: (env: Envelope) => void;
+  /** server→client request (browser.tool.*). Return result or throw
+   *  {code,message} — an error envelope is posted back either way. */
+  onRequest?: (method: string, payload: unknown) => Promise<unknown>;
   /** reconnect backoff bounds */
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
@@ -170,6 +173,10 @@ export class GatewayClient {
       this.#opts.onEvent?.(env);
       return;
     }
+    if (env.kind === "request") {
+      void this.#answerServerRequest(env);
+      return;
+    }
     if (env.kind !== "response") return;
     const pending = this.#pending.get(env.id);
     if (!pending) return;
@@ -179,6 +186,45 @@ export class GatewayClient {
       pending.reject(protocolErrorToError(env.error));
     } else {
       pending.resolve((env as { result?: unknown }).result);
+    }
+  }
+
+  async #answerServerRequest(env: Extract<Envelope, { kind: "request" }>): Promise<void> {
+    const port = this.#port;
+    if (!port || !this.#opts.onRequest) {
+      this.#postResponse(env.id, null, {
+        code: "proto.unsupported",
+        message: "no server-request handler",
+        retryable: false,
+        requiresUserAction: false,
+        sideEffectState: "none",
+      });
+      return;
+    }
+    try {
+      const result = await this.#opts.onRequest(env.method, env.payload);
+      this.#postResponse(env.id, result, null);
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      this.#postResponse(env.id, null, {
+        code: (e.code as never) ?? "internal",
+        message: e.message ?? String(err),
+        retryable: false,
+        requiresUserAction: false,
+        sideEffectState: "none",
+      });
+    }
+  }
+
+  #postResponse(id: string, result: unknown, error: unknown): void {
+    const env =
+      error === null
+        ? ({ v: 1, kind: "response", id, result } as const)
+        : ({ v: 1, kind: "response", id, error } as const);
+    try {
+      this.#port?.postMessage(env);
+    } catch {
+      /* port dying */
     }
   }
 

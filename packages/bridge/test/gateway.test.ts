@@ -413,3 +413,71 @@ describe("gateway task RPCs (SessionManager wiring)", () => {
     }
   });
 });
+
+describe("server→client request channel (P1-09)", () => {
+  function connect2(socketPath: string): Promise<net.Socket> {
+    return new Promise((resolve, reject) => {
+      const s = net.createConnection(socketPath, () => resolve(s));
+      s.once("error", reject);
+    });
+  }
+  function frame(env: unknown): Buffer {
+    const body = Buffer.from(JSON.stringify(env));
+    const header = Buffer.alloc(4);
+    header.writeUInt32LE(body.length, 0);
+    return Buffer.concat([header, body]);
+  }
+  function readOne(socket: net.Socket, timeoutMs = 3000): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      let buf = Buffer.alloc(0);
+      const timer = setTimeout(() => reject(new Error("read timeout")), timeoutMs);
+      const onData = (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        if (buf.length < 4) return;
+        const len = buf.readUInt32LE(0);
+        if (buf.length < 4 + len) return;
+        clearTimeout(timer);
+        socket.off("data", onData);
+        resolve(JSON.parse(buf.subarray(4, 4 + len).toString("utf8")));
+      };
+      socket.on("data", onData);
+    });
+  }
+
+  test("conn.request reaches client; client response resolves it", async () => {
+    const dir2 = await fs.mkdtemp(path.join(os.tmpdir(), "gw-srvreq-"));
+    const server = new GatewayIpcServer(dir2, 768 * 1024, async (req, conn) => {
+      if (req.method === "hello") return { ok: true };
+      if (req.method === "call.client") {
+        const result = await conn.request("browser.tool.request", { tool: "browser.page.click" }, 2000);
+        return { got: result };
+      }
+      throw new Error("unexpected");
+    });
+    const ep = await server.listen();
+    server.markReady();
+    try {
+      const s = await connect2(ep.path);
+      const helloBody = frame({
+        v: 1, kind: "request", id: "h", method: "hello",
+        payload: { token: server.tokenBytes.toString("hex") },
+      });
+      s.write(helloBody);
+      await readOne(s); // hello response
+
+      s.write(frame({ v: 1, kind: "request", id: "c1", method: "call.client" }));
+      // server pushes browser.tool.request to us
+      const srvReq = (await readOne(s)) as { kind: string; id: string; method: string };
+      expect(srvReq.kind).toBe("request");
+      expect(srvReq.method).toBe("browser.tool.request");
+      // answer it like the extension would
+      s.write(frame({ v: 1, kind: "response", id: srvReq.id, result: { clicked: true } }));
+      const res = (await readOne(s)) as { kind: string; result?: { got?: { clicked?: boolean } } };
+      expect(res.kind).toBe("response");
+      expect(res.result?.got?.clicked).toBe(true);
+      s.destroy();
+    } finally {
+      await server.close();
+    }
+  });
+});
