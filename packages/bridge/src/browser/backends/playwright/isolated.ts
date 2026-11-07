@@ -516,11 +516,29 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const urlContains = typeof args.urlContains === "string" ? args.urlContains : null;
     const text = typeof args.text === "string" ? args.text : null;
     const textGone = typeof args.textGone === "string" ? args.textGone : null;
-    const hasCondition = selector !== null || urlContains !== null || text !== null || textGone !== null;
+    const readyState = typeof args.readyState === "string" ? args.readyState : null;
+    const hasCondition =
+      selector !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null;
     if (!hasCondition) {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
       return { ok: true, waitedMs: Math.min(timeout, 30_000) };
+    }
+    if (readyState !== null) {
+      // document.readyState → playwright load state: interactive ≈
+      // domcontentloaded, complete ≈ load. "loading" is trivially met.
+      const state = readyState === "complete" ? "load" : readyState === "interactive" ? "domcontentloaded" : null;
+      if (state === null && readyState !== "loading") {
+        throw protocolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
+      }
+      if (state !== null) {
+        const remaining = Math.max(0, deadline - Date.now());
+        await page
+          .waitForLoadState(state, { timeout: Math.min(remaining, 30_000) })
+          .catch(() => {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          });
+      }
     }
     for (;;) {
       if (selector) {

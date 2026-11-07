@@ -351,7 +351,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.wait": {
     description:
-      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains — polls the page until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout.",
+      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains, readyState — polls the page until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       frameId: FRAME_ID,
@@ -361,6 +361,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       textGone: { type: "string", description: "Condition: wait until this substring disappears from the page's visible text." },
       selector: TARGET_SELECTOR,
       urlContains: { type: "string", description: "Condition: wait until the page URL contains this substring." },
+      readyState: {
+        type: "string",
+        enum: ["loading", "interactive", "complete"],
+        description: "Condition: wait until document.readyState reaches at least this level (interactive ≈ DOMContentLoaded, complete ≈ load event).",
+      },
     }),
   },
   "browser.page.hover": {

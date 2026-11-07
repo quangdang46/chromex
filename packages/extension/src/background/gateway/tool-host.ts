@@ -520,7 +520,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.text) !== undefined ||
           str(args.textGone) !== undefined ||
           str(args.selector) !== undefined ||
-          str(args.urlContains) !== undefined;
+          str(args.urlContains) !== undefined ||
+          str(args.readyState) !== undefined;
+        if (str(args.readyState) !== undefined &&
+            !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
+          throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
+        }
         if (!hasCondition) {
           const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
           await new Promise((r) => setTimeout(r, ms));
@@ -538,6 +543,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(str(args.textGone) ? { textGone: str(args.textGone) } : {}),
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
           ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
+          ...(str(args.readyState) ? { readyState: str(args.readyState) } : {}),
           timeoutMs,
         }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
         if (res?.ok !== true) {

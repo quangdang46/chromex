@@ -18,6 +18,8 @@ export interface PageWaitConditions {
   selectorGone?: string;
   /** substring that must appear in window.location.href */
   urlContains?: string;
+  /** minimum document.readyState — "interactive" | "complete" */
+  readyState?: string;
 }
 
 export interface PageWaitResult {
@@ -58,6 +60,13 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
     if (present) return false;
   }
   if (conds.urlContains && !window.location.href.includes(conds.urlContains)) return false;
+  if (conds.readyState) {
+    const order = ["loading", "interactive", "complete"];
+    const want = order.indexOf(conds.readyState);
+    const have = order.indexOf(document.readyState);
+    // unknown requested state can never be satisfied — fail closed
+    if (want < 0 || have < want) return false;
+  }
   return true;
 }
 
@@ -80,6 +89,7 @@ export async function waitForPageConditions(
     selector: typeof conds.selector === "string" ? conds.selector : "",
     selectorGone: typeof conds.selectorGone === "string" ? conds.selectorGone : "",
     urlContains: typeof conds.urlContains === "string" ? conds.urlContains : "",
+    readyState: typeof conds.readyState === "string" ? conds.readyState : "",
   };
   for (;;) {
     if (conditionsMet(normalized)) {
