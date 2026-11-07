@@ -69,7 +69,7 @@ export interface ToolHostDeps {
    *  → proto.unsupported (permission missing or listeners not installed). */
   listNetworkRequests?(
     tabId: number,
-    query: { limit: number; urlContains?: string; type?: string; status?: string },
+    query: { limit: number; urlContains?: string; type?: string; status?: string; frameId?: number },
   ): Array<{
     method?: string;
     url?: string;
@@ -77,6 +77,7 @@ export interface ToolHostDeps {
     status?: number;
     error?: string;
     mimeType?: string;
+    frameId?: number;
     ts?: number;
   }>;
   /** in-flight request count for a tab (browser.page.wait args.networkIdle)
@@ -142,6 +143,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.upload",
   "browser.page.drag",
   "browser.page.find",
+  "browser.page.network",
 ]);
 
 const SUPPORTED = new Set([
@@ -846,13 +848,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
       }
       case "browser.page.network": {
-        // Tab-scoped (requests span frames — frameId is rejected by the
-        // FRAME_SCOPED_TOOLS guard). Metadata only: status/mime/size,
-        // never response bodies.
+        // Requests span frames — args.frameId filters to requests a
+        // specific frame initiated (webRequest details.frameId).
+        // Metadata only: status/mime/size, never response bodies.
         if (!deps.listNetworkRequests) {
           throw toolError("proto.unsupported", "network log requires the webRequest permission");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const frameFilter = frameIdArg(args);
         const limit =
           typeof args.limit === "number" && Number.isFinite(args.limit)
             ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
@@ -868,6 +871,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(urlContains ? { urlContains } : {}),
           ...(type ? { type } : {}),
           ...(status ? { status } : {}),
+          // only filter when the caller asked — frameIdArg defaults to 0
+          // and an always-on filter would drop non-frame requests.
+          ...(args.frameId !== undefined && args.frameId !== null ? { frameId: frameFilter } : {}),
         });
         return {
           requests: (Array.isArray(entries) ? entries : []).map((e) => ({
@@ -877,6 +883,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             ...(typeof e.status === "number" ? { status: e.status } : {}),
             ...(e.error ? { error: e.error } : {}),
             ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+            ...(typeof e.frameId === "number" ? { frameId: e.frameId } : {}),
             ts: e.ts ?? 0,
           })),
           resolvedTabId: tabId,

@@ -27,6 +27,9 @@ export interface NetworkLogEntry {
   error?: string;
   /** response Content-Type header when present */
   mimeType?: string;
+  /** frame that initiated the request (webRequest details.frameId);
+   *  absent for non-frame requests */
+  frameId?: number;
   /** epoch ms */
   ts: number;
 }
@@ -128,6 +131,7 @@ function installNetworkLogInner(): void {
       type: details.type,
       status: details.statusCode,
       ...(mime ? { mimeType: mime } : {}),
+      ...(typeof details.frameId === "number" && details.frameId >= 0 ? { frameId: details.frameId } : {}),
       ts: Date.now(),
     });
   }, filters);
@@ -141,6 +145,7 @@ function installNetworkLogInner(): void {
       url: safeUrl(details.url),
       type: details.type,
       ...(details.error ? { error: details.error } : {}),
+      ...(typeof details.frameId === "number" && details.frameId >= 0 ? { frameId: details.frameId } : {}),
       ts: Date.now(),
     });
   }, filters);
@@ -155,6 +160,8 @@ export interface NetworkQuery {
   type?: string;
   /** "error" → only failed requests; "2xx"/"4xx"/"5xx" → status class */
   status?: string;
+  /** restrict to requests initiated by this frame (0 = top frame) */
+  frameId?: number;
 }
 
 /** Newest-first bounded slice of a tab's network log. */
@@ -166,6 +173,7 @@ export function listNetworkRequests(tabId: number, query: NetworkQuery): Network
     const e = buf[i]!;
     if (needle && !e.url.toLowerCase().includes(needle)) continue;
     if (query.type && e.type !== query.type) continue;
+    if (query.frameId !== undefined && e.frameId !== query.frameId) continue;
     if (query.status === "error" && !e.error) continue;
     if (/^[245]xx$/.test(query.status ?? "")) {
       const cls = `${Math.floor((e.status ?? 0) / 100)}xx`;

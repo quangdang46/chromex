@@ -450,6 +450,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       urlContains: { type: "string", description: "Only requests whose sanitized URL contains this substring." },
       type: { type: "string", description: "chrome.webRequest type filter, e.g. xhr, fetch, main_frame, document, image." },
       status: { type: "string", enum: ["error", "2xx", "4xx", "5xx"], description: "Filter: failed requests or an HTTP status class." },
+      frameId: FRAME_ID,
     }),
   },
   "browser.page.find": {

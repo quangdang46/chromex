@@ -454,8 +454,24 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.network", { status: "bogus" }))).rejects.toMatchObject({
       code: "proto.invalid",
     });
-    // requests span frames — frameId is meaningless here
-    await expect(h(req("browser.page.network", { frameId: 2 }))).rejects.toMatchObject({
+  });
+
+  test("page.network frameId filters requests to that frame", async () => {
+    const queries: Array<{ frameId?: number }> = [];
+    const d = deps({
+      listNetworkRequests: vi.fn((_tabId: number, q: { frameId?: number }) => {
+        queries.push(q);
+        return [{ method: "GET", url: "https://a.example/x", type: "fetch", frameId: 3, ts: 1 }];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.network", { frameId: 3 }))) as {
+      requests: Array<{ frameId?: number }>;
+    };
+    expect(queries[0]).toMatchObject({ frameId: 3 });
+    expect(res.requests[0]).toMatchObject({ frameId: 3 });
+    // invalid frameId still rejected
+    await expect(h(req("browser.page.network", { frameId: -1 }))).rejects.toMatchObject({
       code: "proto.invalid",
     });
   });
