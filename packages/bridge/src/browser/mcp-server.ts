@@ -206,13 +206,18 @@ const EXPECT_CONDITION: JsonSchema = {
     text: { type: "string", description: "Substring that must appear in the page's visible text." },
     urlContains: { type: "string", description: "Substring that must appear in the page URL." },
     goneSelector: { type: "string", description: "CSS selector that must match NO element after the action." },
+    readyState: {
+      type: "string",
+      enum: ["loading", "interactive", "complete"],
+      description: "document.readyState must reach at least this level.",
+    },
     timeoutMs: { type: "number", description: "Poll budget in ms — clamped host-side (default ~2000, max 5000)." },
   },
   additionalProperties: false,
 };
 
 const EXPECT_NOTE =
-  " Accepts args.expect — a post-action condition {selector?, text?, urlContains?, goneSelector?, timeoutMs?} polled briefly after dispatch; the result reports an honest verified verdict.";
+  " Accepts args.expect — a post-action condition {selector?, text?, urlContains?, goneSelector?, readyState?, timeoutMs?} polled briefly after dispatch; the result reports an honest verified verdict.";
 
 const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   "browser.tabs.list": {

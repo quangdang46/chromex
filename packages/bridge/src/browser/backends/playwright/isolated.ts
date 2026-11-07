@@ -514,6 +514,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const bodyText = await page.locator("body").innerText().catch(() => "");
       if (!bodyText.includes(cond.text)) return false;
     }
+    if (cond.readyState) {
+      const order = ["loading", "interactive", "complete"];
+      const want = order.indexOf(cond.readyState);
+      const have = order.indexOf(
+        await page.evaluate(() => document.readyState).catch(() => "loading"),
+      );
+      if (want < 0 || have < want) return false;
+    }
     return true;
   }
 
@@ -791,15 +799,20 @@ function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
   const text = str(o.text);
   const urlContains = str(o.urlContains);
   const goneSelector = str(o.goneSelector);
+  const readyState = str(o.readyState);
+  if (readyState !== undefined && !["loading", "interactive", "complete"].includes(readyState)) {
+    throw protocolError("proto.invalid", "args.expect.readyState must be loading|interactive|complete");
+  }
   const timeoutMs = typeof o.timeoutMs === "number" && Number.isFinite(o.timeoutMs) ? o.timeoutMs : undefined;
   const cond: BrowserExpectCondition = {
     ...(selector ? { selector } : {}),
     ...(text ? { text } : {}),
     ...(urlContains ? { urlContains } : {}),
     ...(goneSelector ? { goneSelector } : {}),
+    ...(readyState ? { readyState: readyState as BrowserExpectCondition["readyState"] } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
-  return cond.selector || cond.text || cond.urlContains || cond.goneSelector ? cond : null;
+  return cond.selector || cond.text || cond.urlContains || cond.goneSelector || cond.readyState ? cond : null;
 }
 
 function boundText(text: string, max: number): { text: string; truncated: boolean } {

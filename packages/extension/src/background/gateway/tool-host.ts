@@ -1001,6 +1001,10 @@ function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
   const text = str(o.text);
   const urlContains = str(o.urlContains);
   const goneSelector = str(o.goneSelector);
+  const readyState = str(o.readyState);
+  if (readyState !== undefined && !["loading", "interactive", "complete"].includes(readyState)) {
+    throw toolError("proto.invalid", "args.expect.readyState must be loading|interactive|complete");
+  }
   const timeoutMs =
     typeof o.timeoutMs === "number" && Number.isFinite(o.timeoutMs)
       ? Math.min(Math.max(Math.floor(o.timeoutMs), 0), EXPECT_MAX_TIMEOUT_MS)
@@ -1010,9 +1014,10 @@ function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
     ...(text ? { text } : {}),
     ...(urlContains ? { urlContains } : {}),
     ...(goneSelector ? { goneSelector } : {}),
+    ...(readyState ? { readyState: readyState as BrowserExpectCondition["readyState"] } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
-  return cond.selector || cond.text || cond.urlContains || cond.goneSelector ? cond : null;
+  return cond.selector || cond.text || cond.urlContains || cond.goneSelector || cond.readyState ? cond : null;
 }
 
 /** Poll the content script for the expect conditions via page.dom.wait.
@@ -1033,6 +1038,7 @@ async function runExpectCondition(
       ...(cond.text ? { text: cond.text } : {}),
       ...(cond.urlContains ? { urlContains: cond.urlContains } : {}),
       ...(cond.goneSelector ? { selectorGone: cond.goneSelector } : {}),
+      ...(cond.readyState ? { readyState: cond.readyState } : {}),
       timeoutMs,
     }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number };
     if (res?.ok === true) return { met: true, elapsedMs: res.elapsedMs ?? 0 };

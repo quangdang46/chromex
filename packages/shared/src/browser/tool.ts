@@ -102,6 +102,8 @@ export interface BrowserExpectCondition {
   urlContains?: string;
   /** CSS selector that must match NO element after the action */
   goneSelector?: string;
+  /** document.readyState must reach at least this level */
+  readyState?: "loading" | "interactive" | "complete";
   /** poll budget in ms — clamped host-side (default ~2s, max 5s) */
   timeoutMs?: number;
 }
