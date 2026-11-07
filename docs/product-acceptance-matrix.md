@@ -55,7 +55,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   server-side + honest-failure check); runs in `run-all` without a token.
   `agent-loop-mcp-isolated` PASS — same loop through the real MCP path:
   JSON-RPC tools/call → scope allowlist + untrusted fencing → tool
-  server (token verify, §4.8 classify + approval) → backend → Chromium
+  server (token verify, §4.8 classify + approval) → backend → Chromium.
+  `content-script-isolated` PASS — the real bundled content.js injected
+  into headless Chromium behind a chrome.* stub, driven via the actual
+  runtime.onMessage API: snapshot refs, pointer-sequence actions,
+  per-char type, DataTransfer upload/drag, wait conditions, honest
+  failure on hidden targets (19 asserts)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)
