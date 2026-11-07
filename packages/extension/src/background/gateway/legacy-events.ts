@@ -97,7 +97,20 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
     case "turn.unknown":
       return { type: "turn.failed", ...base, error: "turn outcome unknown after restart" };
     case "permission.requested": {
-      const req = payload.request;
+      const req = payload.request as
+        | { requestId?: string; kind?: string; details?: { argsPreview?: { questions?: unknown[] } } }
+        | undefined;
+      const questions = req?.details?.argsPreview?.questions;
+      if (req?.kind === "provider_permission" && Array.isArray(questions) && questions.length > 0) {
+        // legacy UI renders provider questions via plan.user_input.*
+        return {
+          type: "plan.user_input.requested",
+          ...base,
+          requestId: req.requestId ?? "",
+          itemId: `perm-${req.requestId ?? ""}`,
+          questions,
+        };
+      }
       return {
         type: "permission.requested",
         ...base,
@@ -107,9 +120,8 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
     }
     case "permission.resolved":
       return {
-        type: "permission.resolved",
+        type: "plan.user_input.resolved",
         requestId: (payload as { requestId?: string }).requestId ?? "",
-        decision: payload.decision,
       };
     case "tool.started":
       return { type: "tool.started", ...base, toolCallId: payload.toolCallId, tool: payload.tool };

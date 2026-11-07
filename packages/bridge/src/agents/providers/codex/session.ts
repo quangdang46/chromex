@@ -251,8 +251,14 @@ export class CodexAgentSession implements AgentSession {
     if (!pending) return {};
     this.pendingPermissions.delete(requestId);
     const answers: Record<string, { answers: string[] }> = {};
+    // compat path may pass an option label where an id is expected —
+    // resolve either, then answer with the canonical option id.
+    const option =
+      pending.request.options.find((o) => o.id === response.optionId) ??
+      pending.request.options.find((o) => o.label === response.optionId);
+    const answerValue = option?.id ?? response.optionId;
     for (const qid of pending.questionIds) {
-      answers[qid] = { answers: [response.optionId] };
+      answers[qid] = { answers: [answerValue] };
     }
     pending.resolve({ answers });
     for (const l of this.listeners) {
@@ -340,7 +346,7 @@ export class CodexAgentSession implements AgentSession {
       actionDigest: "",
       details: {
         tool: "requestUserInput",
-        argsPreview: { questionCount: questions.length },
+        argsPreview: { questionCount: questions.length, questions },
         origin: "provider",
       },
       options: questions.flatMap((q) =>

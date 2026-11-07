@@ -46,6 +46,17 @@ describe("gatewayEventToLegacy", () => {
     }));
     expect(req).toMatchObject({ type: "permission.requested", requestId: "r1", threadId: "t1" });
     const res = gatewayEventToLegacy(durable("t1", "permission.resolved", { requestId: "r1", decision: { kind: "allow" } }));
-    expect(res).toMatchObject({ type: "permission.resolved", requestId: "r1" });
+    expect(res).toMatchObject({ type: "plan.user_input.resolved", requestId: "r1" });
+  });
+  it("provider_permission with questions → plan.user_input.requested", () => {
+    const questions = [{ id: "q1", header: "H", question: "Pick one", options: [{ label: "A" }] }];
+    const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
+      turnId: "g1",
+      request: { requestId: "r9", kind: "provider_permission", details: { argsPreview: { questions } } },
+    }));
+    expect(out).toMatchObject({
+      type: "plan.user_input.requested", requestId: "r9", threadId: "t1", turnId: "g1",
+    });
+    expect((out as { questions?: unknown[] }).questions).toEqual(questions);
   });
 });
