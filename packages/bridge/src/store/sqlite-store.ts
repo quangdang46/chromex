@@ -19,6 +19,7 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import type { GatewayDb } from "./db.js";
+import { buildSnapshotFromSource } from "./snapshot-builder.js";
 
 // ---------- row mapping ----------
 
@@ -492,35 +493,127 @@ export class SQLiteStore {
     return row ? parseInt(row.value, 10) : 0;
   }
 
+  /** §4.6 self-sufficient snapshot rebuilt from the durable event
+   *  stream — user prompts, assistant finals, tool calls, permissions. */
   buildTaskSnapshot(taskId: string): TaskSnapshot | null {
     const task = this.getTask(taskId);
     if (!task) return null;
-    return {
-      storage: { kind: "inline" },
+    const events = this.allTaskEvents(taskId);
+    const approvals = this.listApprovals(taskId);
+    const archived = this.tasksForRetention().find((t) => t.taskId === taskId)?.archived === true;
+    // §5.5: when events were pruned, the checkpoint snapshot carries the
+    // deleted range — merge it with retained events or the snapshot
+    // would silently lose user/assistant history.
+    const checkpoint = this.getTaskSnapshotCheckpoint(taskId);
+    return buildSnapshotFromSource({
       task,
-      conversation: {
-        sessionKey: task.conversationKey,
-        provider: task.providerId,
-        persistence: null,
-        state: "closed",
-      },
-      turns: this.listTurns(taskId).map((t) => ({
-        turnId: t.turnId,
-        status: t.status,
-        clientMessageId: t.clientMessageId,
-        createdAt: t.createdAt,
-        ...(t.queuedAt !== undefined ? { queuedAt: t.queuedAt } : {}),
-        startedAt: t.startedAt,
-        ...(t.endedAt !== undefined && t.endedAt !== null ? { endedAt: t.endedAt } : {}),
-        ...(t.stopReason ? { stopReason: t.stopReason } : {}),
-      })),
-      userMessages: [],
-      assistantMessages: [],
-      toolCalls: [],
-      permissions: [],
-      lastSeq: this.lastTaskSeq(taskId),
-      rebuiltFrom: "event_log",
-    };
+      turns: this.listTurns(taskId),
+      events,
+      approvals,
+      rebuiltFrom: archived ? "archived_snapshot" : "event_log",
+      ...(checkpoint && checkpoint.snapshot.storage.kind === "inline"
+        ? {
+            checkpointThroughSeq: checkpoint.throughSeq,
+            base: checkpoint.snapshot as import("@codex-sidepanel/shared").InlineTaskSnapshot,
+          }
+        : {}),
+    });
+  }
+
+  /** All durable task-stream envelopes, ascending seq (snapshot/prune). */
+  allTaskEvents(taskId: string): DurableTaskEventEnvelope[] {
+    const out: DurableTaskEventEnvelope[] = [];
+    let fromSeq = 0;
+    for (;;) {
+      const page = this.taskEventsAfter(taskId, fromSeq, 1000);
+      out.push(...page.events);
+      if (!page.hasMore) break;
+      fromSeq = page.nextSeq;
+    }
+    return out;
+  }
+
+  /** Approval rows for snapshot rebuild — request + decision + status. */
+  listApprovals(taskId: string): Array<{
+    request: unknown;
+    decision: { optionId: string; kind: string; decidedAt: number } | null;
+    status: string;
+    createdAt: number;
+  }> {
+    const rows = this.db
+      .prepare(
+        "SELECT request_json, decision_json, status, created_at FROM approvals WHERE task_id = ? ORDER BY created_at",
+      )
+      .all(taskId) as Array<{
+        request_json: string;
+        decision_json: string | null;
+        status: string;
+        created_at: number;
+      }>;
+    return rows.map((r) => ({
+      request: JSON.parse(r.request_json),
+      decision: r.decision_json ? JSON.parse(r.decision_json) : null,
+      status: r.status,
+      createdAt: r.created_at,
+    }));
+  }
+
+  // ---- snapshot checkpoints + event pruning (§5.5, P1-11) ----
+
+  getTaskSnapshotCheckpoint(taskId: string): { throughSeq: number; snapshot: TaskSnapshot } | null {
+    const row = this.db
+      .prepare("SELECT value FROM gateway_state WHERE key = ?")
+      .get(`task.snapshot.${taskId}`) as { value: string } | undefined;
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(row.value) as { throughSeq?: number; snapshot?: TaskSnapshot };
+      if (typeof parsed.throughSeq !== "number" || !parsed.snapshot) return null;
+      return { throughSeq: parsed.throughSeq, snapshot: parsed.snapshot };
+    } catch {
+      return null;
+    }
+  }
+
+  putTaskSnapshotCheckpoint(taskId: string, throughSeq: number, snapshot: TaskSnapshot): void {
+    this.#guard();
+    this.db
+      .prepare(
+        `INSERT INTO gateway_state (key, value, updated_at) VALUES (?,?,?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+      )
+      .run(`task.snapshot.${taskId}`, JSON.stringify({ throughSeq, snapshot }), Date.now());
+  }
+
+  /** Delete specific task-stream seqs — caller MUST have a snapshot
+   *  checkpoint covering them first (planEventPrune enforces). */
+  deleteTaskEvents(taskId: string, seqs: number[]): number {
+    if (seqs.length === 0) return 0;
+    this.#guard();
+    const stmt = this.db.prepare(
+      "DELETE FROM events WHERE stream='task' AND task_id=? AND seq=?",
+    );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      let n = 0;
+      for (const seq of seqs) n += Number(stmt.run(taskId, seq).changes);
+      this.db.exec("COMMIT");
+      return n;
+    } catch (err) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    }
+  }
+
+  /** Mark the earliest retained event as a milestone — the seq at which
+   *  replay + snapshot checkpoint reconstruct full state (§5.5). */
+  markTaskEventMilestone(taskId: string, seq: number): void {
+    this.db
+      .prepare("UPDATE events SET milestone=1 WHERE stream='task' AND task_id=? AND seq=?")
+      .run(taskId, seq);
   }
 
   // ---- approvals / artifacts / provider_state (minimal DAO) ----
@@ -685,6 +778,57 @@ export class SQLiteStore {
         /* best-effort: orphaned artifact file is logged by caller sweep */
       });
     }
+  }
+
+  /** §5.5 approval retention: resolved approvals deleted once the task
+   *  has been terminal > APPROVAL_POST_TERMINAL_MS (updated_at is the
+   *  terminal timestamp proxy — tasks are not updated post-terminal
+   *  except by archive marking, which only makes them older). */
+  sweepResolvedApprovals(olderThanMs: number): number {
+    this.#guard();
+    const res = this.db
+      .prepare(
+        `DELETE FROM approvals WHERE status != 'pending' AND task_id IN (
+           SELECT task_id FROM tasks
+           WHERE status IN ('completed','failed','cancelled') AND updated_at < ?
+         )`,
+      )
+      .run(olderThanMs);
+    return Number(res.changes);
+  }
+
+  /** §5.5 artifact TTL: delete artifact rows + files for tasks terminal
+   *  > ARTIFACT_TTL_MS. File deletion is best-effort. */
+  async sweepExpiredArtifacts(olderThanMs: number): Promise<{ rows: number; filesDeleted: number }> {
+    this.#guard();
+    const rows = this.db
+      .prepare(
+        `SELECT artifact_id, path FROM artifacts WHERE task_id IN (
+           SELECT task_id FROM tasks
+           WHERE status IN ('completed','failed','cancelled') AND updated_at < ?
+         )`,
+      )
+      .all(olderThanMs) as Array<{ artifact_id: string; path: string | null }>;
+    let filesDeleted = 0;
+    for (const r of rows) {
+      if (r.path) {
+        try {
+          await fs.promises.unlink(r.path);
+          filesDeleted += 1;
+        } catch {
+          /* best-effort — logged by caller via counts */
+        }
+      }
+    }
+    const res = this.db
+      .prepare(
+        `DELETE FROM artifacts WHERE task_id IN (
+           SELECT task_id FROM tasks
+           WHERE status IN ('completed','failed','cancelled') AND updated_at < ?
+         )`,
+      )
+      .run(olderThanMs);
+    return { rows: Number(res.changes), filesDeleted };
   }
 
   close(): void {

@@ -16,6 +16,7 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import type { TaskRecord, TurnRecord } from "@codex-sidepanel/shared";
+import { buildSnapshotFromSource } from "../store/snapshot-builder.js";
 
 export interface MemoryStoreStats {
   tasks: number;
@@ -168,14 +169,50 @@ export class InMemoryStore {
 
   // ---- approvals (in-memory mirror of the SQLite DAO) ----
 
-  private approvals = new Map<string, { taskId: string; status: string }>();
+  private approvals = new Map<
+    string,
+    {
+      taskId: string;
+      status: string;
+      request?: unknown;
+      decision?: { optionId: string; kind: string; decidedAt: number } | null;
+      createdAt?: number;
+    }
+  >();
 
   insertApproval(row: {
     approvalId: string;
     taskId: string;
+    turnId?: string;
+    request?: unknown;
+    actionDigest?: string;
     status: "pending" | "allowed" | "denied" | "expired";
+    createdAt?: number;
   }): void {
-    this.approvals.set(row.approvalId, { taskId: row.taskId, status: row.status });
+    this.approvals.set(row.approvalId, {
+      taskId: row.taskId,
+      status: row.status,
+      ...(row.request !== undefined ? { request: row.request } : {}),
+      decision: null,
+      ...(row.createdAt !== undefined ? { createdAt: row.createdAt } : {}),
+    });
+  }
+
+  /** Approval rows for snapshot rebuild (mirror of SQLiteStore.listApprovals). */
+  listApprovals(taskId: string): Array<{
+    request: unknown;
+    decision: { optionId: string; kind: string; decidedAt: number } | null;
+    status: string;
+    createdAt: number;
+  }> {
+    return [...this.approvals.entries()]
+      .filter(([, a]) => a.taskId === taskId)
+      .map(([approvalId, a]) => ({
+        request: a.request ?? { requestId: approvalId },
+        decision: a.decision ?? null,
+        status: a.status,
+        createdAt: a.createdAt ?? 0,
+      }));
   }
 
   listPendingApprovals(taskId: string): unknown[] {
@@ -200,36 +237,61 @@ export class InMemoryStore {
     if (a && a.status === "pending") a.status = status;
   }
 
-  /** Minimal inline snapshot — P1-02 fills conversation/messages/toolCalls. */
+  /** §4.6 self-sufficient snapshot rebuilt from the durable event
+   *  stream — same builder as SQLiteStore for identical output. */
   buildTaskSnapshot(taskId: string): TaskSnapshot | null {
     const task = this.tasks.get(taskId);
     if (!task) return null;
-    return {
-      storage: { kind: "inline" },
+    const checkpoint = this.getTaskSnapshotCheckpoint(taskId);
+    return buildSnapshotFromSource({
       task,
-      conversation: {
-        sessionKey: task.conversationKey,
-        provider: task.providerId,
-        persistence: null,
-        state: "closed",
-      },
-      turns: this.listTurns(taskId).map((t) => ({
-        turnId: t.turnId,
-        status: t.status,
-        clientMessageId: t.clientMessageId,
-        createdAt: t.createdAt,
-        ...(t.queuedAt !== undefined ? { queuedAt: t.queuedAt } : {}),
-        startedAt: t.startedAt,
-        ...(t.endedAt !== undefined && t.endedAt !== null ? { endedAt: t.endedAt } : {}),
-        ...(t.stopReason ? { stopReason: t.stopReason } : {}),
-      })),
-      userMessages: [],
-      assistantMessages: [],
-      toolCalls: [],
-      permissions: [],
-      lastSeq: this.lastTaskSeq(taskId),
-      rebuiltFrom: "event_log",
-    };
+      turns: this.listTurns(taskId),
+      events: this.allTaskEvents(taskId),
+      approvals: this.listApprovals(taskId),
+      rebuiltFrom: task.archived === true ? "archived_snapshot" : "event_log",
+      ...(checkpoint && checkpoint.snapshot.storage.kind === "inline"
+        ? {
+            checkpointThroughSeq: checkpoint.throughSeq,
+            base: checkpoint.snapshot as import("@codex-sidepanel/shared").InlineTaskSnapshot,
+          }
+        : {}),
+    });
+  }
+
+  /** All durable task-stream envelopes, ascending seq. */
+  allTaskEvents(taskId: string): DurableTaskEventEnvelope[] {
+    return this.taskEvents.get(taskId) ?? [];
+  }
+
+  // ---- snapshot checkpoints + event pruning (mirror of SQLite) ----
+
+  private snapshotCheckpoints = new Map<string, { throughSeq: number; snapshot: TaskSnapshot }>();
+
+  getTaskSnapshotCheckpoint(taskId: string): { throughSeq: number; snapshot: TaskSnapshot } | null {
+    return this.snapshotCheckpoints.get(taskId) ?? null;
+  }
+
+  putTaskSnapshotCheckpoint(taskId: string, throughSeq: number, snapshot: TaskSnapshot): void {
+    this.snapshotCheckpoints.set(taskId, { throughSeq, snapshot });
+  }
+
+  deleteTaskEvents(taskId: string, seqs: number[]): number {
+    const drop = new Set(seqs);
+    const log = this.taskEvents.get(taskId) ?? [];
+    const kept = log.filter((e) => !drop.has(e.seq));
+    const removed = log.length - kept.length;
+    this.taskEvents.set(taskId, kept);
+    return removed;
+  }
+
+  markTaskEventMilestone(taskId: string, seq: number): void {
+    const log = this.taskEvents.get(taskId) ?? [];
+    for (const e of log) {
+      if (e.seq === seq) {
+        (e as { milestone?: number }).milestone = 1;
+        break;
+      }
+    }
   }
 
   setTaskArchived(taskId: string, archived: boolean): void {
@@ -256,6 +318,7 @@ export class InMemoryStore {
     for (const [id, t] of this.turns) if (t.taskId === taskId) this.turns.delete(id);
     this.taskEvents.delete(taskId);
     this.taskSeq.delete(taskId);
+    this.snapshotCheckpoints.delete(taskId);
     for (const [id, a] of this.approvals) if (a.taskId === taskId) this.approvals.delete(id);
   }
 

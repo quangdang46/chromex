@@ -57,6 +57,8 @@ import { openGatewayDb, runIntegrityChecks } from "../store/db.js";
 import { SQLiteStore } from "../store/sqlite-store.js";
 import { runRecoveryScan } from "../store/recovery.js";
 import { runRetentionSweep } from "../store/retention.js";
+import { runPruneSweep } from "./prune.js";
+import { APPROVAL_POST_TERMINAL_MS, ARTIFACT_TTL_MS } from "../store/retention.js";
 import type { GatewayDb } from "../store/db.js";
 import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
 import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
@@ -308,14 +310,35 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     await ipc.writeTokenFile();
     await ipc.listen();
 
-    // §5.5 retention sweep: archive terminal tasks past retentionDays.
-    // Idempotent; runs once per gateway start (no timer yet — P1-11
-    // follow-up may add periodic sweep).
+    // §5.5 retention sweep: archive terminal tasks past retentionDays,
+    // then checkpoint+prune unprotected events (P1-11). Idempotent;
+    // runs once per gateway start (periodic sweep is follow-up).
     try {
       const archivedIds = runRetentionSweep(store as never);
       if (archivedIds.length > 0) log(`retention sweep archived ${archivedIds.length} task(s)`);
+      const pruned = runPruneSweep(store as never);
+      if (pruned.eventsDeleted > 0 || pruned.checkpointsWritten > 0) {
+        log(
+          `prune sweep: ${pruned.eventsDeleted} events deleted, ` +
+            `${pruned.checkpointsWritten} checkpoints, ${pruned.milestones.length} milestones`,
+        );
+      }
+      // §5.5 approval + artifact TTL sweeps (SQLite store only —
+      // in-memory has nothing durable to expire).
+      const s = store as {
+        sweepResolvedApprovals?: (ms: number) => number;
+        sweepExpiredArtifacts?: (ms: number) => Promise<{ rows: number; filesDeleted: number }>;
+      };
+      if (s.sweepResolvedApprovals) {
+        const n = s.sweepResolvedApprovals(Date.now() - APPROVAL_POST_TERMINAL_MS);
+        if (n > 0) log(`approval sweep removed ${n} resolved approval(s)`);
+      }
+      if (s.sweepExpiredArtifacts) {
+        const a = await s.sweepExpiredArtifacts(Date.now() - ARTIFACT_TTL_MS);
+        if (a.rows > 0) log(`artifact sweep removed ${a.rows} row(s), ${a.filesDeleted} file(s)`);
+      }
     } catch (err) {
-      log(`retention sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      log(`retention/prune sweep failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // recovery runs before ready (P1-02 wires real recovery); in-memory
