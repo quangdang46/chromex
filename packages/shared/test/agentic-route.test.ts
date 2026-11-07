@@ -1213,4 +1213,118 @@ describe("agentic route plan normalization", () => {
 
     expect(plan.selectedProfileId).toBe("custom-product-manager");
   });
+  test("browserPolicyV2: model cannot select engine — mode derived deterministically", () => {
+    const plan = normalizeAgenticRoutePlan(
+      {
+        source: "llm",
+        task: "general",
+        contextRequests: [],
+        intent: {
+          summary: "Run a separate browser automation workflow.",
+          action: "navigate",
+          target: "current-page",
+          constraints: [],
+          needsClarification: false,
+        },
+        browserControl: {
+          shouldControl: true,
+          mode: "computer-use",
+          fallbackMode: "playwright",
+          surface: "new-tab",
+          reason: "Model tried to pick computer-use.",
+        },
+        confidence: 0.7,
+      },
+      {
+        ...input,
+        message: "research this in a separate browser",
+        browserPolicyV2: true,
+        browserAutomationCapabilities: {
+          dom: true,
+          playwright: true,
+          "computer-use": true,
+        },
+      },
+    );
+
+    // new-tab + playwright available → deterministic playwright; computer-use
+    // and fallbackMode from the model are discarded.
+    expect(plan.browserControl.mode).toBe("playwright");
+    expect(plan.browserControl.surface).toBe("new-tab");
+    expect(plan.browserControl.fallbackMode).toBeUndefined();
+  });
+
+  test("browserPolicyV2: active-tab control is always dom regardless of model mode", () => {
+    const plan = normalizeAgenticRoutePlan(
+      {
+        source: "llm",
+        task: "general",
+        contextRequests: [],
+        intent: {
+          summary: "Click a button on the current page.",
+          action: "navigate",
+          target: "current-page",
+          constraints: [],
+          needsClarification: false,
+        },
+        browserControl: {
+          shouldControl: true,
+          mode: "playwright",
+          surface: "active-tab",
+          reason: "Model asked for playwright on active tab.",
+        },
+        confidence: 0.7,
+      },
+      {
+        ...input,
+        message: "click the button",
+        browserPolicyV2: true,
+        browserAutomationCapabilities: {
+          dom: true,
+          playwright: true,
+          "computer-use": true,
+        },
+      },
+    );
+
+    expect(plan.browserControl.mode).toBe("dom");
+    expect(plan.browserControl.surface).toBe("active-tab");
+  });
+
+  test("browserPolicyV2: new-tab falls back to dom when playwright unavailable", () => {
+    const plan = normalizeAgenticRoutePlan(
+      {
+        source: "llm",
+        task: "general",
+        contextRequests: [],
+        intent: {
+          summary: "Separate browser workflow.",
+          action: "navigate",
+          target: "current-page",
+          constraints: [],
+          needsClarification: false,
+        },
+        browserControl: {
+          shouldControl: true,
+          mode: "playwright",
+          surface: "new-tab",
+          reason: "Separate workflow.",
+        },
+        confidence: 0.7,
+      },
+      {
+        ...input,
+        message: "separate browser workflow",
+        browserPolicyV2: true,
+        browserAutomationCapabilities: {
+          dom: true,
+          playwright: false,
+          "computer-use": false,
+        },
+      },
+    );
+
+    expect(plan.browserControl.mode).toBe("dom");
+    expect(plan.browserControl.surface).toBe("new-tab");
+  });
 });

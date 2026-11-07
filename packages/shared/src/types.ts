@@ -515,6 +515,14 @@ export interface AgenticRouteInput {
     restricted?: boolean;
   };
   browserAutomationCapabilities?: Partial<Record<BrowserAutomationMode, boolean>>;
+  /**
+   * Plan §6.6/P0-03: when true, the route planner may NOT choose the
+   * execution engine/backend — mode/fallbackMode in model output are
+   * ignored and derived deterministically (active-tab→dom, new-tab→
+   * playwright only when capability-available). Default off until PR-A
+   * regression tests pass.
+   */
+  browserPolicyV2?: boolean;
 }
 
 export type BrowserDomActionKind = "click" | "fill" | "select" | "scroll" | "focus" | "submit" | "navigate";

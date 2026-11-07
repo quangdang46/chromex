@@ -379,19 +379,42 @@ function normalizeBrowserControl(
     : typeof raw.shouldControl === "boolean"
       ? raw.shouldControl
       : defaultShouldControl;
-  const requestedMode = BROWSER_AUTOMATION_MODES.has(raw.mode as BrowserAutomationMode)
-    ? (raw.mode as BrowserAutomationMode)
-    : "dom";
-  const requestedFallbackMode = BROWSER_AUTOMATION_MODES.has(raw.fallbackMode as BrowserAutomationMode)
-    ? (raw.fallbackMode as BrowserAutomationMode)
-    : undefined;
-  const surface = BROWSER_CONTROL_SURFACES.has(raw.surface as BrowserControlSurface)
+  // P0-03 / plan §6.6: under browserPolicyV2 the model has no API to pick
+  // the engine. Mode is derived deterministically from surface +
+  // availability; fallbackMode and computer-use are never model-chosen.
+  const policyV2 = input.browserPolicyV2 === true;
+  const rawSurface = BROWSER_CONTROL_SURFACES.has(raw.surface as BrowserControlSurface)
     ? (raw.surface as BrowserControlSurface)
-    : defaultShouldControl
-      ? "active-tab"
-      : requestedMode === "playwright" || requestedFallbackMode === "playwright"
-        ? "new-tab"
-        : "active-tab";
+    : undefined;
+  const surface = policyV2
+    ? rawSurface ??
+      (defaultShouldControl ||
+      (typeof raw.shouldControl === "boolean" ? raw.shouldControl : defaultShouldControl)
+        ? "active-tab"
+        : "new-tab")
+    : rawSurface ??
+      (defaultShouldControl
+        ? "active-tab"
+        : BROWSER_AUTOMATION_MODES.has(raw.mode as BrowserAutomationMode) &&
+            (raw.mode === "playwright" ||
+              (BROWSER_AUTOMATION_MODES.has(raw.fallbackMode as BrowserAutomationMode) &&
+                raw.fallbackMode === "playwright"))
+          ? "new-tab"
+          : "active-tab");
+  const deterministicMode =
+    surface === "new-tab" && isBrowserAutomationModeAvailable("playwright", input)
+      ? "playwright"
+      : "dom";
+  const requestedMode = policyV2
+    ? deterministicMode
+    : BROWSER_AUTOMATION_MODES.has(raw.mode as BrowserAutomationMode)
+      ? (raw.mode as BrowserAutomationMode)
+      : deterministicMode;
+  const requestedFallbackMode = policyV2
+    ? undefined
+    : BROWSER_AUTOMATION_MODES.has(raw.fallbackMode as BrowserAutomationMode)
+      ? (raw.fallbackMode as BrowserAutomationMode)
+      : undefined;
   const forceCurrentPageDom =
     defaultShouldControl &&
     (shouldControl || shouldDeferBrowserAction) &&

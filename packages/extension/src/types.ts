@@ -211,6 +211,7 @@ export interface ExtensionSettings {
   imagePromptHoverButtonEnabled: boolean;
   planModeEnabled: boolean;
   playwrightBrowserControlEnabled: boolean;
+  browserPolicyV2: boolean;
   preferredVoice: string;
   voiceInputAudioSource: VoiceInputAudioSource;
   workspaceRoot: string;

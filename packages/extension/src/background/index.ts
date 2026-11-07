@@ -2045,6 +2045,7 @@ function createAgenticRouteInput(
       playwright: state.playwrightRuntime.available && settings.playwrightBrowserControlEnabled,
       "computer-use": false,
     },
+    browserPolicyV2: settings.browserPolicyV2,
     activeTab: activeTab
       ? {
           ...(activeTab.title ? { title: activeTab.title } : {}),

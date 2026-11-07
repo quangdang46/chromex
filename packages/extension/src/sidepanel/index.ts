@@ -922,6 +922,7 @@ const state = {
     imagePromptHoverButtonEnabled: true,
     planModeEnabled: false,
     playwrightBrowserControlEnabled: false,
+    browserPolicyV2: false,
     preferredVoice: "",
     voiceInputAudioSource: "microphone",
     workspaceRoot: "",

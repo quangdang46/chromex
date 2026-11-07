@@ -52,6 +52,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   imagePromptHoverButtonEnabled: true,
   planModeEnabled: false,
   playwrightBrowserControlEnabled: false,
+  browserPolicyV2: false,
   preferredVoice: "",
   voiceInputAudioSource: "microphone",
   workspaceRoot: "",
@@ -104,6 +105,7 @@ export async function updateStoredSettings(patch: Partial<ExtensionSettings>): P
     imagePromptHoverButtonEnabled: (patch.imagePromptHoverButtonEnabled ?? current.imagePromptHoverButtonEnabled) !== false,
     planModeEnabled: (patch.planModeEnabled ?? current.planModeEnabled) === true,
     playwrightBrowserControlEnabled: (patch.playwrightBrowserControlEnabled ?? current.playwrightBrowserControlEnabled) === true,
+    browserPolicyV2: (patch.browserPolicyV2 ?? current.browserPolicyV2) === true,
     enabledCodexSkillIds: normalizeEnabledCodexSkillIds(
       patch.enabledCodexSkillIds ?? current.enabledCodexSkillIds,
     ),
