@@ -30,15 +30,15 @@ not sufficient.
 | Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | live-verify pending (frg) |
 | Provider abstraction codex/claude/acp | bridge agents | ✅ built | live ACP creds blocked (436) |
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
-| Tab lifecycle: list/activate/close | ext tool-host | ✅ 3 tools | **no tab.create/open** — agent cannot open new tabs |
-| Page observation: snapshot/get/extract/screenshot | ext tool-host + content | ✅ | no console logs, no network, no a11y tree option, iframe=none |
-| Page interaction: click/focus/type/fill/select/submit/scroll/wait/navigate/upload | ext tool-host + content | ✅ 10 tools | no hover/press-key/drag, dialogs unhandled, download capture missing |
+| Tab lifecycle: list/create/activate/close | ext tool-host | ✅ 4 tools (07cf2e4) | lifecycle completeness edge cases |
+| Page observation: snapshot/get/extract/screenshot/console | ext tool-host + content | ✅ console landed (07cf2e4) | no network, no a11y tree option, iframe=none, screenshot→image wiring (22wi) |
+| Page interaction: click/focus/type/fill/select/submit/scroll/navigate/wait/upload/hover/press | ext tool-host + content | ✅ 12 tools (07cf2e4) | conditional wait/history/find/upload-bytes/downloads in flight; dialogs need debugger decision (d7v) |
 | Browser↔MCP tool surface for providers | bridge mcp-server + session-manager | ✅ wired per task | verify providers actually iterate tool calls E2E |
 | Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
 | Browser↔code feedback loop | composition | ⚠️ architecture only | **no E2E proof** — S1/S2 blocked on this |
-| Prompt-injection defense | page content → agent boundary | ⚠️ partial | audit needed: page text must be data, not instructions |
+| Prompt-injection defense | page content → agent boundary | ✅ fenced (af60f2b, cd3cf46) | envelope + label-defuse + planner marking; action-side cross-check deferred |
 | Permission/audit/revoke | approvals + tool tokens | ✅ built | live-verify (S7) |
-| UX: timeline/approvals/questions/elapsed | sidepanel | ✅ recent work | deliverable/evidence view (S8) |
+| UX: timeline/approvals/questions/elapsed/deliverable | sidepanel | ✅ deliverable card (9cbdcb7) | approval-card-for-all-kinds + verified badge + rebuild notice in flight |
 | Backend capability honesty | shared backend.ts | ✅ truthful | update as capabilities land |
 
 ## Workstream beads (this matrix)
