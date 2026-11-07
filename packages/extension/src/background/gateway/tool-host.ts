@@ -1063,12 +1063,24 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       const clickModifiers = Array.isArray(args.modifiers)
         ? args.modifiers.filter((m): m is string => typeof m === "string")
         : undefined;
+      const x = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+      const y = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+      if ((x === undefined) !== (y === undefined)) {
+        throw toolError("proto.invalid", "browser.page.click args.x and args.y must be provided together");
+      }
+      if (x !== undefined && (x < 0 || y! < 0)) {
+        throw toolError("proto.invalid", "browser.page.click coordinates must be non-negative viewport pixels");
+      }
+      if (x !== undefined && (str(args.ref) || str(args.selector) || str(args.label))) {
+        throw toolError("proto.invalid", "browser.page.click accepts coordinates or an element target, not both");
+      }
       return {
         ...base,
         action: "click",
         ...(button && button !== "left" ? { button } : {}),
         ...(clickCount === 2 ? { clickCount: 2 } : {}),
         ...(clickModifiers && clickModifiers.length > 0 ? { modifiers: clickModifiers } : {}),
+        ...(x !== undefined ? { x, y: y! } : {}),
       };
     }
     case "browser.page.focus":

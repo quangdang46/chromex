@@ -478,4 +478,34 @@ describe("PlaywrightIsolatedBackend expect verification (chromex-0fza)", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
     expect(clicks).toBe(1); // malformed expect never dispatched
   });
+
+  test("coordinate click → page.mouse.click; mixing coords+target rejected", async () => {
+    const mouseCalls: Array<Record<string, unknown>> = [];
+    const page = {
+      url: () => "https://x.example/",
+      mouse: {
+        click: async (x: number, y: number, opts: Record<string, unknown>) => {
+          mouseCalls.push({ x, y, ...opts });
+        },
+      },
+      keyboard: { down: async () => {}, up: async () => {}, press: async () => {} },
+      locator: () => ({ first: () => ({}) }),
+      waitForTimeout: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.click", {
+      x: 100, y: 200, button: "right", clickCount: 2,
+    })) as { clicked: boolean; x: number; y: number };
+    expect(res).toMatchObject({ clicked: true, x: 100, y: 200 });
+    expect(mouseCalls).toEqual([{ x: 100, y: 200, button: "right", clickCount: 2 }]);
+    await expect(
+      backend.execute("t1", "browser.page.click", { x: 1 }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      backend.execute("t1", "browser.page.click", { x: 1, y: 2, selector: ".a" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(mouseCalls).toHaveLength(1); // rejected calls never dispatched
+  });
 });

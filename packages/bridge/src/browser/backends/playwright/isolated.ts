@@ -450,6 +450,54 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       return { pressed: key };
     }
+    // Coordinate click — canvas/WebGL/map surfaces have no DOM target.
+    // page.mouse.click hit-tests exactly like a real pointer.
+    if (tool === "browser.page.click") {
+      const x = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+      const y = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+      if (x === undefined && y === undefined) {
+        // fall through to the selector path below
+      } else {
+        if (x === undefined || y === undefined) {
+          throw protocolError("proto.invalid", "browser.page.click args.x and args.y must be provided together");
+        }
+        if (x < 0 || y < 0) {
+          throw protocolError("proto.invalid", "browser.page.click coordinates must be non-negative viewport pixels");
+        }
+        if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
+          throw protocolError("proto.invalid", "browser.page.click accepts coordinates or an element target, not both");
+        }
+        const button = typeof args.button === "string" ? args.button : "left";
+        if (!["left", "right", "middle"].includes(button)) {
+          throw protocolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
+        }
+        const clickCount = typeof args.clickCount === "number" ? args.clickCount : 1;
+        if (clickCount !== 1 && clickCount !== 2) {
+          throw protocolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
+        }
+        const mods = Array.isArray(args.modifiers)
+          ? args.modifiers
+              .filter((m): m is string => typeof m === "string")
+              .map((m) => {
+                const lower = m.toLowerCase();
+                return lower === "control" || lower === "alt" || lower === "shift" || lower === "meta"
+                  ? (m[0]!.toUpperCase() + m.slice(1).toLowerCase() as "Alt" | "Control" | "Meta" | "Shift")
+                  : null;
+              })
+              .filter((m): m is "Alt" | "Control" | "Meta" | "Shift" => m !== null)
+          : [];
+        for (const mod of mods) await page.keyboard.down(mod);
+        try {
+          await page.mouse.click(x, y, {
+            button: button as "left" | "right" | "middle",
+            clickCount: clickCount as 1 | 2,
+          });
+        } finally {
+          for (const mod of [...mods].reverse()) await page.keyboard.up(mod).catch(() => {});
+        }
+        return { clicked: true, x, y, ...(clickCount === 2 ? { clickCount: 2 } : {}) };
+      }
+    }
     const selector = await this.#requireSelector(args);
     const locator = page.locator(selector).first();
     switch (tool) {

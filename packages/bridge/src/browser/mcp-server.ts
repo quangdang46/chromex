@@ -292,7 +292,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     }),
   },
   "browser.page.click": {
-    description: `Click an element. Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
+    description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       button: { type: "string", enum: ["left", "right", "middle"], description: "Mouse button (default left)." },
@@ -302,6 +302,8 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         items: { type: "string" },
         description: "Modifier keys held during the click: 'control', 'alt', 'shift', 'meta' (e.g. ctrl/cmd+click opens links in a new tab).",
       },
+      x: { type: "number", description: "Viewport x (CSS px) — coordinate click for canvas/WebGL/map surfaces; mutually exclusive with ref/selector/label. Requires y." },
+      y: { type: "number", description: "Viewport y (CSS px) — coordinate click for canvas/WebGL/map surfaces; mutually exclusive with ref/selector/label. Requires x." },
     }),
     expectable: true,
   },

@@ -247,6 +247,22 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       return { step, ok: true, message: "Navigated the current page." };
     }
 
+    // Coordinate click — no DOM target to resolve; hit-test at the
+    // point instead. Covers canvas/WebGL/map surfaces.
+    if (step.action === "click" && typeof step.x === "number" && typeof step.y === "number") {
+      const button = step.button === "right" || step.button === "middle" ? step.button : "left";
+      dispatchClickAtPoint(step.x, step.y, {
+        button,
+        modifiers: step.modifiers,
+        clickCount: step.clickCount,
+      });
+      return {
+        step,
+        ok: true,
+        message: `Clicked at viewport coordinates (${Math.round(step.x)}, ${Math.round(step.y)}).`,
+      };
+    }
+
     const target = resolveDomActionTargetDetailed(step);
     // chromex-ykj: ≥2 matches → typed ambiguous_target, never first-match.
     if (target.status === "ambiguous") {
@@ -745,6 +761,64 @@ export function dispatchDragSequence(source: HTMLElement, target: HTMLElement): 
     } catch {
       // DataTransfer/DragEvent unavailable — pointer path already ran.
     }
+  }
+}
+
+/**
+ * click at raw viewport coordinates — the only way to reach canvas,
+ * WebGL, map tiles and other non-DOM surfaces. Events target
+ * document.elementFromPoint(x, y) so hit-testing matches what a real
+ * pointer would hit; falls back to <body> outside the viewport content.
+ * UNTRUSTED like every synthetic event here.
+ */
+export function dispatchClickAtPoint(
+  x: number,
+  y: number,
+  opts: { button?: "left" | "right" | "middle"; modifiers?: readonly string[] | undefined; clickCount?: number | undefined } = {},
+): void {
+  const button = opts.button ?? "left";
+  const buttonCode = button === "right" ? 2 : button === "middle" ? 1 : 0;
+  const el =
+    (document.elementFromPoint(x, y) as HTMLElement | null) ??
+    document.body ??
+    document.documentElement;
+  const common = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    view: window,
+    button: buttonCode,
+    ...pressModifierInit(opts.modifiers),
+  };
+  // Pointer arrival first — :hover styles, mouseover listeners and
+  // tooltip triggers observe the same sequence a real mouse produces.
+  el.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse" }));
+  el.dispatchEvent(new MouseEvent("mouseover", common));
+  el.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse" }));
+  el.dispatchEvent(new MouseEvent("mousemove", common));
+
+  const fire = (): void => {
+    el.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
+    el.dispatchEvent(new MouseEvent("mousedown", common));
+    if (button === "right") {
+      el.dispatchEvent(new PointerEvent("contextmenu", { ...common, pointerType: "mouse" }));
+      el.dispatchEvent(new MouseEvent("contextmenu", common));
+    }
+    el.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
+    el.dispatchEvent(new MouseEvent("mouseup", common));
+    if (button === "left") {
+      el.dispatchEvent(new PointerEvent("click", { ...common, pointerType: "mouse" }));
+      el.dispatchEvent(new MouseEvent("click", common));
+    } else {
+      el.dispatchEvent(new PointerEvent("auxclick", { ...common, pointerType: "mouse" }));
+      el.dispatchEvent(new MouseEvent("auxclick", common));
+    }
+  };
+  fire();
+  if ((opts.clickCount ?? 1) === 2) {
+    fire();
+    el.dispatchEvent(new MouseEvent("dblclick", { ...common, detail: 2 }));
   }
 }
 

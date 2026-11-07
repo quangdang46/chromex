@@ -74,6 +74,18 @@ describe("tool host (P1-09)", () => {
     expect(msg.steps[0]).toMatchObject({ action: "click", targetRef: "e1" });
   });
 
+  test("page.click coordinate args map to x/y step; mixing with target rejected", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.click", { x: 120, y: 340, button: "right", clickCount: 2 }));
+    const msg = d.sent[0].message as { type: string; steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0]).toMatchObject({ action: "click", x: 120, y: 340, button: "right", clickCount: 2 });
+    expect(msg.steps[0].targetRef).toBeUndefined();
+    await expect(h(req("browser.page.click", { x: 10 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.click", { x: -1, y: 5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.click", { x: 1, y: 2, selector: ".a" }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.drag maps source + drop target onto a dom.perform step", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
