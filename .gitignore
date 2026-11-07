@@ -52,3 +52,7 @@ tmp-smoke-debug.png
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# stale pnpm experiment — repo is npm workspaces
+pnpm-lock.yaml
+pnpm-workspace.yaml
