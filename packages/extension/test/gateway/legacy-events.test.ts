@@ -48,6 +48,21 @@ describe("gatewayEventToLegacy", () => {
     const res = gatewayEventToLegacy(durable("t1", "permission.resolved", { requestId: "r1", decision: { kind: "allow" } }));
     expect(res).toMatchObject({ type: "plan.user_input.resolved", requestId: "r1" });
   });
+  it("browser_action approval → approve/deny plan.user_input.requested", () => {
+    const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
+      turnId: "g1",
+      request: {
+        requestId: "appr-1", kind: "browser_action", risk: "external_mutation",
+        summary: "Browser tool browser.page.click requires approval",
+        details: { tool: "browser.page.click" },
+      },
+    }));
+    expect(out).toMatchObject({
+      type: "plan.user_input.requested", requestId: "appr-1", threadId: "t1",
+    });
+    const qs = (out as { questions: { options: { label: string }[] }[] }).questions;
+    expect(qs[0]!.options.map((o) => o.label)).toEqual(["Allow", "Deny"]);
+  });
   it("provider_permission with questions → plan.user_input.requested", () => {
     const questions = [{ id: "q1", header: "H", question: "Pick one", options: [{ label: "A" }] }];
     const out = gatewayEventToLegacy(durable("t1", "permission.requested", {

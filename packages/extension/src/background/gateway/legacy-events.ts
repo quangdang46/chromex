@@ -98,9 +98,40 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       return { type: "turn.failed", ...base, error: "turn outcome unknown after restart" };
     case "permission.requested": {
       const req = payload.request as
-        | { requestId?: string; kind?: string; details?: { argsPreview?: { questions?: unknown[] } } }
+        | {
+            requestId?: string;
+            kind?: string;
+            summary?: string;
+            details?: { argsPreview?: { questions?: unknown[] } };
+          }
         | undefined;
       const questions = req?.details?.argsPreview?.questions;
+      if (req?.kind === "browser_action") {
+        // gateway browser-tool approval — render as a single
+        // approve/deny question through the existing input card;
+        // permission.respond resolves the approvals row.
+        const summary =
+          typeof (req as { summary?: unknown }).summary === "string"
+            ? (req as { summary: string }).summary
+            : "Browser action requires approval";
+        return {
+          type: "plan.user_input.requested",
+          ...base,
+          requestId: req.requestId ?? "",
+          itemId: `appr-${req.requestId ?? ""}`,
+          questions: [
+            {
+              id: "decision",
+              header: "Approval",
+              question: summary,
+              options: [
+                { label: "Allow", description: "Allow this browser action once" },
+                { label: "Deny", description: "Reject this browser action" },
+              ],
+            },
+          ],
+        };
+      }
       if (req?.kind === "provider_permission" && Array.isArray(questions) && questions.length > 0) {
         // legacy UI renders provider questions via plan.user_input.*
         return {

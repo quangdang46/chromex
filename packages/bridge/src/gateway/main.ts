@@ -584,7 +584,10 @@ async function handleGatewayRequest(
       // provider path already handled it).
       const storeAny = ctx.store as { approvalStatus?: (id: string) => string | null; resolveApproval?: (id: string, s: "allowed" | "denied" | "expired") => void };
       if (storeAny.approvalStatus?.(p.requestId) === "pending") {
-        storeAny.resolveApproval?.(p.requestId, p.optionId === "deny" ? "denied" : "allowed");
+        storeAny.resolveApproval?.(
+          p.requestId,
+          String(p.optionId).toLowerCase() === "deny" ? "denied" : "allowed",
+        );
       }
       return result;
     }
