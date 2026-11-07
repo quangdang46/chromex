@@ -434,7 +434,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.downloads.list": {
     description:
-      "List recent downloads for this profile (id, state, filename, bytes, error, startTime). Not tab-scoped. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
+      "List recent downloads for this profile (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
     inputSchema: objectSchema({
       state: { type: "string", enum: ["in_progress", "interrupted", "complete"], description: "Optional state filter." },
       limit: { type: "integer", description: "Max items (1–200, default 50)." },

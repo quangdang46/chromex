@@ -282,6 +282,10 @@ const toolHostHandler = createToolHostHandler({
         filename: d.filename,
         bytesReceived: d.bytesReceived,
         totalBytes: d.totalBytes,
+        ...(d.mime ? { mime: d.mime } : {}),
+        // exists tells the agent the bytes are actually on disk —
+        // filename alone can point at a file the user moved/deleted.
+        ...(typeof d.exists === "boolean" ? { fileExists: d.exists } : {}),
         ...(d.error ? { error: d.error } : {}),
         startTime: d.startTime,
       }));
@@ -3371,20 +3375,25 @@ async function collectAutomaticDocumentAttachments(
   }
 }
 
-async function ensureContentScript(tabId: number, url?: string): Promise<void> {
-  if (await hasActiveContentScript(tabId)) {
+async function ensureContentScript(tabId: number, url?: string, frameId = 0): Promise<void> {
+  if (await hasActiveContentScript(tabId, frameId)) {
     return;
   }
+  // frameId 0 → top frame only (existing behavior). frameId > 0 → inject
+  // just that frame: a subframe added before an extension reload has no
+  // content script and would otherwise fail every frame-scoped call.
+  const target =
+    frameId > 0 ? { tabId, frameIds: [frameId] } : { tabId };
   try {
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target,
       files: ["content.js"],
     });
   } catch (error) {
     if (shouldAttemptTabOriginRecovery(url, error) && (await hasTabOriginPermission(url))) {
       try {
         await chrome.scripting.executeScript({
-          target: { tabId },
+          target,
           files: ["content.js"],
         });
         return;
@@ -5237,13 +5246,14 @@ async function sendMessageToTab(
   // frameId defaults to 0 (top frame). With all_frames content scripts a
   // frameId-less sendMessage would race every frame's listener — the first
   // responder wins and subframes would act on the wrong DOM.
-  const sendOptions = { frameId: options.frameId ?? 0 };
+  const frameId = options.frameId ?? 0;
+  const sendOptions = { frameId };
   try {
-    await ensureContentScript(activeTab.id, activeTab.url);
+    await ensureContentScript(activeTab.id, activeTab.url, frameId);
     return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
   } catch (error) {
     if (shouldAttemptTabOriginRecovery(activeTab.url, error) && (await hasTabOriginPermission(activeTab.url))) {
-      await ensureContentScript(activeTab.id, activeTab.url);
+      await ensureContentScript(activeTab.id, activeTab.url, frameId);
       try {
         return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
       } catch (retryError) {
@@ -5252,7 +5262,7 @@ async function sendMessageToTab(
     }
     if (isRetryableRuntimeMessageError(error)) {
       await sleepMs(120);
-      await ensureContentScript(activeTab.id, activeTab.url);
+      await ensureContentScript(activeTab.id, activeTab.url, frameId);
       try {
         return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
       } catch (retryError) {
