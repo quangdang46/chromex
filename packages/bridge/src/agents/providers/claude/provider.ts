@@ -8,6 +8,9 @@
  */
 
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import type {
@@ -22,6 +25,32 @@ import type {
 import { CLAUDE_CAPABILITIES, ClaudeAgentSession } from "./session.js";
 
 const execFileAsync = promisify(execFile);
+
+const CLAUDE_MODEL_ENV_KEYS = [
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+] as const;
+
+/** Model ids Claude Code will actually route — process env plus
+ *  ~/.claude/settings.json `env` (the same sources the CLI reads). */
+function discoverConfiguredClaudeModels(): string[] {
+  const ids = new Set<string>();
+  const consider = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) ids.add(value.trim());
+  };
+  for (const key of CLAUDE_MODEL_ENV_KEYS) consider(process.env[key]);
+  try {
+    const settings = JSON.parse(
+      readFileSync(path.join(os.homedir(), ".claude", "settings.json"), "utf8"),
+    ) as { env?: Record<string, unknown> };
+    for (const key of CLAUDE_MODEL_ENV_KEYS) consider(settings.env?.[key]);
+  } catch {
+    // no settings file or unreadable — env-only discovery is fine
+  }
+  return [...ids];
+}
 
 export interface ClaudeProviderOptions {
   /** override `claude` binary path; default resolves via PATH */
@@ -69,10 +98,23 @@ export class ClaudeAgentProvider implements AgentProvider {
       description: `Claude Code "${id}" alias`,
       metadata: { isDefault },
     });
+    const models = [alias("sonnet", "Sonnet", true), alias("opus", "Opus"), alias("haiku", "Haiku")];
+    // Router/proxy users configure real model ids via env or
+    // ~/.claude/settings.json — surface them so the picker is usable
+    // without Anthropic-direct credentials.
+    for (const id of discoverConfiguredClaudeModels()) {
+      if (models.some((m) => m.id === id)) continue;
+      models.push({
+        id,
+        label: id,
+        description: "Model from Claude Code env/settings",
+        metadata: { isDefault: false },
+      });
+    }
     return {
       providerId: "claude",
       displayName: "Claude",
-      models: [alias("sonnet", "Sonnet", true), alias("opus", "Opus"), alias("haiku", "Haiku")],
+      models,
       modes: [],
       fetchedAt: Date.now(),
       capabilities: { ...CLAUDE_CAPABILITIES },
