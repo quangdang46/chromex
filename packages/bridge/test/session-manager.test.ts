@@ -165,6 +165,20 @@ describe("SessionManager", () => {
     expect(turn.endedAt).not.toBeNull();
   });
 
+  test("ephemeral deltas never persist and consume no durable seq (§7.3 #9)", async () => {
+    const { sm, store, published } = await makeManager();
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const events = store.taskEventsAfter(task.taskId, 0, 100).events;
+    expect(events.some((e) => e.type.includes("delta"))).toBe(false);
+    // seq stream is contiguous durable-only: 1..N with no holes
+    expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i + 1));
+    // but the delta was still published live as ephemeral
+    expect(published.some((p) => p.ephemeral && (p.event as { type?: string }).type === "assistant.delta")).toBe(true);
+  });
+
   test("duplicate clientMessageId → idempotent, no second provider call", async () => {
     const { sm, sessions } = await makeManager();
     const task = sm.createTask(taskParams());
