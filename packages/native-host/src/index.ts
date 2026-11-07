@@ -16,3 +16,5 @@ export {
   readGatewayToken,
 } from "./gateway-client.js";
 export type { EnsureGatewayOptions, GatewayConnectOptions, GatewayEndpointFile } from "./gateway-client.js";
+export { resolveBrowserInstanceId } from "./browser-instance.js";
+export type { BrowserInstanceEnv, BrowserInstanceRecord } from "./browser-instance.js";
