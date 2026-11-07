@@ -55,7 +55,14 @@ try {
   // provider-style: fill via selectors discovered from snapshot/find
   await call("browser.page.fill", { tabId, selector: "#name", value: "Agent" });
   await call("browser.page.type", { tabId, selector: "#email", value: "agent@chromex.dev" });
-  await call("browser.page.click", { tabId, selector: "#next" });
+  // args.expect — post-action verification polled after dispatch
+  const nextRes = await call("browser.page.click", {
+    tabId,
+    selector: "#next",
+    expect: { selector: "#step2:not([hidden])", timeoutMs: 5000 },
+  });
+  assert(nextRes?.expect?.met === true && nextRes?.verified === true,
+    "args.expect verified step2 revealed after click");
   // step2 is now visible — select exercises the tool on a visible control
   // (fixture copies plan→hidden input at Next-click time, so the POST
   // carries the default; we assert the field round-trips).
