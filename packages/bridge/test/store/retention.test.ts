@@ -76,3 +76,35 @@ describe("retention policy (P1-11 / §5.5)", () => {
     expect(artifactExpired({ taskTerminalAt: NOW - DAY, releasedAt: null, createdAt: old, now: NOW })).toBe(false);
   });
 });
+
+describe("runRetentionSweep (archive)", () => {
+  it("archives only old terminal tasks; idempotent", async () => {
+    const { InMemoryStore } = await import("../../src/gateway/store-memory.js");
+    const { runRetentionSweep } = await import("../../src/store/retention.js");
+    const store = new InMemoryStore();
+    const old = NOW - 30 * DAY;
+    const mk = (taskId: string, status: string, updatedAt: number) =>
+      store.createTask({
+        taskId, createdAt: updatedAt, updatedAt, status: status as never,
+        profileId: "p", providerId: "codex", conversationKey: `k-${taskId}`,
+        cwd: "/tmp", backend: { backendId: "chrome-extension", pinnedBy: "default" },
+        tabIntent: "untitled" as never,
+        binding: { browserInstanceId: null, state: "none" },
+        lastSeq: 0, lastReadSeq: 0,
+      });
+    mk("old-done", "completed", old);
+    mk("old-active", "active", old);
+    mk("recent-done", "completed", NOW - DAY);
+    mk("old-paused", "paused", old);
+
+    const first = runRetentionSweep(store as never, { now: NOW });
+    expect(first).toEqual(["old-done"]);
+    expect(store.tasksForRetention().find((t) => t.taskId === "old-done")?.archived).toBe(true);
+    expect(store.tasksForRetention().find((t) => t.taskId === "old-active")?.archived).toBe(false);
+    expect(store.tasksForRetention().find((t) => t.taskId === "recent-done")?.archived).toBe(false);
+    // user messages/events untouched — archive is a marker, not a delete
+    expect(store.stats().tasks).toBe(4);
+
+    expect(runRetentionSweep(store as never, { now: NOW })).toEqual([]);
+  });
+});

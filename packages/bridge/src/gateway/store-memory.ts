@@ -232,6 +232,23 @@ export class InMemoryStore {
     };
   }
 
+  setTaskArchived(taskId: string, archived: boolean): void {
+    const t = this.tasks.get(taskId);
+    if (t) {
+      t.archived = archived;
+      t.updatedAt = Date.now();
+    }
+  }
+
+  tasksForRetention(): Array<{ taskId: string; status: TaskRecord["status"]; updatedAt: number; archived: boolean }> {
+    return [...this.tasks.values()].map((t) => ({
+      taskId: t.taskId,
+      status: t.status,
+      updatedAt: t.updatedAt,
+      archived: t.archived === true,
+    }));
+  }
+
   /** Explicit task purge — mirrors SQLiteStore.purgeTask cascade. */
   purgeTask(taskId: string): void {
     this.#guard();

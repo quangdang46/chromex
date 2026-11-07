@@ -56,6 +56,7 @@ import { InMemoryStore } from "./store-memory.js";
 import { openGatewayDb, runIntegrityChecks } from "../store/db.js";
 import { SQLiteStore } from "../store/sqlite-store.js";
 import { runRecoveryScan } from "../store/recovery.js";
+import { runRetentionSweep } from "../store/retention.js";
 import type { GatewayDb } from "../store/db.js";
 import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
 import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
@@ -284,6 +285,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     });
     await ipc.writeTokenFile();
     await ipc.listen();
+
+    // §5.5 retention sweep: archive terminal tasks past retentionDays.
+    // Idempotent; runs once per gateway start (no timer yet — P1-11
+    // follow-up may add periodic sweep).
+    try {
+      const archivedIds = runRetentionSweep(store as never);
+      if (archivedIds.length > 0) log(`retention sweep archived ${archivedIds.length} task(s)`);
+    } catch (err) {
+      log(`retention sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // recovery runs before ready (P1-02 wires real recovery); in-memory
     // store starts empty so nothing to recover yet.

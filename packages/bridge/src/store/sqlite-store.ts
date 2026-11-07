@@ -563,6 +563,36 @@ export class SQLiteStore {
     return row.n;
   }
 
+  /** §5.5 archive flag — separate from TaskRecord mapping (not in
+   *  TASK_COLS to keep putTask's ON CONFLICT surface unchanged). */
+  setTaskArchived(taskId: string, archived: boolean): void {
+    this.#guard();
+    this.db.prepare("UPDATE tasks SET archived = ? WHERE task_id = ?").run(archived ? 1 : 0, taskId);
+  }
+
+  /** Sweep view: id/status/updatedAt/archived for retention decisions. */
+  tasksForRetention(): Array<{
+    taskId: string;
+    status: TaskRecord["status"];
+    updatedAt: number;
+    archived: boolean;
+  }> {
+    const rows = this.db
+      .prepare("SELECT task_id, status, updated_at, archived FROM tasks")
+      .all() as Array<{
+        task_id: string;
+        status: TaskRecord["status"];
+        updated_at: number;
+        archived: number;
+      }>;
+    return rows.map((r) => ({
+      taskId: r.task_id,
+      status: r.status,
+      updatedAt: r.updated_at,
+      archived: r.archived === 1,
+    }));
+  }
+
   approvalStatus(
     approvalId: string,
   ): "pending" | "allowed" | "denied" | "expired" | null {

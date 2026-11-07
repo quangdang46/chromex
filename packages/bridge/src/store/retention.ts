@@ -131,3 +131,38 @@ export function artifactExpired(input: {
 }
 
 export { DAY_MS, RETENTION_DAYS as RETENTION_WINDOW_MS };
+
+export interface RetentionStoreView {
+  tasksForRetention(): Array<{
+    taskId: string;
+    status: string;
+    updatedAt: number;
+    archived: boolean;
+  }>;
+  setTaskArchived(taskId: string, archived: boolean): void;
+}
+
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+/**
+ * §5.5 archive sweep: terminal tasks older than retentionDays get
+ * archived=1 (compact marker — events/user messages are NEVER deleted;
+ * §4.6 prune rules still apply separately). Idempotent; safe to run at
+ * every gateway start. Returns the ids newly archived.
+ */
+export function runRetentionSweep(
+  store: RetentionStoreView,
+  opts: { now?: number; retentionDays?: number } = {},
+): string[] {
+  const now = opts.now ?? Date.now();
+  const cutoff = now - (opts.retentionDays ?? RETENTION_DAYS) * DAY_MS;
+  const archived: string[] = [];
+  for (const t of store.tasksForRetention()) {
+    if (t.archived) continue;
+    if (!TERMINAL_STATUSES.has(t.status)) continue;
+    if (t.updatedAt > cutoff) continue;
+    store.setTaskArchived(t.taskId, true);
+    archived.push(t.taskId);
+  }
+  return archived;
+}

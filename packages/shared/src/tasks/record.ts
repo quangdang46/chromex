@@ -70,6 +70,8 @@ export interface TaskRecord {
   /** UI read cursor from ack{stream:"task"}; init 0; = snapshot.lastSeq on snapshot sync */
   lastReadSeq: number;
   error?: ProtocolError | null;
+  /** §5.5 archive: compacted, not deleted — user messages preserved */
+  archived?: boolean;
 }
 
 export interface TurnRecord {
