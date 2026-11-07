@@ -16,7 +16,7 @@
  * `selector`/`label`.
  */
 
-import { SnapshotRegistry } from "@codex-sidepanel/shared";
+import { SnapshotRegistry, urlOriginPath } from "@codex-sidepanel/shared";
 import type { BrowserDomActionResult, BrowserDomSnapshot } from "@codex-sidepanel/shared";
 
 export interface ToolHostDeps {
@@ -137,6 +137,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             structuralFingerprint: snap.structuralFingerprint,
             stateFingerprint: snap.stateFingerprint,
             saltEpoch: snap.saltEpoch,
+            ...(typeof snap.metadata?.url === "string"
+              ? { urlOriginPath: urlOriginPath(snap.metadata.url) }
+              : {}),
             capturedAt: Date.now(),
           });
         }
@@ -159,6 +162,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               "snapshot expired or belongs to another tab; call browser.page.snapshot again",
             );
           }
+          if (meta.urlOriginPath) {
+            const tab = await deps.getTab(tabId);
+            const current = typeof tab?.url === "string" && tab.url ? urlOriginPath(tab.url) : null;
+            if (current && current !== meta.urlOriginPath) {
+              throw toolError("browser.navigated", "page navigated since the snapshot; call browser.page.snapshot again");
+            }
+          }
         }
         const step = domStepFor(tool, args);
         const result = (await deps.sendToTab(tabId, {
@@ -167,9 +177,15 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         })) as BrowserDomActionResult;
         const first = result.results?.[0];
         if (!result.ok || first?.ok === false) {
-          throw toolError("browser.action_failed", first?.message ?? result.summary ?? "browser action failed");
+          const code = typeof first?.code === "string" && first.code.startsWith("browser.") ? first.code : "browser.action_failed";
+          throw toolError(code, first?.message ?? result.summary ?? "browser action failed");
         }
-        return { ok: true, summary: result.summary, step: first };
+        return {
+          ok: true,
+          summary: result.summary,
+          step: first,
+          ...(first?.verified !== undefined ? { verified: first.verified } : {}),
+        };
       }
     }
   };

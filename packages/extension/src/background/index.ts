@@ -501,6 +501,14 @@ function recordDomSnapshotMeta(tabId: number, snapshot: BrowserDomSnapshot): voi
       structuralFingerprint: snapshot.structuralFingerprint,
       stateFingerprint: snapshot.stateFingerprint,
       saltEpoch: snapshot.saltEpoch,
+      ...(typeof snapshot.metadata?.url === "string"
+        ? {
+            urlOriginPath: (() => {
+              const u = new URL(snapshot.metadata.url as string);
+              return `${u.origin}${u.pathname}`;
+            })(),
+          }
+        : {}),
       capturedAt: Date.now(),
     });
   }

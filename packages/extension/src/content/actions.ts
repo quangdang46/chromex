@@ -24,6 +24,7 @@ import {
   sleepDomActionTick,
   waitForDomActionTick,
 } from "./refs.js";
+import { observePage, observeTarget, verifyDomAction } from "./verify.js";
 
 let aiControlOverlayNode: HTMLDivElement | null = null;
 let aiControlOverlayTimer: number | null = null;
@@ -248,40 +249,61 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
 
     const element = resolveDomActionTarget(step);
     if (!element && step.action !== "scroll") {
-      return { step, ok: false, message: "Target element was not found." };
+      return { step, ok: false, message: "Target element was not found.", code: "browser.element_not_found" };
     }
 
     if (step.action === "scroll") {
+      const before = { page: observePage(), target: observeTarget(element) };
       performScrollAction(element, step);
-      return { step, ok: true, message: "Scrolled the page." };
+      await waitForDomActionTick();
+      const verified = verifyDomAction(step, before, { page: observePage(), target: observeTarget(element) });
+      return { step, ok: true, message: "Scrolled the page.", verified };
     }
 
     if (!element || isDomActionElementDisabled(element)) {
-      return { step, ok: false, message: "Target element is unavailable." };
+      return { step, ok: false, message: "Target element is unavailable.", code: "browser.element_not_found" };
     }
 
     element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    await waitForDomActionTick();
 
+    // §6.3 two-layer verify: observe before dispatch, observe after,
+    // then reduce to a semantic verdict. "unknown" is reported, never
+    // retried — the caller decides.
+    const before = { page: observePage(), target: observeTarget(element) };
+    let ok = true;
+    let message = "";
     switch (step.action) {
       case "click":
         element.click();
-        await waitForDomActionTick();
-        return { step, ok: true, message: `Clicked ${getElementLabel(element) || "the target element"}.` };
+        message = `Clicked ${getElementLabel(element) || "the target element"}.`;
+        break;
       case "focus":
         element.focus();
-        return { step, ok: true, message: `Focused ${getElementLabel(element) || "the target element"}.` };
+        message = `Focused ${getElementLabel(element) || "the target element"}.`;
+        break;
       case "fill":
         await fillDomActionElement(element, step.value ?? "");
-        return { step, ok: true, message: `Filled ${getElementLabel(element) || "the target field"}.` };
+        message = `Filled ${getElementLabel(element) || "the target field"}.`;
+        break;
       case "select":
         selectDomActionElement(element, step.value ?? "");
-        return { step, ok: true, message: `Selected a value for ${getElementLabel(element) || "the target field"}.` };
+        message = `Selected a value for ${getElementLabel(element) || "the target field"}.`;
+        break;
       case "submit":
         submitDomActionElement(element);
-        return { step, ok: true, message: "Submitted the nearest form." };
+        message = "Submitted the nearest form.";
+        break;
       default:
-        return { step, ok: false, message: "Unsupported action." };
+        ok = false;
+        message = "Unsupported action.";
     }
+    if (!ok) {
+      return { step, ok: false, message };
+    }
+    await waitForDomActionTick();
+    const verified = verifyDomAction(step, before, { page: observePage(), target: observeTarget(element) });
+    return { step, ok: true, message, verified };
   } catch (error) {
     return { step, ok: false, message: error instanceof Error ? error.message : String(error) };
   }

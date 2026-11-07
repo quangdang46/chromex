@@ -596,6 +596,10 @@ export interface BrowserDomActionStepResult {
   step: BrowserDomActionStep;
   ok: boolean;
   message: string;
+  /** §6.3 semantic verdict — "unknown" must never trigger mutating retry */
+  verified?: boolean | "unknown";
+  /** structured failure code (browser.element_not_found etc.) */
+  code?: string;
 }
 
 export interface BrowserDomActionResult {

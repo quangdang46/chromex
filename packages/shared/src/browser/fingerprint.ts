@@ -196,6 +196,8 @@ export interface SnapshotMeta {
   structuralFingerprint: string;
   stateFingerprint: string;
   saltEpoch: number;
+  /** origin+path of the page at capture — navigation detection (§6.3) */
+  urlOriginPath?: string;
   capturedAt: number;
 }
 
