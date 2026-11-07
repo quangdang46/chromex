@@ -465,6 +465,41 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.network"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("downloads.save waitForCompletion polls to terminal state", async () => {
+    let state = "in_progress";
+    const d = deps({
+      downloadFile: vi.fn(async () => ({ id: 42, filename: "a.zip" })),
+      listDownloads: vi.fn(async () => {
+        state = state === "in_progress" ? "complete" : state;
+        return [{ id: 42, state, filename: "/dl/a.zip", fileExists: true }];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.downloads.save", { url: "https://example.com/a.zip", waitForCompletion: true, timeoutMs: 5000 }),
+    )) as { downloadId?: number; state?: string; filename?: string; fileExists?: boolean };
+    expect(res).toMatchObject({ downloadId: 42, state: "complete", filename: "/dl/a.zip", fileExists: true });
+  });
+
+  test("downloads.save waitForCompletion times out honestly", async () => {
+    const d = deps({
+      downloadFile: vi.fn(async () => ({ id: 43 })),
+      listDownloads: vi.fn(async () => [{ id: 43, state: "in_progress", filename: "/dl/b.bin" }]),
+    });
+    const h = createToolHostHandler(d);
+    await expect(
+      h(req("browser.downloads.save", { url: "https://example.com/b.bin", waitForCompletion: true, timeoutMs: 50 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+  });
+
+  test("downloads.save waitForCompletion without listDownloads dep → proto.unsupported", async () => {
+    const d = deps({ downloadFile: vi.fn(async () => ({ id: 44 })) });
+    const h = createToolHostHandler(d);
+    await expect(
+      h(req("browser.downloads.save", { url: "https://example.com/c", waitForCompletion: true })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("downloads.save without dep → proto.unsupported", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.downloads.save", { url: "https://example.com/f" }))).rejects.toMatchObject({

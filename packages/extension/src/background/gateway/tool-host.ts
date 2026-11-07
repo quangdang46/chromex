@@ -770,11 +770,60 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
         }
         const res = await deps.downloadFile({ url, ...(filename !== undefined ? { filename } : {}) });
-        return {
-          downloadId: typeof res?.id === "number" ? res.id : undefined,
+        const downloadId = typeof res?.id === "number" ? res.id : undefined;
+        const base = {
+          downloadId,
           filename: res?.filename,
-          note: "Download started — call browser.downloads.list to resolve the final on-disk path.",
         };
+        if (args.waitForCompletion !== true) {
+          return {
+            ...base,
+            note: "Download started — call browser.downloads.list to resolve the final on-disk path.",
+          };
+        }
+        // Optional completion wait — closes the download→disk loop in
+        // one call. Polls the downloads search API; terminal states are
+        // complete|interrupted (interrupted carries error).
+        if (!deps.listDownloads) {
+          throw toolError("proto.unsupported", "download completion wait requires the downloads permission");
+        }
+        if (downloadId === undefined) {
+          return {
+            ...base,
+            note: "Download started but no id was returned — poll browser.downloads.list to track it.",
+          };
+        }
+        const waitMs = Math.min(
+          Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000, 0),
+          120_000,
+        );
+        const started = Date.now();
+        const deadline = started + waitMs;
+        let lastState: string | undefined;
+        for (;;) {
+          const items = await deps.listDownloads({ limit: 50 });
+          const item = (Array.isArray(items) ? items : []).find((d) => d.id === downloadId);
+          if (item) {
+            lastState = item.state;
+            if (item.state === "complete" || item.state === "interrupted") {
+              return {
+                downloadId,
+                state: item.state,
+                filename: item.filename,
+                ...(typeof item.fileExists === "boolean" ? { fileExists: item.fileExists } : {}),
+                ...(item.error ? { error: item.error } : {}),
+                waitedMs: Date.now() - started,
+              };
+            }
+          }
+          if (Date.now() >= deadline) {
+            throw toolError(
+              "browser.timeout",
+              `download ${downloadId} still ${lastState ?? "in_progress"} after ${waitMs}ms`,
+            );
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
       }
       case "browser.page.network": {
         // Tab-scoped (requests span frames — frameId is rejected by the

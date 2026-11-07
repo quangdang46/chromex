@@ -488,11 +488,13 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.downloads.save": {
     description:
-      "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). Not tab-scoped. Always requires approval. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
+      "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). waitForCompletion polls until the download reaches complete|interrupted and returns the final filename (absolute path) + fileExists. Not tab-scoped. Always requires approval. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
     inputSchema: objectSchema(
       {
         url: { type: "string", description: "http(s) URL to download (required)." },
         filename: { type: "string", description: "Optional relative filename inside the download directory." },
+        waitForCompletion: { type: "boolean", description: "Poll until the download finishes (default false — returns immediately after starting)." },
+        timeoutMs: { type: "number", description: "Max wait when waitForCompletion is set (default 30000, max 120000)." },
       },
       ["url"],
     ),

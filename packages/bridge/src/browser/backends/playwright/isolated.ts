@@ -424,12 +424,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         await locator.focus();
         return { focused: true };
       case "browser.page.type": {
-        const text = typeof args.text === "string" ? args.text : "";
+        const text = typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : "";
         await locator.pressSequentially(text);
         return { typed: text.length };
       }
       case "browser.page.fill": {
-        const text = typeof args.text === "string" ? args.text : "";
+        const text = typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : "";
         await locator.fill(text);
         return { filled: true };
       }
