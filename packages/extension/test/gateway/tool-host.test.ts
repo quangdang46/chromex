@@ -466,6 +466,54 @@ describe("tool host (P1-09)", () => {
   });
 });
 
+describe("tool host screenshot payload (chromex-22wi)", () => {
+  const shotDeps = (captureImpl?: (windowId: number, opts?: { quality?: number }) => Promise<string>) =>
+    deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true })),
+      captureVisibleTab: vi.fn(
+        captureImpl ?? (async () => "data:image/jpeg;base64,QUJD"),
+      ),
+      uploadArtifact: vi.fn(async () => ({ artifactRef: "artifact:art-1", sha256: "abc", bytes: 3 })),
+    });
+
+  test("returns artifactRef AND bounded inline dataBase64 for the provider", async () => {
+    const d = shotDeps();
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.screenshot"))) as {
+      artifactRef: string;
+      dataBase64: string;
+      mimeType: string;
+    };
+    expect(res.artifactRef).toBe("artifact:art-1");
+    expect(res.dataBase64).toBe("QUJD");
+    expect(res.mimeType).toBe("image/jpeg");
+  });
+
+  test("oversized capture retries at lower jpeg quality until under the 512KiB artifact cap", async () => {
+    const big = `data:image/jpeg;base64,${"A".repeat(700_000)}`; // ~525KiB decoded > cap
+    const small = "data:image/jpeg;base64,QUJD";
+    const qualities: Array<number | undefined> = [];
+    const d = shotDeps(async (_w, opts) => {
+      qualities.push(opts?.quality);
+      return opts?.quality === undefined ? big : small;
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.screenshot"))) as { dataBase64: string };
+    expect(res.dataBase64).toBe("QUJD");
+    expect(qualities).toEqual([undefined, 45]);
+  });
+
+  test("still oversized at lowest quality → artifact.too_large, never uploads", async () => {
+    const big = `data:image/jpeg;base64,${"A".repeat(700_000)}`;
+    const d = shotDeps(async () => big);
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.screenshot"))).rejects.toMatchObject({
+      code: "artifact.too_large",
+    });
+    expect(d.uploadArtifact).not.toHaveBeenCalled();
+  });
+});
+
 describe("tool host tab scope (chromex-9e3)", () => {
   const scopedReq = (
     tool: string,

@@ -65,6 +65,10 @@ const MAX_CONSOLE_TEXT = 1000;
 
 const MAX_EXTRACT_CHARS = 64 * 1024;
 const DEFAULT_NAV_TIMEOUT_MS = 30_000;
+/** Screenshot inline-payload bound — mirrors the gateway artifact.upload
+ *  decoded cap (512KiB, packages/bridge/src/gateway/main.ts). */
+const SCREENSHOT_MAX_BYTES = 512 * 1024;
+const SCREENSHOT_JPEG_QUALITIES = [70, 45, 25] as const;
 
 type PwModule = typeof import("playwright-core");
 type PwBrowser = import("playwright-core").Browser;
@@ -340,10 +344,20 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    const buf = await page.screenshot({ type: "png" });
-    // artifact-backed: return base64 bounded — caller (tool-server/host
-    // channel) persists via artifact.upload; never inline unbounded.
-    return { dataBase64: buf.toString("base64"), mimeType: "image/png", bytes: buf.length };
+    // chromex-22wi: the result IS the provider's image input — there is
+    // no artifact.upload channel on this backend, so the payload must be
+    // bounded inline. Same 512KiB decoded ceiling the gateway artifact
+    // store enforces; retry at lower jpeg quality, then fail honestly.
+    for (const quality of SCREENSHOT_JPEG_QUALITIES) {
+      const buf = await page.screenshot({ type: "jpeg", quality });
+      if (buf.length <= SCREENSHOT_MAX_BYTES) {
+        return { dataBase64: buf.toString("base64"), mimeType: "image/jpeg", bytes: buf.length };
+      }
+    }
+    throw protocolError(
+      "artifact.too_large",
+      `screenshot exceeds ${SCREENSHOT_MAX_BYTES} bytes even at the lowest jpeg quality`,
+    );
   }
 
   // ---- DOM actions ----

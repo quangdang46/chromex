@@ -187,6 +187,41 @@ export function toolHostSnapshotRegistry(): SnapshotRegistry {
   return snapshotRegistry;
 }
 
+/** Mirrors the gateway artifact.upload decoded cap (512KiB) — keep in
+ *  sync with packages/bridge/src/gateway/main.ts. */
+const SCREENSHOT_MAX_DECODED_BYTES = 512 * 1024;
+/** jpeg quality ladder tried after the dep's default capture. */
+const SCREENSHOT_QUALITY_RETRY = [45, 25] as const;
+
+function base64DecodedBytes(dataBase64: string): number {
+  const padding = dataBase64.endsWith("==") ? 2 : dataBase64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((dataBase64.length * 3) / 4) - padding);
+}
+
+async function captureScreenshotWithinArtifactCap(
+  capture: (windowId: number, opts?: { quality?: number }) => Promise<string>,
+  windowId: number,
+): Promise<{ mimeType: string; dataBase64: string }> {
+  const attempt = async (quality?: number) => {
+    const dataUrl = await capture(windowId, quality === undefined ? undefined : { quality });
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(dataUrl);
+    if (!m) throw toolError("browser.action_failed", "captureVisibleTab returned unexpected format");
+    return { mimeType: m[1]!, dataBase64: m[2]! };
+  };
+  let shot = await attempt();
+  for (const quality of SCREENSHOT_QUALITY_RETRY) {
+    if (base64DecodedBytes(shot.dataBase64) <= SCREENSHOT_MAX_DECODED_BYTES) return shot;
+    shot = await attempt(quality);
+  }
+  if (base64DecodedBytes(shot.dataBase64) > SCREENSHOT_MAX_DECODED_BYTES) {
+    throw toolError(
+      "artifact.too_large",
+      `screenshot exceeds ${SCREENSHOT_MAX_DECODED_BYTES} bytes even at the lowest jpeg quality`,
+    );
+  }
+  return shot;
+}
+
 export function createToolHostHandler(deps: ToolHostDeps) {
   return async function handleToolRequest(payload: unknown): Promise<unknown> {
     const req = (payload ?? {}) as {
@@ -485,23 +520,33 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (typeof tab?.windowId !== "number") {
           throw toolError("browser.no_tab", `tab ${tabId} has no window`);
         }
-        const dataUrl = await deps.captureVisibleTab(tab.windowId);
-        const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(dataUrl);
-        if (!m) throw toolError("browser.action_failed", "captureVisibleTab returned unexpected format");
-        const mimeType = m[1]!;
-        const dataBase64 = m[2]!;
+        // chromex-22wi: the artifact store caps uploads at 512KiB decoded
+        // (gateway artifact.upload). Retry at lower jpeg quality until
+        // the capture fits — the same bytes are returned inline as
+        // dataBase64 so the provider receives image input, not just a
+        // reference it cannot resolve. Bounded egress: the tool is
+        // already classified agentEgress "screenshot" upstream.
+        const shot = await captureScreenshotWithinArtifactCap(deps.captureVisibleTab, tab.windowId);
         if (!deps.uploadArtifact) {
-          // no artifact channel → bounded inline fallback is NOT allowed
-          // for screenshots (egress risk) — fail honestly.
+          // no artifact channel → the durable artifactRef cannot be
+          // minted; the bounded inline payload alone is not enough —
+          // fail honestly rather than silently degrade the contract.
           throw toolError("proto.unsupported", "artifact upload channel unavailable");
         }
         const art = await deps.uploadArtifact({
           taskId: req.taskId ?? "",
           kind: "screenshot",
-          mimeType,
-          dataBase64,
+          mimeType: shot.mimeType,
+          dataBase64: shot.dataBase64,
         });
-        return { artifactRef: art.artifactRef, sha256: art.sha256, bytes: art.bytes, mimeType, resolvedTabId: tabId };
+        return {
+          artifactRef: art.artifactRef,
+          sha256: art.sha256,
+          bytes: art.bytes,
+          mimeType: shot.mimeType,
+          dataBase64: shot.dataBase64,
+          resolvedTabId: tabId,
+        };
       }
       case "browser.page.extract": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);

@@ -282,8 +282,8 @@ const toolHostHandler = createToolHostHandler({
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
     },
-    captureVisibleTab: async (windowId) =>
-      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 70 }),
+    captureVisibleTab: async (windowId, opts) =>
+      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: opts?.quality ?? 70 }),
     uploadArtifact: async (input) => {
       const rt = await getGatewayRuntime();
       if (!rt) throw new Error("gateway runtime unavailable");

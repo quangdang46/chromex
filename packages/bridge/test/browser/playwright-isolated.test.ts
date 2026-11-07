@@ -348,6 +348,51 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
   });
 });
 
+describe("PlaywrightIsolatedBackend screenshot (chromex-22wi)", () => {
+  test("screenshot returns bounded jpeg bytes as provider image input (chromex-22wi)", async () => {
+    const shots: Array<{ type?: string; quality?: number }> = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      screenshot: async (opts: { type?: string; quality?: number }) => {
+        shots.push(opts);
+        return Buffer.alloc(2048, 1);
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.screenshot", {})) as {
+      dataBase64: string;
+      mimeType: string;
+      bytes: number;
+    };
+    expect(res.mimeType).toBe("image/jpeg");
+    expect(res.bytes).toBe(2048);
+    expect(Buffer.from(res.dataBase64, "base64")).toHaveLength(2048);
+    expect(shots[0]).toMatchObject({ type: "jpeg", quality: 70 });
+  });
+
+  test("oversized screenshot retries lower quality then artifact.too_large — never unbounded", async () => {
+    const qualities: number[] = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      screenshot: async (opts: { quality?: number }) => {
+        qualities.push(opts.quality ?? -1);
+        return Buffer.alloc(600 * 1024, 1); // always over the 512KiB cap
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    await expect(backend.execute("t1", "browser.page.screenshot", {})).rejects.toMatchObject({
+      code: "artifact.too_large",
+    });
+    expect(qualities).toEqual([70, 45, 25]);
+  });
+});
+
 /** Minimal playwright-core stub — only what the isolated backend touches. */
 function stubPlaywright(pages: unknown[]) {
   const pwPages = pages as Array<Record<string, unknown>>;

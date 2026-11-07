@@ -25,6 +25,12 @@ export interface BrowserBackendCapabilities {
   dom: boolean;
   accessibility: boolean;
   screenshot: boolean;
+  /** browser.page.screenshot result carries bounded image bytes
+   *  (`dataBase64`, ≤512KiB decoded — the gateway artifact cap) inline
+   *  so the provider can consume them as image input; hosts that also
+   *  persist an artifact return `artifactRef` alongside. Absent/false
+   *  means the tool only yields a reference the provider cannot see. */
+  screenshotImagePayload?: boolean;
   upload: boolean;
   /**
    * Proven iframe level. MVP chrome-extension = "none" (content script
@@ -86,6 +92,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     dom: true,
     accessibility: false,
     screenshot: true,
+    screenshotImagePayload: true,
     // DataTransfer bytes path (browser.page.upload) — synthetic, not a
     // trusted gesture; filePicker stays false for the native picker.
     upload: true,
@@ -110,6 +117,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     dom: true,
     accessibility: true,
     screenshot: true,
+    screenshotImagePayload: true,
     upload: true,
     // PROVISIONAL(spike-B4): claimed "all" pending real frame tests.
     iframe: "all",
