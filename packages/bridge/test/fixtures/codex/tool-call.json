@@ -1,0 +1,18 @@
+{
+  "name": "tool-call",
+  "description": "Command execution tool call lifecycle",
+  "gatewayTurnId": "gt-2",
+  "notifications": [
+    { "method": "turn/started", "params": { "turn": { "id": "pt-2", "status": "inProgress" } } },
+    { "method": "item/started", "params": { "turnId": "pt-2", "item": { "id": "tc-1", "type": "commandExecution", "command": "ls -la", "status": "inProgress" } } },
+    { "method": "item/completed", "params": { "turnId": "pt-2", "item": { "id": "tc-1", "type": "commandExecution", "command": "ls -la", "status": "completed", "exitCode": 0, "aggregatedOutput": "total 0" } } },
+    { "method": "turn/completed", "params": { "turn": { "id": "pt-2", "status": "completed" } } }
+  ],
+  "expectedDurableEvents": [
+    { "type": "turn.started", "turnId": "gt-2" },
+    { "type": "tool.started", "turnId": "gt-2", "toolCallId": "tc-1", "tool": "commandExecution", "source": "provider" },
+    { "type": "tool.completed", "turnId": "gt-2", "toolCallId": "tc-1", "tool": "commandExecution", "outcome": "succeeded" },
+    { "type": "turn.completed", "turnId": "gt-2" }
+  ],
+  "notes": "Every tool.started MUST get exactly one tool.completed incl. crash → outcome unknown (§4.4)."
+}

@@ -1,0 +1,19 @@
+{
+  "name": "interrupt",
+  "description": "turn/interrupt → ownership guarantee → terminal ordering",
+  "gatewayTurnId": "gt-5",
+  "scenario": "interrupt() called mid-turn; adapter must not let old foreground turn continue after resolve",
+  "notifications": [
+    { "method": "turn/started", "params": { "turn": { "id": "pt-5", "status": "inProgress" } } },
+    { "method": "turn/completed", "params": { "turn": { "id": "pt-5", "status": "interrupted", "interruptReason": "user" } } }
+  ],
+  "expectedDurableEvents": [
+    { "type": "turn.started", "turnId": "gt-5" },
+    { "type": "turn.cancelled", "turnId": "gt-5" }
+  ],
+  "expectedBehavior": [
+    "interrupt() resolves only after provider confirms terminal state",
+    "pending steers cancelled; adapter internal queue cleared",
+    "no events from the interrupted turn may arrive after interrupt() resolves"
+  ]
+}

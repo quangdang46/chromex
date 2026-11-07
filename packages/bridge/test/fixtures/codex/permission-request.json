@@ -1,0 +1,20 @@
+{
+  "name": "permission-request",
+  "description": "Codex approval request → PermissionRequest → resolved; chain may yield followUpPrompt",
+  "gatewayTurnId": "gt-3",
+  "notifications": [
+    { "method": "turn/started", "params": { "turn": { "id": "pt-3", "status": "inProgress" } } },
+    { "method": "item/tool/requestUserInput", "params": { "turnId": "pt-3", "itemId": "req-1", "questions": [{ "id": "q1", "question": "Allow command?", "options": [{ "id": "allow", "label": "Allow" }, { "id": "deny", "label": "Deny" }] }] } },
+    { "method": "turn/completed", "params": { "turn": { "id": "pt-3", "status": "completed" } } }
+  ],
+  "expectedDurableEvents": [
+    { "type": "turn.started", "turnId": "gt-3" },
+    { "type": "permission.requested", "turnId": "gt-3", "kind": "provider_permission" },
+    { "type": "turn.completed", "turnId": "gt-3" }
+  ],
+  "permissionFlow": {
+    "request": "permission.requested → Gateway approval store (source of truth) → user decides → permission.respond → adapter",
+    "followUp": "Codex plan-approval chains may return followUpPrompt in PermissionResponseResult; GATEWAY executes it as a NEW turn with NEW gatewayTurnId — adapter never self-runs"
+  },
+  "notes": "getPendingPermissions() on the session is a MIRROR only."
+}

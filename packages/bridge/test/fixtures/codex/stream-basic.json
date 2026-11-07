@@ -1,0 +1,22 @@
+{
+  "name": "stream-basic",
+  "description": "Happy-path turn: start, two deltas, final message, completion",
+  "gatewayTurnId": "gt-1",
+  "notifications": [
+    { "method": "turn/started", "params": { "turn": { "id": "pt-1", "status": "inProgress" } } },
+    { "method": "item/agentMessage/delta", "params": { "turnId": "pt-1", "itemId": "m1", "delta": "Hello " } },
+    { "method": "item/agentMessage/delta", "params": { "turnId": "pt-1", "itemId": "m1", "delta": "world" } },
+    { "method": "item/completed", "params": { "turnId": "pt-1", "item": { "id": "m1", "type": "agentMessage", "text": "Hello world" } } },
+    { "method": "turn/completed", "params": { "turn": { "id": "pt-1", "status": "completed", "completedAt": 1700000000 } } }
+  ],
+  "expectedDurableEvents": [
+    { "type": "turn.started", "turnId": "gt-1" },
+    { "type": "assistant.message", "turnId": "gt-1", "text": "Hello world" },
+    { "type": "turn.completed", "turnId": "gt-1" }
+  ],
+  "expectedEphemeralEvents": [
+    { "type": "assistant.delta", "turnId": "gt-1", "deltaOffset": 0 },
+    { "type": "assistant.delta", "turnId": "gt-1", "deltaOffset": 6 }
+  ],
+  "notes": "assistant.delta is EPHEMERAL (no seq, no persist); assistant.message is the durable replacement. deltaOffset = chars before this chunk."
+}

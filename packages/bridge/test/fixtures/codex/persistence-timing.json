@@ -1,0 +1,11 @@
+{
+  "name": "persistence-timing",
+  "description": "thread/start rollout resumability timing (§8.2 minor)",
+  "scenario": "verify WHEN codex thread/start creates a resumable rollout; describePersistence() must return null BEFORE that point",
+  "expectedBehavior": [
+    "describePersistence() returns null until the provider confirms the rollout/thread is persisted",
+    "after thread/start completes AND rollout file exists → AgentPersistenceHandle{provider:'codex', ref:<threadId>, kind:'thread'}",
+    "persistence.provider is ALWAYS the original provider id even under derived profiles"
+  ],
+  "notes": "Pairs with P1-05 real-App-Server test (skip when codex not installed) + mock fixture."
+}

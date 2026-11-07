@@ -53,7 +53,8 @@ export interface AgentSession {
    */
   interrupt(): Promise<void>;
   /** decides whether idle runtime shutdown is safe */
-  canStopRuntime?(): boolean;
+  /** sync or async — adapters may need to query runtime state */
+  canStopRuntime?(): boolean | Promise<boolean>;
 
   respondToPermission(requestId: string, response: PermissionResponse): Promise<PermissionResponseResult>;
   /** mirror only — Gateway approval store is the source of truth */
