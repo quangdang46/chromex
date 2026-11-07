@@ -562,6 +562,15 @@ export interface BrowserDomElementSnapshot {
   ariaExpanded?: string;
   ariaHasPopup?: string;
   ariaControls?: string;
+  ariaChecked?: string;
+  ariaSelected?: string;
+  ariaPressed?: string;
+  /** checkbox/radio checked state (absent on other elements) */
+  checked?: boolean;
+  /** input/textarea readonly or aria-readonly/readonly attribute */
+  readOnly?: boolean;
+  /** img src sanitized to origin+path */
+  imgSrc?: string;
   tabIndex?: number;
   isTextEntryCandidate?: boolean;
   opensEditableSurface?: boolean;

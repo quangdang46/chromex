@@ -86,6 +86,30 @@ export function describeDomActionElement(ref: string, element: HTMLElement): Bro
   const ariaExpanded = element.getAttribute("aria-expanded") || "";
   const ariaHasPopup = element.getAttribute("aria-haspopup") || "";
   const ariaControls = element.getAttribute("aria-controls") || "";
+  const ariaChecked = element.getAttribute("aria-checked") || "";
+  const ariaSelected = element.getAttribute("aria-selected") || "";
+  const ariaPressed = element.getAttribute("aria-pressed") || "";
+  // checkbox/radio checked state — agents verifying form state need it;
+  // input.checked is not covered by `value`.
+  const checked =
+    element instanceof HTMLInputElement && (element.type === "checkbox" || element.type === "radio")
+      ? element.checked
+      : null;
+  // img src for vision workflows — sanitized to origin+path (query can
+  // carry signed-URL tokens).
+  let imgSrc = "";
+  if (element instanceof HTMLImageElement && element.src) {
+    try {
+      const u = new URL(element.src);
+      imgSrc = `${u.origin}${u.pathname}`;
+    } catch {
+      imgSrc = "";
+    }
+  }
+  const readOnly =
+    element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+      ? element.readOnly
+      : element.getAttribute("aria-readonly") === "true" || element.hasAttribute("readonly");
   return {
     ref,
     role: element.getAttribute("role") || inferDomActionRole(element),
@@ -101,6 +125,12 @@ export function describeDomActionElement(ref: string, element: HTMLElement): Bro
     ...(ariaExpanded ? { ariaExpanded } : {}),
     ...(ariaHasPopup ? { ariaHasPopup } : {}),
     ...(ariaControls ? { ariaControls } : {}),
+    ...(ariaChecked ? { ariaChecked } : {}),
+    ...(ariaSelected ? { ariaSelected } : {}),
+    ...(ariaPressed ? { ariaPressed } : {}),
+    ...(checked !== null ? { checked } : {}),
+    ...(readOnly ? { readOnly: true } : {}),
+    ...(imgSrc ? { imgSrc } : {}),
     ...(element.tabIndex >= 0 ? { tabIndex: element.tabIndex } : {}),
     isTextEntryCandidate: isTextEntryCandidate(element),
     opensEditableSurface: opensEditableSurface(element),
