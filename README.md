@@ -129,7 +129,7 @@ Chrome Extension -> Native Messaging Host -> Local Bridge -> codex app-server
 > persistence, event replay + snapshots, OS advisory-lock ownership, and
 > provider/browser abstraction (Codex first, Claude later). See
 > [`COMPREHENSIVE PLAN FOR CHROMEX.md`](./COMPREHENSIVE%20PLAN%20FOR%20CHROMEX.md)
-> and `docs/adr/` for the decision records. Compatibility flags
+> and the architecture decision records in `docs`. Compatibility flags
 > (`gatewayMode`, `browserPolicyV2`, …) default to legacy behavior until
 > each phase's regression tests pass; `gatewayMode=off` remains fully
 > supported.

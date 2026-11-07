@@ -4904,6 +4904,12 @@ async function getWorkspaceHarness(): Promise<WorkspaceHarnessSnapshot> {
   return harness;
 }
 
+function refreshCatalogAfterProviderChange(settings: ExtensionSettings): void {
+  void triggerCatalogRefresh(normalizeConfiguredPath(settings.workspaceRoot) || undefined, {
+    force: true,
+  });
+}
+
 async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const previousSettings = await getStoredSettings();
   const settings = await updateStoredSettings(patch);
@@ -4914,9 +4920,7 @@ async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<
     });
   }
   if (patch.agentProviderId !== undefined && patch.agentProviderId !== previousSettings.agentProviderId) {
-    void triggerCatalogRefresh(normalizeConfiguredPath(settings.workspaceRoot) || undefined, {
-      force: true,
-    });
+    void refreshCatalogAfterProviderChange(settings);
     return settings;
   }
   if (

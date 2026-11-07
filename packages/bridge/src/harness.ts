@@ -481,6 +481,9 @@ export class BridgeHarnessRuntime {
         }
       });
 
+      // hook may exit before consuming stdin — EPIPE on write must not
+      // surface as an uncaught exception (close handler reports result)
+      child.stdin.on("error", () => {});
       child.stdin.write(JSON.stringify(input));
       child.stdin.end();
     });
