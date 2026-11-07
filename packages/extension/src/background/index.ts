@@ -99,6 +99,7 @@ import { resolveVisibleCurrentConversation } from "./conversation-history.js";
 import { NativeBridgeClient } from "./native-bridge-client.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { createToolHostHandler } from "./gateway/tool-host.js";
+import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
@@ -230,6 +231,19 @@ setGatewayServerRequestHandler(
 // Events/delta streaming migration is P1-10 — request path only.
 void getGatewayRuntime().then((rt) => {
   bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
+  // P1-10 interim: translate gateway envelopes into legacy bridge.event
+  // broadcasts so the existing sidepanel keeps rendering in gatewayMode.
+  rt?.onEvent((env) => {
+    const legacy = gatewayEventToLegacy(env);
+    if (legacy) broadcastBridgeEvent(legacy);
+    // P1-10: ack durable task events once handed to the panel —
+    // broadcastBridgeEvent resolves only after runtime.sendMessage, so
+    // this approximates "rendered" for the interim translation path.
+    const e = env as { kind?: string; stream?: string; taskId?: string; seq?: number };
+    if (e.kind === "event" && e.stream === "task" && typeof e.seq === "number" && e.taskId) {
+      rt?.tasks.markRendered(e.taskId, e.seq);
+    }
+  });
 });
 const UI_BRIDGE_TIMEOUT_MS = 4000;
 const UI_CONTEXT_TIMEOUT_MS = 2500;
@@ -677,6 +691,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             selectedServiceTier: state.selectedServiceTier,
           });
           return;
+        case "gateway.tasks": {
+          const rt = await getGatewayRuntime();
+          sendResponse({
+            enabled: Boolean(rt),
+            state: rt?.state() ?? "disabled",
+            tasks: rt?.tasks.listTasks() ?? [],
+          });
+          return;
+        }
         case "settings.update":
           sendResponse(await handleSettingsUpdate(message.settings ?? {}));
           return;

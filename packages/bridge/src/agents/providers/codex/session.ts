@@ -111,7 +111,12 @@ export class CodexAgentSession implements AgentSession {
       ) {
         this.activeTurn = null;
       }
-      for (const l of this.listeners) l(e.event);
+      for (const l of this.listeners)
+        l(
+          e.deltaOffset !== undefined
+            ? ({ ...e.event, deltaOffset: e.deltaOffset } as AgentEvent)
+            : e.event,
+        );
     });
     this.unsubscribeNotifications = this.client.onNotification((n) =>
       this.mapper.mapNotification(n.method, n.params),

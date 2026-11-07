@@ -23,8 +23,8 @@ export type AgentEvent =
   | { type: "user.message.created"; turnId: string; message: TurnInput; clientMessageId: string }
   | { type: "turn.started"; turnId: string; clientMessageId?: string }
   // EPHEMERAL — no seq, lossy, never persisted
-  | { type: "assistant.delta"; turnId: string; text: string }
-  | { type: "reasoning.delta"; turnId: string; text: string }
+  | { type: "assistant.delta"; turnId: string; text: string; deltaOffset?: number }
+  | { type: "reasoning.delta"; turnId: string; text: string; deltaOffset?: number }
   // DURABLE final assistant message; oversized text → assistantMessageRef artifact
   | { type: "assistant.message"; turnId: string; text: string; assistantMessageRef?: string }
   // DURABLE summary only — never raw reasoning (storeReasoning=false default)

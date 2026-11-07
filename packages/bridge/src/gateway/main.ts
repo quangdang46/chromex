@@ -150,8 +150,30 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       config,
       // durable envelopes broadcast to all authed connections; ephemeral
       // agent deltas are dropped here until P1-08 wires the delta channel
-      publish: (_taskId, event, ephemeral) => {
-        if (!ephemeral && typeof event === "object" && "kind" in event) {
+      publish: (taskId, event, ephemeral) => {
+        if (ephemeral) {
+          // §4.1/§4.6: deltas are RAM-only — wrapped as
+          // EphemeralDeltaEnvelope, broadcast to clients, never stored.
+          const e = event as { type?: string; turnId?: string; deltaOffset?: number; text?: string };
+          if (
+            (e.type === "assistant.delta" || e.type === "reasoning.delta") &&
+            typeof e.turnId === "string"
+          ) {
+            ipc?.broadcast({
+              v: 1,
+              kind: "event",
+              reliability: "ephemeral",
+              taskId,
+              turnId: e.turnId,
+              type: e.type,
+              deltaOffset: typeof e.deltaOffset === "number" ? e.deltaOffset : 0,
+              text: typeof e.text === "string" ? e.text : "",
+              ts: Date.now(),
+            } as import("@codex-sidepanel/shared").Envelope);
+          }
+          return;
+        }
+        if (typeof event === "object" && "kind" in event) {
           ipc?.broadcast(event as import("@codex-sidepanel/shared").Envelope);
         }
       },

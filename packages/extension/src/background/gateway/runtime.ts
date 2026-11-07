@@ -84,6 +84,11 @@ async function build(): Promise<GatewayRuntime | null> {
     onGatewayEvent: (env) => {
       for (const l of listeners) l(env as Envelope);
     },
+    onTasksChanged: () => {
+      void chrome.runtime
+        .sendMessage({ type: "gateway.tasks.changed" })
+        .catch(() => undefined);
+    },
   });
 
   // §11 reconnect flow: connect → hello seeds tasks → syncAll replays

@@ -1,0 +1,51 @@
+import { describe, expect, it } from "vitest";
+import { gatewayEventToLegacy } from "../../src/background/gateway/legacy-events.js";
+import type { Envelope } from "@codex-sidepanel/shared";
+
+function durable(taskId: string, type: string, payload: Record<string, unknown>, seq = 1): Envelope {
+  return {
+    v: 1, kind: "event", reliability: "durable", stream: "task",
+    taskId, seq, ts: 1, type, payload: { type, ...payload },
+  } as unknown as Envelope;
+}
+function eph(taskId: string, turnId: string, type: string, text: string): Envelope {
+  return {
+    v: 1, kind: "event", reliability: "ephemeral", taskId, turnId,
+    type, deltaOffset: 0, text, ts: 1,
+  } as unknown as Envelope;
+}
+
+describe("gatewayEventToLegacy", () => {
+  it("assistant.message → message.completed with threadId=taskId", () => {
+    const out = gatewayEventToLegacy(durable("t1", "assistant.message", { turnId: "g1", text: "hi" }));
+    expect(out).toMatchObject({ type: "message.completed", threadId: "t1", turnId: "g1", text: "hi" });
+  });
+  it("turn.completed → legacy turn.completed", () => {
+    const out = gatewayEventToLegacy(durable("t1", "turn.completed", { turnId: "g1", stopReason: "end_turn" }));
+    expect(out).toMatchObject({ type: "turn.completed", threadId: "t1", turnId: "g1", stopReason: "end_turn" });
+  });
+  it("ephemeral assistant.delta → message.delta", () => {
+    const out = gatewayEventToLegacy(eph("t1", "g1", "assistant.delta", "chunk"));
+    expect(out).toMatchObject({ type: "message.delta", threadId: "t1", turnId: "g1", itemId: "gw-g1", delta: "chunk" });
+  });
+  it("reasoning.delta maps through", () => {
+    const out = gatewayEventToLegacy(eph("t1", "g1", "reasoning.delta", "think"));
+    expect(out).toMatchObject({ type: "reasoning.delta", delta: "think" });
+  });
+  it("turn.cancelled → turn.completed stopReason=cancelled", () => {
+    const out = gatewayEventToLegacy(durable("t1", "turn.cancelled", { turnId: "g1" }));
+    expect(out).toMatchObject({ type: "turn.completed", stopReason: "cancelled" });
+  });
+  it("unmapped types return null (never faked)", () => {
+    expect(gatewayEventToLegacy(durable("t1", "task.paused", { taskId: "t1" }))).toBeNull();
+    expect(gatewayEventToLegacy({ v: 1, kind: "response" } as unknown as Envelope)).toBeNull();
+  });
+  it("permission.requested/resolved carry requestId", () => {
+    const req = gatewayEventToLegacy(durable("t1", "permission.requested", {
+      turnId: "g1", request: { requestId: "r1", kind: "browser_tool", summary: "click" },
+    }));
+    expect(req).toMatchObject({ type: "permission.requested", requestId: "r1", threadId: "t1" });
+    const res = gatewayEventToLegacy(durable("t1", "permission.resolved", { requestId: "r1", decision: { kind: "allow" } }));
+    expect(res).toMatchObject({ type: "permission.resolved", requestId: "r1" });
+  });
+});
