@@ -7,3 +7,12 @@ export {
   encodeNativeMessage,
 } from "./framing.js";
 export { NativeHostRelay, normalizeNativeHostPath } from "./relay.js";
+export {
+  GatewayClientError,
+  GatewayConnection,
+  ensureGateway,
+  endpointPidAlive,
+  readGatewayEndpoint,
+  readGatewayToken,
+} from "./gateway-client.js";
+export type { EnsureGatewayOptions, GatewayConnectOptions, GatewayEndpointFile } from "./gateway-client.js";
