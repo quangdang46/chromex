@@ -1,0 +1,35 @@
+{
+  "scenario": "s3-multitab",
+  "runId": "2026-11-07T15-02-48-245Z-eedae1",
+  "status": "PASS",
+  "summary": "two tasks held isolated tab scopes; cross-task tab access refused",
+  "durationMs": 5637,
+  "details": {
+    "tabA": 798783178,
+    "tabB": 798783179,
+    "ownOk": true,
+    "crossDenied": true,
+    "sawB": false,
+    "cross": {
+      "toolCallId": "rpc-mw6j8z8i-hmam4f",
+      "tool": "browser.page.get",
+      "status": "failed",
+      "error": {
+        "code": "browser.not_in_scope",
+        "message": "tab 798783179 is outside this task's tab scope"
+      }
+    },
+    "getA": "completed",
+    "getB": "completed"
+  },
+  "notes": [
+    "[2026-11-07T15:02:52.171Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:02:52.182Z] taskA=01M6V8HAGG1MBJWM5YRCB9K7X5 taskB=01M6V8HAGMJSF7A21BYV7SA536",
+    "[2026-11-07T15:02:52.198Z] taskA tab.create → {\"toolCallId\":\"rpc-mw6j8y6w-q9uv56\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":798783178,\"tabId\":798783178,\"resolvedTabId\":798783178,\"id\":798783178,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false},\"verified\":true}",
+    "[2026-11-07T15:02:52.218Z] taskB tab.create → {\"toolCallId\":\"rpc-mw6j8y7e-0y40sb\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":798783179,\"tabId\":798783179,\"resolvedTabId\":798783179,\"id\":798783179,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false},\"verified\":true}",
+    "[2026-11-07T15:02:52.219Z] tabA=798783178 tabB=798783179",
+    "[2026-11-07T15:02:53.537Z] A sees: {\"id\":798783178,\"url\":\"http://127.0.0.1:58464/?tag=A\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":798783178}",
+    "[2026-11-07T15:02:53.537Z] B sees: {\"id\":798783179,\"url\":\"http://127.0.0.1:58464/form?tag=B\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":798783179}",
+    "[2026-11-07T15:02:53.539Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw6j8z8i-hmam4f\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.not_in_scope\",\"message\":\"tab 798783179 is outside this task's tab scope\"}}"
+  ]
+}

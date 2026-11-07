@@ -1,0 +1,45 @@
+{
+  "scenario": "s7-approval",
+  "runId": "2026-11-07T14-34-11-539Z-2f053e",
+  "status": "FAIL",
+  "summary": "deny=true allow=true navigated=false resolved=2",
+  "durationMs": 37854,
+  "details": {
+    "denied": true,
+    "allowed": true,
+    "navigated": false,
+    "finalUrl": "http://127.0.0.1:53784/",
+    "tabsText": "{\"toolCallId\":\"rpc-mw6i8k07-wqzhhb\",\"tool\":\"browser.tabs.list\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.tabs.list timed out after 15000ms\"}}",
+    "resolvedCount": 2,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw6i87d8-wp72pl",
+      "tool": "browser.page.navigate",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "allowOutcome": {
+      "toolCallId": "rpc-mw6i87ka-sw1qsy",
+      "tool": "browser.page.navigate",
+      "status": "unknown",
+      "error": {
+        "code": "browser.tool_timeout",
+        "message": "tool browser.page.navigate timed out after 15000ms"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-07T14:34:16.611Z] task 01M6V6WZ51S64FYT0KKKAYESC5",
+    "[2026-11-07T14:34:16.613Z] browser.mcp scope acquired",
+    "[2026-11-07T14:34:17.803Z] gated target: http://auth.localhost:53784/",
+    "[2026-11-07T14:34:17.806Z] permission.requested id=appr-mw6i87d9-3vok6o kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
+    "[2026-11-07T14:34:17.807Z] answered deny with optionId=deny",
+    "[2026-11-07T14:34:18.057Z] deny outcome={\"toolCallId\":\"rpc-mw6i87d8-wp72pl\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-07T14:34:18.460Z] second permission.requested id=appr-mw6i87ka-3cfbq7 options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
+    "[2026-11-07T14:34:18.460Z] answered allow with optionId=allow_once",
+    "[2026-11-07T14:34:33.665Z] allow outcome={\"toolCallId\":\"rpc-mw6i87ka-sw1qsy\",\"tool\":\"browser.page.navigate\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.page.navigate timed out after 15000ms\"}}",
+    "[2026-11-07T14:34:49.247Z] tabs.list → {\"toolCallId\":\"rpc-mw6i8k07-wqzhhb\",\"tool\":\"browser.tabs.list\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.tabs.list timed out after 15000ms\"}}"
+  ]
+}

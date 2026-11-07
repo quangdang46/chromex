@@ -1,0 +1,17 @@
+{
+  "scenario": "s5-interruption",
+  "runId": "2026-11-07T15-04-44-296Z-b97c45",
+  "status": "FAIL",
+  "summary": "harness error: Cannot read properties of undefined (reading 'catch')",
+  "durationMs": 21297,
+  "error": "TypeError: Cannot read properties of undefined (reading 'catch')\n    at runScenario.autoAnswer (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s5-interruption.mjs:146:29)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:710:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s5-interruption.mjs:16:1",
+  "notes": [
+    "[2026-11-07T15:04:48.682Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:04:48.686Z] task 01M6V8MW9DKDMS4JTT50314GMB",
+    "[2026-11-07T15:04:49.045Z] pre-kill page.get → {\"toolCallId\":\"rpc-mw6jbg5u-e355s6\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":130493347,\"url\":\"http://127.0.0.1:58761/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":1304933",
+    "[2026-11-07T15:04:49.045Z] gateway pid=41648 — sending SIGKILL",
+    "[2026-11-07T15:04:49.546Z] spawn_in_flight window: waiting 16s before respawn",
+    "[2026-11-07T15:05:05.592Z] gateway respawned",
+    "[2026-11-07T15:05:05.593Z] post-respawn call with old token failed: task.not_found: task 01M6V8MW9DKDMS4JTT50314GMB not found — re-spawning scope"
+  ]
+}

@@ -1,0 +1,220 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 1,
+      "ts": 1794062537618,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 2,
+      "ts": 1794062537618,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 3,
+      "ts": 1794062537904,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihta-k6jzi3",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://127.0.0.1:55105/form"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 4,
+      "ts": 1794062537916,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihta-k6jzi3",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.no_host",
+            "message": "no browser host for task scope (no_host)"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 5,
+      "ts": 1794062537917,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtp-dqg0z7",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 6,
+      "ts": 1794062537919,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtp-dqg0z7",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.no_host",
+            "message": "no browser host for task scope (no_host)"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 7,
+      "ts": 1794062537919,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtr-1bqj4t",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "input": {
+          "label": "Next"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 8,
+      "ts": 1794062537924,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtr-1bqj4t",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.no_host",
+            "message": "no browser host for task scope (no_host)"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 9,
+      "ts": 1794062537925,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtx-po3q62",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V7BMWHQG03VTJXQBYHMHWT",
+      "seq": 10,
+      "ts": 1794062537926,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6iihtx-po3q62",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.no_host",
+            "message": "no browser host for task scope (no_host)"
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 10,
+  "hasMore": false
+}

@@ -1,0 +1,31 @@
+{
+  "scenario": "s1-build-feature",
+  "runId": "2026-11-07T15-07-56-593Z-f2ec47",
+  "status": "PASS",
+  "summary": "provider iterated real-extension browser tools observe→act→observe",
+  "durationMs": 55331,
+  "details": {
+    "taskId": "01M6V8TQWXM3YR6TDPDWVFVEPZ",
+    "turnId": "01M6V8TQX3WJVEVXJFEE6M8DKG",
+    "terminal": "turn.completed",
+    "actions": [
+      "browser.page.navigate",
+      "browser.page.snapshot",
+      "browser.page.click",
+      "browser.page.get",
+      "browser.page.extract",
+      "browser.page.extract",
+      "browser.page.extract"
+    ],
+    "classified": 7,
+    "browserDone": 7,
+    "browserSucceeded": 7,
+    "mcpDone": 0
+  },
+  "notes": [
+    "[2026-11-07T15:08:00.491Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:08:00.799Z] task 01M6V8TQWXM3YR6TDPDWVFVEPZ provider=codex model=xxx",
+    "[2026-11-07T15:08:00.802Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-duXoXN/mcp/01M6V8TQWXM3YR6TDPDWVFVEPZ.json",
+    "[2026-11-07T15:08:00.999Z] turn 01M6V8TQX3WJVEVXJFEE6M8DKG"
+  ]
+}

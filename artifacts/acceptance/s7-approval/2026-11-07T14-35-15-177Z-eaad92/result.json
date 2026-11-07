@@ -1,0 +1,47 @@
+{
+  "scenario": "s7-approval",
+  "runId": "2026-11-07T14-35-15-177Z-eaad92",
+  "status": "FAIL",
+  "summary": "deny=true allow=true navigated=false resolved=2",
+  "durationMs": 53920,
+  "details": {
+    "denied": true,
+    "allowed": true,
+    "navigated": false,
+    "finalUrl": "http://127.0.0.1:53992/",
+    "tabsText": "{\"toolCallId\":\"rpc-mw6i9y0t-caiip7\",\"tool\":\"browser.tabs.list\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.tabs.list timed out after 15000ms\"}}",
+    "hostAliveAfterApproval": false,
+    "resolvedCount": 2,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw6i9lgp-l2m87p",
+      "tool": "browser.page.navigate",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "allowOutcome": {
+      "toolCallId": "rpc-mw6i9lnr-flx1f5",
+      "tool": "browser.page.navigate",
+      "status": "unknown",
+      "error": {
+        "code": "browser.tool_timeout",
+        "message": "tool browser.page.navigate timed out after 15000ms"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-07T14:35:22.536Z] task 01M6V6YZH53DX393FJ7RSEXG3P",
+    "[2026-11-07T14:35:22.539Z] browser.mcp scope acquired",
+    "[2026-11-07T14:35:22.727Z] gated target: http://auth.localhost:53992/",
+    "[2026-11-07T14:35:22.732Z] permission.requested id=appr-mw6i9lgr-slx7gp kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
+    "[2026-11-07T14:35:22.734Z] answered deny with optionId=deny",
+    "[2026-11-07T14:35:22.983Z] deny outcome={\"toolCallId\":\"rpc-mw6i9lgp-l2m87p\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-07T14:35:23.385Z] second permission.requested id=appr-mw6i9lns-5myo6a options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
+    "[2026-11-07T14:35:23.386Z] answered allow with optionId=allow_once",
+    "[2026-11-07T14:35:38.499Z] allow outcome={\"toolCallId\":\"rpc-mw6i9lnr-flx1f5\",\"tool\":\"browser.page.navigate\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.page.navigate timed out after 15000ms\"}}",
+    "[2026-11-07T14:35:54.008Z] tabs.list → {\"toolCallId\":\"rpc-mw6i9y0t-caiip7\",\"tool\":\"browser.tabs.list\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.tabs.list timed out after 15000ms\"}}",
+    "[2026-11-07T14:36:09.094Z] probe tabs.list → {\"toolCallId\":\"rpc-mw6ia9nv-swfpcx\",\"tool\":\"browser.tabs.list\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.tabs.list timed out after 15000ms\"}}"
+  ]
+}

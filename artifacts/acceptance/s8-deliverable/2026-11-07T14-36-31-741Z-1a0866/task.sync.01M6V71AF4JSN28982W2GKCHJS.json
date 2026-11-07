@@ -1,0 +1,410 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 1,
+      "ts": 1794062199277,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 2,
+      "ts": 1794062199278,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 3,
+      "ts": 1794062199701,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ib8us-epuw28",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://127.0.0.1:54226/form"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 4,
+      "ts": 1794062199705,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "low",
+        "needsApproval": false,
+        "reason": "http(s) navigation with resolved context",
+        "origin": "http://127.0.0.1:54226",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 5,
+      "ts": 1794062214723,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ib8us-epuw28",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.page.navigate timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 6,
+      "ts": 1794062214734,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ibkge-jtm9n4",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 7,
+      "ts": 1794062214734,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.snapshot",
+        "risk": "external_mutation",
+        "needsApproval": true,
+        "reason": "data egress to non-local destination requires approval",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 8,
+      "ts": 1794062214736,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw6ibkgg-uxxjbl",
+          "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.snapshot requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "3b17e5a045c7f082d5c61aa0964e864994b979ea3f2b21121c3b5f51e17bafdb",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.snapshot",
+            "argsPreview": {},
+            "origin": ""
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 9,
+      "ts": 1794062214758,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw6ibkgg-uxxjbl",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 10,
+      "ts": 1794062230013,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ibkge-jtm9n4",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.page.snapshot timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 11,
+      "ts": 1794062230022,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ibw92-can87y",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "input": {
+          "label": "Next"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 12,
+      "ts": 1794062230026,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.click",
+        "risk": "low",
+        "needsApproval": false,
+        "reason": "click with resolved benign context",
+        "origin": null,
+        "targetLabel": "Next",
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 13,
+      "ts": 1794062245034,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ibw92-can87y",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.page.click timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 14,
+      "ts": 1794062245055,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ic7um-wq1hn5",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 15,
+      "ts": 1794062245055,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.get",
+        "risk": "external_mutation",
+        "needsApproval": true,
+        "reason": "data egress to non-local destination requires approval",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 16,
+      "ts": 1794062245055,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw6ic7un-re3w66",
+          "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.get requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "acbd166a1dee6284b25674aec7d57bef2c6181f5a5857f4e296938079cb7e2e6",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.get",
+            "argsPreview": {},
+            "origin": ""
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 17,
+      "ts": 1794062245066,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw6ic7un-re3w66",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V71AF4JSN28982W2GKCHJS",
+      "seq": 18,
+      "ts": 1794062260532,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6ic7um-wq1hn5",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.page.get timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 18,
+  "hasMore": false
+}

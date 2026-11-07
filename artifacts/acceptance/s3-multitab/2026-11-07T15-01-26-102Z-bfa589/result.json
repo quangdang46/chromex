@@ -1,0 +1,39 @@
+{
+  "scenario": "s3-multitab",
+  "runId": "2026-11-07T15-01-26-102Z-bfa589",
+  "status": "FAIL",
+  "summary": "ownOk=false crossDenied=false sawB=false",
+  "durationMs": 5793,
+  "details": {
+    "tabA": "1221168143",
+    "tabB": "1221168144",
+    "ownOk": false,
+    "crossDenied": false,
+    "sawB": false,
+    "cross": {
+      "toolCallId": "rpc-mw6j77s9-3seqhz",
+      "tool": "browser.page.get",
+      "status": "completed",
+      "result": {
+        "id": 1221168143,
+        "url": "http://127.0.0.1:58104/?tag=A",
+        "title": "Fixture Home",
+        "active": false,
+        "resolvedTabId": 1221168143
+      },
+      "verified": true
+    },
+    "getA": "completed",
+    "getB": "completed"
+  },
+  "notes": [
+    "[2026-11-07T15:01:29.936Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:01:29.943Z] taskA=01M6V8ET6KP6J3KZ4VB49FFJEQ taskB=01M6V8ET6PDSFJ4W5S2CFDH8YE",
+    "[2026-11-07T15:01:29.968Z] taskA tab.create → {\"toolCallId\":\"rpc-mw6j76qf-ndawaq\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1221168143,\"tabId\":1221168143,\"resolvedTabId\":1221168143,\"id\":1221168143,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false},\"verified\":true}",
+    "[2026-11-07T15:01:29.991Z] taskB tab.create → {\"toolCallId\":\"rpc-mw6j76r5-xo132u\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1221168144,\"tabId\":1221168144,\"resolvedTabId\":1221168144,\"id\":1221168144,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false},\"verified\":true}",
+    "[2026-11-07T15:01:29.992Z] tabA=1221168143 tabB=1221168144",
+    "[2026-11-07T15:01:31.304Z] A sees: {\"id\":1221168143,\"url\":\"http://127.0.0.1:58104/?tag=A\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":1221168143}",
+    "[2026-11-07T15:01:31.304Z] B sees: {\"id\":1221168144,\"url\":\"http://127.0.0.1:58104/form?tag=B\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":1221168144}",
+    "[2026-11-07T15:01:31.561Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw6j77s9-3seqhz\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1221168143,\"url\":\"http://127.0.0.1:58104/?tag=A\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":1221168143},\"verified\":true}"
+  ]
+}

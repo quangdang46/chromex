@@ -1,0 +1,351 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 1,
+      "ts": 1794062122535,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 2,
+      "ts": 1794062122536,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 3,
+      "ts": 1794062122729,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9lgp-l2m87p",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://auth.localhost:53992/"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 4,
+      "ts": 1794062122730,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "financial",
+        "needsApproval": true,
+        "reason": "payment/auth context requires approval",
+        "origin": "http://auth.localhost:53992",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 5,
+      "ts": 1794062122731,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw6i9lgr-slx7gp",
+          "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+          "kind": "browser_action",
+          "risk": "financial",
+          "summary": "browser.page.navigate requires approval (payment/auth context requires approval)",
+          "actionDigest": "b3cb743d27d49c4ceb9a9e84ccdaee6e639775198023826dccf17fe873e6e860",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.navigate",
+            "argsPreview": {
+              "url": "http://auth.localhost:53992/"
+            },
+            "origin": "http://auth.localhost:53992"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 6,
+      "ts": 1794062122734,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw6i9lgr-slx7gp",
+        "decision": {
+          "kind": "deny"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 7,
+      "ts": 1794062122983,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9lgp-l2m87p",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.approval_denied",
+            "message": "approval denied"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 8,
+      "ts": 1794062122983,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9lnr-flx1f5",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://auth.localhost:53992/"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 9,
+      "ts": 1794062122984,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "financial",
+        "needsApproval": true,
+        "reason": "payment/auth context requires approval",
+        "origin": "http://auth.localhost:53992",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 10,
+      "ts": 1794062122984,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw6i9lns-5myo6a",
+          "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+          "kind": "browser_action",
+          "risk": "financial",
+          "summary": "browser.page.navigate requires approval (payment/auth context requires approval)",
+          "actionDigest": "b3cb743d27d49c4ceb9a9e84ccdaee6e639775198023826dccf17fe873e6e860",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.navigate",
+            "argsPreview": {
+              "url": "http://auth.localhost:53992/"
+            },
+            "origin": "http://auth.localhost:53992"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 11,
+      "ts": 1794062123386,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw6i9lns-5myo6a",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 12,
+      "ts": 1794062138490,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9lnr-flx1f5",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.page.navigate timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 13,
+      "ts": 1794062139005,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9y0t-caiip7",
+        "tool": "browser.tabs.list",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 14,
+      "ts": 1794062139005,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.tabs.list",
+        "risk": "read",
+        "needsApproval": false,
+        "reason": "read-only tool",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6V6YZH53DX393FJ7RSEXG3P",
+      "seq": 15,
+      "ts": 1794062154008,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw6i9y0t-caiip7",
+        "tool": "browser.tabs.list",
+        "source": "browser",
+        "outcome": "unknown",
+        "output": {
+          "error": {
+            "code": "browser.tool_timeout",
+            "message": "tool browser.tabs.list timed out after 15000ms"
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 15,
+  "hasMore": false
+}

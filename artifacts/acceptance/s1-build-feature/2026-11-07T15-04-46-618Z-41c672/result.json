@@ -1,0 +1,20 @@
+{
+  "scenario": "s1-build-feature",
+  "runId": "2026-11-07T15-04-46-618Z-41c672",
+  "status": "FAIL",
+  "summary": "terminal=turn.completed classified=0 mcpDone=2 oao=false",
+  "durationMs": 83363,
+  "details": {
+    "taskId": "01M6V8MYDQBDD80TMB9Y1FPTB2",
+    "turnId": "01M6V8MYDS0BAW2TMNZB4XE07T",
+    "terminal": "turn.completed",
+    "actions": [],
+    "classified": 0,
+    "toolDone": 2
+  },
+  "notes": [
+    "[2026-11-07T15:04:50.690Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:04:50.872Z] task 01M6V8MYDQBDD80TMB9Y1FPTB2 provider=codex model=xxx",
+    "[2026-11-07T15:04:51.029Z] turn 01M6V8MYDS0BAW2TMNZB4XE07T"
+  ]
+}

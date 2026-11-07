@@ -1,0 +1,26 @@
+{
+  "scenario": "s8-deliverable",
+  "runId": "2026-11-07T14-36-31-741Z-1a0866",
+  "status": "PASS",
+  "summary": "task.sync carries full tool evidence; sidepanel renders in real Chrome",
+  "durationMs": 77481,
+  "details": {
+    "durableOk": true,
+    "uiOk": true,
+    "events": 18,
+    "toolStarted": 4,
+    "toolCompleted": 4,
+    "classified": 4,
+    "spState": {
+      "title": "Chromex · Chat",
+      "bodyText": "Disconnected\n\nmessage rejected\n\nAssistant\n\nChromex uses the current page and selected tabs to answer questions and help with browser work.\n\nChromex · Chat\nBasic permissions\nLoading models…\nVery high",
+      "hasComposer": true
+    },
+    "note": "agent-authored deliverable card requires a live provider turn (see s1)"
+  },
+  "notes": [
+    "[2026-11-07T14:37:40.645Z] calls: nav=unknown snap=unknown click=unknown get=unknown",
+    "[2026-11-07T14:37:41.491Z] durable events=18 started=4 completed=4 classified=4",
+    "[2026-11-07T14:37:49.156Z] sidepanel state: {\"title\":\"Chromex · Chat\",\"bodyText\":\"Disconnected\\n\\nmessage rejected\\n\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nChromex · Chat\\nBasic permissions\\nLoading models…\\nVery high\",\"hasComposer\":true}"
+  ]
+}

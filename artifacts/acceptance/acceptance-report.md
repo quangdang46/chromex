@@ -1,0 +1,75 @@
+# Chromex Acceptance Report
+
+Generated: 2026-11-07T15:12:19.122Z
+
+| Scenario | Status | Summary | Evidence |
+|----------|--------|---------|----------|
+| s1-build-feature | PASS | provider iterated real-extension browser tools observe→act→observe (55.3s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s1-build-feature/2026-11-07T15-07-56-593Z-f2ec47 |
+| s3-multitab | PASS | two tasks held isolated tab scopes; cross-task tab access refused (5.6s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s3-multitab/2026-11-07T15-02-48-245Z-eedae1 |
+| s6-failedplan | PASS | stale snapshotId rejected loudly; re-observe + retry succeeded (5.8s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s6-failedplan/2026-11-07T15-01-44-291Z-f5c205 |
+| s7-approval | PASS | deny→approval_denied, allow→navigated, permission.resolved×2 (5.9s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s7-approval/2026-11-07T15-01-05-558Z-e9a258 |
+| s8-deliverable | PASS | task.sync carries full tool evidence; sidepanel renders in real Chrome (7.0s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s8-deliverable/2026-11-07T15-01-37-042Z-c1b098 |
+| s5-interruption | FAIL | call2=failed completed=32 started=32 dup=false (111.5s) | /Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s5-interruption/2026-11-07T15-06-18-949Z-e206a4 |
+
+## Failures
+
+### s5-interruption
+
+call2=failed completed=32 started=32 dup=false
+
+```json
+{
+  "call1Status": "completed",
+  "call2": {
+    "toolCallId": "rpc-mw6jfrr4-0jzl3l",
+    "tool": "browser.page.get",
+    "status": "failed",
+    "error": {
+      "code": "browser.no_host",
+      "message": "no browser host for task scope (no_host)"
+    }
+  },
+  "completed": 32,
+  "started": 32,
+  "duplicateCompletions": false
+}
+```
+
+- [2026-11-07T15:06:22.640Z] authed gateway connections=2 (1=client, 2+=browser host)
+- [2026-11-07T15:06:22.645Z] task 01M6V8QR1M9YAJHY8CKPQYE007
+- [2026-11-07T15:06:22.942Z] pre-kill page.get → {"toolCallId":"rpc-mw6jdgm2-p5ibhn","tool":"browser.page.get","status":"completed","result":{"id":1145568819,"url":"http://127.0.0.1:59162/","title":"Fixture Home","active":true,"resolvedTabId":114556
+- [2026-11-07T15:06:22.943Z] gateway pid=45506 — sending SIGKILL
+- [2026-11-07T15:06:23.444Z] spawn_in_flight window: waiting 17s before respawn
+- [2026-11-07T15:06:40.315Z] gateway respawned
+- [2026-11-07T15:06:40.318Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:43.321Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:46.324Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:49.329Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:52.335Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:55.338Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:06:58.340Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:01.344Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:04.346Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:07.350Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:10.352Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:13.369Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:16.375Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:19.378Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:22.381Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:25.384Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:28.388Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:31.390Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:34.393Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:37.397Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:40.401Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:43.403Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:46.407Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:49.412Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:52.415Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:55.418Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:07:58.421Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:08:01.425Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:08:04.428Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:08:07.431Z] browser.no_host — waiting for extension host re-register, retrying
+- [2026-11-07T15:08:10.434Z] post-respawn page.get → {"toolCallId":"rpc-mw6jfrr4-0jzl3l","tool":"browser.page.get","status":"failed","error":{"code":"browser.no_host","message":"no browser host for task scope (no_host)"}}
+- [2026-11-07T15:08:10.438Z] durable: tool.started=32 tool.completed=32

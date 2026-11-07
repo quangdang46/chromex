@@ -1,0 +1,44 @@
+{
+  "scenario": "s7-approval",
+  "runId": "2026-11-07T14-26-26-106Z-1e2cf2",
+  "status": "FAIL",
+  "summary": "deny=true allow=true navigated=false resolved=2",
+  "durationMs": 447700,
+  "details": {
+    "denied": true,
+    "allowed": true,
+    "navigated": false,
+    "finalUrl": "http://127.0.0.1:52418/form",
+    "resolvedCount": 2,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw6hy9wk-b2xzcu",
+      "tool": "browser.page.navigate",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "allowOutcome": {
+      "toolCallId": "rpc-mw6hya3s-qtdkyn",
+      "tool": "browser.page.navigate",
+      "status": "unknown",
+      "error": {
+        "code": "browser.tool_timeout",
+        "message": "tool browser.page.navigate timed out after 15000ms"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-07T14:26:33.834Z] task 01M6V6EV799HSGK2YP3DZ8G8JM",
+    "[2026-11-07T14:26:33.838Z] browser.mcp scope acquired",
+    "[2026-11-07T14:26:34.531Z] gated target: http://auth.localhost:52418/",
+    "[2026-11-07T14:26:34.535Z] permission.requested id=appr-mw6hy9wm-rpnnet kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
+    "[2026-11-07T14:26:34.536Z] answered deny with optionId=deny",
+    "[2026-11-07T14:26:34.790Z] deny outcome={\"toolCallId\":\"rpc-mw6hy9wk-b2xzcu\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-07T14:26:35.195Z] second permission.requested id=appr-mw6hya3t-ggee82 options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
+    "[2026-11-07T14:26:35.197Z] answered allow with optionId=allow_once",
+    "[2026-11-07T14:26:50.437Z] allow outcome={\"toolCallId\":\"rpc-mw6hya3s-qtdkyn\",\"tool\":\"browser.page.navigate\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.page.navigate timed out after 15000ms\"}}",
+    "[2026-11-07T14:26:50.943Z] screenshot s7-after-allow failed: page.screenshot: Target page, context or browser has been closed"
+  ]
+}

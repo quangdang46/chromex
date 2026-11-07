@@ -1,0 +1,35 @@
+{
+  "scenario": "s8-deliverable",
+  "runId": "2026-11-07T14-42-41-857Z-23dd9c",
+  "status": "FAIL",
+  "summary": "durableOk=false uiOk=true",
+  "durationMs": 45288,
+  "details": {
+    "durableOk": false,
+    "uiOk": true,
+    "events": 10,
+    "toolStarted": 4,
+    "toolCompleted": 4,
+    "classified": 0,
+    "callsOk": false,
+    "callStatuses": {
+      "nav": "failed",
+      "snap": "failed",
+      "click": "failed",
+      "get": "failed"
+    },
+    "spState": {
+      "title": "Chromex · Chat",
+      "bodyText": "Disconnected\n\nmessage rejected\n\nAssistant\n\nChromex uses the current page and selected tabs to answer questions and help with browser work.\n\nChromex · Chat\nBasic permissions\nLoading models…\nVery high",
+      "hasComposer": true
+    },
+    "note": "agent-authored deliverable card requires a live provider turn (see s1)"
+  },
+  "notes": [
+    "[2026-11-07T14:43:13.223Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-07T14:43:13.231Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-07T14:43:16.666Z] calls: nav=failed snap=failed click=failed get=failed",
+    "[2026-11-07T14:43:24.751Z] durable events=10 started=4 completed=4 classified=0",
+    "[2026-11-07T14:43:27.102Z] sidepanel state: {\"title\":\"Chromex · Chat\",\"bodyText\":\"Disconnected\\n\\nmessage rejected\\n\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nChromex · Chat\\nBasic permissions\\nLoading models…\\nVery high\",\"hasComposer\":true}"
+  ]
+}
