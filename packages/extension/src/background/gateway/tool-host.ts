@@ -90,6 +90,35 @@ export interface ToolHostDeps {
     id?: number;
     filename?: string;
   }>;
+  /** chrome.windows.getAll/create/update (browser.windows.*) — absent
+   *  deps → proto.unsupported. */
+  listWindows?(): Promise<Array<{
+    id?: number | undefined;
+    focused?: boolean | undefined;
+    type?: string | undefined;
+    state?: string | undefined;
+    incognito?: boolean | undefined;
+    left?: number | undefined;
+    top?: number | undefined;
+    width?: number | undefined;
+    height?: number | undefined;
+    tabCount?: number | undefined;
+  }>>;
+  createWindow?(opts: {
+    url?: string | undefined;
+    focused?: boolean | undefined;
+    width?: number | undefined;
+    height?: number | undefined;
+    left?: number | undefined;
+    top?: number | undefined;
+    state?: string | undefined;
+  }): Promise<{
+    id?: number | undefined;
+    focused?: boolean | undefined;
+    state?: string | undefined;
+    tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
+  }>;
+  updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -174,6 +203,9 @@ const SUPPORTED = new Set([
   "browser.page.history",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.windows.list",
+  "browser.windows.create",
+  "browser.windows.update",
   "browser.page.network",
 ]);
 
@@ -851,6 +883,122 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           await new Promise((r) => setTimeout(r, 500));
         }
+      }
+      case "browser.windows.list": {
+        // Not tab-scoped: chrome.windows.getAll across normal windows.
+        if (!deps.listWindows) {
+          throw toolError("proto.unsupported", "window listing is not available on this host");
+        }
+        const windows = await deps.listWindows();
+        return {
+          windows: (Array.isArray(windows) ? windows : [])
+            .filter((w) => w.id !== undefined)
+            .map((w) => ({
+              id: w.id,
+              focused: w.focused === true,
+              type: w.type ?? "normal",
+              state: w.state ?? "normal",
+              incognito: w.incognito === true,
+              ...(typeof w.left === "number" ? { left: w.left } : {}),
+              ...(typeof w.top === "number" ? { top: w.top } : {}),
+              ...(typeof w.width === "number" ? { width: w.width } : {}),
+              ...(typeof w.height === "number" ? { height: w.height } : {}),
+              ...(typeof w.tabCount === "number" ? { tabCount: w.tabCount } : {}),
+            })),
+        };
+      }
+      case "browser.windows.create": {
+        // Not tab-scoped: opens a new browser window. http(s)/blank
+        // only — same egress model as tab.create.
+        if (!deps.createWindow) {
+          throw toolError("proto.unsupported", "window creation is not available on this host");
+        }
+        const rawUrl = str(args.url);
+        let url: string | undefined;
+        if (rawUrl) {
+          let parsed: URL;
+          try {
+            parsed = new URL(rawUrl);
+          } catch {
+            throw toolError("proto.invalid", "browser.windows.create args.url is not a valid URL");
+          }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            throw toolError("proto.invalid", "browser.windows.create only supports http(s) urls");
+          }
+          url = parsed.href;
+        }
+        const state = str(args.state);
+        if (state !== undefined && !["normal", "minimized", "maximized", "fullscreen"].includes(state)) {
+          throw toolError("proto.invalid", "browser.windows.create args.state must be normal|minimized|maximized|fullscreen");
+        }
+        const numArg = (key: string): number | undefined => {
+          const v = args[key];
+          return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+        };
+        const win = await deps.createWindow({
+          ...(url ? { url } : {}),
+          ...(typeof args.focused === "boolean" ? { focused: args.focused } : {}),
+          ...(numArg("width") !== undefined ? { width: numArg("width") } : {}),
+          ...(numArg("height") !== undefined ? { height: numArg("height") } : {}),
+          ...(numArg("left") !== undefined ? { left: numArg("left") } : {}),
+          ...(numArg("top") !== undefined ? { top: numArg("top") } : {}),
+          ...(state ? { state } : {}),
+        });
+        if (typeof win?.id !== "number") {
+          throw toolError("browser.action_failed", "chrome.windows.create returned no window id");
+        }
+        // Surface the window's tabs (sanitized urls) so the agent can
+        // address them — first tab also enters task scope via
+        // openedTabId like tab.create.
+        const tabs = (Array.isArray(win.tabs) ? win.tabs : [])
+          .filter((t) => typeof t.id === "number")
+          .map((t) => {
+            let safeUrl = "";
+            try {
+              const u = new URL(t.url ?? "about:blank");
+              safeUrl = `${u.origin}${u.pathname}`;
+            } catch {
+              safeUrl = "";
+            }
+            return {
+              id: t.id,
+              url: safeUrl,
+              title: t.title ?? "",
+              active: t.active === true,
+            };
+          });
+        const firstTabId = tabs[0]?.id;
+        return {
+          windowId: win.id,
+          id: win.id,
+          focused: win.focused === true,
+          state: win.state ?? state ?? "normal",
+          tabs,
+          ...(typeof firstTabId === "number" ? { openedTabId: firstTabId, tabId: firstTabId, resolvedTabId: firstTabId } : {}),
+        };
+      }
+      case "browser.windows.update": {
+        // Not tab-scoped: focus/state on an existing window.
+        if (!deps.updateWindow) {
+          throw toolError("proto.unsupported", "window update is not available on this host");
+        }
+        const windowId = args.windowId;
+        if (typeof windowId !== "number" || !Number.isInteger(windowId)) {
+          throw toolError("proto.invalid", "browser.windows.update requires integer args.windowId");
+        }
+        const focused = typeof args.focused === "boolean" ? args.focused : undefined;
+        const state = str(args.state);
+        if (state !== undefined && !["normal", "minimized", "maximized", "fullscreen"].includes(state)) {
+          throw toolError("proto.invalid", "browser.windows.update args.state must be normal|minimized|maximized|fullscreen");
+        }
+        if (focused === undefined && state === undefined) {
+          throw toolError("proto.invalid", "browser.windows.update requires args.focused or args.state");
+        }
+        await deps.updateWindow(windowId, {
+          ...(focused !== undefined ? { focused } : {}),
+          ...(state ? { state } : {}),
+        });
+        return { updated: windowId };
       }
       case "browser.page.network": {
         // Requests span frames — args.frameId filters to requests a

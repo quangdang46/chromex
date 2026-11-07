@@ -97,6 +97,55 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: -3, dropY: 4 }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("windows.list maps chrome.windows entries", async () => {
+    const d = deps();
+    d.listWindows = async () => [
+      { id: 1, focused: true, type: "normal", state: "normal", tabCount: 3, incognito: false },
+      { id: 2, focused: false, state: "minimized", width: 800, height: 600 },
+    ];
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.windows.list", {}))) as { windows: Array<Record<string, unknown>> };
+    expect(res.windows).toHaveLength(2);
+    expect(res.windows[0]).toMatchObject({ id: 1, focused: true, tabCount: 3 });
+    expect(res.windows[1]).toMatchObject({ id: 2, focused: false, state: "minimized", width: 800 });
+  });
+
+  test("windows.create validates url/state and surfaces first tab into scope", async () => {
+    const d = deps();
+    let created: Record<string, unknown> | undefined;
+    d.createWindow = async (opts) => {
+      created = opts as Record<string, unknown>;
+      return {
+        id: 7,
+        focused: true,
+        state: "normal",
+        tabs: [{ id: 42, url: "https://app.example/path?q=secret", title: "App", active: true }],
+      };
+    };
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.windows.create", { url: "https://app.example/path?q=secret", width: 1024 }))) as {
+      windowId: number; openedTabId: number; tabs: Array<{ url: string }>;
+    };
+    expect(created).toMatchObject({ url: "https://app.example/path?q=secret", width: 1024 });
+    expect(res.windowId).toBe(7);
+    expect(res.openedTabId).toBe(42);
+    expect(res.tabs[0]!.url).toBe("https://app.example/path"); // query stripped
+    await expect(h(req("browser.windows.create", { url: "file:///etc/passwd" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.create", { state: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("windows.update requires windowId + focused|state", async () => {
+    const d = deps();
+    const calls: Array<[number, Record<string, unknown>]> = [];
+    d.updateWindow = async (id, opts) => { calls.push([id, opts as Record<string, unknown>]); };
+    const h = createToolHostHandler(d);
+    await h(req("browser.windows.update", { windowId: 3, focused: true, state: "maximized" }));
+    expect(calls).toEqual([[3, { focused: true, state: "maximized" }]]);
+    await expect(h(req("browser.windows.update", { windowId: 3 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.update", { state: "maximized" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.update", { windowId: 3, state: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.drag maps source + drop target onto a dom.perform step", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

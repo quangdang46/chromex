@@ -33,7 +33,10 @@ export type BrowserToolName =
   | "browser.page.find"
   | "browser.page.history"
   | "browser.downloads.list"
-  | "browser.downloads.save";
+  | "browser.downloads.save"
+  | "browser.windows.list"
+  | "browser.windows.create"
+  | "browser.windows.update";
 
 export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tabs.list",
@@ -64,6 +67,9 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.history",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.windows.list",
+  "browser.windows.create",
+  "browser.windows.update",
 ];
 
 /** Per-call context handed to the browser tool server (plan §9.2). */

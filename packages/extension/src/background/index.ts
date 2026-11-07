@@ -309,6 +309,52 @@ const toolHostHandler = createToolHostHandler({
       });
       return { id, ...(filename ? { filename } : {}) };
     },
+    listWindows: async () => {
+      const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+      return wins
+        .filter((w) => typeof w.id === "number")
+        .map((w) => ({
+          id: w.id,
+          focused: w.focused === true,
+          type: w.type ?? "normal",
+          state: w.state ?? "normal",
+          incognito: w.incognito === true,
+          ...(typeof w.left === "number" ? { left: w.left } : {}),
+          ...(typeof w.top === "number" ? { top: w.top } : {}),
+          ...(typeof w.width === "number" ? { width: w.width } : {}),
+          ...(typeof w.height === "number" ? { height: w.height } : {}),
+          tabCount: Array.isArray(w.tabs) ? w.tabs.length : 0,
+        }));
+    },
+    createWindow: async (opts) => {
+      const win = await chrome.windows.create({
+        ...(opts.url ? { url: opts.url } : {}),
+        ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
+        ...(opts.width !== undefined ? { width: opts.width } : {}),
+        ...(opts.height !== undefined ? { height: opts.height } : {}),
+        ...(opts.left !== undefined ? { left: opts.left } : {}),
+        ...(opts.top !== undefined ? { top: opts.top } : {}),
+        ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.CreateData["state"]> } : {}),
+      });
+      return {
+        id: win?.id,
+        focused: win?.focused === true,
+        state: win?.state ?? opts.state,
+        tabs: (win?.tabs ?? [])
+          .filter((t) => typeof t.id === "number")
+          .map((t) => ({
+            id: t.id,
+            url: t.url ?? "",
+            title: t.title ?? "",
+            active: t.active === true,
+          })),
+      };
+    },
+    updateWindow: async (windowId, opts) =>
+      chrome.windows.update(windowId, {
+        ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
+        ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.UpdateInfo["state"]> } : {}),
+      }),
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

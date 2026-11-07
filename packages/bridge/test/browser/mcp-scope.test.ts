@@ -74,7 +74,10 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.page.drag");
     expect(tools).not.toContain("browser.page.network");
     expect(tools).not.toContain("browser.tab.duplicate");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 5);
+    expect(tools).not.toContain("browser.windows.list");
+    expect(tools).not.toContain("browser.windows.create");
+    expect(tools).not.toContain("browser.windows.update");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 8);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

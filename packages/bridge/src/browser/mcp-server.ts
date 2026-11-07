@@ -517,6 +517,36 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["url"],
     ),
   },
+  "browser.windows.list": {
+    description:
+      "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
+    inputSchema: objectSchema({}),
+  },
+  "browser.windows.create": {
+    description:
+      "Open a new browser window — optionally with an http(s) URL, size/position, initial state, and focus. Returns windowId plus the window's tabs (sanitized urls); the first tab enters this task's scope as openedTabId. Lets the agent work in its own window without disturbing the user's. chrome-extension backend only.",
+    inputSchema: objectSchema({
+      url: { type: "string", description: "Optional http(s) URL to open in the new window." },
+      focused: { type: "boolean", description: "Focus the new window (default: browser decides, usually true)." },
+      width: { type: "number", description: "Window width in px." },
+      height: { type: "number", description: "Window height in px." },
+      left: { type: "number", description: "Window left position in screen px." },
+      top: { type: "number", description: "Window top position in screen px." },
+      state: { type: "string", enum: ["normal", "minimized", "maximized", "fullscreen"], description: "Initial window state." },
+    }),
+  },
+  "browser.windows.update": {
+    description:
+      "Update an existing window's focus and/or state (normal|minimized|maximized|fullscreen). windowId comes from browser.windows.list. Not tab-scoped.",
+    inputSchema: objectSchema(
+      {
+        windowId: { type: "integer", description: "Window id from browser.windows.list (required)." },
+        focused: { type: "boolean", description: "Focus or unfocus the window." },
+        state: { type: "string", enum: ["normal", "minimized", "maximized", "fullscreen"], description: "New window state." },
+      },
+      ["windowId"],
+    ),
+  },
 };
 
 /** Advertised inputSchema for a spec — expectable tools get the

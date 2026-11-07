@@ -47,7 +47,6 @@ export interface BrowserBackendCapabilities {
   trustedGesture: boolean;
   /** controlling browser chrome UI (address bar, menus) — always false */
   browserChrome: boolean;
-  networkInspection?: boolean;
   attachToRunningChrome?: boolean;
   /** browser.tab.create — open a new tab inside the task's scope */
   tabCreate?: boolean;
@@ -73,6 +72,9 @@ export interface BrowserBackendCapabilities {
   /** browser.downloads.save — agent-initiated http(s) download into the
    *  profile's download dir (extension only; same permission). */
   downloadsSave?: boolean;
+  /** browser.windows.* — list/create/update browser windows
+   *  (chrome-extension only; playwright has a single implicit window). */
+  windowManagement?: boolean;
   /** browser.page.network — chrome.webRequest metadata log: method,
    *  sanitized url, status/error, mime, size. Bodies are NOT observable
    *  at this tier — the capability is metadata inspection only. */
@@ -117,6 +119,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     downloadsList: true,
     downloadsSave: true,
     networkInspection: true,
+    windowManagement: true,
   },
   "playwright-isolated": {
     existingUserTabs: false,

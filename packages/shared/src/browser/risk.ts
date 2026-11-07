@@ -95,6 +95,7 @@ const READ_TOOLS = new Set([
   "browser.page.find",
   "browser.downloads.list",
   "browser.page.network",
+  "browser.windows.list",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;
@@ -283,6 +284,37 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         reason: "tab.duplicate target unresolved",
       });
     }
+
+    case "browser.windows.create": {
+      // Same exposure model as tab.create: a new window loading a URL
+      // is a mutation; resolved http(s)/blank stays low, anything else
+      // fails closed to approval.
+      const dest = ctx.url || "";
+      if (dest === "") {
+        return verdict("low", { reason: "new blank window" });
+      }
+      let ok = false;
+      try {
+        const u = new URL(dest);
+        ok = (u.protocol === "http:" || u.protocol === "https:") && ctx.contextResolved;
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        return verdict("low", { reason: "new window to resolved http(s) url" });
+      }
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "windows.create target unresolved",
+      });
+    }
+
+    case "browser.windows.update":
+      // Focus/state changes are reversible window chrome ops — no page
+      // mutation, no egress.
+      return verdict("low", { reason: "window focus/state update" });
 
     case "browser.tab.create": {
       // Opening a tab is a mutation (new page load, possible egress), so
