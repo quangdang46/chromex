@@ -21,6 +21,18 @@ import process from "node:process";
 import { ensureGateway } from "../../../packages/native-host/dist/gateway-client.js";
 export { ensureGateway };
 
+// Real-browser scenarios spawn Chromium + fixture servers + gateways.
+// They are OFF by default so routine work (agents, watchers, editors)
+// never opens browser windows on the user's machine. Opt in explicitly:
+//   CHROMEX_ACCEPTANCE_ENABLE=1 node scripts/acceptance/run-all.mjs
+if (process.env.CHROMEX_ACCEPTANCE_ENABLE !== "1") {
+  console.error(
+    "[acceptance] real-browser scenarios are disabled. " +
+      "Set CHROMEX_ACCEPTANCE_ENABLE=1 to run them.",
+  );
+  process.exit(3);
+}
+
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 export const EXTENSION_DIST = join(REPO_ROOT, "packages/extension/dist");
 export const ARTIFACTS_ROOT = join(REPO_ROOT, "artifacts/acceptance");
