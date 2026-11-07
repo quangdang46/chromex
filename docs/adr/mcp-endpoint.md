@@ -34,3 +34,25 @@ token refresh when the adapter cannot hot-update, kill on session end).
 - Hard blocks (`evaluate`, `cookies`, `localStorage`, binary download)
   are enforced in `BrowserToolServer` before dispatch regardless of
   what the MCP schema advertises.
+
+## Open: Codex per-session registration (P1-09 follow-up)
+
+`browser.mcp.spawn` returns a stdio spawn descriptor + writes the
+0600 scope file, and `mcp-stdio.js` is a working thin client. What is
+NOT yet wired: getting codex app-server to spawn that descriptor **per
+provider session**. Codex MCP servers come from the shared
+`config.toml`/`config.json` `mcp_servers` table on the app-server
+process — env there is static, so a per-task `CHROMEX_MCP_SCOPE_FILE`
+cannot be expressed per thread today.
+
+Options when this is picked up:
+1. App-server per-session config override (if `thread/start` accepts
+   config overrides — verify against codex-rs app-server protocol).
+2. One app-server process per gateway task (heavier; breaks session
+   sharing).
+3. Shared `chromex_browser` MCP entry + dynamic scope resolution —
+   rejected for now: MCP `tools/call` carries no task identity, so a
+   shared server cannot pick the right token safely.
+
+Claude Agent SDK (P3) is unaffected: `mcpServers` is per-query config,
+so the spawn descriptor plugs in directly.
