@@ -25,6 +25,7 @@ docs/*
 !docs/adr/
 !docs/adr/**
 !docs/gate-c.md
+!docs/gateway-mode.md
 !docs/pages/
 docs/pages/*
 !docs/pages/.nojekyll

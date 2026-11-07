@@ -128,11 +128,11 @@ Chrome Extension -> Native Messaging Host -> Local Bridge -> codex app-server
 > **Chromex Gateway** process owning sessions/tasks/turns with SQLite
 > persistence, event replay + snapshots, OS advisory-lock ownership, and
 > provider/browser abstraction (Codex first, Claude later). See
-> [`COMPREHENSIVE PLAN FOR CHROMEX.md`](./COMPREHENSIVE%20PLAN%20FOR%20CHROMEX.md)
-> and the architecture decision records in `docs`. Compatibility flags
-> (`gatewayMode`, `browserPolicyV2`, …) default to legacy behavior until
-> each phase's regression tests pass; `gatewayMode=off` remains fully
-> supported.
+> [`COMPREHENSIVE PLAN FOR CHROMEX.md`](./COMPREHENSIVE%20PLAN%20FOR%20CHROMEX.md),
+> [docs/gateway-mode.md](./docs/gateway-mode.md), and the architecture
+> decision records in `docs`. Gateway mode is the default transport in
+> this checkout; reinstalling the native host with `--legacy-mode`
+> restores the per-port bridge.
 
 The source tree is organized as:
 
