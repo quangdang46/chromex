@@ -234,6 +234,12 @@ import {
   isNoisyTraceText,
   shouldOpenMessageTrace,
 } from "./message-trace-formatting.js";
+import {
+  parseUnifiedDiffPaths,
+  summarizeTurnDeliverable,
+  type DeliverableExtras,
+  type TurnDeliverable,
+} from "./deliverable.js";
 import { isQuickInteractionLocked } from "./interaction-lock.js";
 import {
   createAnnotatedImageAttachment,
@@ -321,6 +327,7 @@ import { renderUiIcon, type UiIconName } from "./ui-icons.js";
 type MainView = "chat" | "conference" | "interpreter" | "context" | "skills" | "plugins" | "workspace";
 type GatewayPanelState = "disabled" | "disconnected" | "connecting" | "ready" | "starting" | "unresponsive";
 const MAX_TRACE_ITEMS = 12;
+const MAX_DELIVERABLE_EXTRAS = 200;
 const COMPLETED_IMAGE_WORKFLOW_MESSAGE_RETENTION_MS = 60_000;
 const PARTIAL_IMAGE_WORKFLOW_MESSAGE_RETENTION_MS = 30 * 60_000;
 
@@ -1882,6 +1889,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     shouldRender = state.activeView === "workspace" || state.activeView === "chat";
   }
   if (event.type === "turn.diff.updated" && event.diff) {
+    recordDeliverableDiffFiles(event.diff.threadId, event.diff.turnId, event.diff.diff);
     if (!isCurrentConversationEvent) {
       if (eventConversationId) {
         rememberConversationThreadId(eventConversationId, event.diff.threadId);
@@ -2812,6 +2820,7 @@ function applyBufferedConversationBridgeEvent(conversationId: string, event: Sid
     }
     case "turn.diff.updated": {
       if (event.diff) {
+        recordDeliverableDiffFiles(event.diff.threadId, event.diff.turnId, event.diff.diff);
         upsertTurnDiffTraceForConversation(conversationId, event.diff);
       }
       break;
@@ -5797,6 +5806,12 @@ function applyPlanUserInputRequest(event: SidepanelBridgeEvent): void {
     itemId: event.itemId ?? "",
     questions,
   };
+  recordPendingDeliverableApproval({
+    requestId: event.requestId,
+    threadId: event.threadId ?? "",
+    turnId: event.turnId ?? "",
+    questions,
+  });
   state.planInputActiveIndex = 0;
   state.planInputAnswers = Object.fromEntries(
     questions.map((question) => [
@@ -5977,6 +5992,7 @@ async function submitPlanInputResponse(answers: Record<string, { answers: string
         answers,
       },
     });
+    recordDeliverableApprovalAnswer(request.requestId, extractPlanInputAnswerText(answers));
   } catch (error) {
     state.actionStatus = toUserFacingRuntimeError(error);
     render();
@@ -7150,6 +7166,7 @@ function renderConversationMessage(message: ConversationMessage): string {
   const structuredInputHtml =
     message.role === "user" ? renderConversationMessageStructuredInputs(message.structuredInputs) : "";
   const traceHtml = renderMessageTrace(message.id, message.trace);
+  const deliverableHtml = renderTurnDeliverable(message);
   const planHtml = message.role === "assistant" ? renderTurnPlanDecisionCard(message.plan) : "";
   const editing = message.role === "user" && state.editingMessageId === message.id;
   const editingClass = editing ? "editing" : "";
@@ -7173,7 +7190,7 @@ function renderConversationMessage(message: ConversationMessage): string {
       : `<div class="message-content">${renderMessageContentHtml(message.text, {
           enableYouTubeTimestampLinks: shouldRenderYouTubeTimestampLinksForMessage(message),
         })}</div>`;
-  const cardHtml = hasTextBody || planHtml || traceHtml || imageHtml || userMetaHtml || userContextHtml
+  const cardHtml = hasTextBody || planHtml || traceHtml || deliverableHtml || imageHtml || userMetaHtml || userContextHtml
     ? `
     <div class="message-card ${message.role} ${editingClass} ${voiceClass} ${steerClass} ${imageResultClass}">
       ${userMetaHtml}
@@ -7186,6 +7203,7 @@ function renderConversationMessage(message: ConversationMessage): string {
       }
       ${imageHtml}
       ${traceHtml}
+      ${deliverableHtml}
     </div>
   `
     : "";
@@ -16345,6 +16363,217 @@ function removeTurnTraceItemsInMessages(
     messages.splice(messageIndex, 1);
   }
   return true;
+}
+
+// ---- turn deliverable evidence (S8) ---------------------------------------
+// Extras the trace items alone can't carry: file lists parsed from the
+// full turn diff, and approval Q→A pairs the user submitted through the
+// sidepanel. Keyed by the turn-trace message id so they attach to the
+// same persisted message the trace lives on. In-memory only — after a
+// panel reload old turns simply show no approval/diff extras.
+
+const deliverableExtrasByTraceMessageId = new Map<string, DeliverableExtras>();
+const pendingDeliverableApprovals = new Map<
+  string,
+  { traceMessageId: string; question: string }
+>();
+
+function deliverableExtrasForTraceMessage(traceMessageId: string): DeliverableExtras {
+  let extras = deliverableExtrasByTraceMessageId.get(traceMessageId);
+  if (!extras) {
+    if (deliverableExtrasByTraceMessageId.size >= MAX_DELIVERABLE_EXTRAS) {
+      const oldest = deliverableExtrasByTraceMessageId.keys().next().value;
+      if (oldest !== undefined) deliverableExtrasByTraceMessageId.delete(oldest);
+    }
+    extras = {};
+    deliverableExtrasByTraceMessageId.set(traceMessageId, extras);
+  }
+  return extras;
+}
+
+function recordDeliverableDiffFiles(threadId: string, turnId: string, diff: string): void {
+  if (!threadId || !turnId || !diff.trim()) {
+    return;
+  }
+  const paths = parseUnifiedDiffPaths(diff);
+  if (!paths.length) {
+    return;
+  }
+  const extras = deliverableExtrasForTraceMessage(createTurnTraceMessageId(threadId, turnId));
+  const merged = new Set([...(extras.diffFiles ?? []), ...paths]);
+  extras.diffFiles = [...merged];
+}
+
+function recordPendingDeliverableApproval(input: {
+  requestId: string;
+  threadId: string;
+  turnId: string;
+  questions: PlanUserInputQuestion[];
+}): void {
+  if (!input.requestId || !input.threadId || !input.turnId) {
+    return;
+  }
+  if (pendingDeliverableApprovals.size >= MAX_DELIVERABLE_EXTRAS) {
+    const oldest = pendingDeliverableApprovals.keys().next().value;
+    if (oldest !== undefined) pendingDeliverableApprovals.delete(oldest);
+  }
+  pendingDeliverableApprovals.set(input.requestId, {
+    traceMessageId: createTurnTraceMessageId(input.threadId, input.turnId),
+    question: input.questions
+      .map((question) => question.question.trim())
+      .filter(Boolean)
+      .join(" "),
+  });
+}
+
+function recordDeliverableApprovalAnswer(requestId: string, answerText: string): void {
+  const pending = pendingDeliverableApprovals.get(requestId);
+  if (!pending) {
+    return;
+  }
+  pendingDeliverableApprovals.delete(requestId);
+  const extras = deliverableExtrasForTraceMessage(pending.traceMessageId);
+  const approvals = [...(extras.approvals ?? [])];
+  approvals.push({
+    question: pending.question,
+    answer: answerText || stringsForState().deliverable.approvalDismissed,
+  });
+  extras.approvals = approvals;
+}
+
+function renderTurnDeliverable(message: ConversationMessage): string {
+  if (!message.trace?.length || !message.id.startsWith("turn-trace-")) {
+    return "";
+  }
+  if (message.trace.some((item) => item.status === "running") || isActiveTurnTraceMessage(message)) {
+    return "";
+  }
+  const deliverable = summarizeTurnDeliverable(
+    message.trace,
+    deliverableExtrasByTraceMessageId.get(message.id),
+  );
+  if (!deliverable) {
+    return "";
+  }
+  return renderDeliverableCard(deliverable, stringsForState().deliverable);
+}
+
+const DELIVERABLE_MAX_ROWS = 8;
+
+function renderDeliverableRows<T>(
+  items: T[],
+  renderRow: (item: T) => string,
+  moreLabel: (count: number) => string,
+): string {
+  const visible = items.slice(0, DELIVERABLE_MAX_ROWS);
+  const overflow = items.length - visible.length;
+  return `${visible.map(renderRow).join("")}${
+    overflow > 0 ? `<li class="deliverable-more">${escapeHtml(moreLabel(overflow))}</li>` : ""
+  }`;
+}
+
+function renderDeliverableStatusIcon(status: "completed" | "failed"): string {
+  return status === "failed"
+    ? `<span class="deliverable-status failed" aria-hidden="true">${renderUiIcon("x")}</span>`
+    : `<span class="deliverable-status" aria-hidden="true">${renderUiIcon("check")}</span>`;
+}
+
+function renderDeliverableCard(
+  deliverable: TurnDeliverable,
+  strings: ReturnType<typeof stringsForState>["deliverable"],
+): string {
+  const sections: string[] = [];
+
+  if (deliverable.files.length) {
+    sections.push(`
+      <div class="deliverable-section">
+        <h4 class="deliverable-heading">${escapeHtml(strings.filesChanged)}</h4>
+        <ul class="deliverable-list">${renderDeliverableRows(
+          deliverable.files,
+          (file) => `
+            <li class="deliverable-row">
+              ${renderDeliverableStatusIcon(file.status)}
+              <span class="deliverable-path">${escapeHtml(file.path)}</span>
+            </li>`,
+          (count) => strings.moreFiles(count),
+        )}</ul>
+      </div>`);
+  }
+
+  if (deliverable.commands.length) {
+    sections.push(`
+      <div class="deliverable-section">
+        <h4 class="deliverable-heading">${escapeHtml(strings.commandsRun)}</h4>
+        <ul class="deliverable-list">${renderDeliverableRows(
+          deliverable.commands,
+          (command) => `
+            <li class="deliverable-row">
+              ${renderDeliverableStatusIcon(command.status)}
+              <span class="deliverable-command">${escapeHtml(command.command)}</span>
+              ${
+                command.exitCode !== undefined
+                  ? `<span class="deliverable-exit ${command.exitCode === 0 ? "" : "failed"}">exit ${command.exitCode}</span>`
+                  : ""
+              }
+            </li>`,
+          (count) => strings.moreCommands(count),
+        )}</ul>
+      </div>`);
+  }
+
+  if (deliverable.browserActions.length) {
+    sections.push(`
+      <div class="deliverable-section">
+        <h4 class="deliverable-heading">${escapeHtml(strings.browserActions)}</h4>
+        <ul class="deliverable-list">${renderDeliverableRows(
+          deliverable.browserActions,
+          (action) => `
+            <li class="deliverable-row">
+              ${renderDeliverableStatusIcon(action.status)}
+              <span class="deliverable-tool">${escapeHtml(action.tool)}</span>
+              ${action.detail ? `<span class="deliverable-detail">${escapeHtml(action.detail)}</span>` : ""}
+            </li>`,
+          (count) => strings.moreBrowserActions(count),
+        )}</ul>
+      </div>`);
+  }
+
+  if (deliverable.approvals.length) {
+    sections.push(`
+      <div class="deliverable-section">
+        <h4 class="deliverable-heading">${escapeHtml(strings.approvals)}</h4>
+        <ul class="deliverable-list">${renderDeliverableRows(
+          deliverable.approvals,
+          (approval) => `
+            <li class="deliverable-row deliverable-approval">
+              <span class="deliverable-detail">${escapeHtml(approval.question)}</span>
+              <span class="deliverable-answer">${escapeHtml(approval.answer)}</span>
+            </li>`,
+          (count) => strings.moreApprovals(count),
+        )}</ul>
+      </div>`);
+  }
+
+  const summaryParts: string[] = [];
+  if (deliverable.otherStepCount > 0) {
+    summaryParts.push(strings.otherSteps(deliverable.otherStepCount));
+  }
+  if (deliverable.failedCount > 0) {
+    summaryParts.push(strings.failedSteps(deliverable.failedCount));
+  }
+  if (summaryParts.length) {
+    sections.push(`<p class="deliverable-summary">${escapeHtml(summaryParts.join(" · "))}</p>`);
+  }
+
+  return `
+    <details class="deliverable-card">
+      <summary class="deliverable-summary-line">
+        <span class="deliverable-title">${escapeHtml(strings.title)}</span>
+        <span class="deliverable-caret" aria-hidden="true">${renderUiIcon("chevron-down")}</span>
+      </summary>
+      <div class="deliverable-body">${sections.join("")}</div>
+    </details>
+  `;
 }
 
 function upsertTurnDiffTrace(diff: CodexTurnDiff): void {
