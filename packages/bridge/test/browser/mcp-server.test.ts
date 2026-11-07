@@ -319,6 +319,21 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
     }
   });
 
+  it("playwright-isolated descriptions drop ref/snapshotId guidance", () => {
+    const snap = toolListEntry("browser.page.snapshot", "playwright-isolated");
+    expect(snap.description).toContain("aria text tree");
+    expect(snap.description).not.toContain("mints the refs");
+    expect(snap.description).not.toContain("refs are per-frame");
+    expect(snap.description).toContain("frameId is refused");
+    const click = toolListEntry("browser.page.click", "playwright-isolated");
+    expect(click.description).toContain("CSS selector");
+    expect(click.description).not.toContain("Snapshot before acting");
+    // chrome-extension keeps the ref-based guidance
+    const extSnap = toolListEntry("browser.page.snapshot", "chrome-extension");
+    expect(extSnap.description).toContain("mints the refs");
+    expect(extSnap.description).toContain("Snapshot before acting");
+  });
+
   it("each tool's inputSchema validates a representative call", () => {
     for (const internal of BROWSER_TOOL_NAMES) {
       const entry = toolListEntry(internal);
