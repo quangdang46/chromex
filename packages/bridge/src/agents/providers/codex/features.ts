@@ -73,7 +73,7 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
     schema: z.object({
       serverName: z.string().min(1),
       toolName: z.string().min(1),
-      arguments: z.record(z.unknown()).optional(),
+      arguments: z.record(z.string(), z.unknown()).optional(),
     }),
     appServerMethod: "mcpServer/tool/call",
     toParams: (p) => p as Record<string, unknown>,

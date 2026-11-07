@@ -151,6 +151,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     if (config.providers.codex.enabled) {
       await registry.register("codex", async () => new CodexAgentProvider());
     }
+    if (config.providers.claude.enabled) {
+      const { ClaudeAgentProvider } = await import("../agents/providers/claude/provider.js");
+      await registry.register(
+        "claude",
+        async () =>
+          new ClaudeAgentProvider(
+            config.providers.claude.command ? { command: config.providers.claude.command } : {},
+          ),
+      );
+    }
     // assigned once toolRefresher exists (below); sessions opened
     // earlier simply get no browser MCP — honest, never fake.
     let spawnBrowserMcpForTask: ((task: TaskRecord) => Promise<Record<string, unknown> | null>) | null =

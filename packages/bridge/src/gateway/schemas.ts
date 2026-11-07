@@ -10,7 +10,7 @@ import { z } from "zod";
 
 const taskId = z.string().min(1);
 const clientMessageId = z.string().min(1).max(128);
-const turnInputContent = z.array(z.record(z.unknown())).min(1);
+const turnInputContent = z.array(z.record(z.string(), z.unknown())).min(1);
 
 export const taskCreateSchema = z.object({
   profileId: z.string().min(1).optional(),
@@ -20,7 +20,7 @@ export const taskCreateSchema = z.object({
   model: z.string().nullable().optional(),
   modeId: z.string().nullable().optional(),
   thinkingOptionId: z.string().nullable().optional(),
-  providerOptions: z.record(z.unknown()).nullable().optional(),
+  providerOptions: z.record(z.string(), z.unknown()).nullable().optional(),
   conversationKey: z.string().optional(),
   resumeFrom: z.string().optional(), // compat: session.resume
   backend: z
@@ -34,11 +34,11 @@ export const taskCreateSchema = z.object({
       z.object({ scope: z.literal("untitled") }),
       z.object({
         scope: z.literal("active_resolved"),
-        resolved: z.record(z.unknown()),
+        resolved: z.record(z.string(), z.unknown()),
       }),
       z.object({
         scope: z.literal("explicit"),
-        refs: z.array(z.record(z.unknown())).min(1),
+        refs: z.array(z.record(z.string(), z.unknown())).min(1),
       }),
     ])
     .optional(),
@@ -49,7 +49,7 @@ export const taskSendSchema = z.object({
   taskId,
   clientMessageId,
   content: turnInputContent,
-  ctx: z.record(z.unknown()).optional(),
+  ctx: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const taskIdSchema = z.object({ taskId });
@@ -85,7 +85,7 @@ export const browserToolCallSchema = z.object({
   toolCallId: z.string().min(1).optional(),
   turnId: z.string().optional(),
   tool: z.string().min(1),
-  args: z.record(z.unknown()).optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
   token: z.string().min(1),
 });
 
@@ -106,7 +106,7 @@ export const providerCatalogSchema = z.object({
 export const configReadSchema = z.object({}).passthrough();
 
 export const configUpdateSchema = z.object({
-  patch: z.record(z.unknown()),
+  patch: z.record(z.string(), z.unknown()),
 });
 
 export const browserBackendSchema = z.object({
