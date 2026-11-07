@@ -97,6 +97,23 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: -3, dropY: 4 }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.select values[] maps to multi-select step; value+values and empty values rejected", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.select", { selector: "#plans", values: ["pro", "team"] }));
+    const msg = d.sent[0].message as { steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0]).toMatchObject({ action: "select", values: ["pro", "team"] });
+    await expect(
+      h(req("browser.page.select", { selector: "#p", value: "a", values: ["b"] })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.select", { selector: "#p", values: [] })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.select", { selector: "#p", values: ["a", 42] })),
+    ).resolves.toBeDefined();
+  });
+
   test("tab.update/discard resolve scoped tab and validate args", async () => {
     const d = deps();
     const updCalls: Array<[number, Record<string, unknown>]> = [];
