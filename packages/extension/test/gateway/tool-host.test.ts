@@ -671,7 +671,10 @@ describe("tool host tab scope (chromex-9e3)", () => {
     });
     const res = (await h(scopedReq("browser.page.get", { tabId: 9 }, scope))) as { resolvedTabId: number };
     expect(res.resolvedTabId).toBe(9);
-    expect(d.sent).toHaveLength(0); // page.get uses getTab, not sendToTab
+    // page.get resolves via getTab; the only sendToTab is the read-only
+    // scrollpos probe — never a DOM mutation.
+    expect(d.sent).toHaveLength(1);
+    expect((d.sent[0].message as { type: string }).type).toBe("page.scrollpos");
   });
 
   test("bound task defaults to its bound tab, not the active tab", async () => {

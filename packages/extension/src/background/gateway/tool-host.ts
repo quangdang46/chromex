@@ -489,12 +489,22 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             frames = undefined;
           }
         }
+        // Scroll/viewport position — content script knows it; chrome.tabs
+        // does not. Absent content script → field omitted, not faked.
+        let scroll: Record<string, number> | undefined;
+        try {
+          const sp = (await deps.sendToTab(tabId, { type: "page.scrollpos" })) as Record<string, number>;
+          if (sp && typeof sp.scrollY === "number") scroll = sp;
+        } catch {
+          scroll = undefined;
+        }
         return {
           id: tab.id,
           url: tab.url ?? "",
           title: tab.title ?? "",
           active: tab.active === true,
           resolvedTabId: tabId,
+          ...(scroll ? { scroll } : {}),
           ...(frames ? { frames } : {}),
         };
       }

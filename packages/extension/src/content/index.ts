@@ -304,6 +304,18 @@ function chromexRuntimeMessageListener(
     return false;
   }
 
+  if (message.type === "page.scrollpos") {
+    sendResponse({
+      scrollX: Math.round(window.scrollX),
+      scrollY: Math.round(window.scrollY),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      documentHeight: document.documentElement.scrollHeight,
+      documentWidth: document.documentElement.scrollWidth,
+    });
+    return false;
+  }
+
   if (message.type === "page.dom.wait") {
     const timeoutMs =
       typeof message.timeoutMs === "number" && Number.isFinite(message.timeoutMs)
