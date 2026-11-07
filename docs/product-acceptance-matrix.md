@@ -33,8 +33,8 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 | Provider abstraction codex/claude/acp | bridge agents | ✅ built | live ACP creds blocked (436) |
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
 | Tab lifecycle: list/create/activate/close | ext tool-host | ✅ 4 tools (07cf2e4) | lifecycle completeness edge cases |
-| Page observation: snapshot/get/extract/screenshot/console | ext tool-host + content | ✅ console + screenshot→image landed | no network, no a11y tree option, iframe=none |
-| Page interaction: click/focus/type/fill/select/submit/scroll/navigate/wait/upload/hover/press/find/history + downloads.list | ext tool-host + content | ✅ 16 tools | conditional wait, history nav, page find, upload-bytes, downloads.list landed; dialogs need debugger decision (d7v); download initiation still hard-blocked |
+| Page observation: snapshot/get/extract/screenshot/console/network | ext tool-host + content | ✅ console, screenshot→image, webRequest metadata log, extract selector+html, scroll pos | no a11y tree option; iframe impl landed, real-Chrome verify pending |
+| Page interaction: click(+button)/focus/type/fill/select/submit/scroll/navigate/wait(+readyState)/upload/hover/press/drag/find/history + downloads.list/save | ext tool-host + content | ✅ 20 tools | dialogs need debugger decision (d7v deferred); click/drag are untrusted-event paths |
 | Browser↔MCP tool surface for providers | bridge mcp-server + session-manager | ✅ wired per task | verify providers actually iterate tool calls E2E |
 | Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
 | Browser↔code feedback loop | composition | ✅ E2E proven | S1 + S2 PASS real-browser; loop proof cbbda36/6e690ab |
@@ -45,8 +45,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 
 ## Workstream beads (this matrix)
 
-- Browser runtime depth: tab.create, console/network observation,
-  a11y snapshot mode, iframe same-origin, dialogs, downloads
+- Browser runtime depth: a11y snapshot mode, iframe real-Chrome
+  verification (code landed: all_frames + frameId end-to-end),
+  dialogs/file-picker/trusted-input (debugger-tier, deferred),
+  response-body inspection (needs debugger/CDP tier)
 - Agent loop proof: scripted E2E where provider iterates browser tools
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
