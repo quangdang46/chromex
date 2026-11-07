@@ -70,6 +70,9 @@ export interface BrowserBackendCapabilities {
    *  requires the "downloads" permission). Playwright-isolated does NOT
    *  claim it: download events are not wired. */
   downloadsList?: boolean;
+  /** browser.downloads.save — agent-initiated http(s) download into the
+   *  profile's download dir (extension only; same permission). */
+  downloadsSave?: boolean;
 }
 
 /**
@@ -108,6 +111,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     pageFind: true,
     pageHistory: true,
     downloadsList: true,
+    downloadsSave: true,
   },
   "playwright-isolated": {
     existingUserTabs: false,

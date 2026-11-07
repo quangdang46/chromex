@@ -70,7 +70,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
   test("playwright-isolated omits tools it cannot execute", () => {
     const tools = supportedToolsForBackend("playwright-isolated");
     expect(tools).not.toContain("browser.downloads.list");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 1);
+    expect(tools).not.toContain("browser.downloads.save");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 2);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

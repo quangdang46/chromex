@@ -290,6 +290,14 @@ const toolHostHandler = createToolHostHandler({
         startTime: d.startTime,
       }));
     },
+    downloadFile: async ({ url, filename }) => {
+      const id = await chrome.downloads.download({
+        url,
+        ...(filename ? { filename } : {}),
+        saveAs: false,
+      });
+      return { id, ...(filename ? { filename } : {}) };
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

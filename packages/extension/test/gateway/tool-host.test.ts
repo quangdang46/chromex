@@ -318,6 +318,8 @@ describe("tool host (P1-09)", () => {
             filename: "/Users/x/Downloads/a.pdf",
             bytesReceived: 100,
             totalBytes: 100,
+            mime: "application/pdf",
+            fileExists: true,
             startTime: "2026-01-01T00:00:00Z",
           },
         ];
@@ -326,14 +328,62 @@ describe("tool host (P1-09)", () => {
     const h = createToolHostHandler(d);
     const res = (await h(
       req("browser.downloads.list", { state: "complete", limit: 10, since: "2026-01-01T00:00:00Z" }),
-    )) as { downloads: Array<{ id?: number; filename: string; state: string }> };
-    expect(res.downloads[0]).toMatchObject({ id: 3, filename: "/Users/x/Downloads/a.pdf", state: "complete" });
+    )) as {
+      downloads: Array<{ id?: number; filename: string; state: string; mime?: string; fileExists?: boolean }>;
+    };
+    expect(res.downloads[0]).toMatchObject({
+      id: 3,
+      filename: "/Users/x/Downloads/a.pdf",
+      state: "complete",
+      mime: "application/pdf",
+      fileExists: true,
+    });
     expect(queries[0]).toMatchObject({ state: "complete", limit: 10 });
     await expect(h(req("browser.downloads.list", { state: "bogus" }))).rejects.toMatchObject({
       code: "proto.invalid",
     });
     await expect(h(req("browser.downloads.list", { since: "not-a-date" }))).rejects.toMatchObject({
       code: "proto.invalid",
+    });
+  });
+
+  test("downloads.save validates url/filename and maps the download id", async () => {
+    const calls: Array<{ url: string; filename?: string }> = [];
+    const d = deps({
+      downloadFile: vi.fn(async (input: { url: string; filename?: string }) => {
+        calls.push(input);
+        return { id: 7, filename: input.filename ?? "report.csv" };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.downloads.save", { url: "https://example.com/a.csv", filename: "exports/a.csv" }),
+    )) as { downloadId?: number; filename?: string };
+    expect(res.downloadId).toBe(7);
+    expect(calls[0]).toEqual({ url: "https://example.com/a.csv", filename: "exports/a.csv" });
+
+    await expect(h(req("browser.downloads.save", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.downloads.save", { url: "not a url" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.downloads.save", { url: "file:///etc/passwd" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    for (const bad of ["../escape.txt", "/abs/path.txt", "a\\b.txt", "x".repeat(201)]) {
+      await expect(
+        h(req("browser.downloads.save", { url: "https://example.com/f", filename: bad })),
+      ).rejects.toMatchObject({ code: "proto.invalid" });
+    }
+    // frameId is meaningless on a profile-level tool
+    await expect(
+      h(req("browser.downloads.save", { url: "https://example.com/f", frameId: 3 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("downloads.save without dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.downloads.save", { url: "https://example.com/f" }))).rejects.toMatchObject({
+      code: "proto.unsupported",
     });
   });
 

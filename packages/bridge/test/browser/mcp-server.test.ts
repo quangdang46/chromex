@@ -281,6 +281,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.find": { text: "Sign in", limit: 10 },
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },
+  "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
 };
 
 describe("tools/list schemas + descriptions (chromex-23y5)", () => {
@@ -324,7 +325,13 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
         `${internal} empty args rejected — check required fields`,
       ).toBe(
         // tools with required args legitimately reject {}
-        ["browser.page.navigate", "browser.page.press", "browser.page.upload", "browser.page.history"].includes(internal)
+        [
+          "browser.page.navigate",
+          "browser.page.press",
+          "browser.page.upload",
+          "browser.page.history",
+          "browser.downloads.save",
+        ].includes(internal)
           ? false
           : true,
       );

@@ -58,8 +58,17 @@ export interface ToolHostDeps {
       totalBytes?: number;
       error?: string;
       startTime?: string;
+      mime?: string;
+      fileExists?: boolean;
     }>
   >;
+  /** chrome.downloads.download (browser.downloads.save) — starts a
+   *  download into the profile's download dir; absent dep →
+   *  proto.unsupported. */
+  downloadFile?(input: { url: string; filename?: string }): Promise<{
+    id?: number;
+    filename?: string;
+  }>;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -139,6 +148,7 @@ const SUPPORTED = new Set([
   "browser.page.find",
   "browser.page.history",
   "browser.downloads.list",
+  "browser.downloads.save",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -605,7 +615,54 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             totalBytes: d.totalBytes ?? -1,
             ...(d.error ? { error: d.error } : {}),
             startTime: d.startTime ?? "",
+            ...(d.mime ? { mime: d.mime } : {}),
+            ...(typeof d.fileExists === "boolean" ? { fileExists: d.fileExists } : {}),
           })),
+        };
+      }
+      case "browser.downloads.save": {
+        // Not tab-scoped: starts a download into the profile's download
+        // directory. http(s) only — file:/chrome: URLs would let the
+        // agent pull local/browser-internal resources to disk.
+        if (!deps.downloadFile) {
+          throw toolError("proto.unsupported", "download save requires the downloads permission");
+        }
+        const url = str(args.url);
+        if (!url) {
+          throw toolError("proto.invalid", "browser.downloads.save args.url is required");
+        }
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          throw toolError("proto.invalid", "browser.downloads.save args.url must be a valid URL");
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw toolError("proto.invalid", "browser.downloads.save args.url must be http(s)");
+        }
+        // chrome.downloads filename is relative to the download dir —
+        // reject absolute paths and traversal so the agent cannot write
+        // outside it.
+        const filename = str(args.filename);
+        if (filename !== undefined) {
+          if (
+            filename.length > 200 ||
+            filename.startsWith("/") ||
+            filename.includes("..") ||
+            filename.includes("\\") ||
+            /[\x00-\x1f]/.test(filename)
+          ) {
+            throw toolError(
+              "proto.invalid",
+              "browser.downloads.save args.filename must be a relative path inside the download directory",
+            );
+          }
+        }
+        const res = await deps.downloadFile({ url, ...(filename !== undefined ? { filename } : {}) });
+        return {
+          downloadId: typeof res?.id === "number" ? res.id : undefined,
+          filename: res?.filename,
+          note: "Download started — call browser.downloads.list to resolve the final on-disk path.",
         };
       }
       case "browser.page.screenshot": {

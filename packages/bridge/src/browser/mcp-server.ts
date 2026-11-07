@@ -441,6 +441,17 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       since: { description: "Only downloads started after this — epoch ms or ISO date string.", anyOf: [{ type: "number" }, { type: "string" }] },
     }),
   },
+  "browser.downloads.save": {
+    description:
+      "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). Not tab-scoped. Always requires approval. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
+    inputSchema: objectSchema(
+      {
+        url: { type: "string", description: "http(s) URL to download (required)." },
+        filename: { type: "string", description: "Optional relative filename inside the download directory." },
+      },
+      ["url"],
+    ),
+  },
 };
 
 /** Advertised inputSchema for a spec — expectable tools get the
