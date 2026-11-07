@@ -155,6 +155,10 @@ export interface RuntimeConfigSnapshot {
   resolvedCodexBinPath: string;
   codexBinSource: "configured" | "env" | "path" | "common" | "missing";
   configuredCodexBinPathInvalid: boolean;
+  /** true when runtime.config.* was unavailable and this snapshot was
+   * rebuilt from extension settings — the sidecar's real codex binary
+   * resolution is unknown. */
+  degraded?: boolean;
 }
 
 export interface PromptRequestPayload {

@@ -126,6 +126,11 @@ import {
   writeCatalogCache,
 } from "./catalog-refresh.js";
 import {
+  createDegradedReporter,
+  createDegradedRuntimeConfigSnapshot,
+  reportDegradedCatalogList,
+} from "./degraded.js";
+import {
   resolveUploadedImageReferenceInputs,
   resolveUploadedImageEditInput,
   type PromptImageWorkflowKind,
@@ -212,6 +217,11 @@ import {
 } from "./pdf-page-context.js";
 
 const bridge = new NativeBridgeClient();
+
+// chromex-ur7: sidecar/gateway method failures degrade to local fallback
+// state; report each once so a dead sidecar is visible in SW logs without
+// spamming on every catalog refresh or diagnostic write.
+const degradedReport = createDegradedReporter();
 
 // P1-09: answer gateway browser.tool.request envelopes. Registered
 // unconditionally — the runtime only exists when gatewayMode is on.
@@ -4405,7 +4415,9 @@ async function recordDiagnostic(event: string, details: Record<string, unknown> 
       event,
       details,
     })
-    .catch(() => undefined);
+    .catch((error) =>
+      degradedReport("diagnostics.log.write", "diagnostics.log.write failed; diagnostic event dropped", error),
+    );
 }
 
 async function dataUrlToEditableJpegInput(dataUrl: string, fallbackFilename: string) {
@@ -4581,7 +4593,10 @@ async function refreshAppServerCatalog(
         {},
       )
       .then((r) => r.catalogs ?? [])
-      .catch(() => [] as Array<{ providerId: string; displayName?: string }>);
+      .catch((error) => {
+        degradedReport("provider.catalog", "provider.catalog failed; falling back to built-in providers", error);
+        return [] as Array<{ providerId: string; displayName?: string }>;
+      });
     const providers = catalogs.map((c) => ({
       id: c.providerId,
       label: c.displayName ?? c.providerId,
@@ -4609,22 +4624,25 @@ async function refreshAppServerCatalog(
     bridge.request<CodexThreadSummary[]>("thread.list", {
       ...(cwd ? { cwd } : {}),
       limit: 12,
-    }).catch(() => []),
+    }).catch((error) => reportDegradedCatalogList(state.serverThreads, "thread.list", error, degradedReport)),
     bridge.request<CodexSkillOption[]>("skills.list", {
       ...(cwd ? { cwd } : {}),
       forceReload: true,
-    }).catch(() => []),
+    }).catch((error) => reportDegradedCatalogList(state.appServerSkills, "skills.list", error, degradedReport)),
     bridge.request<CodexAppOption[]>("apps.list", {
       ...(options.force ? { forceRefetch: true } : {}),
-    }).catch(() => []),
+    }).catch((error) => reportDegradedCatalogList(state.connectedApps, "apps.list", error, degradedReport)),
     bridge.request<CodexPluginOption[]>("plugins.list", {
       ...(cwd ? { cwd } : {}),
-    }).catch(() => []),
+    }).catch((error) => reportDegradedCatalogList(state.appServerPlugins, "plugins.list", error, degradedReport)),
     bridge.request<CodexMcpServerOption[]>("mcp.servers.list", {
       detail: "toolsAndAuthOnly",
       limit: 100,
-    }).catch(() => []),
-    bridge.request<CodexRateLimits | null>("account.rate_limits.read").catch(() => null),
+    }).catch((error) => reportDegradedCatalogList(state.mcpServers, "mcp.servers.list", error, degradedReport)),
+    bridge.request<CodexRateLimits | null>("account.rate_limits.read").catch((error) => {
+      degradedReport("account.rate_limits.read", "account.rate_limits.read failed; keeping previous rate limits", error);
+      return state.rateLimits;
+    }),
   ]);
 
   // customModels applies to providers that accept free-form model ids
@@ -4738,15 +4756,15 @@ async function refreshCatalogKind(kind: "skills" | "apps" | "mcp"): Promise<void
   if (kind === "skills") {
     state.appServerSkills = await bridge
       .request<CodexSkillOption[]>("skills.list", { ...(cwd ? { cwd } : {}), forceReload: true })
-      .catch(() => state.appServerSkills);
+      .catch((error) => reportDegradedCatalogList(state.appServerSkills, "skills.list", error, degradedReport));
   } else if (kind === "apps") {
     state.connectedApps = await bridge
       .request<CodexAppOption[]>("apps.list", { forceRefetch: true })
-      .catch(() => state.connectedApps);
+      .catch((error) => reportDegradedCatalogList(state.connectedApps, "apps.list", error, degradedReport));
   } else {
     state.mcpServers = await bridge
       .request<CodexMcpServerOption[]>("mcp.servers.list", { detail: "toolsAndAuthOnly", limit: 100 })
-      .catch(() => state.mcpServers);
+      .catch((error) => reportDegradedCatalogList(state.mcpServers, "mcp.servers.list", error, degradedReport));
   }
   broadcastBridgeEvent({ type: "catalog.updated" });
 }
@@ -5027,9 +5045,12 @@ async function getWorkspaceHarness(): Promise<WorkspaceHarnessSnapshot> {
     const harness = await bridge.request<WorkspaceHarnessSnapshot>("workspace.harness.read");
     state.workspaceHarness = harness;
     return harness;
-  } catch {
-    // Gateway mode does not serve the sidecar's workspace scan yet — fall
-    // back so catalog refresh and skill merges keep working.
+  } catch (error) {
+    // Gateway mode routes workspace.harness.read to the bridge sidecar;
+    // when the sidecar is down the snapshot is a degraded fallback —
+    // workspace deny/ask rules are unknown and ensureOperationAllowed
+    // escalates sensitive operations to "ask" via withDegradedHarnessAsks.
+    degradedReport("workspace.harness.read", "workspace.harness.read failed; using degraded harness fallback", error);
     const fallback = createFallbackWorkspaceHarness(
       (await getStoredSettings().catch(() => null))?.workspaceRoot,
     );
@@ -5385,14 +5406,10 @@ function createCodexSkillRuntimeAvailability(settings: ExtensionSettings) {
 }
 
 function createFallbackRuntimeConfig(settings: ExtensionSettings): RuntimeConfigSnapshot {
-  const codexBinPath = normalizeConfiguredPath(settings.codexBinPath);
-  return {
-    workspaceRoot: normalizeConfiguredPath(settings.workspaceRoot),
-    codexBinPath,
-    resolvedCodexBinPath: codexBinPath,
-    codexBinSource: codexBinPath ? "configured" : "missing",
-    configuredCodexBinPathInvalid: false,
-  };
+  return createDegradedRuntimeConfigSnapshot({
+    workspaceRoot: settings.workspaceRoot,
+    codexBinPath: settings.codexBinPath,
+  });
 }
 
 function normalizeConfiguredPath(value: string | undefined): string {
