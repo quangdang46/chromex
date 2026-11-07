@@ -34,10 +34,12 @@ const SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.tabs.list",
   "browser.tab.activate",
   "browser.tab.close",
+  "browser.tab.create",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.extract",
   "browser.page.screenshot",
+  "browser.page.console",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -47,8 +49,13 @@ const SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.scroll",
   "browser.page.navigate",
   "browser.page.wait",
+  "browser.page.hover",
+  "browser.page.press",
   "browser.page.upload",
 ]);
+
+const MAX_CONSOLE_ENTRIES = 200;
+const MAX_CONSOLE_TEXT = 1000;
 
 const MAX_EXTRACT_CHARS = 64 * 1024;
 const DEFAULT_NAV_TIMEOUT_MS = 30_000;
@@ -79,6 +86,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   #browser: PwBrowser | null = null;
   /** taskId → isolated context (one context per task = session isolation) */
   readonly #contexts = new Map<string, PwBrowserContext>();
+  /** page → bounded console buffer (page.on('console'/'pageerror')) */
+  readonly #consoleBuffers = new Map<PwPage, Array<{ level: string; text: string; ts: number }>>();
   #closed = false;
 
   constructor(opts: IsolatedBackendOptions = {}) {
@@ -155,6 +164,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#tabActivate(taskId, args);
       case "browser.tab.close":
         return this.#tabClose(taskId, args);
+      case "browser.tab.create":
+        return this.#tabCreate(taskId, args);
       case "browser.page.navigate":
         return this.#navigate(taskId, args);
       case "browser.page.snapshot":
@@ -165,6 +176,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#extract(taskId, args);
       case "browser.page.screenshot":
         return this.#screenshot(taskId, args);
+      case "browser.page.console":
+        return this.#console(taskId, args);
       case "browser.page.click":
       case "browser.page.focus":
       case "browser.page.type":
@@ -172,6 +185,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.select":
       case "browser.page.submit":
       case "browser.page.scroll":
+      case "browser.page.hover":
+      case "browser.page.press":
         return this.#domAction(taskId, tool, args);
       case "browser.page.wait":
         return this.#wait(taskId, args);
@@ -209,6 +224,35 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const page = await this.#pageFor(taskId, args);
     await page.close();
     return { closed: true };
+  }
+
+  /** browser.tab.create — a new isolated page inside the task's context.
+   *  tabId is the page index, matching tabs.list / #pageFor addressing. */
+  async #tabCreate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const context = await this.#contextFor(taskId);
+    const url = typeof args.url === "string" ? args.url : "";
+    if (url) {
+      let protocol = "";
+      try {
+        protocol = new URL(url).protocol;
+      } catch {
+        protocol = "";
+      }
+      if (protocol !== "http:" && protocol !== "https:") {
+        throw protocolError("proto.invalid", "browser.tab.create only supports http(s) urls");
+      }
+    }
+    const page = await context.newPage();
+    if (url) {
+      await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
+    }
+    const tabId = context.pages().indexOf(page);
+    return {
+      openedTabId: tabId,
+      tabId,
+      url: stripQuery(page.url()),
+      title: await page.title(),
+    };
   }
 
   // ---- navigation / observation ----
@@ -256,6 +300,34 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return { text: bounded.text, truncated: bounded.truncated, url: stripQuery(page.url()) };
   }
 
+  /** Lazily attach console/pageerror capture to a page; buffer lives on
+   *  the Page object so it survives across tool calls until navigation
+   *  or context close (Playwright keeps listeners per page). */
+  #ensureConsoleCapture(page: PwPage): Array<{ level: string; text: string; ts: number }> {
+    const existing = this.#consoleBuffers.get(page);
+    if (existing) return existing;
+    const buf: Array<{ level: string; text: string; ts: number }> = [];
+    this.#consoleBuffers.set(page, buf);
+    page.on("console", (msg) => {
+      buf.push({ level: msg.type(), text: msg.text().slice(0, MAX_CONSOLE_TEXT), ts: Date.now() });
+      if (buf.length > MAX_CONSOLE_ENTRIES) buf.splice(0, buf.length - MAX_CONSOLE_ENTRIES);
+    });
+    page.on("pageerror", (err) => {
+      buf.push({ level: "error", text: String(err).slice(0, MAX_CONSOLE_TEXT), ts: Date.now() });
+      if (buf.length > MAX_CONSOLE_ENTRIES) buf.splice(0, buf.length - MAX_CONSOLE_ENTRIES);
+    });
+    return buf;
+  }
+
+  async #console(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const buf = this.#ensureConsoleCapture(page);
+    const level = typeof args.level === "string" ? args.level : "";
+    const limit = typeof args.limit === "number" ? Math.min(Math.max(Math.floor(args.limit), 1), MAX_CONSOLE_ENTRIES) : 100;
+    const filtered = level ? buf.filter((e) => e.level === level) : buf;
+    return { entries: filtered.slice(-limit), captured: true };
+  }
+
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const buf = await page.screenshot({ type: "png" });
@@ -276,6 +348,20 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #domAction(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
+    // press may target the focused element/page with no selector —
+    // page.keyboard.press is the honest equivalent.
+    if (tool === "browser.page.press") {
+      const key = typeof args.key === "string" ? args.key : "";
+      if (!key) throw protocolError("proto.invalid", "browser.page.press requires args.key");
+      const chord = pressChord(key, args.modifiers);
+      const sel = args.selector ?? args.ref;
+      if (typeof sel === "string" && sel.length > 0) {
+        await page.locator(sel).first().press(chord, { timeout: DEFAULT_NAV_TIMEOUT_MS });
+      } else {
+        await page.keyboard.press(chord);
+      }
+      return { pressed: key };
+    }
     const selector = await this.#requireSelector(args);
     const locator = page.locator(selector).first();
     switch (tool) {
@@ -306,6 +392,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           if (form) (form as HTMLFormElement).requestSubmit();
         });
         return { submitted: true };
+      case "browser.page.hover":
+        await locator.hover({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+        return { hovered: true };
       case "browser.page.scroll": {
         const dir = typeof args.direction === "string" ? args.direction : "down";
         await page.mouse.wheel(0, dir === "up" ? -600 : 600);
@@ -361,6 +450,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async releaseTask(taskId: string): Promise<void> {
     const ctx = this.#contexts.get(taskId);
     this.#contexts.delete(taskId);
+    for (const p of ctx?.pages() ?? []) this.#consoleBuffers.delete(p);
     await ctx?.close().catch(() => {});
   }
 
@@ -368,9 +458,28 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#closed = true;
     for (const ctx of this.#contexts.values()) await ctx.close().catch(() => {});
     this.#contexts.clear();
+    this.#consoleBuffers.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;
   }
+}
+
+const PRESS_MODIFIERS = new Set(["control", "alt", "shift", "meta"]);
+
+/** Build a Playwright chord ("Control+Shift+A") from key + modifier args.
+ *  Modifier names are case-insensitive; unknown entries are dropped. */
+function pressChord(key: string, modifiers: unknown): string {
+  const mods = new Set<string>();
+  if (Array.isArray(modifiers)) {
+    for (const m of modifiers) {
+      if (typeof m !== "string") continue;
+      const lower = m.toLowerCase();
+      if (PRESS_MODIFIERS.has(lower)) mods.add(m[0]!.toUpperCase() + m.slice(1).toLowerCase());
+    }
+  }
+  const order = ["Control", "Alt", "Shift", "Meta"];
+  const prefix = order.filter((m) => mods.has(m)).join("+");
+  return prefix ? `${prefix}+${key}` : key;
 }
 
 function boundText(text: string, max: number): { text: string; truncated: boolean } {

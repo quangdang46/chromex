@@ -9,10 +9,12 @@ export type BrowserToolName =
   | "browser.tabs.list"
   | "browser.tab.activate"
   | "browser.tab.close"
+  | "browser.tab.create"
   | "browser.page.snapshot"
   | "browser.page.get"
   | "browser.page.extract"
   | "browser.page.screenshot"
+  | "browser.page.console"
   | "browser.page.click"
   | "browser.page.focus"
   | "browser.page.type"
@@ -22,16 +24,20 @@ export type BrowserToolName =
   | "browser.page.scroll"
   | "browser.page.navigate"
   | "browser.page.wait"
+  | "browser.page.hover"
+  | "browser.page.press"
   | "browser.page.upload";
 
 export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tabs.list",
   "browser.tab.activate",
   "browser.tab.close",
+  "browser.tab.create",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.extract",
   "browser.page.screenshot",
+  "browser.page.console",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -41,6 +47,8 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.scroll",
   "browser.page.navigate",
   "browser.page.wait",
+  "browser.page.hover",
+  "browser.page.press",
   "browser.page.upload",
 ];
 

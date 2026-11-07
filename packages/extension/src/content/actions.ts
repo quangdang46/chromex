@@ -257,30 +257,43 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         message: `${target.count} elements match the target; use a snapshot ref or a more specific selector/label`,
       };
     }
-    const element = target.status === "resolved" ? target.element : null;
-    if (!element && step.action !== "scroll") {
+    const resolvedElement = target.status === "resolved" ? target.element : null;
+    // press may legitimately target the focused element when no explicit
+    // target resolves (e.g. "press Enter" in a form field).
+    const actionTarget =
+      resolvedElement ??
+      (step.action === "press" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    if (!resolvedElement && step.action !== "scroll" && step.action !== "press") {
       return { step, ok: false, message: "Target element was not found.", code: "browser.element_not_found" };
     }
 
     if (step.action === "scroll") {
-      const before = { page: observePage(), target: observeTarget(element) };
-      performScrollAction(element, step);
+      const before = { page: observePage(), target: observeTarget(resolvedElement) };
+      performScrollAction(resolvedElement, step);
       await waitForDomActionTick();
-      const verified = verifyDomAction(step, before, { page: observePage(), target: observeTarget(element) });
+      const verified = verifyDomAction(step, before, { page: observePage(), target: observeTarget(resolvedElement) });
       return { step, ok: true, message: "Scrolled the page.", verified };
     }
 
-    if (!element || isDomActionElementDisabled(element)) {
+    if (resolvedElement && isDomActionElementDisabled(resolvedElement)) {
       return { step, ok: false, message: "Target element is unavailable.", code: "browser.element_not_found" };
     }
 
-    element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-    await waitForDomActionTick();
+    if (resolvedElement) {
+      resolvedElement.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      await waitForDomActionTick();
+    }
+
+    // Every action reaching the switch below has a resolved element except
+    // press, which uses actionTarget (explicit target or focused element).
+    const element = resolvedElement as HTMLElement;
 
     // §6.3 two-layer verify: observe before dispatch, observe after,
     // then reduce to a semantic verdict. "unknown" is reported, never
     // retried — the caller decides.
-    const before = { page: observePage(), target: observeTarget(element) };
+    const before = { page: observePage(), target: observeTarget(actionTarget) };
     let ok = true;
     let message = "";
     switch (step.action) {
@@ -304,6 +317,20 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         submitDomActionElement(element);
         message = "Submitted the nearest form.";
         break;
+      case "hover":
+        // element is guaranteed non-null here (hover without a resolved
+        // target returns element_not_found above). Synthetic events are
+        // untrusted: JS listeners fire, but :hover CSS state and trusted
+        // gesture checks do not — verify reports "unknown" honestly.
+        dispatchHoverSequence(element);
+        message = `Hovered ${getElementLabel(element) || "the target element"}.`;
+        break;
+      case "press": {
+        const pressTarget = actionTarget ?? document.body ?? document.documentElement;
+        dispatchPressSequence(pressTarget, step);
+        message = `Pressed ${step.key || "key"} ${actionTarget ? `on ${getElementLabel(actionTarget) || "the focused element"}` : "on the page"}.`;
+        break;
+      }
       default:
         ok = false;
         message = "Unsupported action.";
@@ -440,6 +467,72 @@ export function performScrollAction(element: HTMLElement | null, step: BrowserDo
   });
 }
 
+
+/**
+ * hover (chromex-cly): pointer/mouse event sequence. Synthetic events are
+ * UNTRUSTED — isTrusted=false, so :hover CSS and trusted-gesture checks do
+ * not engage; JS listeners do. verifyDomAction reports "unknown".
+ */
+export function dispatchHoverSequence(element: HTMLElement): void {
+  const rect = element.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
+  element.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new PointerEvent("pointerenter", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new MouseEvent("mouseover", common));
+  element.dispatchEvent(new MouseEvent("mouseenter", common));
+  element.dispatchEvent(new MouseEvent("mousemove", common));
+}
+
+/** Normalize step.modifiers → KeyboardEventInit modifier flags. */
+export function pressModifierInit(modifiers: readonly string[] | undefined): KeyboardEventInit {
+  const init: KeyboardEventInit = {};
+  for (const m of modifiers ?? []) {
+    switch (m.toLowerCase()) {
+      case "control":
+        init.ctrlKey = true;
+        break;
+      case "alt":
+        init.altKey = true;
+        break;
+      case "shift":
+        init.shiftKey = true;
+        break;
+      case "meta":
+        init.metaKey = true;
+        break;
+      default:
+        break; // unknown modifiers are dropped
+    }
+  }
+  return init;
+}
+
+/**
+ * press (chromex-cly): keydown → (keypress for printable keys) → keyup on
+ * the target. Synthetic events are UNTRUSTED: page JS listeners observe
+ * them, but browser default actions (Enter submitting a form, Tab moving
+ * focus, shortcuts) do NOT run — a trusted path needs chrome.debugger or
+ * CDP Input.dispatchKeyEvent, neither of which this backend has.
+ */
+export function dispatchPressSequence(target: EventTarget, step: BrowserDomActionStep): void {
+  const key = typeof step.key === "string" ? step.key : "";
+  if (!key) {
+    throw new Error("browser.page.press requires a key.");
+  }
+  const init: KeyboardEventInit = {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...pressModifierInit(step.modifiers),
+  };
+  target.dispatchEvent(new KeyboardEvent("keydown", init));
+  if (key.length === 1) {
+    target.dispatchEvent(new KeyboardEvent("keypress", init));
+  }
+  target.dispatchEvent(new KeyboardEvent("keyup", init));
+}
 
 export function summarizeDomActionResults(results: BrowserDomActionResult["results"]): string {
   const okCount = results.filter((result) => result.ok).length;

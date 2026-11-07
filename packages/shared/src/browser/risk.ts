@@ -86,6 +86,7 @@ const READ_TOOLS = new Set([
   "browser.tabs.list",
   "browser.page.extract",
   "browser.page.wait",
+  "browser.page.console",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;
@@ -216,7 +217,9 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     }
 
     case "browser.page.click":
-    case "browser.page.submit": {
+    case "browser.page.submit":
+    case "browser.page.hover":
+    case "browser.page.press": {
       const destructiveLabel = /submit|send|post|publish|delete|confirm|pay|purchase|order|transfer/i;
       const formMutating = t?.method ? t.method.toUpperCase() !== "GET" : false;
       if (t?.isDestructive || destructiveLabel.test(t?.label ?? "") || formMutating || !ctx.contextResolved) {
@@ -233,6 +236,32 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
 
     case "browser.page.focus":
       return verdict("low", { reason: "focus is low-risk" });
+
+    case "browser.tab.create": {
+      // Opening a tab is a mutation (new page load, possible egress), so
+      // it is never `read`. Blank or resolved http(s) targets are low;
+      // anything else fails closed to approval like navigate.
+      const dest = ctx.url || "";
+      if (dest === "") {
+        return verdict("low", { reason: "new blank tab" });
+      }
+      let ok = false;
+      try {
+        const u = new URL(dest);
+        ok = (u.protocol === "http:" || u.protocol === "https:") && ctx.contextResolved;
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        return verdict("low", { reason: "new tab to resolved http(s) url" });
+      }
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "tab.create target unresolved",
+      });
+    }
 
     default:
       // unknown tool → fail closed for anything that isn't provably read

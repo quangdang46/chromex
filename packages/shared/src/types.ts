@@ -525,7 +525,16 @@ export interface AgenticRouteInput {
   browserPolicyV2?: boolean;
 }
 
-export type BrowserDomActionKind = "click" | "fill" | "select" | "scroll" | "focus" | "submit" | "navigate";
+export type BrowserDomActionKind =
+  | "click"
+  | "fill"
+  | "select"
+  | "scroll"
+  | "focus"
+  | "submit"
+  | "navigate"
+  | "hover"
+  | "press";
 
 export interface BrowserDomElementSnapshot {
   ref: string;
@@ -579,6 +588,10 @@ export interface BrowserDomActionStep {
   url?: string;
   direction?: "up" | "down" | "left" | "right" | "top" | "bottom";
   amountPx?: number;
+  /** press: KeyboardEvent.key ("Enter", "Tab", "a", …) */
+  key?: string;
+  /** press: modifier names — "Control" | "Alt" | "Shift" | "Meta" */
+  modifiers?: string[];
   reason: string;
 }
 

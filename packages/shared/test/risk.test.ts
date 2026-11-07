@@ -83,6 +83,33 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(local.needsApproval).toBe(false);
   });
 
+  test("browser.page.console is read; tab.create/hover/press classified (chromex-he2/nr8/cly)", () => {
+    expect(classifyActionRisk(ctx({ action: "browser.page.console" })).risk).toBe("read");
+
+    // tab.create: blank or resolved http(s) → low; anything else approval
+    expect(classifyActionRisk(ctx({ action: "browser.tab.create", url: "" })).risk).toBe("low");
+    expect(
+      classifyActionRisk(
+        ctx({ action: "browser.tab.create", url: "https://x.test/p", origin: "https://x.test" }),
+      ).risk,
+    ).toBe("low");
+    const bad = classifyActionRisk(
+      ctx({ action: "browser.tab.create", url: "javascript:alert(1)", origin: "" }),
+    );
+    expect(bad).toMatchObject({ risk: "external_mutation", needsApproval: true, allowTaskEligible: false });
+
+    // hover/press share the click/submit contextual rules
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.hover", target: { ref: "e1", label: "Menu" } })).risk,
+    ).toBe("low");
+    expect(classifyActionRisk(ctx({ action: "browser.page.hover", contextResolved: false })).needsApproval).toBe(true);
+    expect(classifyActionRisk(ctx({ action: "browser.page.press", contextResolved: true })).risk).toBe("low");
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.press", target: { ref: "e1", label: "Delete account" } }))
+        .needsApproval,
+    ).toBe(true);
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

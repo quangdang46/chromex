@@ -43,6 +43,18 @@ export interface BrowserBackendCapabilities {
   browserChrome: boolean;
   networkInspection?: boolean;
   attachToRunningChrome?: boolean;
+  /** browser.tab.create — open a new tab inside the task's scope */
+  tabCreate?: boolean;
+  /** browser.page.console — buffered console/error capture per tab */
+  consoleCapture?: boolean;
+  /** browser.page.hover — untrusted pointer/mouse events; cannot force
+   *  :hover CSS state or trusted listeners */
+  pageHover?: boolean;
+  /** browser.page.press — key events. Extension dispatches UNTRUSTED
+   *  DOM KeyboardEvents: JS listeners see them, but browser default
+   *  actions (e.g. Enter submitting a form) are not guaranteed. Only a
+   *  real input path (chrome.debugger / CDP Input domain) is trusted. */
+  pagePress?: boolean;
 }
 
 /**
@@ -71,6 +83,10 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     filePicker: false,
     trustedGesture: false,
     browserChrome: false,
+    tabCreate: true,
+    consoleCapture: true,
+    pageHover: true,
+    pagePress: true,
   },
   "playwright-isolated": {
     existingUserTabs: false,
@@ -87,6 +103,10 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     filePicker: false, // setInputFiles works; native picker does not
     trustedGesture: false,
     browserChrome: false,
+    tabCreate: true,
+    consoleCapture: true,
+    pageHover: true,
+    pagePress: true,
   },
   "playwright-cdp": {
     existingUserTabs: false,

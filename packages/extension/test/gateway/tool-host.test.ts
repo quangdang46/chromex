@@ -203,6 +203,105 @@ describe("tool host (P1-09)", () => {
     const h = createToolHostHandler(d);
     await expect(h(req("browser.page.screenshot"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
+
+  test("tab.create opens a tab, returns scope ids, strips query/hash (chromex-he2)", async () => {
+    const created: Array<{ url?: string; active?: boolean }> = [];
+    const d = deps({
+      createTab: vi.fn(async (opts: { url?: string; active?: boolean }) => {
+        created.push(opts);
+        return { id: 55, url: opts.url ?? "about:blank", title: "New", active: opts.active ?? true } as chrome.tabs.Tab;
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tab.create", { url: "https://example.com/path?q=1#frag" }))) as {
+      openedTabId: number;
+      resolvedTabId: number;
+      tabId: number;
+      url: string;
+      origin: string;
+    };
+    expect(res.openedTabId).toBe(55);
+    expect(res.resolvedTabId).toBe(55);
+    expect(res.tabId).toBe(55);
+    expect(res.url).toBe("https://example.com/path");
+    expect(res.origin).toBe("https://example.com");
+    expect(created[0]).toMatchObject({ url: "https://example.com/path?q=1#frag", active: true });
+  });
+
+  test("tab.create blank url → no url passed; active:false honored", async () => {
+    const created: Array<{ url?: string; active?: boolean }> = [];
+    const d = deps({
+      createTab: vi.fn(async (opts: { url?: string; active?: boolean }) => {
+        created.push(opts);
+        return { id: 56, url: "about:blank", title: "", active: false } as chrome.tabs.Tab;
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tab.create", { active: false }))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(56);
+    expect(created[0]).toEqual({ active: false });
+  });
+
+  test("tab.create rejects non-http(s)/invalid urls and missing dep — never faked", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.tab.create", {}))).rejects.toMatchObject({ code: "proto.unsupported" });
+    const d = deps({
+      createTab: vi.fn(async () => ({ id: 1 }) as chrome.tabs.Tab),
+    });
+    const h2 = createToolHostHandler(d);
+    await expect(h2(req("browser.tab.create", { url: "javascript:alert(1)" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h2(req("browser.tab.create", { url: "not a url" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    expect(d.createTab).not.toHaveBeenCalled();
+  });
+
+  test("page.console runs the MAIN-world collector on the scoped tab (chromex-nr8)", async () => {
+    const calls: Array<{ tabId: number; funcName: string; args: unknown[] | undefined }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (tabId: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
+        calls.push({ tabId, funcName: func.name, args });
+        return { installed: true, entries: [{ level: "error", text: "boom", ts: 1 }] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.console", { limit: 5, level: "error" }))) as {
+      entries: unknown[];
+      captured: boolean;
+      resolvedTabId: number;
+    };
+    expect(res.captured).toBe(true);
+    expect(res.entries).toHaveLength(1);
+    expect(res.resolvedTabId).toBe(7);
+    expect(calls[0]).toMatchObject({ tabId: 7, funcName: "chromexConsoleCollect", args: [5, "error"] });
+  });
+
+  test("page.console without runInMainWorld dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.console"))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.hover", { ref: "e1" }));
+    await h(req("browser.page.press", { key: "Enter", modifiers: ["Control"] }));
+    const steps = d.sent.map((s) => (s.message as { steps: Array<Record<string, unknown>> }).steps[0]);
+    expect(steps[0]).toMatchObject({ action: "hover", targetRef: "e1" });
+    expect(steps[1]).toMatchObject({ action: "press", key: "Enter", modifiers: ["Control"] });
+  });
+
+  test("page.press without key → proto.invalid; press without target still dispatches (focused element)", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.press", { ref: "e1" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await h(req("browser.page.press", { key: "Tab" }));
+    const step = (d.sent[0].message as { steps: Array<Record<string, unknown>> }).steps[0];
+    expect(step).toMatchObject({ action: "press", key: "Tab" });
+    expect(step.targetRef).toBeUndefined();
+  });
 });
 
 describe("tool host tab scope (chromex-9e3)", () => {

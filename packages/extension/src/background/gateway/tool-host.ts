@@ -19,9 +19,17 @@
 import { SnapshotRegistry, urlOriginPath } from "@codex-sidepanel/shared";
 import type { BrowserDomActionResult, BrowserDomSnapshot } from "@codex-sidepanel/shared";
 
+import { chromexConsoleCollect } from "../../content/console-capture.js";
+
 export interface ToolHostDeps {
   /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL */
   captureVisibleTab?(windowId: number): Promise<string>;
+  /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
+  createTab?(opts: { url?: string; active?: boolean }): Promise<chrome.tabs.Tab>;
+  /** chrome.scripting.executeScript world:"MAIN" — runs `func` in the
+   *  page's main world and resolves its return value (browser.page.console,
+   *  chromex-nr8). `func` must be self-contained (serialized source). */
+  runInMainWorld?(tabId: number, func: (...fnArgs: unknown[]) => unknown, args?: unknown[]): Promise<unknown>;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -48,8 +56,10 @@ const SUPPORTED = new Set([
   "browser.tabs.list",
   "browser.tab.activate",
   "browser.tab.close",
+  "browser.tab.create",
   "browser.page.snapshot",
   "browser.page.get",
+  "browser.page.console",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -59,6 +69,8 @@ const SUPPORTED = new Set([
   "browser.page.scroll",
   "browser.page.navigate",
   "browser.page.wait",
+  "browser.page.hover",
+  "browser.page.press",
   "browser.page.screenshot",
   "browser.page.extract",
   "browser.page.upload",
@@ -212,6 +224,76 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         await deps.closeTab(tabId);
         return { closed: tabId, resolvedTabId: tabId };
+      }
+      case "browser.tab.create": {
+        // chromex-he2: opens a NEW tab — no existing tab to scope-check.
+        // The created tab enters this task's scope via the result's
+        // tabId/openedTabId (tool-server harvestTabRefs + resolvedTabId
+        // bind). Only http(s) or blank — other schemes are refused
+        // host-side even if the classifier approved them.
+        if (!deps.createTab) {
+          throw toolError("proto.unsupported", "tab creation is not available on this host");
+        }
+        const rawUrl = str(args.url);
+        let url: string | undefined;
+        if (rawUrl) {
+          let parsed: URL;
+          try {
+            parsed = new URL(rawUrl);
+          } catch {
+            throw toolError("proto.invalid", "browser.tab.create args.url is not a valid URL");
+          }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            throw toolError("proto.invalid", "browser.tab.create only supports http(s) urls");
+          }
+          url = parsed.href;
+        }
+        const active = typeof args.active === "boolean" ? args.active : true;
+        const tab = await deps.createTab({ ...(url ? { url } : {}), active });
+        if (typeof tab.id !== "number") {
+          throw toolError("browser.action_failed", "chrome.tabs.create returned no tab id");
+        }
+        // §6.1.1 privacy: same redaction as tabs.list — no query/hash.
+        let safeUrl = "";
+        let origin = "";
+        try {
+          const u = new URL(tab.url ?? url ?? "about:blank");
+          origin = u.origin;
+          safeUrl = `${u.origin}${u.pathname}`;
+        } catch {
+          safeUrl = "";
+        }
+        return {
+          openedTabId: tab.id,
+          tabId: tab.id,
+          resolvedTabId: tab.id,
+          id: tab.id,
+          url: safeUrl,
+          origin,
+          title: tab.title ?? "",
+          active: tab.active === true,
+        };
+      }
+      case "browser.page.console": {
+        // chromex-nr8: MAIN-world console buffer via chrome.scripting.
+        // Content scripts cannot see page console calls (isolated world).
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "console capture requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+            : 100;
+        const level = str(args.level) ?? null;
+        const res = (await deps.runInMainWorld(tabId, chromexConsoleCollect, [limit, level])) as
+          | { installed?: boolean; entries?: unknown }
+          | undefined;
+        return {
+          entries: Array.isArray(res?.entries) ? res.entries : [],
+          captured: res?.installed === true,
+          resolvedTabId: tabId,
+        };
       }
       case "browser.page.get": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
@@ -374,6 +456,21 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       return { ...base, action: "select", value: typeof args.value === "string" ? args.value : "" };
     case "browser.page.submit":
       return { ...base, action: "submit" };
+    case "browser.page.hover":
+      return { ...base, action: "hover" };
+    case "browser.page.press": {
+      const key = str(args.key);
+      if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");
+      const modifiers = Array.isArray(args.modifiers)
+        ? args.modifiers.filter((m): m is string => typeof m === "string")
+        : undefined;
+      return {
+        ...base,
+        action: "press",
+        key,
+        ...(modifiers && modifiers.length > 0 ? { modifiers } : {}),
+      };
+    }
     case "browser.page.scroll":
       return {
         ...base,

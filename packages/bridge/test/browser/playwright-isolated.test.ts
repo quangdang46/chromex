@@ -74,15 +74,104 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
         code: "proto.unsupported",
       });
     }
-    // a tool that lands in the contract later (e.g. browser.tab.create,
-    // browser.page.hover) is equally honest — checked before any launch
+    // a tool outside the contract is equally honest — rejected before
+    // any playwright load. browser.dialog.respond has no real mechanism
+    // on this backend (no debugger permission) and must stay unsupported.
     await expect(
-      backend.execute("t1", "browser.tab.create" as never, {}),
-    ).rejects.toMatchObject({ code: "proto.unsupported" });
-    await expect(
-      backend.execute("t1", "browser.page.hover" as never, {}),
+      backend.execute("t1", "browser.dialog.respond" as never, {}),
     ).rejects.toMatchObject({ code: "proto.unsupported" });
     expect(loads).toBe(0);
+  });
+
+  test("tab.create opens an isolated page and reports its index (chromex-he2)", async () => {
+    const existing = { url: () => "https://a.example/", title: async () => "A" };
+    const created = {
+      url: () => "https://n.example/",
+      title: async () => "N",
+      goto: async () => {},
+    };
+    const context = {
+      pages: () => [existing, created],
+      newPage: async () => created,
+      close: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () =>
+        ({
+          chromium: {
+            launch: async () => ({
+              isConnected: () => true,
+              newContext: async () => context,
+              close: async () => {},
+            }),
+          },
+        }) as never,
+    });
+    const res = (await backend.execute("t1", "browser.tab.create", {
+      url: "https://n.example/?q=1#f",
+    })) as { openedTabId: number; tabId: number; url: string };
+    expect(res.tabId).toBe(1);
+    expect(res.openedTabId).toBe(1);
+    expect(res.url).toBe("https://n.example/"); // query stripped
+    await expect(
+      backend.execute("t1", "browser.tab.create", { url: "javascript:alert(1)" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("press without selector uses page.keyboard with modifier chord (chromex-cly)", async () => {
+    const presses: string[] = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      keyboard: { press: async (key: string) => void presses.push(key) },
+      locator: () => {
+        throw new Error("locator must not be used without a selector");
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.press", {
+      key: "Enter",
+      modifiers: ["Control", "bogus"],
+    })) as { pressed: string };
+    expect(res.pressed).toBe("Enter");
+    expect(presses).toEqual(["Control+Enter"]);
+    await expect(backend.execute("t1", "browser.page.press", {})).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("page.console returns buffered console/pageerror entries (chromex-nr8)", async () => {
+    const handlers = new Map<string, Array<(arg: unknown) => void>>();
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      on: (event: string, cb: (arg: unknown) => void) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), cb]);
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    // emit before first read — buffer only exists after capture attaches,
+    // so emit after the first (empty) read
+    const first = (await backend.execute("t1", "browser.page.console", {})) as {
+      entries: unknown[];
+      captured: boolean;
+    };
+    expect(first.captured).toBe(true);
+    expect(first.entries).toHaveLength(0);
+    for (const cb of handlers.get("console") ?? []) {
+      cb({ type: () => "error", text: () => "boom" });
+    }
+    for (const cb of handlers.get("pageerror") ?? []) {
+      cb(new Error("page died"));
+    }
+    const second = (await backend.execute("t1", "browser.page.console", { level: "error" })) as {
+      entries: Array<{ level: string; text: string }>;
+    };
+    expect(second.entries.map((e) => e.text)).toEqual(["boom", "Error: page died"]);
   });
 
   test("tabs.list reports real page titles, not placeholders", async () => {

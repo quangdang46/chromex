@@ -198,6 +198,9 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.get": "page-text",
   "browser.page.extract": "page-text",
   "browser.page.screenshot": "screenshot",
+  // console entries are page-generated content — same egress class as
+  // extracted text (may carry tokens/PII the page logged).
+  "browser.page.console": "page-text",
 };
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -298,7 +301,16 @@ export function buildActionContext(
       : {}),
     ...(agentEgress ? { agentEgress } : {}),
     withinTabScope,
-    contextResolved: !mutating || hasTarget || (req.tool.endsWith("navigate") && url !== "") || req.tool.endsWith("scroll") || req.tool.endsWith("wait"),
+    // press may legitimately target the focused element with no explicit
+    // target — the key itself is the resolved input. hover still needs a
+    // target or it fails closed to approval.
+    contextResolved:
+      !mutating ||
+      hasTarget ||
+      (req.tool.endsWith("navigate") && url !== "") ||
+      req.tool.endsWith("scroll") ||
+      req.tool.endsWith("wait") ||
+      (req.tool === "browser.page.press" && typeof args.key === "string" && args.key.length > 0),
   };
 }
 

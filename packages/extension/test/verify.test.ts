@@ -106,6 +106,26 @@ describe("verifyDomAction — §6.3 semantic layer", () => {
     expect(verifyDomAction(step("focus"), before, { page: page(), target: target({ focused: false }) })).toBe("unknown");
   });
 
+  test("press verifies only on targeted evidence; otherwise unknown (chromex-cly)", () => {
+    const before = { page: page(), target: target({ focused: false }) };
+    expect(
+      verifyDomAction(step("press"), before, { page: page(), target: target({ focused: true }) }),
+    ).toBe(true);
+    const unchanged = { page: page(), target: target() };
+    expect(verifyDomAction(step("press"), unchanged, unchanged)).toBe("unknown");
+    expect(
+      verifyDomAction(step("press"), unchanged, {
+        page: page({ url: "https://app.example.com/next" }),
+        target: target(),
+      }),
+    ).toBe(true);
+  });
+
+  test("hover is always unknown — untrusted events have no state contract", () => {
+    const obs = { page: page(), target: target() };
+    expect(verifyDomAction(step("hover"), obs, obs)).toBe("unknown");
+  });
+
   test("navigate + url change → true; unchanged → unknown", () => {
     const before = { page: page(), target: null };
     expect(

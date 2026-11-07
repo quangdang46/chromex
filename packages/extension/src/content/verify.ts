@@ -141,6 +141,16 @@ export function verifyDomAction(
     case "scroll":
       return scrolled ? true : "unknown";
 
+    case "press":
+      // Key events are untrusted: targeted evidence only — a URL change,
+      // element removal, or observed target state change. Otherwise the
+      // press is unconfirmed, never retried.
+      if (nav || targetGone || targetStateChanged) return true;
+      return "unknown";
+
+    // hover dispatches untrusted pointer/mouse events with no observable
+    // state contract — always "unknown" (falls through to default).
+
     default:
       return "unknown";
   }
