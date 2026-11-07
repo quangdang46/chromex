@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { matchesHarnessPattern, resolveHarnessPermission } from "../src/index.js";
+import { matchesHarnessPattern, resolveHarnessPermission, withDegradedHarnessAsks } from "../src/index.js";
 
 describe("matchesHarnessPattern", () => {
   test("supports exact and wildcard matches", () => {
@@ -152,5 +152,32 @@ describe("resolveHarnessPermission", () => {
     );
 
     expect(result.decision).toBe("allow");
+  });
+});
+
+describe("withDegradedHarnessAsks", () => {
+  const degraded = withDegradedHarnessAsks({
+    defaultMode: "default",
+    allow: ["prompt.send", "context.tabs.read"],
+    ask: [],
+    deny: [],
+  });
+
+  test("escalates sensitive ops to ask, keeps core ops allowed", () => {
+    for (const op of ["context.history.read", "voice.session.start", "image.edit"] as const) {
+      expect(resolveHarnessPermission(degraded, op).decision).toBe("ask");
+    }
+    expect(resolveHarnessPermission(degraded, "prompt.send").decision).toBe("allow");
+    expect(resolveHarnessPermission(degraded, "context.tabs.read").decision).toBe("allow");
+  });
+
+  test("explicit deny still wins over degraded ask", () => {
+    const config = withDegradedHarnessAsks({
+      defaultMode: "default",
+      allow: [],
+      ask: [],
+      deny: ["voice.session.start"],
+    });
+    expect(resolveHarnessPermission(config, "voice.session.start").decision).toBe("deny");
   });
 });

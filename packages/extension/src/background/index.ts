@@ -23,6 +23,7 @@ import {
   normalizeAgenticRoutePlan,
   routePlanToPromptRoutingPlan,
   resolveHarnessPermission,
+  withDegradedHarnessAsks,
   type ActionCard,
   type AgenticRouteContextSource,
   type AgenticRouteInput,
@@ -5234,11 +5235,15 @@ async function ensureOperationAllowed(operation: HarnessPermissionOperation, con
           "workspace.harness.read(permission)",
         ),
   ]);
-  const result = resolveHarnessPermission(harness.permissions, operation, {
-    browserActionsEnabled: settings.allowBrowserActions,
-    browserActionPermissionMode: settings.browserActionPermissionMode,
-    confirmedOperations: confirmed ? [operation] : [],
-  });
+  const result = resolveHarnessPermission(
+    harness.degraded ? withDegradedHarnessAsks(harness.permissions) : harness.permissions,
+    operation,
+    {
+      browserActionsEnabled: settings.allowBrowserActions,
+      browserActionPermissionMode: settings.browserActionPermissionMode,
+      confirmedOperations: confirmed ? [operation] : [],
+    },
+  );
 
   if (result.decision === "allow") {
     return { ok: true as const };
@@ -5275,6 +5280,7 @@ function createFallbackWorkspaceHarness(workspaceRoot = ""): WorkspaceHarnessSna
       eventCount: 0,
     },
     shortcuts: [],
+    degraded: true,
   };
 }
 

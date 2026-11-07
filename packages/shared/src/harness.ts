@@ -54,6 +54,9 @@ export interface WorkspaceHarnessSnapshot {
   permissions: HarnessPermissionConfig;
   hooks: WorkspaceHookSummary;
   shortcuts: WorkspaceShortcut[];
+  /** true when the snapshot is a fallback because workspace.harness.read
+   * failed — workspace deny/ask rules are unknown and must not be bypassed. */
+  degraded?: boolean;
 }
 
 export interface PermissionResolutionOptions {
@@ -187,6 +190,22 @@ export function resolveHarnessPermission(
           : "This action is allowed by the default workspace policy.",
       };
   }
+}
+
+/** Operations that read private/user data or start capture sessions —
+ * escalated to "ask" when the harness snapshot is degraded so a failed
+ * workspace.harness.read cannot silently bypass workspace deny rules. */
+export const DEGRADED_HARNESS_ASK_OPERATIONS: readonly HarnessPermissionOperation[] = [
+  "context.history.read",
+  "voice.session.start",
+  "image.edit",
+];
+
+export function withDegradedHarnessAsks(config: HarnessPermissionConfig): HarnessPermissionConfig {
+  return {
+    ...config,
+    ask: Array.from(new Set([...config.ask, ...DEGRADED_HARNESS_ASK_OPERATIONS])),
+  };
 }
 
 export function matchesHarnessPattern(pattern: string, value: string): boolean {
