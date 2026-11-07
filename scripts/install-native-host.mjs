@@ -573,7 +573,14 @@ async function writeLauncher({
       ? [
           "@echo off",
           `set "BRIDGE_ENTRY=${bridgeEntryPath}"`,
-          ...(gatewayMode ? [`set "CHROMEX_GATEWAY_MODE=1"`] : []),
+          ...(gatewayMode
+            ? [
+                `set "CHROMEX_GATEWAY_MODE=1"`,
+                // installed host dir is flat — sibling-package bin resolution
+                // cannot find bridge/dist; point spawn at the real entry
+                `set "GATEWAY_ENTRY=${bridgeEntryPath.replace(/cli\.js$/, "gateway/bin.js")}"`,
+              ]
+            : []),
           `set "PATH=${windowsPath}"`,
           `"${process.execPath}" "${hostPath}" %*`,
           "",
@@ -581,7 +588,12 @@ async function writeLauncher({
       : [
           "#!/bin/sh",
           `export BRIDGE_ENTRY="${bridgeEntryPath}"`,
-          ...(gatewayMode ? [`export CHROMEX_GATEWAY_MODE=1`] : []),
+          ...(gatewayMode
+            ? [
+                `export CHROMEX_GATEWAY_MODE=1`,
+                `export GATEWAY_ENTRY="${bridgeEntryPath.replace(/cli\.js$/, "gateway/bin.js")}"`,
+              ]
+            : []),
           `export PATH="${nodeDir}:$PATH"`,
           `exec "${process.execPath}" "${hostPath}" "$@"`,
           "",
