@@ -19,6 +19,7 @@ export const DRAIN_GRACE_MS = 60 * 1000;
 
 export interface RefreshNotice {
   type: "tool.token.refreshed";
+  taskId: string;
   token: string;
   expiresAt: number;
   /** adapter must hot-update or confirm drain before this deadline */
@@ -97,6 +98,7 @@ export class ToolTokenRefresher {
     const drainDeadlineAt = previousExpiresAt + DRAIN_GRACE_MS;
     this.#opts.notify({
       type: "tool.token.refreshed",
+      taskId,
       token: issued.token,
       expiresAt: issued.expiresAt,
       drainDeadlineAt,

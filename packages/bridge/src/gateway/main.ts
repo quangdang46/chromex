@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { protocolError } from "@codex-sidepanel/shared";
 import type { Envelope, ProtocolError } from "@codex-sidepanel/shared";
@@ -66,6 +67,9 @@ import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
 import { BrowserToolServer } from "../browser/tool-server.js";
+import { ToolTokenRefresher } from "../browser/tool-refresh.js";
+import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
+import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
 import { NO_CAPABILITIES, protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
@@ -209,6 +213,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     // approvals row; resolution via permission.respond (browser path
     // handled in the router below). Full §4.8 engine is P2-04.
     const toolTokens = await ToolTokenManager.create(dataDir);
+    // §9.1: Gateway-initiated refresh 2min before expiry; delivery =
+    // scope-file rewrite (MCP stdio re-reads per call = hot-update).
+    const toolRefresher = new ToolTokenRefresher({
+      tokens: toolTokens,
+      notify: (notice) => {
+        void updateMcpScopeToken(dataDir, notice.taskId, notice.token, notice.expiresAt).catch(
+          (err) => log(`tool token refresh scope update failed: ${err instanceof Error ? err.message : String(err)}`),
+        );
+      },
+    });
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
@@ -297,6 +311,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           snapshotChunks,
           playwrightRuntime,
           toolServer,
+          toolRefresher,
         });
       } catch (err) {
         if (err instanceof StaleFenceError) {
@@ -413,6 +428,13 @@ function parsePayload<S extends { safeParse: (v: unknown) => { success: boolean;
   return r.data;
 }
 
+/** Same derivation as GatewayIpcServer.endpointPath — kept in sync. */
+function ipcEndpointPath(dataDir: string): string {
+  const hash = createHash("sha256").update(dataDir).digest("hex").slice(0, 16);
+  if (process.platform === "win32") return `\\.\pipe\chromex-gateway-${hash}`;
+  return path.join(dataDir, "run", `gw-${hash}.sock`);
+}
+
 async function handleGatewayRequest(
   req: Extract<Envelope, { kind: "request" }>,
   ctx: {
@@ -428,6 +450,7 @@ async function handleGatewayRequest(
     snapshotChunks: SnapshotChunkStore;
     playwrightRuntime: PlaywrightRuntimeManager;
     toolServer: BrowserToolServer;
+    toolRefresher: ToolTokenRefresher;
   },
 ): Promise<unknown> {
   switch (req.method) {
@@ -581,6 +604,48 @@ async function handleGatewayRequest(
       });
       return outcome;
     }
+    case "browser.mcp.spawn": {
+      // §9.3: issue a scoped tool token, write the 0600 scope file, and
+      // return the stdio spawn descriptor for the provider adapter.
+      // Per-session MCP registration is adapter-owned (Claude SDK:
+      // per-query mcpServers; Codex: see ADR open question).
+      const p = parsePayload(z.object({ taskId: z.string().min(1) }), req.payload) as {
+        taskId: string;
+      };
+      const task = ctx.store.getTask(p.taskId);
+      if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
+      const issued = ctx.toolRefresher.track({
+        taskId: task.taskId,
+        profileId: task.profileId,
+        backendId: (task.backend.backendId ?? "chrome-extension") as never,
+        allowedTools: [...BROWSER_TOOL_NAMES],
+      });
+      const scopeFile = await writeMcpScopeFile(ctx.dataDir, {
+        taskId: task.taskId,
+        token: issued.token,
+        tokenExpiresAt: issued.expiresAt,
+        profileId: task.profileId,
+        backendId: (task.backend.backendId ?? "chrome-extension") as never,
+        allowedTools: [...BROWSER_TOOL_NAMES],
+        gatewayEndpoint: ipcEndpointPath(ctx.dataDir),
+        gatewayTokenFile: path.join(ctx.dataDir, "auth", "token"),
+      });
+      const mcpStdioJs = fileURLToPath(new URL("../browser/mcp-stdio.js", import.meta.url));
+      return {
+        scopeFile,
+        command: process.execPath,
+        args: [mcpStdioJs],
+        env: { CHROMEX_MCP_SCOPE_FILE: scopeFile },
+        tokenExpiresAt: issued.expiresAt,
+      };
+    }
+    case "browser.mcp.stop": {
+      const p = parsePayload(z.object({ taskId: z.string().min(1) }), req.payload) as {
+        taskId: string;
+      };
+      ctx.toolRefresher.untrack(p.taskId);
+      return { stopped: true, taskId: p.taskId };
+    }
     case "task.sync": {
       const p = parsePayload(taskSyncSchema, req.payload) as z.infer<typeof taskSyncSchema>;
       if (!ctx.store.getTask(p.taskId)) {
@@ -599,6 +664,7 @@ async function handleGatewayRequest(
         throw perr("task.not_found", `task ${p.taskId} not found`);
       }
       ctx.store.purgeTask(p.taskId);
+      ctx.toolRefresher.untrack(p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({
