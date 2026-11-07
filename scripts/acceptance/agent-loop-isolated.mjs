@@ -169,6 +169,24 @@ try {
   const fname = await call("browser.page.extract", { tabId: kTab, selector: "#fname" });
   assert(String(fname?.text ?? "").includes("agent-note.txt"), "file input shows uploaded name");
 
+  // ── Honesty checks: refused paths must fail loudly, never fake ─────
+  const expectReject = async (tool, args, fragment, label) => {
+    try {
+      await call(tool, args);
+    } catch (e) {
+      assert(
+        `${e?.code ?? ""} ${e?.message ?? ""}`.includes(fragment),
+        `${label} → ${e?.code ?? ""} ${e?.message ?? e}`,
+      );
+      return;
+    }
+    throw new Error(`ASSERT FAIL: ${label} did not reject`);
+  };
+  await expectReject("browser.page.evaluate", {}, "unsupported", "evaluate refused (no arbitrary JS)");
+  await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
+  await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");
+  await expectReject("browser.downloads.list", {}, "unsupported", "downloads not advertised on isolated backend");
+
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;
   assert(count >= 2, `tabs.list sees ${count} task tabs`);
