@@ -190,6 +190,9 @@ await conn.request("task.send", {
         "answer, reply with just the chosen style. Do not do anything else.",
     },
   ],
+  // planMode → codex collaborationMode{mode:plan} unlocks requestUserInput
+  // (the standalone feature flag is off by default in codex-cli)
+  ctx: { metadata: { planMode: true } },
 });
 console.log(`prompt sent — waiting up to ${TRIGGER_BUDGET_MS / 1000}s for questions-shaped permission.requested…`);
 
