@@ -516,6 +516,54 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { hovered: true, x, y };
       }
     }
+    // Page-level scroll needs no selector — window scroll is a valid
+    // target (extension host parity). Handled before #requireSelector.
+    if (tool === "browser.page.scroll") {
+      const dir = typeof args.direction === "string" ? args.direction : "down";
+      if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
+        throw protocolError("proto.invalid", "browser.page.scroll args.direction must be up|down|left|right|top|bottom");
+      }
+      const amount =
+        typeof args.amountPx === "number" && Number.isFinite(args.amountPx)
+          ? Math.min(Math.max(args.amountPx, 0), 10_000)
+          : 600;
+      // Element-targeted scroll when a selector/ref resolves — same
+      // contract as the extension host's scroll step. evaluate args
+      // are serialized, so dir/amount travel as parameters.
+      const sel = args.selector ?? args.ref;
+      const scrollOpts = { d: dir, a: amount };
+      const scrollEl = (el: Element | Window, o: { d: string; a: number }) => {
+        const target = el instanceof Window ? el.document.documentElement : (el as HTMLElement);
+        if (o.d === "top") target.scrollTo({ top: 0 });
+        else if (o.d === "bottom") target.scrollTo({ top: target.scrollHeight });
+        else {
+          const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
+          const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
+          target.scrollBy({ left: dx, top: dy });
+        }
+      };
+      if (typeof sel === "string" && sel.length > 0) {
+        await page
+          .locator(sel)
+          .first()
+          .evaluate(scrollEl, scrollOpts)
+          .catch(() => null);
+      } else {
+        await page
+          .evaluate((o) => {
+            const de = document.documentElement;
+            if (o.d === "top") de.scrollTo({ top: 0 });
+            else if (o.d === "bottom") de.scrollTo({ top: de.scrollHeight });
+            else {
+              const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
+              const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
+              de.scrollBy({ left: dx, top: dy });
+            }
+          }, scrollOpts)
+          .catch(() => null);
+      }
+      return { scrolled: dir };
+    }
     const selector = await this.#requireSelector(args);
     const locator = page.locator(selector).first();
     switch (tool) {
@@ -586,52 +634,6 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.hover":
         await locator.hover({ timeout: DEFAULT_NAV_TIMEOUT_MS });
         return { hovered: true };
-      case "browser.page.scroll": {
-        const dir = typeof args.direction === "string" ? args.direction : "down";
-        if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
-          throw protocolError("proto.invalid", "browser.page.scroll args.direction must be up|down|left|right|top|bottom");
-        }
-        const amount =
-          typeof args.amountPx === "number" && Number.isFinite(args.amountPx)
-            ? Math.min(Math.max(args.amountPx, 0), 10_000)
-            : 600;
-        // Element-targeted scroll when a selector/ref resolves — same
-        // contract as the extension host's scroll step. evaluate args
-        // are serialized, so dir/amount travel as parameters.
-        const sel = args.selector ?? args.ref;
-        const scrollOpts = { d: dir, a: amount };
-        const scrollEl = (el: Element | Window, o: { d: string; a: number }) => {
-          const target = el instanceof Window ? el.document.documentElement : (el as HTMLElement);
-          if (o.d === "top") target.scrollTo({ top: 0 });
-          else if (o.d === "bottom") target.scrollTo({ top: target.scrollHeight });
-          else {
-            const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
-            const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
-            target.scrollBy({ left: dx, top: dy });
-          }
-        };
-        if (typeof sel === "string" && sel.length > 0) {
-          await page
-            .locator(sel)
-            .first()
-            .evaluate(scrollEl, scrollOpts)
-            .catch(() => null);
-        } else {
-          await page
-            .evaluate((o) => {
-              const de = document.documentElement;
-              if (o.d === "top") de.scrollTo({ top: 0 });
-              else if (o.d === "bottom") de.scrollTo({ top: de.scrollHeight });
-              else {
-                const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
-                const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
-                de.scrollBy({ left: dx, top: dy });
-              }
-            }, scrollOpts)
-            .catch(() => null);
-        }
-        return { scrolled: dir };
-      }
       default:
         throw protocolError("proto.unsupported", `unsupported dom action ${tool}`);
     }

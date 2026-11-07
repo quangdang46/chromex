@@ -99,6 +99,20 @@ try {
   const backUrl = await call("browser.page.get", { tabId: sTab, key: "url" });
   assert(String(backUrl?.value ?? "").includes("/slow"), "back landed on /slow");
 
+  // ── Loop 5: coordinate click on a fixed-position target ────────────
+  const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
+  const cTab = coord?.tabId ?? coord?.id;
+  await call("browser.page.click", { tabId: cTab, x: 100, y: 70 });
+  const pad = await call("browser.page.extract", { tabId: cTab, selector: "#pad" });
+  assert(String(pad?.text ?? "").includes("coord-hit"), "coordinate click hit the fixed-position button");
+
+  // ── Loop 6: scroll moves viewport, page.get reports position ───────
+  const tall = await call("browser.tab.create", { url: fixture.url("/tall"), active: false });
+  const tTab = tall?.tabId ?? tall?.id;
+  await call("browser.page.scroll", { tabId: tTab, direction: "down", amountPx: 1200 });
+  const pos = await call("browser.page.get", { tabId: tTab });
+  assert((pos?.scroll?.scrollY ?? 0) > 0, `scroll moved viewport (scrollY=${pos?.scroll?.scrollY})`);
+
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;
   assert(count >= 2, `tabs.list sees ${count} task tabs`);

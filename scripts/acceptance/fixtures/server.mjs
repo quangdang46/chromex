@@ -64,6 +64,18 @@ const PAGES = {
 <h1>Slow Page</h1><p id="status">pending</p>
 <script>setTimeout(() => { document.getElementById('status').textContent = 'ready'; }, 800);</script>
 </body></html>`,
+
+  // fixed-position target for coordinate (x,y) click proof — non-DOM
+  // surface path; center of the button is viewport (100, 70).
+  "/coord": `<!doctype html><html><body>
+<h1>Coord Page</h1>
+<button id="pad" style="position:fixed;left:40px;top:40px;width:120px;height:60px" onclick="this.textContent='coord-hit'">pad</button>
+</body></html>`,
+
+  // tall page for scroll proof
+  "/tall": `<!doctype html><html><body>
+<h1>Tall Page</h1><div style="height:5000px">spacer</div><p id="bottom">bottom</p>
+</body></html>`,
 };
 
 export async function startFixtureServer() {
