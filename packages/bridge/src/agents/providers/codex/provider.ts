@@ -64,16 +64,68 @@ export class CodexAgentProvider implements AgentProvider {
   }
 
   async fetchCatalog(_opts: FetchCatalogOptions): Promise<ProviderCatalog> {
-    // No session is created for discovery. Static catalog until the
-    // provider.feature.codex.* RPCs expose the live model list.
-    return {
-      providerId: "codex",
-      displayName: "Codex",
-      models: [],
-      modes: [],
-      fetchedAt: Date.now(),
-      capabilities: { ...CODEX_CAPABILITIES },
-    };
+    // Live app-server model/list — no session created (§8.4). Models the
+    // configured model_provider cannot serve are filtered downstream by
+    // the §5.8 `models` allowlist in the registry.
+    try {
+      const result = (await this.client.request("model/list", {
+        limit: 50,
+        includeHidden: false,
+      })) as { data?: Array<Record<string, unknown>> };
+      const models = (result.data ?? [])
+        .map((m) => {
+          const id = String(m.model ?? m.id ?? "").trim();
+          if (!id || m.hidden === true) return null;
+          const efforts = Array.isArray(m.supportedReasoningEfforts)
+            ? m.supportedReasoningEfforts
+                .map((o) =>
+                  typeof o === "string"
+                    ? o
+                    : String(
+                        (o as Record<string, unknown>).reasoningEffort ??
+                          (o as Record<string, unknown>).value ??
+                          (o as Record<string, unknown>).id ??
+                          "",
+                      ),
+                )
+                .filter((e) => e.length > 0)
+            : [];
+          return {
+            id,
+            label: String(m.displayName ?? "").trim() || id,
+            description: String(m.description ?? "").trim(),
+            metadata: {
+              isDefault: m.isDefault === true,
+              supportsImages: Array.isArray(m.inputModalities) && m.inputModalities.includes("image"),
+              reasoningEfforts: efforts,
+              ...(typeof m.defaultReasoningEffort === "string"
+                ? { defaultReasoningEffort: m.defaultReasoningEffort }
+                : {}),
+            },
+          };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null);
+      const defaultModel =
+        models.find((m) => m.metadata.isDefault === true)?.id ?? null;
+      return {
+        providerId: "codex",
+        displayName: "Codex",
+        models,
+        modes: [],
+        defaultModel,
+        fetchedAt: Date.now(),
+        capabilities: { ...CODEX_CAPABILITIES },
+      };
+    } catch {
+      return {
+        providerId: "codex",
+        displayName: "Codex",
+        models: [],
+        modes: [],
+        fetchedAt: Date.now(),
+        capabilities: { ...CODEX_CAPABILITIES },
+      };
+    }
   }
 
   async createSession(

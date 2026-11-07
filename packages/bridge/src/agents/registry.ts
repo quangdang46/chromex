@@ -66,8 +66,34 @@ export class ProviderRegistry {
   }
 
   /** provider.catalog — single-flight + TTL cached provider catalog (§8.4). */
-  catalog(id: ProviderId, opts: FetchCatalogOptions = {}): Promise<ProviderCatalog> {
-    return this.catalogCache.fetch(id, opts);
+  async catalog(id: ProviderId, opts: FetchCatalogOptions = {}): Promise<ProviderCatalog> {
+    const catalog = await this.catalogCache.fetch(id, opts);
+    return this.applyProviderConfig(id, catalog);
+  }
+
+  /**
+   * §5.8 provider config → catalog: `models` acts as an allowlist over the
+   * provider-fetched list, `additionalModels` always appends, and any
+   * configured id missing from the fetched list is added verbatim (routers
+   * and custom providers serve ids the agent CLI never reports).
+   */
+  private applyProviderConfig(id: ProviderId, catalog: ProviderCatalog): ProviderCatalog {
+    const cfg = this.entries.get(id)?.config;
+    if (!cfg) return catalog;
+    let models = catalog.models;
+    if (cfg.models) {
+      const allow = new Set(cfg.models);
+      models = models.filter((m) => allow.has(m.id));
+    }
+    const seen = new Set(models.map((m) => m.id));
+    const additions = [...(cfg.models ?? []), ...(cfg.additionalModels ?? [])]
+      .filter((mid): mid is string => typeof mid === "string" && mid.length > 0 && !seen.has(mid))
+      .map((mid) => ({ id: mid, label: mid }));
+    const defaultModel = cfg.defaultModel ?? catalog.defaultModel ?? null;
+    if (!additions.length && models === catalog.models && defaultModel === (catalog.defaultModel ?? null)) {
+      return catalog;
+    }
+    return { ...catalog, models: [...models, ...additions], defaultModel };
   }
 
   /** Config/profile change → drop cached catalogs. */

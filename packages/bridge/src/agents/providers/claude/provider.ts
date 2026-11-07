@@ -60,12 +60,18 @@ export class ClaudeAgentProvider implements AgentProvider {
   }
 
   async fetchCatalog(_opts: FetchCatalogOptions): Promise<ProviderCatalog> {
-    // Models/modes come from the live SDK (supportedModels/supportedCommands)
-    // per session — no session is created for catalog discovery.
+    // Claude Code resolves tier aliases (sonnet/opus/haiku) to whatever the
+    // user's settings/env configure — including router-mapped defaults.
+    // No session is created for discovery.
+    const alias = (id: string, label: string) => ({
+      id,
+      label,
+      description: `Claude Code "${id}" alias`,
+    });
     return {
       providerId: "claude",
       displayName: "Claude",
-      models: [],
+      models: [alias("sonnet", "Sonnet"), alias("opus", "Opus"), alias("haiku", "Haiku")],
       modes: [],
       fetchedAt: Date.now(),
       capabilities: { ...CLAUDE_CAPABILITIES },

@@ -217,16 +217,23 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
     fromResult: (r) => {
       const catalogs = (r as { catalogs?: Array<{ models?: Array<Record<string, unknown>> }> }).catalogs ?? [];
       const models = catalogs[0]?.models ?? [];
-      return {
-        models: models.map((m) => ({
-          id: m.id,
+      return models.map((m) => {
+        const meta = (m.metadata ?? {}) as Record<string, unknown>;
+        const efforts = Array.isArray(meta.reasoningEfforts)
+          ? meta.reasoningEfforts.filter((e): e is string => typeof e === "string")
+          : [];
+        return {
+          id: String(m.id),
           label: (m.label as string) ?? String(m.id),
           description: (m.description as string) ?? "",
-          isDefault: false,
-          supportsImages: true,
-          reasoningEfforts: [],
-        })),
-      };
+          isDefault: meta.isDefault === true,
+          supportsImages: meta.supportsImages === true,
+          reasoningEfforts: efforts,
+          ...(typeof meta.defaultReasoningEffort === "string"
+            ? { defaultReasoningEffort: meta.defaultReasoningEffort }
+            : {}),
+        };
+      });
     },
   },
   // ---- provider features (passthrough to schema-validated feature RPCs) ----

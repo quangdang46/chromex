@@ -17,6 +17,7 @@ const extensionIdArg = normalizeCliValue(process.argv.slice(2).find((arg) => !ar
 const profileDirArg = process.argv.find((arg) => arg.startsWith("--profile-dir="));
 const browserArg = process.argv.find((arg) => arg.startsWith("--browser="));
 const includeLegacyExtensionIds = process.argv.includes("--include-legacy-extension-ids");
+const gatewayMode = process.argv.includes("--gateway-mode");
 
 const currentPlatform = platform();
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +29,7 @@ const extensionId = extensionIdArg ?? derivedExtensionId ?? CHROME_WEB_STORE_EXT
 if (!extensionId || !isValidExtensionId(extensionId)) {
   console.error(
     [
-      "Usage: node scripts/install-native-host.mjs [extension-id] [--browser=chrome,chrome-beta,chrome-dev,chrome-canary,chrome-for-testing,chromium] [--profile-dir=/path/to/profile] [--include-legacy-extension-ids]",
+      "Usage: node scripts/install-native-host.mjs [extension-id] [--browser=chrome,chrome-beta,chrome-dev,chrome-canary,chrome-for-testing,chromium] [--profile-dir=/path/to/profile] [--include-legacy-extension-ids] [--gateway-mode]",
       "",
       derivedExtensionId
         ? `Derived extension ID from manifest key: ${derivedExtensionId}`
@@ -104,6 +105,7 @@ await writeLauncher({
   launcherPath,
   hostPath,
   bridgeEntryPath,
+  gatewayMode,
 });
 
 for (const target of targets) {
@@ -548,6 +550,7 @@ async function writeLauncher({
   launcherPath,
   hostPath,
   bridgeEntryPath,
+  gatewayMode = false,
 }) {
   const nodeDir = dirname(process.execPath);
   const windowsPath = [
@@ -570,6 +573,7 @@ async function writeLauncher({
       ? [
           "@echo off",
           `set "BRIDGE_ENTRY=${bridgeEntryPath}"`,
+          ...(gatewayMode ? [`set "CHROMEX_GATEWAY_MODE=1"`] : []),
           `set "PATH=${windowsPath}"`,
           `"${process.execPath}" "${hostPath}" %*`,
           "",
@@ -577,6 +581,7 @@ async function writeLauncher({
       : [
           "#!/bin/sh",
           `export BRIDGE_ENTRY="${bridgeEntryPath}"`,
+          ...(gatewayMode ? [`export CHROMEX_GATEWAY_MODE=1`] : []),
           `export PATH="${nodeDir}:$PATH"`,
           `exec "${process.execPath}" "${hostPath}" "$@"`,
           "",
