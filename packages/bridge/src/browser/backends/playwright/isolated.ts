@@ -329,6 +329,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (args.windowId !== undefined) {
       throw protocolError("proto.unsupported", "playwright-isolated has no windows; args.windowId is chrome-extension only");
     }
+    // pin/mute are chrome tab-strip state with no playwright equivalent —
+    // silently dropping them would lie about the created tab's state.
+    if (args.pinned !== undefined || args.muted !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot pin or mute tabs; args.pinned/args.muted are chrome-extension only");
+    }
     const page = this.#trackPage(await context.newPage());
     this.#activePages.set(taskId, page);
     if (url) {
