@@ -30,6 +30,9 @@ export interface GatewayEndpointFile {
   startedAt: number;
   gatewayVersion: string;
   tokenRef: string;
+  /** §3.3.2 ownership-generation fence — present on endpoints published
+   *  by a ready gateway; absent on the pre-ready placeholder publish. */
+  fence?: string;
 }
 
 export class GatewayClientError extends Error {

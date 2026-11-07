@@ -584,7 +584,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       } catch (err) {
         if (err instanceof StaleFenceError) {
           log("stale fence detected — self-shutdown");
-          void shutdown("stale-fence");
+          // defer one turn so the refusal response reaches the client
+          // before ipc.close() tears the socket down
+          setImmediate(() => void shutdown("stale-fence"));
           throw err;
         }
         throw err;
@@ -634,6 +636,12 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     });
 
     ipc.markReady();
+    // §3.3.2: republish the endpoint with the real version + ownership
+    // fence — listen() publishes a placeholder before the lock fence is
+    // handed to clients; the atomic rename makes the upgrade invisible.
+    await ipc
+      .publishEndpoint(GATEWAY_VERSION, lifetimeLock.fence)
+      .catch((err) => log(`endpoint republish failed: ${err instanceof Error ? err.message : String(err)}`));
     log(`ready pid=${process.pid} dir=${dataDir} fence=${lifetimeLock.fence}`);
 
     let shuttingDown = false;

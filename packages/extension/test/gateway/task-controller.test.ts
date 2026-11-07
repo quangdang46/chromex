@@ -198,6 +198,98 @@ describe("TaskController (P1-08)", () => {
     expect(ctl.getTask("t1")?.lastSeq).toBe(10);
   });
 
+  test("SW killed mid-turn: restart replays in-flight turn events to terminal (§7.3 #5)", async () => {
+    const storage = memStorage();
+    const { client: client1 } = fakeClient(() => ({
+      mode: "replay",
+      events: [
+        taskEvent("t1", 1, "user.message.created", {}),
+        taskEvent("t1", 2, "turn.started", {}),
+        taskEvent("t1", 3, "tool.started", { toolCallId: "tc1", tool: "browser.page.click" }),
+      ],
+      nextSeq: 3,
+      hasMore: false,
+    }));
+    const ctl1 = new TaskController({ client: client1, storage: storage as never });
+    await ctl1.onHello(hello([{ taskId: "t1", lastSeq: 0 }]));
+    await ctl1.syncAll();
+    expect(ctl1.getTask("t1")?.lastSeq).toBe(3);
+
+    // SW dies here mid-turn. The gateway keeps running — the turn
+    // completes while the SW is dead. On restart the new controller
+    // resumes from the persisted cursor (seq 3) and must replay exactly
+    // the missed durable events, including the terminal transition.
+    const missed = [
+      taskEvent("t1", 4, "tool.completed", { toolCallId: "tc1", tool: "browser.page.click", outcome: "ok" }),
+      taskEvent("t1", 5, "assistant.message", { text: "done" }),
+      taskEvent("t1", 6, "turn.completed", {}),
+      taskEvent("t1", 7, "task.status_changed", { from: "active", to: "completed" }),
+      taskEvent("t1", 8, "task.attention_changed", { attention: null }),
+    ];
+    const { client: client2 } = fakeClient((method) => {
+      if (method === "task.sync") {
+        return { mode: "replay", events: missed, nextSeq: 8, hasMore: false };
+      }
+      return {};
+    });
+    const seen2: string[] = [];
+    const ctl2 = new TaskController({
+      client: client2,
+      storage: storage as never,
+      onTaskEvent: (_id, e) => seen2.push(`${e.seq}:${e.type}`),
+    });
+    await ctl2.onHello(hello([{ taskId: "t1", lastSeq: 8 }]));
+    await ctl2.syncAll();
+
+    // only the missed window replays — nothing before the cursor, nothing twice
+    expect(seen2).toEqual(missed.map((e) => `${e.seq}:${e.type}`));
+    const view = ctl2.getTask("t1")!;
+    expect(view.lastSeq).toBe(8);
+    expect(view.status).toBe("completed"); // status_changed replayed mid-stream
+    // cursors persisted for the NEXT restart
+    const cursors = storage._map.get("chromex.gateway.cursors.v1") as {
+      lastSeqByTask: Record<string, number>;
+    };
+    expect(cursors.lastSeqByTask.t1).toBe(8);
+  });
+
+  test("gateway restart mid-turn: replay delivers turn.unknown + paused task (§7.3 #5)", async () => {
+    const storage = memStorage();
+    const { client: client1 } = fakeClient(() => ({
+      mode: "replay",
+      events: [
+        taskEvent("t1", 1, "user.message.created", {}),
+        taskEvent("t1", 2, "turn.started", {}),
+        taskEvent("t1", 3, "assistant.message", { text: "partial" }),
+      ],
+      nextSeq: 3,
+      hasMore: false,
+    }));
+    const ctl1 = new TaskController({ client: client1, storage: storage as never });
+    await ctl1.onHello(hello([{ taskId: "t1", lastSeq: 0 }]));
+    await ctl1.syncAll();
+
+    // BOTH die mid-turn: gateway recovery marks the turn unknown and
+    // pauses the task; the replayed stream must carry that honestly.
+    const missed = [
+      taskEvent("t1", 4, "turn.unknown", { reason: "gateway_restart" }),
+      taskEvent("t1", 5, "task.status_changed", { from: "active", to: "paused", pauseReason: "gateway_restart" }),
+    ];
+    const { client: client2 } = fakeClient((method) => {
+      if (method === "task.sync") {
+        return { mode: "replay", events: missed, nextSeq: 5, hasMore: false };
+      }
+      return {};
+    });
+    const ctl2 = new TaskController({ client: client2, storage: storage as never });
+    await ctl2.onHello(hello([{ taskId: "t1", lastSeq: 5, status: "paused" }]));
+    await ctl2.syncAll();
+
+    const view = ctl2.getTask("t1")!;
+    expect(view.lastSeq).toBe(5);
+    expect(view.status).toBe("paused"); // never resurrected as running/completed
+  });
+
   test("gateway-stream events advance lastSeqByGateway cursor", async () => {
     const storage = memStorage();
     const { client } = fakeClient(() => ({}));

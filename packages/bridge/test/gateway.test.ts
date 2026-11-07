@@ -412,6 +412,61 @@ describe("gateway task RPCs (SessionManager wiring)", () => {
       await gw.shutdown("test");
     }
   });
+
+  test("published endpoint carries the lifetime fence + real version (§3.3.2/§7.3)", async () => {
+    const { startGateway } = await import("../src/gateway/main.js");
+    const gw = await startGateway({ dataDir: dir, log: () => {} });
+    try {
+      const raw = JSON.parse(
+        await fs.readFile(path.join(dir, "run", "gateway.json"), "utf8"),
+      ) as { fence?: string; gatewayVersion?: string; gatewayPid?: number };
+      expect(raw.fence).toBe(gw.lifetimeLock.fence);
+      expect(raw.gatewayVersion).toBe(GATEWAY_VERSION);
+      expect(raw.gatewayPid).toBe(process.pid);
+    } finally {
+      await gw.shutdown("test");
+    }
+  });
+
+  test("stale fence → durable write refused AND gateway self-shuts-down (§3.3.2/§7.3)", async () => {
+    const { startGateway } = await import("../src/gateway/main.js");
+    const gw = await startGateway({ dataDir: dir, log: () => {} });
+    try {
+      const s = await authedConn(gw);
+      // simulate a new ownership generation: lock file metadata carries
+      // a different fence than the one this process acquired.
+      const metaPath = path.join(dir, "gateway.lock");
+      const meta = JSON.parse(await fs.readFile(metaPath, "utf8")) as { fence: string };
+      meta.fence = "01JSTALEFENCE0000000000000";
+      await fs.writeFile(metaPath, JSON.stringify(meta));
+
+      // any durable write must refuse — and trigger self-shutdown
+      await expect(
+        rpc2(s, "t1", "task.create", { cwd: "/tmp" }),
+      ).rejects.toMatchObject({ code: "internal" });
+
+      const deadline = Date.now() + 3000;
+      while (gw.lifetimeLock.isHeld() && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(gw.lifetimeLock.isHeld()).toBe(false);
+      // endpoint file removed by ipc.close() during shutdown
+      const deadline2 = Date.now() + 3000;
+      for (;;) {
+        try {
+          await fs.access(path.join(dir, "run", "gateway.json"));
+          if (Date.now() > deadline2) throw new Error("endpoint not removed");
+          await new Promise((r) => setTimeout(r, 25));
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") break;
+          throw err;
+        }
+      }
+      s.destroy();
+    } finally {
+      await gw.shutdown("test").catch(() => {});
+    }
+  });
 });
 
 describe("server→client request channel (P1-09)", () => {

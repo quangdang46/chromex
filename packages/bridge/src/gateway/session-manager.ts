@@ -759,6 +759,15 @@ export class SessionManager {
     // drain queue or complete task (§5.2: all turns terminal → completed)
     const task = this.opts.store.getTask(taskId);
     if (!task) return;
+    // task.cancel owns queued turns itself — never auto-dispatch one
+    // mid-cancel (§5.2: queued → cancelled keeps started_at NULL).
+    if (this.cancelling.has(taskId)) return;
+    // provider-reported turn.unknown is an unconfirmed stop — pause for
+    // explicit resume, never auto-complete or drain (§5.3 honesty).
+    if (event.type === "turn.unknown" && task.status === "active") {
+      this.#pauseTask(task, "provider_unavailable");
+      return;
+    }
     const queued = this.opts.store.listTurns(taskId).find((t) => t.status === "queued");
     if (queued) {
       void this.#resumeQueued(task, queued);

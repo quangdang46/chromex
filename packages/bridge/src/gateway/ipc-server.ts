@@ -29,6 +29,9 @@ export interface GatewayEndpoint {
   gatewayVersion: string;
   /** reference to the token file — never the raw token */
   tokenRef: string;
+  /** §3.3.2 ownership-generation fence of the publishing gateway —
+   *  lets clients distinguish a stale endpoint from the live owner. */
+  fence?: string;
 }
 
 export interface IpcAuthResult {
@@ -132,7 +135,7 @@ export class GatewayIpcServer {
   }
 
   /** Atomic endpoint publish: gateway.json.tmp → rename. */
-  async publishEndpoint(gatewayVersion: string): Promise<GatewayEndpoint> {
+  async publishEndpoint(gatewayVersion: string, fence?: string): Promise<GatewayEndpoint> {
     const ep = this.endpointPath();
     const endpoint: GatewayEndpoint = {
       transport: ep.transport,
@@ -141,6 +144,7 @@ export class GatewayIpcServer {
       startedAt: Date.now(),
       gatewayVersion,
       tokenRef: "auth/token",
+      ...(fence ? { fence } : {}),
     };
     const dir = path.join(this.dataDir, "run");
     await fs.mkdir(dir, { recursive: true });

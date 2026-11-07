@@ -310,6 +310,112 @@ describe("SessionManager", () => {
     expect(["cancelled", "unknown"]).toContain(turn.status);
   });
 
+  test("cancelTask on a QUEUED turn: cancelled, started_at NULL, ended_at set (§5.2/§7.3)", async () => {
+    const { sm, store } = await makeManager({
+      queueWhileRunning: true,
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const r1 = await sm.sendMessage(task.taskId, { clientMessageId: "cm-1", content: [{ type: "text", text: "one" }] });
+    await new Promise((r) => setTimeout(r, 5));
+    const r2 = await sm.sendMessage(task.taskId, { clientMessageId: "cm-2", content: [{ type: "text", text: "two" }] });
+    expect(r2.queued).toBe(true);
+    expect(store.getTurn(r2.turnId)!.startedAt).toBeNull();
+
+    await sm.cancelTask(task.taskId, "user");
+
+    const t2 = store.getTurn(r2.turnId)!;
+    expect(t2.status).toBe("cancelled");
+    expect(t2.startedAt).toBeNull(); // never dispatched — DB invariant
+    expect(t2.endedAt).not.toBeNull();
+    // durable turn.cancelled event on the task stream
+    const cancelled = store
+      .taskEventsAfter(task.taskId, 0, 200)
+      .events.find(
+        (e) => e.type === "turn.cancelled" && (e.payload as { turnId?: string }).turnId === r2.turnId,
+      );
+    expect(cancelled).toBeTruthy();
+    expect(store.getTask(task.taskId)!.status).toBe("cancelled");
+    // the running turn was interrupted too — never silently completed
+    const t1 = store.getTurn(r1.turnId)!;
+    expect(["cancelled", "unknown"]).toContain(t1.status);
+  });
+
+  test("provider turn.failed mid-turn: error durable, task completes, reopen resends (§7.3 #1)", async () => {
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const { turnId } = await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 5));
+
+    // provider reports a definitive failure (e.g. adapter surfaced a
+    // provider-side error) — the turn must not be silently lost.
+    sessions[0]!.emit({
+      type: "turn.failed",
+      turnId,
+      error: {
+        code: "provider.turn_failed",
+        message: "provider process exited",
+        retryable: true,
+        requiresUserAction: false,
+        sideEffectState: "unknown",
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const turn = store.getTurn(turnId)!;
+    expect(turn.status).toBe("failed");
+    expect(turn.error?.code).toBe("provider.turn_failed");
+    expect(turn.stopReason).toBe("provider_error");
+    expect(turn.endedAt).not.toBeNull();
+    // all turns terminal → task completes; failure stays visible on the
+    // durable stream (turn.failed) rather than vanishing.
+    expect(store.getTask(task.taskId)!.status).toBe("completed");
+    expect(
+      store.taskEventsAfter(task.taskId, 0, 200).events.some((e) => e.type === "turn.failed"),
+    ).toBe(true);
+
+    // resumable: reopen → active → the next send dispatches normally.
+    sm.reopenTask(task.taskId);
+    const r2 = await sm.sendMessage(task.taskId, {
+      clientMessageId: "cm-2",
+      content: [{ type: "text", text: "again" }],
+    });
+    expect(r2.queued).toBe(false);
+    expect(sessions[0]!.turns).toHaveLength(2);
+  });
+
+  test("provider turn.unknown mid-turn pauses task provider_unavailable; resume re-sends (§7.3 #1)", async () => {
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const { turnId: t1 } = await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 5));
+
+    // crash/reconnect with undetermined outcome — never pretend
+    // completed; task must pause for explicit resume, not auto-complete.
+    sessions[0]!.emit({ type: "turn.unknown", turnId: t1, reason: "provider_process_exit" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(store.getTurn(t1)!.status).toBe("unknown");
+    const paused = store.getTask(task.taskId)!;
+    expect(paused.status).toBe("paused");
+    expect(paused.pauseReason).toBe("provider_unavailable");
+
+    await sm.resumeTask(task.taskId);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // honest resume: the user message re-dispatches as a NEW turn.
+    const turns = store.listTurns(task.taskId);
+    expect(turns).toHaveLength(2);
+    const t2 = turns.find((t) => t.turnId !== t1)!;
+    expect(t2.clientMessageId).toBe(`resume-${t1}`);
+    expect(sessions[0]!.turns).toHaveLength(2);
+    expect(store.getTask(task.taskId)!.status).toBe("active");
+  });
+
   test("shared conversationKey: follow-up task's events persist under its own taskId", async () => {
     const { sm, store } = await makeManager();
     const t1 = sm.createTask({ ...taskParams(), conversationKey: "conv-shared" });
