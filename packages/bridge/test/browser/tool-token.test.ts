@@ -348,9 +348,13 @@ describe("BrowserToolServer ambiguous target (chromex-ykj)", () => {
     const sent: Array<{ method: string; payload: Record<string, unknown> }> = [];
     // call 1: binds tab 7 and acquires 9 + 10; call 2: closes 7
     // → scope {9,10} with NO bound tab → implicit target is ambiguous.
+    // call 3 resolves the explicitly-requested tab 9 (chromex-7k3: the
+    // gateway now fails the outcome if the host reports a resolvedTabId
+    // outside the task's scope, so fixtures must resolve honestly).
     const results = [
       { ok: true, resolvedTabId: 7, openedTabId: 9, targetTabId: 10 },
       { closed: 7, resolvedTabId: 7 },
+      { ok: true, resolvedTabId: 9 },
     ];
     let i = 0;
     const host: ToolHostChannel = {

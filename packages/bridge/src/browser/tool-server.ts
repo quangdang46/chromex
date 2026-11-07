@@ -614,15 +614,33 @@ export class BrowserToolServer {
         ...(tabScope ? { tabScope } : {}),
       })
         .then((result) => {
-          this.#noteTabScope(req, result);
+          // chromex-7k3: the host may have resolved a tab that lost a
+          // concurrent first-bind race (scope payload was computed before
+          // the other task bound it). The action already ran host-side —
+          // it cannot be undone — but the outcome must not record a
+          // success for a tab this task does not own.
+          const inScope = this.#noteTabScope(req, result);
           // host.send resolves when browser.tool.result arrives (channel impl)
-          this.pending.get(req.toolCallId)?.resolve({
-            toolCallId: req.toolCallId,
-            tool: req.tool,
-            status: "completed",
-            result,
-            verified: true,
-          });
+          this.pending.get(req.toolCallId)?.resolve(
+            inScope
+              ? {
+                  toolCallId: req.toolCallId,
+                  tool: req.tool,
+                  status: "completed",
+                  result,
+                  verified: true,
+                }
+              : {
+                  toolCallId: req.toolCallId,
+                  tool: req.tool,
+                  status: "failed",
+                  result,
+                  error: {
+                    code: "browser.not_in_scope",
+                    message: "host resolved a tab outside this task's scope (concurrent bind conflict)",
+                  },
+                },
+          );
         })
         .catch((err: unknown) => {
           // backend channels (e.g. playwright-isolated) throw coded
@@ -645,10 +663,12 @@ export class BrowserToolServer {
 
   /** Learn binds/acquisitions from a successful host result. Only
    *  chrome-extension results carry `resolvedTabId`; binds record on
-   *  success so a failed first call leaves the task unbound. */
-  #noteTabScope(req: ToolCallRequest, result: unknown): void {
-    if ((req.backendId ?? "chrome-extension") !== "chrome-extension") return;
-    if (!result || typeof result !== "object") return;
+   *  success so a failed first call leaves the task unbound.
+   *  Returns false when the host-resolved tab could not be bound —
+   *  i.e. it belongs to another task in this namespace (chromex-7k3). */
+  #noteTabScope(req: ToolCallRequest, result: unknown): boolean {
+    if ((req.backendId ?? "chrome-extension") !== "chrome-extension") return true;
+    if (!result || typeof result !== "object") return true;
     const ns = `${req.profileId} ${req.backendId ?? "chrome-extension"} ${req.browserInstanceId ?? ""}`;
     const r = result as Record<string, unknown>;
     const resolved =
@@ -657,12 +677,13 @@ export class BrowserToolServer {
         : typeof req.args?.tabId === "number"
           ? req.args.tabId
           : null;
-    if (resolved === null) return;
-    this.tabScope.bind(req.taskId, resolved, ns);
+    if (resolved === null) return true;
+    const bound = this.tabScope.bind(req.taskId, resolved, ns);
     this.tabScope.acquire(req.taskId, harvestTabRefs(r), ns);
     if (req.tool === "browser.tab.close" && (r.closed === resolved || r.closed === true)) {
       this.tabScope.release(req.taskId, resolved);
     }
+    return bound;
   }
 
   /** Task purge/end — drop its tab scope and ownership claims so the
@@ -675,8 +696,21 @@ export class BrowserToolServer {
   deliverResult(toolCallId: string, result: unknown): void {
     const p = this.pending.get(toolCallId);
     if (!p) return;
-    this.#noteTabScope(p.req, result);
-    p.resolve({ toolCallId, tool: "", status: "completed", result, verified: true });
+    const inScope = this.#noteTabScope(p.req, result);
+    p.resolve(
+      inScope
+        ? { toolCallId, tool: "", status: "completed", result, verified: true }
+        : {
+            toolCallId,
+            tool: "",
+            status: "failed",
+            result,
+            error: {
+              code: "browser.not_in_scope",
+              message: "host resolved a tab outside this task's scope (concurrent bind conflict)",
+            },
+          },
+    );
   }
 
   hostDisconnected(hostInstanceId: string): void {
