@@ -10,7 +10,7 @@
 [![日本語](https://img.shields.io/badge/readme-日本語-dc2626.svg)](./readmes/README.ja.md)
 [![简体中文](https://img.shields.io/badge/readme-简体中文-16a34a.svg)](./readmes/README.zh-CN.md)
 
-Chromex is a Chrome MV3 side-panel coding agent that connects Chrome to Codex/Claude through a local native bridge. The agent can own browser work end-to-end: it plans, opens and coordinates tabs, reads and acts on pages, runs code and tests, verifies results, and hands back evidence — while credentials stay out of extension storage. See `docs/product-acceptance-matrix.md` for the current product acceptance target.
+Chromex is a Chrome MV3 side-panel coding agent that connects Chrome to Codex/Claude through a local native bridge. The agent can own browser work end-to-end: it plans, opens and coordinates tabs, reads and acts on pages, runs code and tests, verifies results, and hands back evidence — while credentials stay out of extension storage.
 
 Published by **GenexisAI CHOI**.
 
@@ -128,9 +128,8 @@ Chrome Extension -> Native Messaging Host -> Local Bridge -> codex app-server
 > **Chromex Gateway** process owning sessions/tasks/turns with SQLite
 > persistence, event replay + snapshots, OS advisory-lock ownership, and
 > provider/browser abstraction (Codex first, Claude later). See
-> [`COMPREHENSIVE PLAN FOR CHROMEX.md`](./COMPREHENSIVE%20PLAN%20FOR%20CHROMEX.md),
-> [docs/gateway-mode.md](./docs/gateway-mode.md), and the architecture
-> decision records in `docs`. Gateway mode is the default transport in
+> [`COMPREHENSIVE PLAN FOR CHROMEX.md`](./COMPREHENSIVE%20PLAN%20FOR%20CHROMEX.md)
+> and the architecture decision records. Gateway mode is the default transport in
 > this checkout; reinstalling the native host with `--legacy-mode`
 > restores the per-port bridge.
 

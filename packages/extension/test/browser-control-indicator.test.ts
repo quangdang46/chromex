@@ -48,7 +48,8 @@ describe("agentic browser control indicator", () => {
     expect(contentSource).toContain('step.action === "navigate"');
     expect(contentSource).toContain("performNavigateAction(step)");
     expect(contentSource).toContain("window.location.assign");
-    expect(sharedTypesSource).toContain('"submit" | "navigate"');
+    expect(sharedTypesSource).toContain('"submit"');
+    expect(sharedTypesSource).toContain('"navigate"');
   });
 
   test("lets the user stop in-flight browser control and removes the page indicator immediately", () => {

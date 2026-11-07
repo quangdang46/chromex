@@ -132,11 +132,13 @@ describe("online image prompt extraction", () => {
           matches: expect.arrayContaining(["http://*/*", "https://*/*", "file:///*"]),
           js: ["content.js"],
           run_at: "document_idle",
-          all_frames: false,
+          all_frames: true,
         }),
       ]),
     );
-    expect(normalizedContentSource).toContain("\ninitializeImagePromptHoverSetting();\n");
+    // hover bridges are top-frame only — subframes get the page.* listener
+    expect(normalizedContentSource).toContain("if (window.self === window.top)");
+    expect(normalizedContentSource).toContain("initializeImagePromptHoverSetting();");
     expect(contentSource).toContain("function readImagePromptHoverButtonEnabled");
     expect(manifest.permissions).toContain("offscreen");
   });
@@ -182,11 +184,11 @@ describe("online image prompt extraction", () => {
 
     expect(messageListener).toContain('message.type === "page.ping"');
     expect(messageListener).toContain("isActiveContentScriptInstance()");
-    expect(ensureContentScript).toContain("hasActiveContentScript(tabId)");
-    expect(ensureContentScript.indexOf("hasActiveContentScript(tabId)")).toBeLessThan(
+    expect(ensureContentScript).toContain("hasActiveContentScript(tabId, frameId)");
+    expect(ensureContentScript.indexOf("hasActiveContentScript(tabId, frameId)")).toBeLessThan(
       ensureContentScript.indexOf("chrome.scripting.executeScript"),
     );
-    expect(backgroundSource).toContain('chrome.tabs.sendMessage(tabId, { type: "page.ping" })');
+    expect(backgroundSource).toContain('chrome.tabs.sendMessage(tabId, { type: "page.ping" }, { frameId })');
   });
 
   test("surfaces site access requirements when hover injection is blocked on real pages", () => {
@@ -613,7 +615,7 @@ describe("online image prompt extraction", () => {
     expect(backgroundSource).toContain('const OFFSCREEN_DOCUMENT_PATH = "offscreen.html"');
     expect(backgroundSource).toContain('const OFFSCREEN_IMAGE_CROP_MESSAGE_TYPE = "offscreen.image.crop"');
     expect(offscreenCrop).toContain("type: OFFSCREEN_IMAGE_CROP_MESSAGE_TYPE");
-    expect(offscreenSource).toContain('message.type !== "offscreen.image.crop"');
+    expect(offscreenSource).toContain('message?.target !== "offscreen"');
     expect(offscreenSource).toContain("canvas.toBlob");
   });
 });
