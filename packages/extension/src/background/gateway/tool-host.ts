@@ -1087,7 +1087,7 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       if (values && values.length === 0) {
         throw toolError("proto.invalid", "browser.page.select args.values must contain at least one string");
       }
-      if (values && values.length > 1 && str(args.value) !== undefined) {
+      if (values && values.length > 0 && str(args.value) !== undefined) {
         throw toolError("proto.invalid", "browser.page.select accepts value or values, not both");
       }
       return {

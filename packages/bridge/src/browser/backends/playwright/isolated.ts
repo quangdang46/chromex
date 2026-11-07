@@ -505,7 +505,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         if (values && values.length === 0) {
           throw protocolError("proto.invalid", "browser.page.select args.values must contain at least one string");
         }
-        if (values && values.length > 1 && value) {
+        if (values && values.length > 0 && value) {
           throw protocolError("proto.invalid", "browser.page.select accepts value or values, not both");
         }
         await locator.selectOption((values ?? [value]) as never);
