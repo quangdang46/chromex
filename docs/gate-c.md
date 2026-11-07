@@ -5,8 +5,45 @@ C3 test-case matrix, C4 contract consistency check.
 C4: `node scripts/plan/check-plan-consistency.mjs` → **30/30 pass**
 (incl. `--self-test` per bead chromex-gs6 note; run 2026-11-07 @d61d70e).
 
-Status: artifacts prepared 2026-11-07. Sign-off still gated on
-MVP-accept (chromex-frg) criteria 1+6 real-Chrome verification.
+Status: artifacts prepared 2026-11-07. Sign-off gated on
+MVP-accept (chromex-frg), which now runs against the 8-scenario
+product acceptance matrix (chromex-ov1,
+[docs/product-acceptance-matrix.md](product-acceptance-matrix.md)).
+
+## MVP acceptance — 8 scenarios (supersedes plan §14 12-criteria list)
+
+Per [docs/product-acceptance-matrix.md](product-acceptance-matrix.md):
+no capability counts as done until an end-to-end user scenario passes
+on a real browser. The 8 gate scenarios are S1–S8; APIs, classes, and
+unit tests are necessary, not sufficient.
+
+| # | Scenario | Blocking work |
+|---|----------|----------------|
+| S1 | Build a web feature end-to-end (understand → edit → run → drive UI → iterate → report) | chromex-cl0, chromex-d9o |
+| S2 | Debug a live website on a logged-in tab | chromex-cl0, chromex-d9o |
+| S3 | Multi-tab/multi-app work without scope bleed | chromex-7k3 |
+| S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff | chromex-d7v |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicates | partially evidenced (recovery tests); real-Chrome legs pending |
+| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, never fake success | needs failed-plan handling proof |
+| S7 | Protection: sensitive actions → contextual approval; denial honored | partially evidenced (approval flows) |
+| S8 | Verifiable deliverable rendered in sidepanel | chromex-5rf |
+
+Old §14 criteria → new mapping:
+
+| Old # | Old criterion | Disposition |
+|---|---|---|
+| 1 | Control real logged-in Chrome tab | Covered by S2/S4 real-browser runs |
+| 2 | No auto-open separate browser for default tasks | Covered — precondition of S1–S4 real-browser runs |
+| 3 | Codex create/send/stream/interrupt/resume | Superseded — exercised implicitly by every scenario's provider leg |
+| 4 | Claude spike ADR + Phase 3 adapter | Superseded as gate item; still required per provider contract (Phase beads) |
+| 5 | Browser tools list/get/snapshot/click/type/fill/select/scroll/navigate/wait (+screenshot) | Prerequisite to S1–S4; unit/integration evidence exists, live proof comes via scenarios |
+| 6 | SW sleep + panel close + hostInstanceId + gateway crash → paused+resume | Covered by S5 |
+| 7 | Approval for mutation/sensitive/egress; financial never auto | Covered by S7 |
+| 8 | No provider/profile/tab-scope mixing | Covered by S3 (scope bleed) + S7 (profile isolation) |
+| 9 | Verified or typed error | Covered by S6 (never fake success) + S8 (honest evidence) |
+| 10 | Playwright capability intact + isolated opt-in | Superseded as gate item; keep as regression check only |
+| 11 | Durable seq no-gap under delta drop | Prerequisite to S5; already verified (delta-coalescer tests) |
+| 12 | Post-prune snapshot retains user+assistant messages | Prerequisite to S5/S8; already verified (snapshot tests) |
 
 ---
 
