@@ -114,6 +114,16 @@ describe("tool host (P1-09)", () => {
     await expect(h(scopedReq("browser.tab.discard", { tabId: 99 }, scope))).rejects.toMatchObject({ code: "browser.not_in_scope" });
   });
 
+  test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.hover", { x: 50, y: 60 }));
+    const msg = d.sent[0].message as { steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0]).toMatchObject({ action: "hover", x: 50, y: 60 });
+    await expect(h(req("browser.page.hover", { x: 5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.hover", { x: 1, y: 2, ref: "e1" }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("tab.create forwards pinned/muted to chrome.tabs.create", async () => {
     const d = deps();
     let created: Record<string, unknown> | undefined;

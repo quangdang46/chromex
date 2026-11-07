@@ -416,8 +416,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     }),
   },
   "browser.page.hover": {
-    description: `Move the pointer over an element — untrusted DOM events only: JS listeners see them but :hover CSS state and trusted listeners may not fire. ${SNAPSHOT_FIRST}`,
-    inputSchema: objectSchema(ELEMENT_TARGET_WITH_TAB),
+    description: `Move the pointer over an element — or to viewport coordinates (x,y) for canvas/surface hover states (mutually exclusive with ref/selector/label). Untrusted DOM events only: JS listeners see them but :hover CSS state and trusted listeners may not fire. ${SNAPSHOT_FIRST}`,
+    inputSchema: objectSchema({
+      ...ELEMENT_TARGET_WITH_TAB,
+      x: { type: "number", description: "Viewport x (CSS px) — coordinate hover for canvas/surface states; mutually exclusive with ref/selector/label. Requires y." },
+      y: { type: "number", description: "Viewport y (CSS px)." },
+    }),
     expectable: true,
   },
   "browser.page.press": {

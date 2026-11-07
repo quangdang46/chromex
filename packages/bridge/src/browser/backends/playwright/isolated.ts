@@ -498,6 +498,24 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { clicked: true, x, y, ...(clickCount === 2 ? { clickCount: 2 } : {}) };
       }
     }
+    // Coordinate hover — canvas/surface hover states, no DOM target.
+    if (tool === "browser.page.hover") {
+      const x = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+      const y = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+      if (x !== undefined || y !== undefined) {
+        if (x === undefined || y === undefined) {
+          throw protocolError("proto.invalid", "browser.page.hover args.x and args.y must be provided together");
+        }
+        if (x < 0 || y < 0) {
+          throw protocolError("proto.invalid", "browser.page.hover coordinates must be non-negative viewport pixels");
+        }
+        if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
+          throw protocolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
+        }
+        await page.mouse.move(x, y);
+        return { hovered: true, x, y };
+      }
+    }
     const selector = await this.#requireSelector(args);
     const locator = page.locator(selector).first();
     switch (tool) {

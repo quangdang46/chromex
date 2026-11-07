@@ -629,9 +629,9 @@ export interface BrowserDomActionStep {
   /** click: 1 (default) or 2 — two full click sequences then a dblclick
    *  event, matching browser double-click semantics. */
   clickCount?: number;
-  /** click: viewport coordinates (CSS px, frame-relative when frameId is
-   *  set) — for canvas/WebGL/map surfaces with no DOM target. Mutually
-   *  exclusive with targetRef/selector/label. */
+  /** click/hover: viewport coordinates (CSS px, frame-relative when
+   *  frameId is set) — for canvas/WebGL/map surfaces with no DOM
+   *  target. Mutually exclusive with targetRef/selector/label. */
   x?: number;
   y?: number;
   /** drag: destination element — same target triple as the source

@@ -1298,8 +1298,24 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
     }
     case "browser.page.submit":
       return { ...base, action: "submit" };
-    case "browser.page.hover":
-      return { ...base, action: "hover" };
+    case "browser.page.hover": {
+      const hx = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+      const hy = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+      if ((hx === undefined) !== (hy === undefined)) {
+        throw toolError("proto.invalid", "browser.page.hover args.x and args.y must be provided together");
+      }
+      if (hx !== undefined && (hx < 0 || hy! < 0)) {
+        throw toolError("proto.invalid", "browser.page.hover coordinates must be non-negative viewport pixels");
+      }
+      if (hx !== undefined && (str(args.ref) || str(args.selector) || str(args.label))) {
+        throw toolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
+      }
+      return {
+        ...base,
+        action: "hover",
+        ...(hx !== undefined ? { x: hx, y: hy! } : {}),
+      };
+    }
     case "browser.page.press": {
       const key = str(args.key);
       if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");

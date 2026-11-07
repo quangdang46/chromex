@@ -263,6 +263,16 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       };
     }
 
+    // Coordinate hover — same non-DOM surface reach as coordinate click.
+    if (step.action === "hover" && typeof step.x === "number" && typeof step.y === "number") {
+      dispatchHoverAtPoint(step.x, step.y);
+      return {
+        step,
+        ok: true,
+        message: `Hovered viewport coordinates (${Math.round(step.x)}, ${Math.round(step.y)}).`,
+      };
+    }
+
     // Coordinate drag — x,y → dropX,dropY, for canvas/surface drags
     // with no DOM source or drop element.
     if (
@@ -870,6 +880,22 @@ export function dispatchDragAtPoints(
   const endEl = at(tx, ty);
   endEl.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse", buttons: 0, clientX: tx, clientY: ty }));
   endEl.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0, clientX: tx, clientY: ty }));
+}
+
+/**
+ * hover at raw viewport coordinates — pointer arrival only (over/move,
+ * no down/up), for canvas tooltips and surface hover states. UNTRUSTED.
+ */
+export function dispatchHoverAtPoint(x: number, y: number): void {
+  const el =
+    (document.elementFromPoint(x, y) as HTMLElement | null) ??
+    document.body ??
+    document.documentElement;
+  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
+  el.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse" }));
+  el.dispatchEvent(new MouseEvent("mouseover", common));
+  el.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse" }));
+  el.dispatchEvent(new MouseEvent("mousemove", common));
 }
 
 /** Normalize step.modifiers → KeyboardEventInit modifier flags. */
