@@ -137,6 +137,11 @@ export function verifyDomAction(
     }
 
     case "select": {
+      if (step.values && step.values.length > 0) {
+        // multi-select: .value only exposes the first selected option —
+        // exact verification isn't expressible, stay honest.
+        return "unknown";
+      }
       const expected = step.value ?? "";
       if (targetGone) return "unknown";
       if (targetAfter && targetAfter.value === expected) return true;

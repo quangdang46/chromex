@@ -499,8 +499,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       case "browser.page.select": {
         const value = typeof args.value === "string" ? args.value : "";
-        await locator.selectOption(value);
-        return { selected: value };
+        const values = Array.isArray(args.values)
+          ? args.values.filter((v): v is string => typeof v === "string" && v.length > 0)
+          : undefined;
+        if (values && values.length === 0) {
+          throw protocolError("proto.invalid", "browser.page.select args.values must contain at least one string");
+        }
+        if (values && values.length > 1 && value) {
+          throw protocolError("proto.invalid", "browser.page.select accepts value or values, not both");
+        }
+        await locator.selectOption((values ?? [value]) as never);
+        return { selected: values ?? value };
       }
       case "browser.page.submit":
         await locator.evaluate((el) => {

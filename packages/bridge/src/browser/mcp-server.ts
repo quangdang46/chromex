@@ -332,7 +332,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     description: `Choose an option on a <select> element by its value attribute. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
-      value: { type: "string", description: "Option value to select." },
+      value: { type: "string", description: "Option value to select (matches value or label)." },
+      values: {
+        type: "array",
+        items: { type: "string" },
+        description: "Multiple option values for <select multiple> — mutually exclusive with value.",
+      },
     }),
     expectable: true,
   },

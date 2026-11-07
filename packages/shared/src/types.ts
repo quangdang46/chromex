@@ -611,6 +611,9 @@ export interface BrowserDomActionStep {
   selector?: string;
   label?: string;
   value?: string;
+  /** select: multiple values for <select multiple> — mutually exclusive
+   *  with `value` at the tool boundary. */
+  values?: string[];
   url?: string;
   direction?: "up" | "down" | "left" | "right" | "top" | "bottom";
   amountPx?: number;

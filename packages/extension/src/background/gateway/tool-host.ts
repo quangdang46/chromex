@@ -619,6 +619,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (networkIdle && typeof deps.networkInflightCount !== "function") {
           throw toolError("proto.unsupported", "network-idle wait is unavailable on this host");
         }
+        if (networkIdle && !hasCondition && args.frameId !== undefined && args.frameId !== null) {
+          // networkIdle is tab-wide — a frameId here would be silently
+          // ignored, so reject it like other meaningless scope args.
+          throw toolError("proto.invalid", "args.frameId is meaningless for a networkIdle-only wait");
+        }
         if (!hasCondition && !networkIdle) {
           const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
           await new Promise((r) => setTimeout(r, ms));
@@ -1075,8 +1080,23 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       // — NOT fill: type inserts char-by-char at the caret/end and does
       // not clear existing content.
       return { ...base, action: "type", value: typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : "" };
-    case "browser.page.select":
-      return { ...base, action: "select", value: typeof args.value === "string" ? args.value : "" };
+    case "browser.page.select": {
+      const values = Array.isArray(args.values)
+        ? args.values.filter((v): v is string => typeof v === "string" && v.length > 0)
+        : undefined;
+      if (values && values.length === 0) {
+        throw toolError("proto.invalid", "browser.page.select args.values must contain at least one string");
+      }
+      if (values && values.length > 1 && str(args.value) !== undefined) {
+        throw toolError("proto.invalid", "browser.page.select accepts value or values, not both");
+      }
+      return {
+        ...base,
+        action: "select",
+        value: typeof args.value === "string" ? args.value : "",
+        ...(values ? { values } : {}),
+      };
+    }
     case "browser.page.submit":
       return { ...base, action: "submit" };
     case "browser.page.hover":

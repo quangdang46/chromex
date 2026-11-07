@@ -352,7 +352,7 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         message = `Typed into ${getElementLabel(element) || "the target field"}.`;
         break;
       case "select":
-        selectDomActionElement(element, step.value ?? "");
+        selectDomActionElement(element, step.value ?? "", step.values);
         message = `Selected a value for ${getElementLabel(element) || "the target field"}.`;
         break;
       case "submit":
@@ -560,20 +560,27 @@ export function setEditableTargetValue(element: HTMLElement | HTMLInputElement |
 }
 
 
-export function selectDomActionElement(element: HTMLElement, value: string): void {
+export function selectDomActionElement(element: HTMLElement, value: string, values?: string[]): void {
   if (!(element instanceof HTMLSelectElement)) {
     throw new Error("Target element is not a select field.");
   }
-  const normalizedValue = normalizeDomActionText(value).toLowerCase();
-  const option = Array.from(element.options).find(
-    (item) =>
-      item.value.toLowerCase() === normalizedValue ||
-      normalizeDomActionText(item.label || item.textContent || "").toLowerCase() === normalizedValue,
+  const wanted = values && values.length > 0 ? values : [value];
+  const normalized = wanted.map((v) => normalizeDomActionText(v).toLowerCase());
+  const matches = Array.from(element.options).filter((item) =>
+    normalized.some(
+      (n) =>
+        item.value.toLowerCase() === n ||
+        normalizeDomActionText(item.label || item.textContent || "").toLowerCase() === n,
+    ),
   );
-  if (!option) {
-    throw new Error("Requested select option was not found.");
+  if (matches.length !== normalized.length) {
+    throw new Error("One or more requested select options were not found.");
   }
-  element.value = option.value;
+  if (!element.multiple && matches.length > 1) {
+    throw new Error("Target select is single-choice; pass one value.");
+  }
+  for (const opt of Array.from(element.options)) opt.selected = matches.includes(opt);
+  if (!element.multiple) element.value = matches[0]!.value;
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
