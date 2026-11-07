@@ -97,6 +97,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   #browser: PwBrowser | null = null;
   /** taskId → isolated context (one context per task = session isolation) */
   readonly #contexts = new Map<string, PwBrowserContext>();
+  /** taskId → last page explicitly bringToFront'd — playwright has no
+   *  real "active tab" concept; this is the closest honest signal. */
+  readonly #activePages = new Map<string, PwPage>();
   /** page → bounded console buffer (page.on('console'/'pageerror')) */
   readonly #consoleBuffers = new Map<PwPage, Array<{ level: string; text: string; ts: number }>>();
   #closed = false;
@@ -232,12 +235,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const pages = context.pages();
     // real titles — an empty string here would fake a loaded page state
     const titles = await Promise.all(pages.map((p) => p.title().catch(() => "")));
+    const active = this.#activePages.get(taskId) ?? pages[pages.length - 1];
     return {
       tabs: pages.map((p, i) => ({
         tabId: i,
         url: stripQuery(p.url()),
         title: titles[i] ?? "",
-        active: i === pages.length - 1,
+        active: p === active,
       })),
     };
   }
@@ -245,6 +249,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #tabActivate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     await page.bringToFront();
+    this.#activePages.set(taskId, page);
     return { activated: true };
   }
 
@@ -275,6 +280,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.unsupported", "playwright-isolated has no windows; args.windowId is chrome-extension only");
     }
     const page = await context.newPage();
+    this.#activePages.set(taskId, page);
     if (url) {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
     }
@@ -825,6 +831,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async releaseTask(taskId: string): Promise<void> {
     const ctx = this.#contexts.get(taskId);
     this.#contexts.delete(taskId);
+    this.#activePages.delete(taskId);
     for (const p of ctx?.pages() ?? []) this.#consoleBuffers.delete(p);
     await ctx?.close().catch(() => {});
   }
@@ -833,6 +840,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#closed = true;
     for (const ctx of this.#contexts.values()) await ctx.close().catch(() => {});
     this.#contexts.clear();
+    this.#activePages.clear();
     this.#consoleBuffers.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;
