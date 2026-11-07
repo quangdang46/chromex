@@ -17,7 +17,7 @@ import {
   isTextEntryCandidate,
   normalizeDomActionText,
   resolveDirectEditableTarget,
-  resolveDomActionTarget,
+  resolveDomActionTargetDetailed,
   resolveEditableTargetAfterActivation,
   safeRemoveElement,
   setNativeTextControlValue,
@@ -247,7 +247,17 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       return { step, ok: true, message: "Navigated the current page." };
     }
 
-    const element = resolveDomActionTarget(step);
+    const target = resolveDomActionTargetDetailed(step);
+    // chromex-ykj: ≥2 matches → typed ambiguous_target, never first-match.
+    if (target.status === "ambiguous") {
+      return {
+        step,
+        ok: false,
+        code: "browser.ambiguous_target",
+        message: `${target.count} elements match the target; use a snapshot ref or a more specific selector/label`,
+      };
+    }
+    const element = target.status === "resolved" ? target.element : null;
     if (!element && step.action !== "scroll") {
       return { step, ok: false, message: "Target element was not found.", code: "browser.element_not_found" };
     }

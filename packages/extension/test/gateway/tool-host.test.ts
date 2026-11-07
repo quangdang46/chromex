@@ -303,13 +303,35 @@ describe("tool host tab scope (chromex-9e3)", () => {
     expect(res.resolvedTabId).toBe(42);
     expect(d.sent[0].tabId).toBe(42);
   });
+
+  test("implicit target with multiple in-scope tabs and no bound tab → browser.ambiguous_target (chromex-ykj)", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: null, allowedTabIds: [7, 9], foreignTabIds: [] };
+    await expect(h(scopedReq("browser.page.snapshot", {}, scope))).rejects.toMatchObject({
+      code: "browser.ambiguous_target",
+    });
+    expect(d.sent).toHaveLength(0); // never dispatched
+    // explicit tabId still disambiguates
+    const res = (await h(scopedReq("browser.page.snapshot", { tabId: 9 }, scope))) as {
+      resolvedTabId: number;
+    };
+    expect(res.resolvedTabId).toBe(9);
+  });
+
+  test("single in-scope tab with no bound tab still falls back to active (unambiguous)", async () => {
+    const d = deps({ activeTabId: vi.fn(async () => 7) });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: null, allowedTabIds: [7], foreignTabIds: [] };
+    const res = (await h(scopedReq("browser.page.snapshot", {}, scope))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(7);
+  });
 });
 
 describe("tool host error surfacing (§7.3 residual)", () => {
   test("content-reported browser.* failure codes reach the caller unchanged", async () => {
-    // browser.ambiguous_target has no producer yet (element/tab resolution
-    // is first-match today), but IF the content layer reports it the code
-    // must survive the tool-host → tool-caller boundary intact.
+    // browser.ambiguous_target now has producers (content element
+    // resolution + scoped tab fallback); this locks the passthrough.
     const d = deps({
       sendToTab: vi.fn(async () => ({
         ok: false,

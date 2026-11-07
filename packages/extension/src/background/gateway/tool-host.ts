@@ -104,6 +104,18 @@ async function resolveScopedTabId(
   scope: TabScopePayload | null,
 ): Promise<number> {
   const explicit = typeof args.tabId === "number" ? args.tabId : null;
+  // chromex-ykj: an implicit target with several in-scope tabs and no
+  // bound default is ambiguous — never silently fall through to the
+  // active tab. The caller must pass args.tabId.
+  if (scope && explicit === null && scope.boundTabId == null) {
+    const inScope = new Set(scope.allowedTabIds);
+    if (inScope.size > 1) {
+      throw toolError(
+        "browser.ambiguous_target",
+        `${inScope.size} tabs are in this task's scope; pass args.tabId to disambiguate`,
+      );
+    }
+  }
   let candidate: number;
   if (explicit !== null) {
     candidate = explicit;

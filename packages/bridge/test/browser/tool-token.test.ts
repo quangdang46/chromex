@@ -338,3 +338,180 @@ describe("BrowserToolServer tab scope (chromex-9e3)", () => {
     expect(rebound.status).toBe("completed");
   });
 });
+
+describe("BrowserToolServer ambiguous target (chromex-ykj)", () => {
+  function makeAmbiguous() {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens, {
+      allowedTools: ["browser.page.snapshot", "browser.page.click", "browser.tab.close"],
+    });
+    const sent: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    // call 1: binds tab 7 and acquires 9 + 10; call 2: closes 7
+    // → scope {9,10} with NO bound tab → implicit target is ambiguous.
+    const results = [
+      { ok: true, resolvedTabId: 7, openedTabId: 9, targetTabId: 10 },
+      { closed: 7, resolvedTabId: 7 },
+    ];
+    let i = 0;
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async (method, payload) => {
+        sent.push({ method, payload: payload as Record<string, unknown> });
+        return results[Math.min(i++, results.length - 1)];
+      },
+      onDisconnect: () => {},
+    };
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async () => ({ verdict: "approved" as const }),
+      now: () => NOW,
+    });
+    return { server, token, sent };
+  }
+
+  const snap = (server: BrowserToolServer, token: string, over = {}) =>
+    server.execute({
+      toolCallId: `tc-${Math.random().toString(36).slice(2)}`,
+      taskId: "task-1",
+      profileId: "profile-1",
+      tool: "browser.page.snapshot",
+      args: {},
+      token,
+      ...over,
+    });
+
+  it("implicit target with multiple in-scope tabs and no bound tab → browser.ambiguous_target", async () => {
+    const { server, token, sent } = makeAmbiguous();
+    await snap(server, token); // binds 7, acquires 9+10
+    await snap(server, token, { tool: "browser.tab.close", args: { tabId: 7 } }); // releases bound 7
+    const denied = await snap(server, token);
+    expect(denied.status).toBe("failed");
+    expect(denied.error?.code).toBe("browser.ambiguous_target");
+    expect(sent).toHaveLength(2); // never dispatched a third time
+  });
+
+  it("explicit tabId still resolves when the implicit target is ambiguous", async () => {
+    const { server, token } = makeAmbiguous();
+    await snap(server, token);
+    await snap(server, token, { tool: "browser.tab.close", args: { tabId: 7 } });
+    const ok = await snap(server, token, { args: { tabId: 9 } });
+    expect(ok.status).toBe("completed");
+  });
+});
+
+describe("BrowserToolServer cross-profile tab scope (chromex-jtl)", () => {
+  function makeProfiled() {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token: tokenA } = issue(tokens, {
+      taskId: "task-a",
+      profileId: "profile-a",
+      allowedTools: ["browser.page.snapshot"],
+    });
+    const { token: tokenB } = issue(tokens, {
+      taskId: "task-b",
+      profileId: "profile-b",
+      allowedTools: ["browser.page.snapshot"],
+    });
+    const sent: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async (method, payload) => {
+        sent.push({ method, payload: payload as Record<string, unknown> });
+        return { ok: true, resolvedTabId: 7 };
+      },
+      onDisconnect: () => {},
+    };
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async () => ({ verdict: "approved" as const }),
+      now: () => NOW,
+    });
+    const call = (token: string, taskId: string, profileId: string, over = {}) =>
+      server.execute({
+        toolCallId: `tc-${Math.random().toString(36).slice(2)}`,
+        taskId,
+        profileId,
+        tool: "browser.page.snapshot",
+        args: {},
+        token,
+        ...over,
+      });
+    return { server, tokenA, tokenB, sent, call };
+  }
+
+  it("same numeric tabId under a different profile is a different tab — no silent adopt, no false foreign", async () => {
+    const { tokenA, tokenB, sent, call } = makeProfiled();
+    await call(tokenA, "task-a", "profile-a"); // profile-a binds tab 7
+    // profile-b's own tab 7 must NOT be treated as profile-a's foreign tab
+    const res = await call(tokenB, "task-b", "profile-b", { args: { tabId: 7 } });
+    expect(res.status).toBe("completed");
+    // pre-bind payload: profile-a's tab 7 is a different namespace → not foreign
+    const scopeB = sent[1]!.payload.tabScope as { foreignTabIds: number[] };
+    expect(scopeB.foreignTabIds).toEqual([]);
+    // post-bind: task-b's own tab 7 is in scope, still no foreign leakage
+    await call(tokenB, "task-b", "profile-b");
+    const scopeB2 = sent[2]!.payload.tabScope as { foreignTabIds: number[]; allowedTabIds: number[] };
+    expect(scopeB2.allowedTabIds).toEqual([7]);
+    expect(scopeB2.foreignTabIds).toEqual([]);
+  });
+
+  it("a proven browserInstanceId change resets runtime bindings (no cross-instance adopt)", async () => {
+    const { tokenA, call } = makeProfiled();
+    await call(tokenA, "task-a", "profile-a", { browserInstanceId: "inst-1" }); // binds 7 @ inst-1
+    // same task, NEW Chrome run: runtime binding is invalid (§4.9) —
+    // tabId 7 in inst-2 is a different tab and must not inherit scope.
+    const res = await call(tokenA, "task-a", "profile-a", {
+      browserInstanceId: "inst-2",
+      args: { tabId: 7 },
+    });
+    expect(res.status).toBe("completed");
+  });
+
+  it("resolveHost returning a coded rejection surfaces it (browser.wrong_profile)", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens);
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => ({ error: { code: "browser.wrong_profile", message: "host serves profile-b" } }),
+      now: () => NOW,
+    });
+    const out = await server.execute({
+      toolCallId: "tc-wp",
+      taskId: "task-1",
+      profileId: "profile-1",
+      tool: "browser.page.snapshot",
+      args: {},
+      token,
+    });
+    expect(out.status).toBe("failed");
+    expect(out.error?.code).toBe("browser.wrong_profile");
+  });
+
+  it("host channel declaring a different profileId → browser.wrong_profile, never dispatched", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens);
+    let sent = 0;
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      profileId: "profile-other",
+      send: async () => {
+        sent += 1;
+        return { ok: true };
+      },
+      onDisconnect: () => {},
+    };
+    const server = new BrowserToolServer({ tokens, resolveHost: () => host, now: () => NOW });
+    const out = await server.execute({
+      toolCallId: "tc-wp2",
+      taskId: "task-1",
+      profileId: "profile-1",
+      tool: "browser.page.snapshot",
+      args: {},
+      token,
+    });
+    expect(out.error?.code).toBe("browser.wrong_profile");
+    expect(sent).toBe(0);
+  });
+});

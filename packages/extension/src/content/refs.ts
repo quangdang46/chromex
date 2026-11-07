@@ -78,19 +78,47 @@ export function collectInteractiveElements(): HTMLElement[] {
 }
 
 
-export function resolveDomActionTarget(step: BrowserDomActionStep): HTMLElement | null {
-  if (step.targetRef && domActionElementRefs.has(step.targetRef)) {
-    return domActionElementRefs.get(step.targetRef) ?? null;
+export type DomActionTargetResolution =
+  | { status: "resolved"; element: HTMLElement }
+  | { status: "ambiguous"; count: number }
+  | { status: "none" };
+
+/** Resolve a step's target AND detect ambiguity (chromex-ykj): a
+ *  selector or label matching ≥2 elements must surface
+ *  `browser.ambiguous_target` in the step result instead of silently
+ *  acting on the first match. `targetRef` is snapshot-unique by
+ *  construction. Selector matches count every HTMLElement the selector
+ *  hits; label matches count visible interactive elements only. */
+export function resolveDomActionTargetDetailed(step: BrowserDomActionStep): DomActionTargetResolution {
+  if (step.targetRef) {
+    const element = domActionElementRefs.get(step.targetRef);
+    return element ? { status: "resolved", element } : { status: "none" };
   }
   if (step.selector) {
-    const element = document.querySelector(step.selector);
-    return element instanceof HTMLElement ? element : null;
+    const matches = Array.from(document.querySelectorAll(step.selector)).filter(
+      (el): el is HTMLElement => el instanceof HTMLElement,
+    );
+    if (matches.length > 1) {
+      return { status: "ambiguous", count: matches.length };
+    }
+    return matches.length === 1 ? { status: "resolved", element: matches[0]! } : { status: "none" };
   }
   if (step.label) {
     const normalizedLabel = normalizeDomActionText(step.label).toLowerCase();
-    return collectInteractiveElements().find((element) => getElementLabel(element).toLowerCase() === normalizedLabel) ?? null;
+    const matches = collectInteractiveElements().filter(
+      (element) => getElementLabel(element).toLowerCase() === normalizedLabel,
+    );
+    if (matches.length > 1) {
+      return { status: "ambiguous", count: matches.length };
+    }
+    return matches.length === 1 ? { status: "resolved", element: matches[0]! } : { status: "none" };
   }
-  return null;
+  return { status: "none" };
+}
+
+export function resolveDomActionTarget(step: BrowserDomActionStep): HTMLElement | null {
+  const resolved = resolveDomActionTargetDetailed(step);
+  return resolved.status === "resolved" ? resolved.element : null;
 }
 
 
