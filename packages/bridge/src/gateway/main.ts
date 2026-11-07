@@ -65,6 +65,7 @@ import { runPruneSweep } from "./prune.js";
 import { APPROVAL_POST_TERMINAL_MS, ARTIFACT_TTL_MS } from "../store/retention.js";
 import type { GatewayDb } from "../store/db.js";
 import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
+import { CLAUDE_CAPABILITIES as CLAUDE_SESSION_CAPABILITIES } from "../agents/providers/claude/session.js";
 import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
 import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
@@ -78,7 +79,7 @@ import { resolveBackendSelection, backendMismatchFor } from "../browser/backend-
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
 import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
 import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
-import { NO_CAPABILITIES, protocolError as perr } from "@codex-sidepanel/shared";
+import { protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
   /** override CHROMEX_GATEWAY_HOME */
@@ -244,7 +245,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       {
         id: "claude",
         available: config.providers.claude.enabled,
-        capabilities: CLAUDE_CAPABILITIES,
+        capabilities: CLAUDE_SESSION_CAPABILITIES,
       },
     ];
 
@@ -624,7 +625,6 @@ type HelloResponseProviders = import("@codex-sidepanel/shared").HelloResponse["p
 
 // Honest capability advertisement — sourced from the provider
 // implementations, not hand-maintained literals (§8.1 intersection).
-const CLAUDE_CAPABILITIES = NO_CAPABILITIES;
 
 function invalidRequest(issues: string): ProtocolError {
   return perr("proto.invalid", `invalid request payload: ${issues}`);
