@@ -103,9 +103,15 @@ chromexContentGlobal[CHROMEX_CONTENT_CLEANUP_KEY] = cleanupContentScriptInstance
 
 registerChromexRuntimeMessageListener();
 startContentScriptRuntimeWatchdog();
-initializeImagePromptHoverSetting();
-installPageSelectionContextBridge();
-installDictationFocusBridge();
+// With all_frames injection every frame runs this script, but the
+// user-facing bridges (selection context, dictation target tracking,
+// image prompt hover) only make sense in the top frame — page.* tool
+// messages reach subframes via explicit frameId targeting instead.
+if (window.self === window.top) {
+  initializeImagePromptHoverSetting();
+  installPageSelectionContextBridge();
+  installDictationFocusBridge();
+}
 
 function getSafeChromeRuntime(): typeof chrome.runtime | null {
   try {

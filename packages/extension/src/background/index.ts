@@ -3388,9 +3388,9 @@ async function ensureContentScript(tabId: number, url?: string): Promise<void> {
   }
 }
 
-async function hasActiveContentScript(tabId: number): Promise<boolean> {
+async function hasActiveContentScript(tabId: number, frameId = 0): Promise<boolean> {
   try {
-    const response = await chrome.tabs.sendMessage(tabId, { type: "page.ping" });
+    const response = await chrome.tabs.sendMessage(tabId, { type: "page.ping" }, { frameId });
     return typeof response === "object" && response !== null && (response as { ok?: unknown }).ok === true;
   } catch {
     return false;
@@ -5224,15 +5224,20 @@ async function hasTabOriginPermission(url: string | undefined): Promise<boolean>
 async function sendMessageToTab(
   activeTab: chrome.tabs.Tab & { id: number; url: string },
   message: Record<string, unknown>,
+  options: { frameId?: number } = {},
 ): Promise<unknown> {
+  // frameId defaults to 0 (top frame). With all_frames content scripts a
+  // frameId-less sendMessage would race every frame's listener — the first
+  // responder wins and subframes would act on the wrong DOM.
+  const sendOptions = { frameId: options.frameId ?? 0 };
   try {
     await ensureContentScript(activeTab.id, activeTab.url);
-    return await chrome.tabs.sendMessage(activeTab.id, message);
+    return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
   } catch (error) {
     if (shouldAttemptTabOriginRecovery(activeTab.url, error) && (await hasTabOriginPermission(activeTab.url))) {
       await ensureContentScript(activeTab.id, activeTab.url);
       try {
-        return await chrome.tabs.sendMessage(activeTab.id, message);
+        return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
       } catch (retryError) {
         throw toFriendlyPageAccessError(activeTab.url, retryError);
       }
@@ -5241,7 +5246,7 @@ async function sendMessageToTab(
       await sleepMs(120);
       await ensureContentScript(activeTab.id, activeTab.url);
       try {
-        return await chrome.tabs.sendMessage(activeTab.id, message);
+        return await chrome.tabs.sendMessage(activeTab.id, message, sendOptions);
       } catch (retryError) {
         throw toFriendlyPageAccessError(activeTab.url, retryError);
       }
