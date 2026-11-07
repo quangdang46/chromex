@@ -43,3 +43,6 @@ backups/
 *.tmp
 tmp-*
 tmp-smoke-debug.png
+
+# bv (beads viewer) local config and caches
+.bv/
