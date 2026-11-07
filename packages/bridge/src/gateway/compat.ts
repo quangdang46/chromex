@@ -293,7 +293,8 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
         codexAuthenticated: authenticated,
         multimodalAvailable: authenticated,
         openAiApiKeyConfigured: rec.openAiApiKeyConfigured === true,
-        email: typeof account?.email === "string" ? account.email : null,
+        email:
+          typeof account?.email === "string" && account.email.trim() ? account.email.trim() : null,
         planType,
       };
     },

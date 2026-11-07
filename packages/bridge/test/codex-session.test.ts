@@ -320,3 +320,84 @@ describe("CodexAgentSession — MCP config override (§9.3)", () => {
     expect((start!.params as { config?: unknown }).config).toBeUndefined();
   });
 });
+
+describe("CodexAgentProvider.callFeature — account carve-outs (chromex-pnk)", () => {
+  function makeSecrets() {
+    const store = new Map<string, string>();
+    return {
+      store,
+      setOpenAiApiKey: (k: string) => void store.set("openAiApiKey", k),
+      clearOpenAiApiKey: () => void store.delete("openAiApiKey"),
+      hasOpenAiApiKey: () => store.has("openAiApiKey"),
+    };
+  }
+
+  test("apiKey login stores the secret without touching the app-server", async () => {
+    const client = new FakeCodexClient();
+    const secrets = makeSecrets();
+    const provider = new CodexAgentProvider({ client: client as never, secrets });
+
+    const res = await provider.callFeature("provider.feature.codex.account.login.start", {
+      type: "apiKey",
+      apiKey: "sk-test",
+    });
+
+    expect(res).toEqual({ stored: true });
+    expect(secrets.hasOpenAiApiKey()).toBe(true);
+    expect(client.calls).toHaveLength(0);
+    await provider.shutdown();
+  });
+
+  test("apiKey login without a key rejects before any app-server call", async () => {
+    const client = new FakeCodexClient();
+    const provider = new CodexAgentProvider({ client: client as never, secrets: makeSecrets() });
+
+    await expect(
+      provider.callFeature("provider.feature.codex.account.login.start", { type: "apiKey" }),
+    ).rejects.toThrow(/requires params\.apiKey/u);
+    expect(client.calls).toHaveLength(0);
+    await provider.shutdown();
+  });
+
+  test("chatgpt login forwards to account/login/start", async () => {
+    const client = new FakeCodexClient();
+    const provider = new CodexAgentProvider({ client: client as never });
+
+    await provider.callFeature("provider.feature.codex.account.login.start", { type: "chatgpt" });
+
+    expect(client.calls[0]).toEqual({
+      method: "account/login/start",
+      params: { type: "chatgpt" },
+    });
+    await provider.shutdown();
+  });
+
+  test("logout calls account/logout and clears the stored api key", async () => {
+    const client = new FakeCodexClient();
+    const secrets = makeSecrets();
+    secrets.setOpenAiApiKey("sk-test");
+    const provider = new CodexAgentProvider({ client: client as never, secrets });
+
+    await provider.callFeature("provider.feature.codex.account.logout", {});
+
+    expect(client.calls[0]).toEqual({ method: "account/logout", params: {} });
+    expect(secrets.hasOpenAiApiKey()).toBe(false);
+    await provider.shutdown();
+  });
+
+  test("account.status is enriched with openAiApiKeyConfigured", async () => {
+    const client = new FakeCodexClient();
+    const secrets = makeSecrets();
+    secrets.setOpenAiApiKey("sk-test");
+    const provider = new CodexAgentProvider({ client: client as never, secrets });
+
+    const res = (await provider.callFeature("provider.feature.codex.account.status", {})) as Record<
+      string,
+      unknown
+    >;
+
+    expect(res.openAiApiKeyConfigured).toBe(true);
+    expect(client.calls[0]).toEqual({ method: "account/read", params: { refreshToken: false } });
+    await provider.shutdown();
+  });
+});

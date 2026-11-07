@@ -70,3 +70,66 @@ describe("LEGACY_COMPAT prompt.send planMode", () => {
     expect((r2.payload as Record<string, unknown>).ctx).toBeUndefined();
   });
 });
+
+describe("LEGACY_COMPAT account.* (chromex-pnk)", () => {
+  test("account.status maps account/read result to AccountStatus", () => {
+    const e = LEGACY_COMPAT["account.status"]!;
+    expect(e.toRequest({ refreshToken: true })).toEqual({
+      method: "provider.feature.codex.account.status",
+      payload: { refreshToken: true },
+    });
+    const out = e.fromResult(
+      {
+        account: { type: "chatgpt", email: "u@x.com", planType: "Plus" },
+        requiresOpenaiAuth: true,
+        openAiApiKeyConfigured: true,
+      },
+      {},
+    ) as Record<string, unknown>;
+    expect(out).toEqual({
+      authMode: "chatgpt",
+      codexAuthenticated: true,
+      multimodalAvailable: true,
+      openAiApiKeyConfigured: true,
+      email: "u@x.com",
+      planType: "plus",
+    });
+  });
+
+  test("account.status unauthenticated + requiresOpenaiAuth=false", () => {
+    const e = LEGACY_COMPAT["account.status"]!;
+    const out = e.fromResult({ account: null, requiresOpenaiAuth: false }, {}) as Record<
+      string,
+      unknown
+    >;
+    expect(out.codexAuthenticated).toBe(true);
+    expect(out.authMode).toBeNull();
+  });
+
+  test("account.status apiKey account maps authMode apikey", () => {
+    const e = LEGACY_COMPAT["account.status"]!;
+    const out = e.fromResult({ account: { type: "apiKey" } }, {}) as Record<string, unknown>;
+    expect(out.authMode).toBe("apikey");
+    expect(out.codexAuthenticated).toBe(true);
+  });
+
+  test("account.login.start/cancel/logout rewrite to codex account features", () => {
+    expect(LEGACY_COMPAT["account.login.start"]!.toRequest({ type: "chatgpt" })).toEqual({
+      method: "provider.feature.codex.account.login.start",
+      payload: { type: "chatgpt" },
+    });
+    expect(
+      LEGACY_COMPAT["account.login.cancel"]!.toRequest({ loginId: "l1" }),
+    ).toEqual({
+      method: "provider.feature.codex.account.login.cancel",
+      payload: { loginId: "l1" },
+    });
+    expect(LEGACY_COMPAT["account.logout"]!.toRequest({})).toEqual({
+      method: "provider.feature.codex.account.logout",
+      payload: {},
+    });
+    // legacy contract: cancel/logout resolve {}
+    expect(LEGACY_COMPAT["account.login.cancel"]!.fromResult({ anything: 1 }, {})).toEqual({});
+    expect(LEGACY_COMPAT["account.logout"]!.fromResult(null, {})).toEqual({});
+  });
+});
