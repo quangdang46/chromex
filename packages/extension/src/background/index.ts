@@ -251,10 +251,11 @@ const toolHostHandler = createToolHostHandler({
     closeTab: async (tabId) => {
       await chrome.tabs.remove(tabId);
     },
-    createTab: async ({ url, active }) =>
+    createTab: async ({ url, active, windowId }) =>
       chrome.tabs.create({
         ...(url ? { url } : {}),
         ...(active !== undefined ? { active } : {}),
+        ...(windowId !== undefined ? { windowId } : {}),
       }),
     runInMainWorld: async (tabId, func, args, frameIds) => {
       const [res] = await chrome.scripting.executeScript({

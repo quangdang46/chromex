@@ -472,6 +472,25 @@ describe("tool host (P1-09)", () => {
     expect(d.createTab).not.toHaveBeenCalled();
   });
 
+  test("tab.create forwards windowId; rejects non-integer windowId", async () => {
+    const created: Array<{ windowId?: number }> = [];
+    const d = deps({
+      createTab: vi.fn(async (opts: { url?: string; active?: boolean; windowId?: number }) => {
+        created.push(opts);
+        return { id: 57, url: "about:blank", title: "", active: true } as chrome.tabs.Tab;
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.tab.create", { windowId: 42 }));
+    expect(created[0]).toMatchObject({ windowId: 42 });
+    await expect(h(req("browser.tab.create", { windowId: -1 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.tab.create", { windowId: 1.5 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
   test("page.console runs the MAIN-world collector on the scoped tab (chromex-nr8)", async () => {
     const calls: Array<{ tabId: number; funcName: string; args: unknown[] | undefined }> = [];
     const d = deps({

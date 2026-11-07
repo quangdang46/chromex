@@ -31,7 +31,7 @@ export interface ToolHostDeps {
    *  quality when the first capture exceeds the artifact byte cap. */
   captureVisibleTab?(windowId: number, opts?: { quality?: number }): Promise<string>;
   /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
-  createTab?(opts: { url?: string; active?: boolean }): Promise<chrome.tabs.Tab>;
+  createTab?(opts: { url?: string; active?: boolean; windowId?: number }): Promise<chrome.tabs.Tab>;
   /** chrome.scripting.executeScript world:"MAIN" — runs `func` in the
    *  page's main world and resolves its return value (browser.page.console,
    *  chromex-nr8). `func` must be self-contained (serialized source). */
@@ -340,6 +340,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               origin,
               active: t.active === true,
               windowId: t.windowId,
+              // loading state matters to the agent: snapshot/click on a
+              // still-loading tab observes a half-built DOM.
+              status: t.status ?? "complete",
+              ...(typeof t.pinned === "boolean" ? { pinned: t.pinned } : {}),
+              ...(typeof t.groupId === "number" ? { groupId: t.groupId } : {}),
             };
           }),
         };
@@ -378,7 +383,21 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           url = parsed.href;
         }
         const active = typeof args.active === "boolean" ? args.active : true;
-        const tab = await deps.createTab({ ...(url ? { url } : {}), active });
+        // windowId targets a specific browser window — must be a real
+        // window or chrome.tabs.create throws; validate as non-negative
+        // int and let the API surface unknown-window errors honestly.
+        const windowId =
+          typeof args.windowId === "number" && Number.isInteger(args.windowId) && args.windowId >= 0
+            ? args.windowId
+            : undefined;
+        if (args.windowId !== undefined && windowId === undefined) {
+          throw toolError("proto.invalid", "browser.tab.create args.windowId must be a non-negative integer");
+        }
+        const tab = await deps.createTab({
+          ...(url ? { url } : {}),
+          active,
+          ...(windowId !== undefined ? { windowId } : {}),
+        });
         if (typeof tab.id !== "number") {
           throw toolError("browser.action_failed", "chrome.tabs.create returned no tab id");
         }

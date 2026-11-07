@@ -270,6 +270,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         throw protocolError("proto.invalid", "browser.tab.create only supports http(s) urls");
       }
     }
+    // isolated context has no windows — refuse rather than silently drop
+    if (args.windowId !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated has no windows; args.windowId is chrome-extension only");
+    }
     const page = await context.newPage();
     if (url) {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });

@@ -236,6 +236,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     inputSchema: objectSchema({
       url: { type: "string", description: "Optional http(s) URL to open; omit for a blank tab." },
       active: { type: "boolean", description: "Focus the new tab (default true)." },
+      windowId: { type: "integer", description: "Optional window to open the tab in (from browser.tabs.list windowId)." },
     }),
   },
   "browser.page.snapshot": {
