@@ -58,6 +58,31 @@ export const GATEWAY_BIN = join(REPO_ROOT, "packages/bridge/dist/gateway/bin.js"
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export { sleep };
 
+/**
+ * Gateways are spawned detached and outlive their IPC clients by design —
+ * conn.close() only drops our socket. The lifetime lock inside the fixture
+ * dataDir records the owning pid, so teardown can find and stop the real
+ * process (including a gateway the native host respawned mid-scenario).
+ */
+async function killGatewayForDataDir(dataDir) {
+  try {
+    const raw = await readFile(join(dataDir, "gateway.lock"), "utf8");
+    const pid = JSON.parse(raw)?.pid;
+    if (typeof pid !== "number") return;
+    const { execFileSync } = await import("node:child_process");
+    const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }).trim();
+    if (!cmd.includes("gateway/bin.js")) return;
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+    await sleep(500);
+    try {
+      process.kill(pid, 0);
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  } catch {}
+}
+
 // ---------------------------------------------------------------------------
 // Playwright / chromium launch (pattern ported from scripts/smoke-extension.mjs)
 // ---------------------------------------------------------------------------
@@ -426,8 +451,10 @@ export async function ensureIsolatedGateway({ providers = ["codex", "claude"], c
         try {
           await conn.close?.();
         } catch {}
+        await killGatewayForDataDir(dataDir);
         if (prevGatewayEntry === undefined) delete process.env.GATEWAY_ENTRY;
         else process.env.GATEWAY_ENTRY = prevGatewayEntry;
+        await rm(dataDir, { recursive: true, force: true }).catch(() => {});
       },
     };
   } catch (err) {
@@ -714,7 +741,10 @@ export async function runScenario(
     // One isolated home shared by gateway + browser NM host. When there is
     // no gateway (pure-UI scenario) the home is unused but still isolated.
     const gatewayHome = gw?.dataDir ?? (await mkdtemp(join(tmpdir(), "chromex-accept-gw-empty-")));
-    if (!gw) cleanups.push(() => rm(gatewayHome, { recursive: true, force: true }).catch(() => {}));
+    if (!gw) cleanups.push(async () => {
+      await killGatewayForDataDir(gatewayHome);
+      await rm(gatewayHome, { recursive: true, force: true }).catch(() => {});
+    });
     if (needsBrowser) {
       // Chrome strips env for NM hosts → install a per-run manifest that
       // bakes the isolated CHROMEX_GATEWAY_HOME into the launcher.
