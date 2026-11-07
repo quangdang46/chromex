@@ -242,6 +242,7 @@ import {
   isAnnotatableImageAttachment,
 } from "./image-annotation.js";
 import { isYouTubeCurrentMomentAction, type YouTubeCurrentMomentPromptResult } from "../youtube-current-moment.js";
+import { isExtensionContextSender, sidepanelMayHandleMessage } from "../message-sender-guard.js";
 import type {
   ConversationConferenceModeSnapshot,
   ConversationMessageAttachment,
@@ -1253,6 +1254,13 @@ async function refreshGatewayTasks(): Promise<void> {
 }
 
 chrome.runtime.onMessage.addListener((message, sender) => {
+  // Sender guard: a compromised content script shares the extension id and
+  // could forge UI events; only extension-internal contexts plus the
+  // narrow content-script allowlist (see message-sender-guard.ts) pass.
+  if (!sidepanelMayHandleMessage(message, sender, chrome.runtime.id)) {
+    return;
+  }
+
   if (message.type === "ui.active-tab.updated") {
     applyActiveTabUpdate(message);
     return;
@@ -18034,7 +18042,12 @@ async function openDedicatedMicrophonePermissionWindow(): Promise<{
     const timeoutId = window.setTimeout(() => {
       settle({ result: "dismissed", message: "Permission dismissed" });
     }, 90_000);
-    const onMessage = (message: unknown) => {
+    const onMessage = (message: unknown, sender: chrome.runtime.MessageSender) => {
+      // Only the mic-permission extension window may report a result —
+      // a content script forging "granted" would bypass the real prompt.
+      if (!isExtensionContextSender(sender, chrome.runtime.id)) {
+        return;
+      }
       if (!isMicrophonePermissionWindowMessage(message)) {
         return;
       }

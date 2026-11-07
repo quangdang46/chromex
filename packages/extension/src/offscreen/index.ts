@@ -1,11 +1,14 @@
 import type { EditablePageImageCandidate } from "../page-image-target.js";
+import { offscreenMayHandleMessage } from "../message-sender-guard.js";
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target !== "offscreen") {
     return false;
   }
-  if (message.type !== "offscreen.image.crop") {
-    sendResponse({ error: `Unknown offscreen message type: ${String(message.type ?? "")}` });
+  // Sender guard: only the background worker may request crops — a content
+  // script shares the extension id but always carries sender.tab.
+  if (!offscreenMayHandleMessage(message, sender, chrome.runtime.id)) {
+    sendResponse({ error: "message rejected" });
     return true;
   }
   void cropVisibleTabDataUrlToImageCandidate(message.dataUrl, message.candidate)
