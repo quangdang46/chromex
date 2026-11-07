@@ -26,6 +26,7 @@ docs/*
 !docs/adr/**
 !docs/gate-c.md
 !docs/gateway-mode.md
+!docs/product-acceptance-matrix.md
 !docs/testing-windows-e2e.md
 !docs/pages/
 docs/pages/*

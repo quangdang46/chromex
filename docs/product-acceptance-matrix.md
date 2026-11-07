@@ -1,0 +1,51 @@
+# Chromex Product Master Acceptance Matrix
+
+North Star: **A coding agent that owns the browser** — the user hands
+over a goal; the agent plans, operates browser + coding tools, verifies
+results, recovers from failure, and delivers evidence. "Own" means the
+agent is the coordinating subject; authority stays behind policy,
+permissions, and user approval.
+
+Rule: no capability counts as done until an end-to-end user scenario
+passes on a real browser. APIs, classes, and unit tests are necessary,
+not sufficient.
+
+## Acceptance scenarios (MVP gate)
+
+| # | Scenario | Pass evidence |
+|---|----------|---------------|
+| S1 | Build a web feature: understand → edit files → run app → drive UI → iterate → report | Real run: diff + test output + browser verification of the feature |
+| S2 | Debug a live website: observe page → locate cause in code → fix → reproduce → verify | Real run on a logged-in tab with an actual bug |
+| S3 | Multi-tab/multi-app work without scope bleed | Task A and B concurrently on different tabs; no cross-talk |
+| S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff (CAPTCHA/MFA → user) | Real run on a real web app |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicate actions | kill -9 style test + live run |
+| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, continue; never fake success | Injected failure run |
+| S7 | Protection: sensitive actions (send/post/delete/pay) → contextual approval; denial is honored, never bypassed | Approval-flow run incl. deny path |
+| S8 | Verifiable deliverable: diff, changed files, test results, browser evidence, known limits | Deliverable rendered in sidepanel |
+
+## Capability → component → gap map
+
+| Capability | Owner | Status | Gap / bead |
+|---|---|---|---|
+| Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | live-verify pending (frg) |
+| Provider abstraction codex/claude/acp | bridge agents | ✅ built | live ACP creds blocked (436) |
+| Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
+| Tab lifecycle: list/activate/close | ext tool-host | ✅ 3 tools | **no tab.create/open** — agent cannot open new tabs |
+| Page observation: snapshot/get/extract/screenshot | ext tool-host + content | ✅ | no console logs, no network, no a11y tree option, iframe=none |
+| Page interaction: click/focus/type/fill/select/submit/scroll/wait/navigate/upload | ext tool-host + content | ✅ 10 tools | no hover/press-key/drag, dialogs unhandled, download capture missing |
+| Browser↔MCP tool surface for providers | bridge mcp-server + session-manager | ✅ wired per task | verify providers actually iterate tool calls E2E |
+| Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
+| Browser↔code feedback loop | composition | ⚠️ architecture only | **no E2E proof** — S1/S2 blocked on this |
+| Prompt-injection defense | page content → agent boundary | ⚠️ partial | audit needed: page text must be data, not instructions |
+| Permission/audit/revoke | approvals + tool tokens | ✅ built | live-verify (S7) |
+| UX: timeline/approvals/questions/elapsed | sidepanel | ✅ recent work | deliverable/evidence view (S8) |
+| Backend capability honesty | shared backend.ts | ✅ truthful | update as capabilities land |
+
+## Workstream beads (this matrix)
+
+- Browser runtime depth: tab.create, console/network observation,
+  a11y snapshot mode, iframe same-origin, dialogs, downloads
+- Agent loop proof: scripted E2E where provider iterates browser tools
+- Browser↔code loop: S1/S2 scripted scenarios
+- Injection defense audit + content fencing
+- Deliverable/evidence rendering (S8)
