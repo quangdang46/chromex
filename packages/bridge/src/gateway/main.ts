@@ -149,6 +149,11 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           ipc?.broadcast(event as import("@codex-sidepanel/shared").Envelope);
         }
       },
+      pendingApprovals: (taskId) =>
+        typeof (store as { countPendingApprovals?: (id: string) => number }).countPendingApprovals ===
+        "function"
+          ? (store as { countPendingApprovals: (id: string) => number }).countPendingApprovals(taskId)
+          : 0,
     });
 
     const providers: HelloResponseProviders = [

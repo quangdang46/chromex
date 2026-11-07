@@ -39,6 +39,7 @@ export interface SessionStore {
   getTask(taskId: string): TaskRecord | undefined;
   putTask(task: TaskRecord): void;
   createTask(task: TaskRecord): void;
+  listTasks?(): TaskRecord[];
   getTurn(turnId: string): TurnRecord | undefined;
   upsertTurn(turn: TurnRecord): void;
   listTurns(taskId?: string): TurnRecord[];
@@ -51,6 +52,17 @@ export interface SessionStore {
     maxEvents?: number,
   ): { events: DurableTaskEventEnvelope[]; nextSeq: number; hasMore: boolean };
   lastTaskSeq(taskId: string): number;
+  // approvals — optional so minimal test doubles keep working
+  insertApproval?(row: {
+    approvalId: string;
+    taskId: string;
+    turnId?: string;
+    request: unknown;
+    actionDigest: string;
+    status: "pending" | "allowed" | "denied" | "expired";
+    createdAt: number;
+  }): void;
+  resolveApproval?(approvalId: string, status: "allowed" | "denied" | "expired"): void;
 }
 
 // ---------- attention (§4.7 — derived, never persisted) ----------
@@ -175,6 +187,8 @@ export class SessionManager {
   private readonly unsubscribers = new Map<string, () => void>();
   /** taskIds mid-cancel — suppresses auto-complete while interrupt drains */
   private readonly cancelling = new Set<string>();
+  /** last emitted attention per task — for task.attention_changed diffs */
+  private readonly lastAttention = new Map<string, TaskAttention | null>();
 
   constructor(private readonly opts: SessionManagerOptions) {}
 
@@ -504,10 +518,25 @@ export class SessionManager {
     requestId: string,
     optionId: string,
   ): Promise<{ followUpPrompt?: import("@codex-sidepanel/shared").TurnInput }> {
-    for (const live of this.conversations.values()) {
-      if (live.session.getPendingPermissions().some((p) => p.requestId === requestId)) {
-        return live.session.respondToPermission(requestId, { requestId, optionId });
+    for (const [conversationKey, live] of this.conversations) {
+      if (!live.session.getPendingPermissions().some((p) => p.requestId === requestId)) continue;
+      const result = await live.session.respondToPermission(requestId, { requestId, optionId });
+      // §4.8: a followUpPrompt is a NEW turn with a NEW gatewayTurnId —
+      // never folded into the resolved turn.
+      if (result.followUpPrompt) {
+        const task = this.opts.store
+          .listTasks?.()
+          .find((t) => t.conversationKey === conversationKey);
+        if (task) {
+          const fp = result.followUpPrompt;
+          void this.sendMessage(task.taskId, {
+            clientMessageId: `followup-${requestId}`,
+            content: fp.content,
+            ...(fp.ctx ? { ctx: fp.ctx } : {}),
+          }).catch(() => {});
+        }
       }
+      return result;
     }
     return {};
   }
@@ -536,7 +565,54 @@ export class SessionManager {
     }
     const env = this.#persist(taskId, event as DurableTaskEvent);
     this.#publish(taskId, env, false);
+    this.#mirrorApproval(taskId, event);
     this.#afterPersistedEvent(taskId, event);
+    this.#maybeEmitAttention(taskId);
+  }
+
+  /**
+   * §5.7: permission.requested/resolved mirror into the approvals
+   * table — the durable record of every approval + decision.
+   */
+  #mirrorApproval(taskId: string, event: AgentEvent): void {
+    const store = this.opts.store;
+    if (event.type === "permission.requested") {
+      const req = (event as { request?: { requestId?: string; actionDigest?: string; turnId?: string } }).request;
+      if (req?.requestId && store.insertApproval) {
+        store.insertApproval({
+          approvalId: req.requestId,
+          taskId,
+          ...(req.turnId ? { turnId: req.turnId } : {}),
+          request: event,
+          actionDigest: req.actionDigest ?? "",
+          status: "pending",
+          createdAt: Date.now(),
+        });
+      }
+      return;
+    }
+    if (event.type === "permission.resolved") {
+      const e = event as { requestId?: string; decision?: { kind?: string } };
+      if (e.requestId && store.resolveApproval) {
+        store.resolveApproval(
+          e.requestId,
+          e.decision?.kind === "deny" ? "denied" : "allowed",
+        );
+      }
+    }
+  }
+
+  /** §4.7: attention is derived — emit task.attention_changed on diff. */
+  #maybeEmitAttention(taskId: string): void {
+    const next = this.attentionFor(taskId);
+    const prev = this.lastAttention.get(taskId) ?? null;
+    if (JSON.stringify(next) === JSON.stringify(prev)) return;
+    this.lastAttention.set(taskId, next);
+    const env = this.#persist(taskId, {
+      type: "task.attention_changed",
+      attention: next,
+    } as DurableTaskEvent);
+    this.#publish(taskId, env, false);
   }
 
   #afterPersistedEvent(taskId: string, event: AgentEvent): void {
@@ -626,6 +702,7 @@ export class SessionManager {
         to,
         ...(pauseReason ? { pauseReason } : {}),
       } as DurableTaskEvent);
+      this.#maybeEmitAttention(task.taskId);
     }
     return next;
   }

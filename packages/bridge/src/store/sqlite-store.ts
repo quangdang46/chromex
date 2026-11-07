@@ -555,6 +555,20 @@ export class SQLiteStore {
       .all(taskId) as unknown[];
   }
 
+  countPendingApprovals(taskId: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM approvals WHERE task_id = ? AND status = 'pending'")
+      .get(taskId) as { n: number };
+    return row.n;
+  }
+
+  /** Resolve a pending approval; idempotent — already-resolved is a no-op. */
+  resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
+    this.db
+      .prepare("UPDATE approvals SET status = ? WHERE approval_id = ? AND status = 'pending'")
+      .run(status, approvalId);
+  }
+
   insertArtifact(row: {
     artifactId: string;
     taskId: string;

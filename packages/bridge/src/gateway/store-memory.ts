@@ -166,6 +166,33 @@ export class InMemoryStore {
     return this.gatewaySeq;
   }
 
+  // ---- approvals (in-memory mirror of the SQLite DAO) ----
+
+  private approvals = new Map<string, { taskId: string; status: string }>();
+
+  insertApproval(row: {
+    approvalId: string;
+    taskId: string;
+    status: "pending" | "allowed" | "denied" | "expired";
+  }): void {
+    this.approvals.set(row.approvalId, { taskId: row.taskId, status: row.status });
+  }
+
+  listPendingApprovals(taskId: string): unknown[] {
+    return [...this.approvals.entries()]
+      .filter(([, a]) => a.taskId === taskId && a.status === "pending")
+      .map(([approvalId]) => ({ approval_id: approvalId }));
+  }
+
+  countPendingApprovals(taskId: string): number {
+    return [...this.approvals.values()].filter((a) => a.taskId === taskId && a.status === "pending").length;
+  }
+
+  resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
+    const a = this.approvals.get(approvalId);
+    if (a && a.status === "pending") a.status = status;
+  }
+
   /** Minimal inline snapshot — P1-02 fills conversation/messages/toolCalls. */
   buildTaskSnapshot(taskId: string): TaskSnapshot | null {
     const task = this.tasks.get(taskId);
