@@ -860,6 +860,29 @@ async function handleGatewayRequest(
             ...(scope ? { scope } : {}),
           },
         );
+        // durable permission.resolved on the task stream — replayed
+        // clients clear the approval card; the approvals table alone
+        // is not visible to task.sync consumers.
+        const reqTaskId = (storeAny.approvalRequest?.(p.requestId) as
+          | { taskId?: string }
+          | null
+          | undefined)?.taskId;
+        if (reqTaskId) {
+          const resolvedEnv = (
+            ctx.store as {
+              appendTaskEvent?: (id: string, e: unknown) => { kind?: string } | null;
+            }
+          ).appendTaskEvent?.(reqTaskId, {
+            type: "permission.resolved",
+            requestId: p.requestId,
+            decision: {
+              kind: denied ? "deny" : optionId === "allow_task" ? "allow_task" : "allow_once",
+            },
+          });
+          if (resolvedEnv && resolvedEnv.kind === "event") {
+            ctx.getIpc().broadcast(resolvedEnv as import("@codex-sidepanel/shared").Envelope);
+          }
+        }
       }
       return result;
     }

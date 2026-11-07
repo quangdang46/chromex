@@ -369,4 +369,57 @@ describe("gateway RPC surface (P1-07)", () => {
     expect(json).not.toMatch(/sk-[A-Za-z0-9]/);
     s.destroy();
   });
+
+  test("browser approval: permission.respond resolves + emits permission.resolved", async () => {
+    await start();
+    const s = await authedConn();
+    const host = await hostConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "appr" })) as {
+      taskId: string;
+    };
+    const tid = created.taskId;
+
+    const { ToolTokenManager } = await import("../src/browser/tool-token.js");
+    const secretHex = (await fs.readFile(path.join(dir, "auth", "tool-secret"), "utf8")).trim();
+    const tokens = ToolTokenManager.forTest(secretHex);
+    const task = gw!.store.getTask(tid)!;
+    const token = tokens.issue({
+      taskId: tid,
+      profileId: task.profileId,
+      backendId: task.backend.backendId,
+      allowedTools: ["browser.page.click"],
+    }).token;
+
+    // mutating tool → needs approval; call pends until permission.respond
+    const callP = rpc(s, "call1", "browser.tool.call", {
+      taskId: tid,
+      tool: "browser.page.click",
+      args: {},
+      token,
+    }) as Promise<{ status: string }>;
+
+    // wait for the durable permission.requested event
+    const storeAny = gw!.store as unknown as {
+      taskEventsAfter: (id: string, seq: number) => { events: Array<{ payload?: { type?: string; request?: { requestId?: string } } }> };
+    };
+    let requestId: string | undefined;
+    for (let i = 0; i < 100 && !requestId; i++) {
+      const page = storeAny.taskEventsAfter(tid, 0);
+      const ev = page.events.find((e) => e.payload?.type === "permission.requested");
+      requestId = ev?.payload?.request?.requestId;
+      if (!requestId) await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(requestId).toBeTruthy();
+
+    await rpc(s, "pr", "permission.respond", { requestId, optionId: "allow_once" });
+    const outcome = await callP;
+    expect(outcome.status).toBe("completed");
+
+    // permission.resolved durable event now on the task stream
+    const after = storeAny.taskEventsAfter(tid, 0);
+    const resolved = after.events.find((e) => e.payload?.type === "permission.resolved");
+    expect(resolved).toBeTruthy();
+    host.destroy();
+    s.destroy();
+  }, 30_000);
 });
