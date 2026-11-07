@@ -7,14 +7,13 @@
 // gatewayMode — the only substituted piece is the provider itself
 // (scripted JSON-RPC instead of codex/claude). Task is pinned to
 // playwright-isolated so no extension host or user session is needed.
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
-import { randomUUID } from "node:crypto";
+import { GatewayIpc } from "./lib/gateway-ipc.mjs";
+import { spawnMcpClient } from "./lib/mcp-stdio-client.mjs";
 import { startGateway } from "../../packages/bridge/dist/gateway/main.js";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
@@ -32,102 +31,10 @@ const assert = (cond, label) => {
   note(`ok — ${label}`);
 };
 
-// ---- minimal framed IPC client (same protocol as mcp-stdio/native-host)
-const FRAME_HEADER = 4;
-class GatewayIpc {
-  #socket = null;
-  #buf = Buffer.alloc(0);
-  #pending = new Map();
-  #helloDone = null;
-  constructor(endpoint, token) {
-    this.endpoint = endpoint;
-    this.token = token;
-  }
-  #connect() {
-    if (this.#socket && !this.#socket.destroyed) return Promise.resolve(this.#socket);
-    return new Promise((resolve, reject) => {
-      const sock = net.createConnection(this.endpoint);
-      sock.once("error", reject);
-      sock.once("connect", () => {
-        sock.off("error", reject);
-        sock.on("error", () => this.#failAll(new Error("ipc socket error")));
-        sock.on("data", (d) => this.#onData(d));
-        sock.on("close", () => this.#failAll(new Error("ipc socket closed")));
-        this.#socket = sock;
-        resolve(sock);
-      });
-    });
-  }
-  #failAll(err) {
-    for (const p of this.#pending.values()) p.reject(err);
-    this.#pending.clear();
-    this.#socket = null;
-  }
-  #onData(d) {
-    this.#buf = Buffer.concat([this.#buf, d]);
-    for (;;) {
-      if (this.#buf.length < FRAME_HEADER) return;
-      const len = this.#buf.readUInt32LE(0);
-      if (this.#buf.length < FRAME_HEADER + len) return;
-      const body = this.#buf.subarray(FRAME_HEADER, FRAME_HEADER + len);
-      this.#buf = this.#buf.subarray(FRAME_HEADER + len);
-      let env;
-      try { env = JSON.parse(body.toString("utf8")); } catch { continue; }
-      if (env.kind === "response" && typeof env.id === "string") {
-        const p = this.#pending.get(env.id);
-        if (!p) continue;
-        this.#pending.delete(env.id);
-        if (env.error) p.reject(new Error(`${env.error.code ?? "error"}: ${env.error.message ?? ""}`));
-        else p.resolve(env.result);
-      }
-    }
-  }
-  #send(sock, env) {
-    const body = Buffer.from(JSON.stringify(env), "utf8");
-    const frame = Buffer.alloc(FRAME_HEADER + body.length);
-    frame.writeUInt32LE(body.length, 0);
-    body.copy(frame, FRAME_HEADER);
-    sock.write(frame);
-  }
-  async request(method, payload) {
-    this.#helloDone ??= (async () => {
-      const sock = await this.#connect();
-      const id = `hello-${randomUUID()}`;
-      await new Promise((resolve, reject) => {
-        this.#pending.set(id, { resolve, reject });
-        this.#send(sock, {
-          v: 1, kind: "request", id, method: "hello",
-          payload: {
-            protocolVersion: 1,
-            clientVersion: "chromex-gateway-mcp-e2e/0.1.0",
-            clientId: "gateway-mcp-e2e",
-            profileId: "e2e",
-            browserInstanceId: null,
-            hostInstanceId: "",
-            token: this.token,
-          },
-        });
-      });
-    })();
-    await this.#helloDone;
-    const sock = await this.#connect();
-    const id = `req-${randomUUID()}`;
-    return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#send(sock, { v: 1, kind: "request", id, method, payload });
-    });
-  }
-  close() {
-    try { this.#socket?.destroy(); } catch {}
-    this.#socket = null;
-    this.#failAll(new Error("ipc closed"));
-  }
-}
-
 const fixture = await startFixtureServer();
 const dataDir = await mkdtemp(join(tmpdir(), "chromex-gw-e2e-"));
 let gateway = null;
-let mcpChild = null;
+let mcp = null;
 let taskIdForDebug = null;
 let approver = null;
 let ipc = null;
@@ -138,7 +45,7 @@ try {
   assert(ep.transport === "unix", `ipc endpoint is unix socket (${ep.path})`);
   const token = (await readFile(join(dataDir, "auth", "token"), "utf8")).trim();
   assert(token.length === 64, "gateway published auth token");
-  ipc = new GatewayIpc(ep.path, token);
+  ipc = new GatewayIpc(ep.path, token, { clientId: "gateway-mcp-e2e", clientVersion: "chromex-gateway-mcp-e2e/0.1.0", profileId: "e2e" });
 
   // enable the isolated backend + confirm the runtime sees a browser
   await ipc.request("config.update", { patch: { browser: { playwright: { enabledByUser: true } } } });
@@ -188,51 +95,9 @@ try {
   assert(existsSync(spawnDesc.scopeFile), "scope file written (0600)");
 
   // ---- spawn the REAL mcp-stdio.js and speak JSON-RPC over stdio ----
-  mcpChild = spawn(spawnDesc.command, spawnDesc.args, {
-    env: { ...process.env, ...spawnDesc.env },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  let mcpBuf = "";
-  const mcpPending = new Map();
-  let mcpStderr = "";
-  mcpChild.stderr.on("data", (d) => { mcpStderr += d; });
-  mcpChild.stdout.on("data", (d) => {
-    mcpBuf += d.toString("utf8");
-    let idx;
-    while ((idx = mcpBuf.indexOf("\n")) >= 0) {
-      const line = mcpBuf.slice(0, idx).trim();
-      mcpBuf = mcpBuf.slice(idx + 1);
-      if (!line) continue;
-      try {
-        const msg = JSON.parse(line);
-        if (msg.id !== undefined && mcpPending.has(msg.id)) {
-          mcpPending.get(msg.id)(msg);
-          mcpPending.delete(msg.id);
-        }
-      } catch { /* non-JSON noise */ }
-    }
-  });
-  let mcpId = 0;
-  const rpc = (method, params) =>
-    new Promise((resolve, reject) => {
-      const id = ++mcpId;
-      mcpPending.set(id, resolve);
-      mcpChild.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-      setTimeout(() => reject(new Error(`mcp rpc ${method} timeout; stderr=${mcpStderr.slice(-300)}`)), 30000);
-    });
-  const callTool = async (name, args = {}) => {
-    const res = await rpc("tools/call", { name, arguments: args });
-    const result = res.result;
-    if (!result || result.isError) {
-      const msg = result?.content?.[0]?.text ?? JSON.stringify(res.error ?? res);
-      const e = new Error(msg);
-      e.rpcMessage = msg;
-      throw e;
-    }
-    const text = result.content?.find((c) => c.type === "text")?.text ?? "";
-    const jsonLine = text.split("\n").find((l) => l.startsWith("{") || l.startsWith("["));
-    return { raw: text, data: jsonLine ? JSON.parse(jsonLine) : null };
-  };
+  const mcpClient = spawnMcpClient({ command: spawnDesc.command, args: spawnDesc.args, env: spawnDesc.env });
+  mcp = mcpClient;
+  const { rpc, callTool } = mcpClient;
 
   const init = await rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
   assert(init.result?.serverInfo?.name === "chromex-browser-tools", "mcp-stdio initialize handshake");
@@ -285,7 +150,7 @@ try {
 } catch (err) {
   // debug: did the hung tool actually complete server-side?
   try {
-    const dbgIpc = new GatewayIpc(gateway.ipc.endpointPath().path, (await readFile(join(dataDir, "auth", "token"), "utf8")).trim());
+    const dbgIpc = new GatewayIpc(gateway.ipc.endpointPath().path, (await readFile(join(dataDir, "auth", "token"), "utf8")).trim(), { clientId: "gateway-mcp-e2e-debug" });
     try {
       if (taskIdForDebug) {
         const sync = await dbgIpc.request("task.sync", { taskId: taskIdForDebug, fromSeq: 0, maxEvents: 200 });
@@ -308,7 +173,7 @@ try {
 } finally {
   try { clearInterval(approver); } catch {}
   try { ipc?.close(); } catch {}
-  try { mcpChild?.kill("SIGKILL"); } catch {}
+  try { mcp?.close(); } catch {}
   try { await gateway?.shutdown("e2e done"); } catch {}
   try { await rm(dataDir, { recursive: true, force: true }); } catch {}
   await fixture.close();

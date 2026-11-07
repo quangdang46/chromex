@@ -66,6 +66,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC
   token, §4.8 classify, permission.respond approval) →
   playwright-isolated → Chrome for Testing (15 asserts)
+  `gateway-host-routing` PASS — the chrome-extension dispatch path
+  without user Chrome: fake host registers via the real hello protocol
+  (hostInstanceId/browserInstanceId), MCP tool calls route through
+  host registry → browser.tool.request → typed result; proves tabScope
+  payload, browserInstanceId scope isolation (browser.no_host),
+  host-loss → stranded → re-registration recovery (21 asserts)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)

@@ -17,12 +17,14 @@ const TOKENLESS = new Set([
   "agent-loop-isolated",
   "agent-loop-mcp-isolated",
   "gateway-mcp-isolated",
+  "gateway-host-routing",
   "content-script-isolated",
 ]);
 const ALL = [
   "agent-loop-isolated",
   "agent-loop-mcp-isolated",
   "gateway-mcp-isolated",
+  "gateway-host-routing",
   "content-script-isolated",
   "s1-build-feature",
   "s2-debug-live",
