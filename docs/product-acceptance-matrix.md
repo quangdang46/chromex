@@ -61,6 +61,11 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   runtime.onMessage API: snapshot refs, pointer-sequence actions,
   per-char type, DataTransfer upload/drag, wait conditions, honest
   failure on hidden targets (19 asserts)
+  `gateway-mcp-isolated` PASS — the full provider path without user
+  Chrome: real in-process Gateway + spawned mcp-stdio.js child +
+  JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC
+  token, §4.8 classify, permission.respond approval) →
+  playwright-isolated → Chrome for Testing (15 asserts)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)
