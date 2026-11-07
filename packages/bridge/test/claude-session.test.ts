@@ -410,6 +410,46 @@ describe("ClaudeAgentProvider lifecycle (P3-02)", () => {
   });
 });
 
+describe("Claude MCP tool binding (P3-03)", () => {
+  test("config.options.mcpServers → SDK mcpServers stdio config", async () => {
+    const { session, getQuery } = makeSession(autoComplete, {
+      provider: "claude",
+      options: {
+        mcpServers: {
+          chromex_browser: {
+            command: "/usr/bin/env",
+            args: ["node", "/tmp/mcp-stdio.js"],
+            env: { CHROMEX_MCP_SCOPE_FILE: "/tmp/scope.json" },
+          },
+          broken: { env: {} }, // no command → dropped
+        },
+      },
+    });
+    await session.startTurn(INPUT as never);
+    await vi.waitFor(() => expect(getQuery()).not.toBeNull());
+    const servers = getQuery()?.capturedOptions?.mcpServers as Record<
+      string,
+      { type?: string; command?: string; args?: string[]; env?: Record<string, string> }
+    >;
+    expect(servers.chromex_browser).toEqual({
+      type: "stdio",
+      command: "/usr/bin/env",
+      args: ["node", "/tmp/mcp-stdio.js"],
+      env: { CHROMEX_MCP_SCOPE_FILE: "/tmp/scope.json" },
+    });
+    expect(servers.broken).toBeUndefined();
+    await session.close();
+  });
+
+  test("no mcpServers in config → SDK option absent", async () => {
+    const { session, getQuery } = makeSession();
+    await session.startTurn(INPUT as never);
+    await vi.waitFor(() => expect(getQuery()).not.toBeNull());
+    expect(getQuery()?.capturedOptions?.mcpServers).toBeUndefined();
+    await session.close();
+  });
+});
+
 describe("ClaudeAgentSession conformance (GateB-B1)", () => {
   runAgentSessionConformance("claude", async () => {
     const { session } = makeSession(autoComplete);
