@@ -59,6 +59,30 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
       return { refreshToken: v.refreshToken ?? false };
     },
   },
+  // OAuth/device-code login only — apiKey login is intercepted by the
+  // provider (it writes the sidecar secret store, not the app-server).
+  "provider.feature.codex.account.login.start": {
+    schema: z.object({
+      type: z.enum(["chatgpt", "chatgptDeviceCode"]),
+    }),
+    appServerMethod: "account/login/start",
+    toParams: (p) => p as Record<string, unknown>,
+  },
+  "provider.feature.codex.account.login.cancel": {
+    schema: z.object({ loginId: z.string().min(1) }),
+    appServerMethod: "account/login/cancel",
+    toParams: (p) => p as Record<string, unknown>,
+  },
+  "provider.feature.codex.account.logout": {
+    schema: z.object({}),
+    appServerMethod: "account/logout",
+    toParams: () => ({}),
+  },
+  "provider.feature.codex.account.rate_limits": {
+    schema: z.object({}),
+    appServerMethod: "account/rateLimits/read",
+    toParams: () => ({}),
+  },
   "provider.feature.codex.mcp.list": {
     schema: z.object({
       detail: z.enum(["full", "toolsAndAuthOnly"]).optional(),
@@ -83,14 +107,22 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
     toParams: (p) => p as Record<string, unknown>,
   },
   "provider.feature.codex.skills.list": {
-    schema: z.object({ cwd: z.string().optional(), forceReload: z.boolean().optional() }),
+    schema: z.object({
+      cwd: z.string().optional(),
+      forceReload: z.boolean().optional(),
+      extraUserRoots: z.array(z.string()).optional(),
+    }),
     appServerMethod: "skills/list",
-    // app-server expects cwds[] not cwd; forceReload passes through
+    // app-server expects cwds[] not cwd; forceReload passes through;
+    // extraUserRoots ride perCwdExtraUserRoots (sidecar router parity).
     toParams: (p) => {
-      const v = p as { cwd?: string; forceReload?: boolean };
+      const v = p as { cwd?: string; forceReload?: boolean; extraUserRoots?: string[] };
       return {
         ...(v.cwd ? { cwds: [v.cwd] } : {}),
         ...(v.forceReload ? { forceReload: true } : {}),
+        ...(v.cwd && v.extraUserRoots?.length
+          ? { perCwdExtraUserRoots: [{ cwd: v.cwd, extraUserRoots: v.extraUserRoots }] }
+          : {}),
       };
     },
   },

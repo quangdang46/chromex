@@ -58,4 +58,29 @@ describe("codex feature RPCs", () => {
     expect(client.calls[0]!.method).toBe("thread/goal/set");
     expect(client.calls[0]!.params).toMatchObject({ threadId: "th-1", objective: "ship it" });
   });
+
+  test("skills.list maps extraUserRoots to perCwdExtraUserRoots", async () => {
+    const client = new FakeClient();
+    await invokeCodexFeature(client as never, "provider.feature.codex.skills.list", {
+      cwd: "/repo",
+      forceReload: true,
+      extraUserRoots: ["/u/skills/a", "/u/skills/b"],
+    });
+    expect(client.calls[0]).toEqual({
+      method: "skills/list",
+      params: {
+        cwds: ["/repo"],
+        forceReload: true,
+        perCwdExtraUserRoots: [{ cwd: "/repo", extraUserRoots: ["/u/skills/a", "/u/skills/b"] }],
+      },
+    });
+  });
+
+  test("skills.list without cwd drops extraUserRoots (app-server requires cwd pairing)", async () => {
+    const client = new FakeClient();
+    await invokeCodexFeature(client as never, "provider.feature.codex.skills.list", {
+      extraUserRoots: ["/u/skills/a"],
+    });
+    expect(client.calls[0]!.params).not.toHaveProperty("perCwdExtraUserRoots");
+  });
 });

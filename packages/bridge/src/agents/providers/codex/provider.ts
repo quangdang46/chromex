@@ -9,22 +9,45 @@
  */
 
 import type {
+  AgenticRouteInput,
+  AgenticRoutePlan,
   AgentProvider,
   AgentSession,
   AgentSessionConfig,
+  BrowserDomActionPlan,
+  BrowserDomSnapshot,
   FetchCatalogOptions,
   LaunchContext,
   ProviderCatalog,
 } from "@codex-sidepanel/shared";
 
+import { CodexAgenticRouterPlane } from "../../../agentic-router.js";
+import { CodexBrowserActionPlane } from "../../../browser-actions.js";
 import { CodexAppServerClient } from "../../../codex-app-server.js";
+import { BridgeHarnessRuntime } from "../../../harness.js";
 import { CODEX_CAPABILITIES, CodexAgentSession } from "./session.js";
 import { invokeCodexFeature } from "./features.js";
+
+/** Minimal secret-store surface the provider needs for the legacy
+ *  apiKey-login contract (stores the OpenAI key for realtime
+ *  translation; Codex auth itself stays ChatGPT OAuth — see
+ *  CHROMEX_API_KEY_AUTH_DISABLED_ERROR in codex-plane). */
+export interface CodexProviderSecrets {
+  setOpenAiApiKey(apiKey: string): void;
+  clearOpenAiApiKey(): void;
+  hasOpenAiApiKey(): boolean;
+}
 
 export interface CodexProviderOptions {
   client?: CodexAppServerClient;
   /** provider-level overrides (command path etc.) applied to client */
   command?: string | null;
+  /** sidecar-compatible secret store; enables apiKey login + the
+   *  openAiApiKeyConfigured flag on account.status. */
+  secrets?: CodexProviderSecrets;
+  /** external skill scan roots merged into skills.list (sidecar
+   *  listExternalSkillRoots parity — chromex-fya). */
+  externalSkillRoots?: () => Promise<string[]>;
 }
 
 export class CodexAgentProvider implements AgentProvider {
@@ -34,11 +57,18 @@ export class CodexAgentProvider implements AgentProvider {
 
   private readonly client: CodexAppServerClient;
   private readonly ownsClient: boolean;
+  private readonly secrets: CodexProviderSecrets | null;
+  private readonly externalSkillRoots: (() => Promise<string[]>) | null;
   private sessionCounter = 0;
+  private routePlane?: CodexAgenticRouterPlane;
+  private browserActionPlane?: CodexBrowserActionPlane;
+  private planningHarness?: BridgeHarnessRuntime;
 
   constructor(options: CodexProviderOptions = {}) {
     this.client = options.client ?? new CodexAppServerClient();
     this.ownsClient = !options.client;
+    this.secrets = options.secrets ?? null;
+    this.externalSkillRoots = options.externalSkillRoots ?? null;
     if (options.command !== undefined) {
       void this.client.configure({ command: options.command });
     }
@@ -149,12 +179,90 @@ export class CodexAgentProvider implements AgentProvider {
   }
 
   /**
+   * route.plan — agentic pre-prompt routing. Runs on the provider's shared
+   * app-server client (ephemeral planner threads, same runtime as
+   * sessions). BridgeEvents are dropped: the gateway response carries the
+   * plan, and gatewayMode clients do not consume legacy route events.
+   */
+  async planRoute(input: AgenticRouteInput): Promise<AgenticRoutePlan> {
+    this.routePlane ??= new CodexAgenticRouterPlane({
+      client: this.client,
+      harness: this.planningRuntime(),
+    });
+    return this.routePlane.plan(input, () => undefined);
+  }
+
+  /** browser.action.plan — DOM action planner on the same shared runtime. */
+  async planBrowserAction(params: {
+    message: string;
+    snapshot: BrowserDomSnapshot;
+    locale?: string;
+    generatedText?: string;
+  }): Promise<BrowserDomActionPlan> {
+    this.browserActionPlane ??= new CodexBrowserActionPlane({
+      client: this.client,
+      harness: this.planningRuntime(),
+    });
+    return this.browserActionPlane.plan(params, () => undefined);
+  }
+
+  private planningRuntime(): BridgeHarnessRuntime {
+    this.planningHarness ??= new BridgeHarnessRuntime();
+    return this.planningHarness;
+  }
+
+  /**
    * Capability-gated feature RPC (§8.2). Only methods registered in
    * CODEX_FEATURES with their own Zod schema are reachable — there is
    * no free-form provider.feature.call.
+   *
+   * account.* carve-outs (legacy sidecar parity):
+   * - login.start type=apiKey never reaches the app-server — it stores
+   *   the OpenAI key in the secret store (realtime-translation key),
+   *   same as AppServerCodexPlane.login.
+   * - logout also clears that stored key.
+   * - account.status is enriched with openAiApiKeyConfigured, which the
+   *   raw account/read result cannot know.
    */
   async callFeature(method: string, payload: unknown): Promise<unknown> {
-    return invokeCodexFeature(this.client, method, payload);
+    if (method === "provider.feature.codex.account.login.start") {
+      const p = payload as { type?: unknown; apiKey?: unknown } | null;
+      if (p?.type === "apiKey") {
+        const apiKey = typeof p.apiKey === "string" ? p.apiKey : "";
+        if (!apiKey) {
+          throw new Error("API key login requires params.apiKey");
+        }
+        if (!this.secrets) {
+          throw new Error("API-key login requires the bridge secret store (not configured for this provider)");
+        }
+        this.secrets.setOpenAiApiKey(apiKey);
+        return { stored: true };
+      }
+    }
+    if (method === "provider.feature.codex.skills.list" && this.externalSkillRoots) {
+      const p = (payload ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(p.extraUserRoots)) {
+        const roots = await this.externalSkillRoots().catch(() => [] as string[]);
+        if (roots.length) {
+          payload = { ...p, extraUserRoots: roots };
+        }
+      }
+    }
+    const result = await invokeCodexFeature(this.client, method, payload);
+    if (method === "provider.feature.codex.account.logout") {
+      this.secrets?.clearOpenAiApiKey();
+    }
+    if (
+      method === "provider.feature.codex.account.status" &&
+      result !== null &&
+      typeof result === "object"
+    ) {
+      return {
+        ...(result as Record<string, unknown>),
+        openAiApiKeyConfigured: this.secrets?.hasOpenAiApiKey() ?? false,
+      };
+    }
+    return result;
   }
 
   async shutdown(): Promise<void> {
