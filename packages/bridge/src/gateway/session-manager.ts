@@ -62,7 +62,12 @@ export interface SessionStore {
     status: "pending" | "allowed" | "denied" | "expired";
     createdAt: number;
   }): void;
-  resolveApproval?(approvalId: string, status: "allowed" | "denied" | "expired"): void;
+  resolveApproval?(
+    approvalId: string,
+    status: "allowed" | "denied" | "expired",
+    decision?: { optionId: string; kind: string; decidedAt: number; scope?: string },
+  ): void;
+  listPendingApprovals?(taskId: string): unknown[];
 }
 
 // ---------- attention (§4.7 — derived, never persisted) ----------
@@ -262,6 +267,11 @@ export class SessionManager {
   async ensureConversation(task: TaskRecord): Promise<LiveConversation> {
     const existing = this.conversations.get(task.conversationKey);
     if (existing) return existing;
+
+    // §5.7: a NEW provider session never inherits approvals mirrored
+    // from a dead one — the old requestIds are unanswerable provider-
+    // side, so expire them honestly instead of leaving cards pending.
+    this.#expireConversationApprovals(task.conversationKey, "restart");
 
     const target = this.opts.registry.resolve(task.profileId, {
       provider: task.providerId,
@@ -677,6 +687,11 @@ export class SessionManager {
     this.#publish(taskId, env, false);
     this.#mirrorApproval(taskId, event);
     this.#afterPersistedEvent(taskId, event);
+    // provider session gone → its pending approvals can never be
+    // answered; expire them instead of pinning attention forever.
+    if (event.type === "conversation.closed") {
+      this.#expirePendingApprovals(taskId, "provider_unavailable");
+    }
     this.#maybeEmitAttention(taskId);
   }
 
@@ -708,6 +723,63 @@ export class SessionManager {
           e.requestId,
           e.decision?.kind === "deny" ? "denied" : "allowed",
         );
+      }
+      return;
+    }
+    if (event.type === "permission.expired") {
+      const e = event as { requestId?: string };
+      if (e.requestId && store.resolveApproval) {
+        store.resolveApproval(e.requestId, "expired");
+      }
+    }
+  }
+
+  /**
+   * §5.7: expire every pending approval on a task — resolves the row
+   * (idempotent: resolveApproval only transitions pending rows) and
+   * persists + publishes permission.expired so replayed and live
+   * clients clear the card. Never leaves an approval silently pending.
+   */
+  #expirePendingApprovals(
+    taskId: string,
+    reason: "task_terminal" | "restart" | "provider_unavailable" | "timeout",
+  ): void {
+    const store = this.opts.store;
+    const list = store.listPendingApprovals?.bind(store);
+    const resolve = store.resolveApproval?.bind(store);
+    if (!list || !resolve) return;
+    for (const row of list(taskId)) {
+      const r = row as { approval_id?: unknown; approvalId?: unknown };
+      const requestId =
+        typeof r.approval_id === "string"
+          ? r.approval_id
+          : typeof r.approvalId === "string"
+            ? r.approvalId
+            : null;
+      if (!requestId) continue;
+      resolve(requestId, "expired", {
+        optionId: reason,
+        kind: "deny",
+        decidedAt: Date.now(),
+      });
+      const env = this.#persist(taskId, {
+        type: "permission.expired",
+        requestId,
+        reason,
+      } as DurableTaskEvent);
+      this.#publish(taskId, env, false);
+    }
+  }
+
+  /** Expire pending approvals across every task sharing a conversation —
+   *  used when a new provider session replaces a dead one (restart). */
+  #expireConversationApprovals(
+    conversationKey: string,
+    reason: "task_terminal" | "restart" | "provider_unavailable" | "timeout",
+  ): void {
+    for (const t of this.opts.store.listTasks?.() ?? []) {
+      if (t.conversationKey === conversationKey) {
+        this.#expirePendingApprovals(t.taskId, reason);
       }
     }
   }
@@ -764,9 +836,14 @@ export class SessionManager {
     if (this.cancelling.has(taskId)) return;
     // provider-reported turn.unknown is an unconfirmed stop — pause for
     // explicit resume, never auto-complete or drain (§5.3 honesty).
-    if (event.type === "turn.unknown" && task.status === "active") {
-      this.#pauseTask(task, "provider_unavailable");
-      return;
+    // Its pending approvals expire provider_unavailable even when the
+    // task is already paused (crash while paused still kills them).
+    if (event.type === "turn.unknown") {
+      this.#expirePendingApprovals(taskId, "provider_unavailable");
+      if (task.status === "active") {
+        this.#pauseTask(task, "provider_unavailable");
+        return;
+      }
     }
     // auto-drain only while the task is active — a paused task keeps its
     // queued turns for explicit task.resume (chromex-94z)
@@ -823,6 +900,10 @@ export class SessionManager {
         to,
         ...(pauseReason ? { pauseReason } : {}),
       } as DurableTaskEvent);
+      // §5.7: terminal task ⇒ every pending approval is moot.
+      if (to === "completed" || to === "failed" || to === "cancelled") {
+        this.#expirePendingApprovals(task.taskId, "task_terminal");
+      }
       this.#maybeEmitAttention(task.taskId);
     }
     return next;
@@ -878,6 +959,11 @@ export class SessionManager {
   }
 
   #pauseTask(task: TaskRecord, reason: PauseReason): void {
+    // §5.7: provider_unavailable pause means the provider can't answer
+    // approvals — expire them (idempotent across repeat pauses).
+    if (reason === "provider_unavailable") {
+      this.#expirePendingApprovals(task.taskId, "provider_unavailable");
+    }
     if (task.status === "paused") return;
     if (["completed", "failed", "cancelled"].includes(task.status)) return;
     this.#setTaskStatus(task, "paused", reason);

@@ -525,6 +525,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         }
         diagnostics.recordApprovalLatency(Date.now() - approvalStartedAt);
         broadcastDiagnostics();
+        // A permission.respond may have landed during the final poll
+        // sleep — re-check so permission.expired never follows
+        // permission.resolved on the same request (§5.7 no double-resolve).
+        const lateStatus = storeAny.approvalStatus?.(approvalId);
+        if (lateStatus === "allowed" || lateStatus === "denied" || lateStatus === "expired") {
+          const lateOptionId = storeAny.approvalDecision?.(approvalId)?.optionId;
+          return lateStatus === "allowed"
+            ? { verdict: "approved" as const, ...(lateOptionId ? { optionId: lateOptionId } : {}) }
+            : { verdict: "denied" as const, ...(lateOptionId ? { optionId: lateOptionId } : {}) };
+        }
         // 60s poll expired — close the row + emit permission.expired so
         // replayed clients clear the card instead of waiting forever.
         storeAny.resolveApproval?.(approvalId, "expired", {
@@ -923,10 +933,6 @@ async function handleGatewayRequest(
     }
     case "permission.respond": {
       const p = parsePayload(permissionRespondSchema, req.payload) as z.infer<typeof permissionRespondSchema>;
-      const result = await ctx.sessionManager.respondToPermission(p.requestId, {
-        ...(p.optionId !== undefined ? { optionId: p.optionId } : {}),
-        ...(p.answers !== undefined ? { answers: p.answers } : {}),
-      });
       // browser-tool approvals live in the approvals table, not provider
       // sessions — resolve the row directly (idempotent no-op if the
       // provider path already handled it).
@@ -939,36 +945,95 @@ async function handleGatewayRequest(
           d?: { optionId: string; kind: string; decidedAt: number; scope?: string },
         ) => void;
       };
-      if (storeAny.approvalStatus?.(p.requestId) === "pending") {
-        const optionId = String(p.optionId ?? "");
-        const denied = optionId.toLowerCase() === "deny";
-        // allow_task scope comes from the stored request details —
-        // the digest-bound scope, never client-supplied. Provider-
-        // mirrored approvals store the whole permission.requested
-        // AgentEvent, so details may sit one level down under `request`.
-        const reqRow = storeAny.approvalRequest?.(p.requestId) as
-          | {
-              taskId?: string;
-              turnId?: string;
-              details?: { allowTaskScope?: string };
-              request?: {
-                taskId?: string;
-                turnId?: string;
-                details?: { allowTaskScope?: string };
-              };
-            }
-          | null
-          | undefined;
-        const scope =
-          optionId === "allow_task"
-            ? (reqRow?.details?.allowTaskScope ?? reqRow?.request?.details?.allowTaskScope)
-            : undefined;
+      const hasApprovalStore = typeof storeAny.approvalStatus === "function";
+      // §5.7: snapshot BEFORE dispatching — a provider-owned approval is
+      // resolved by the session mirror during respondToPermission, so
+      // the post-call status alone cannot distinguish first-resolve
+      // from already-decided.
+      const statusBefore = hasApprovalStore ? storeAny.approvalStatus!(p.requestId) : null;
+      if (hasApprovalStore && statusBefore !== null && statusBefore !== "pending") {
+        throw perr(
+          "approval.already_decided",
+          `approval ${p.requestId} already ${statusBefore}`,
+        );
+      }
+      // allow_task scope comes from the stored request details —
+      // the digest-bound scope, never client-supplied. Provider-
+      // mirrored approvals store the whole permission.requested
+      // AgentEvent, so details may sit one level down under `request`.
+      const reqRow =
+        statusBefore === "pending"
+          ? (storeAny.approvalRequest?.(p.requestId) as
+              | {
+                  taskId?: string;
+                  turnId?: string;
+                  options?: Array<{ id?: string; kind?: string }>;
+                  details?: { allowTaskScope?: string };
+                  request?: {
+                    taskId?: string;
+                    turnId?: string;
+                    options?: Array<{ id?: string; kind?: string }>;
+                    details?: { allowTaskScope?: string };
+                  };
+                }
+              | null
+              | undefined)
+          : undefined;
+      const offered = reqRow?.options ?? reqRow?.request?.options;
+      const matched =
+        p.optionId !== undefined && Array.isArray(offered)
+          ? offered.find((o) => o && typeof o === "object" && o.id === p.optionId)
+          : undefined;
+      // §5.7: optionId must be one of the options the request actually
+      // offered — validated BEFORE dispatch so a bogus optionId never
+      // reaches the provider session either.
+      if (
+        p.optionId !== undefined &&
+        Array.isArray(offered) &&
+        offered.length > 0 &&
+        !matched
+      ) {
+        throw perr(
+          "proto.invalid",
+          `optionId ${JSON.stringify(p.optionId)} is not offered by approval ${p.requestId}`,
+        );
+      }
+      const optionId = String(p.optionId ?? "");
+      const matchedKind = matched?.kind;
+      const denied = matchedKind === "deny" || optionId.toLowerCase() === "deny";
+      const kind =
+        matchedKind === "allow_once" || matchedKind === "allow_task" || matchedKind === "deny"
+          ? matchedKind
+          : denied
+            ? "deny"
+            : optionId === "allow_task"
+              ? "allow_task"
+              : "allow_once";
+      const scope =
+        optionId === "allow_task"
+          ? (reqRow?.details?.allowTaskScope ?? reqRow?.request?.details?.allowTaskScope)
+          : undefined;
+      const result = await ctx.sessionManager.respondToPermission(p.requestId, {
+        ...(p.optionId !== undefined ? { optionId: p.optionId } : {}),
+        ...(p.answers !== undefined ? { answers: p.answers } : {}),
+      });
+      if (!hasApprovalStore) return result;
+      if (statusBefore === null) {
+        // neither the approvals table nor any provider session owns
+        // this requestId — never silently drop the response.
+        throw perr("approval.not_found", `approval ${p.requestId} not found`);
+      }
+      // Provider path already resolved the row via the permission.resolved
+      // mirror — nothing left to do. Still pending ⇒ browser-tool
+      // approval (or a provider that resolved without emitting the
+      // event); resolve + emit the durable lifecycle event ourselves.
+      if (statusBefore === "pending" && storeAny.approvalStatus!(p.requestId) === "pending") {
         storeAny.resolveApproval?.(
           p.requestId,
           denied ? "denied" : "allowed",
           {
             optionId,
-            kind: denied ? "deny" : optionId === "allow_task" ? "allow_task" : "allow_once",
+            kind,
             decidedAt: Date.now(),
             ...(scope ? { scope } : {}),
           },
@@ -993,7 +1058,7 @@ async function handleGatewayRequest(
             type: "permission.resolved",
             requestId: p.requestId,
             decision: {
-              kind: denied ? "deny" : optionId === "allow_task" ? "allow_task" : "allow_once",
+              kind,
             },
           });
           if (resolvedEnv && resolvedEnv.kind === "event") {
