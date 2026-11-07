@@ -87,13 +87,53 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);
   });
+
+  test("external_mutation never offers allow_task (§4.8 forbidden combo)", () => {
+    const verdicts = [
+      classifyActionRisk(ctx({ action: "browser.page.navigate", url: "", contextResolved: false })),
+      classifyActionRisk(ctx({ action: "browser.page.navigate", url: "notaurl", contextResolved: true })),
+      classifyActionRisk(ctx({ action: "browser.page.click", target: { ref: "e1", label: "Pay now" } })),
+      classifyActionRisk(ctx({ action: "browser.page.click", contextResolved: false })),
+      classifyActionRisk(ctx({ action: "browser.page.submit", target: { ref: "e1", method: "POST" } })),
+      classifyActionRisk(ctx({ action: "browser.page.evaluate" as never })),
+    ];
+    for (const v of verdicts) {
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+    }
+  });
 });
 
 describe("allowTaskScope + detectSensitiveContent", () => {
-  test("scope is tool+origin+dataClass+destination", () => {
-    const s = allowTaskScope(ctx({ action: "browser.page.fill", agentEgress: { dataClass: "none", destination: "local-provider" } }));
-    expect(s).toContain("browser.page.fill");
-    expect(s).toContain("https://app.example.com");
+  test("scope is tool+origin+targetFormIntent+dataClass+destination", () => {
+    const s = allowTaskScope(
+      ctx({
+        action: "browser.page.fill",
+        target: { ref: "e1", label: "Name" },
+        agentEgress: { dataClass: "none", destination: "local-provider" },
+      }),
+    );
+    expect(s.split("|")).toEqual([
+      "browser.page.fill",
+      "https://app.example.com",
+      "generic",
+      "none",
+      "local-provider",
+    ]);
+  });
+
+  test("targetFormIntent distinguishes payment/password/form-method/label intents", () => {
+    const scope = (target: ActionContext["target"]) =>
+      allowTaskScope(ctx({ action: "browser.page.click", target })).split("|")[2];
+    expect(scope({ ref: "e1", isPayment: true })).toBe("payment");
+    expect(scope({ ref: "e1", isPassword: true })).toBe("password");
+    expect(scope({ ref: "e1", method: "POST" })).toBe("form-post");
+    expect(scope({ ref: "e1", autosave: true })).toBe("autosave");
+    expect(scope({ ref: "e1", isDestructive: true })).toBe("destructive");
+    expect(scope({ ref: "e1", label: "Search" })).toBe("search");
+    expect(scope({ ref: "e1", label: "Pay now" })).toBe("purchase");
+    expect(scope(undefined)).toBe("none");
   });
   test("PII detection", () => {
     expect(detectSensitiveContent("contact me at a@b.com")).toBe(true);

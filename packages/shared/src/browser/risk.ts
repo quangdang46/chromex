@@ -177,10 +177,11 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       if (ok && !isFinancialOrigin(dest)) {
         return verdict("low", { reason: "http(s) navigation with resolved context" });
       }
+      // external_mutation → approval, NEVER allow_task (§4.8 forbidden combo)
       return verdict("external_mutation", {
         needsApproval: true,
         kind: "browser_action",
-        allowTaskEligible: !financial,
+        allowTaskEligible: false,
         reason: "navigation target or side effect unresolved",
       });
     }
@@ -212,10 +213,11 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       const destructiveLabel = /submit|send|post|publish|delete|confirm|pay|purchase|order|transfer/i;
       const formMutating = t?.method ? t.method.toUpperCase() !== "GET" : false;
       if (t?.isDestructive || destructiveLabel.test(t?.label ?? "") || formMutating || !ctx.contextResolved) {
+        // external_mutation → approval, NEVER allow_task (§4.8 forbidden combo)
         return verdict("external_mutation", {
           needsApproval: true,
           kind: "browser_action",
-          allowTaskEligible: !financial,
+          allowTaskEligible: false,
           reason: "click may trigger a public/external side effect",
         });
       }
@@ -236,11 +238,33 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
   }
 }
 
-/** Canonical allow_task scope (§4.8): tool + origin + dataClass + destination. */
+/**
+ * Deterministic targetFormIntent for the allow_task scope (§4.8): what the
+ * target DOES, so a grant on one intent (search box) can't leak to another
+ * (pay button) on the same origin. Derived from ActionContext.target only.
+ */
+function targetFormIntent(ctx: ActionContext): string {
+  const t = ctx.target;
+  if (!t) return "none";
+  if (t.isPayment) return "payment";
+  if (t.isPassword) return "password";
+  const method = t.method?.toUpperCase();
+  if (method && method !== "GET") return `form-${method.toLowerCase()}`;
+  if (t.autosave) return "autosave";
+  if (t.isDestructive) return "destructive";
+  const label = `${t.label ?? ""} ${t.name ?? ""}`.toLowerCase();
+  if (/pay|purchase|checkout|order|buy|transfer/.test(label)) return "purchase";
+  if (/search/.test(label)) return "search";
+  if (/submit|send|post|publish|delete|confirm/.test(label)) return "submit";
+  return "generic";
+}
+
+/** Canonical allow_task scope (§4.8): tool + origin + targetFormIntent + dataClass + destination. */
 export function allowTaskScope(ctx: ActionContext): string {
   return [
     ctx.action,
     ctx.origin,
+    targetFormIntent(ctx),
     ctx.agentEgress?.dataClass ?? "none",
     ctx.agentEgress?.destination ?? "none",
   ].join("|");

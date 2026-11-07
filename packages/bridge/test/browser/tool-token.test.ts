@@ -176,7 +176,7 @@ describe("BrowserToolServer", () => {
     expect(d1).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("allow_task grant skips approval for matching scope only", async () => {
+  it("external_mutation approval is allow_once only — no allow_task scope (§4.8)", async () => {
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = issue(tokens);
     const host: ToolHostChannel = {
@@ -185,12 +185,16 @@ describe("BrowserToolServer", () => {
       onDisconnect: () => {},
     };
     const granted = new Set<string>();
+    const scopes: Array<string | undefined> = [];
     let approvalCalls = 0;
     const s = new BrowserToolServer({
       tokens,
       resolveHost: () => host,
-      requestApproval: async () => {
+      requestApproval: async (tctx) => {
         approvalCalls += 1;
+        scopes.push(tctx.allowTaskScope);
+        // user picks allow_task, but the server must not grant a scope
+        // that was never offered (external_mutation → allow_once only)
         return { verdict: "approved" as const, optionId: "allow_task" };
       },
       allowTaskGranted: async (_t, scope) => granted.has(scope),
@@ -201,18 +205,12 @@ describe("BrowserToolServer", () => {
     const first = await s.execute({ ...req, toolCallId: "tc-at-1" });
     expect(first.status).toBe("completed");
     expect(approvalCalls).toBe(1);
-    expect(granted.size).toBe(1);
-    // same scope → no second approval
+    expect(scopes[0]).toBeUndefined();
+    expect(granted.size).toBe(0);
+    // nothing granted → the same action asks again
     const second = await s.execute({ ...req, toolCallId: "tc-at-2" });
     expect(second.status).toBe("completed");
-    expect(approvalCalls).toBe(1);
-    // different origin → new scope → approval again
-    const third = await s.execute({
-      ...req,
-      toolCallId: "tc-at-3",
-      args: { ref: "e1", label: "Pay now", url: "https://other.example.com/" },
-    });
-    expect(third.status).toBe("completed");
     expect(approvalCalls).toBe(2);
+    expect(granted.size).toBe(0);
   });
 });
