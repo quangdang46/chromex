@@ -54,6 +54,9 @@ export class GatewayClient {
   #state: GatewayConnectionState = "disconnected";
   #helloResponse: HelloResponse | null = null;
   #connectPromise: Promise<void> | null = null;
+  #closed = false;
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  #reconnectAttempt = 0;
   readonly #opts: GatewayClientOptions;
 
   constructor(opts: GatewayClientOptions) {
@@ -107,6 +110,7 @@ export class GatewayClient {
         clientVersion: helloPayload.clientVersion ?? "extension",
       })) as HelloResponse;
       this.#helloResponse = result;
+      this.#reconnectAttempt = 0;
       this.#setState("ready");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -228,6 +232,22 @@ export class GatewayClient {
     }
   }
 
+  /** Proactive reconnect: without this, a gateway respawn leaves the
+   *  extension disconnected forever — nothing calls request() while the
+   *  sidepanel is idle, so the new gateway never sees our hello and
+   *  reports browser.no_host for every tool call (S5). */
+  #scheduleReconnect(): void {
+    if (this.#closed || this.#reconnectTimer) return;
+    const base = this.#opts.reconnectBaseMs ?? 1_000;
+    const max = this.#opts.reconnectMaxMs ?? 30_000;
+    const delay = Math.min(max, base * 2 ** this.#reconnectAttempt);
+    this.#reconnectAttempt += 1;
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = null;
+      void this.connect().catch(() => this.#scheduleReconnect());
+    }, delay);
+  }
+
   #teardown(err: Error): void {
     for (const [, p] of this.#pending) {
       if (p.timer) clearTimeout(p.timer);
@@ -237,9 +257,15 @@ export class GatewayClient {
     this.#port = null;
     this.#helloResponse = null;
     this.#setState("disconnected");
+    this.#scheduleReconnect();
   }
 
   close(): void {
+    this.#closed = true;
+    if (this.#reconnectTimer) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = null;
+    }
     this.#teardown(new Error("closed"));
   }
 }

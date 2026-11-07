@@ -92,6 +92,7 @@ describe("GatewayClient (P1-08)", () => {
     const last = port.postMessage.mock.calls.at(-1)?.[0] as Envelope & { id: string };
     port.emit({ v: 1, kind: "response", id: last.id, result: { tasks: [] } } as PortMessage);
     await expect(req).resolves.toEqual({ tasks: [] });
+    client.close();
   });
 
   test("request error envelope rejects with code", async () => {
@@ -110,6 +111,7 @@ describe("GatewayClient (P1-08)", () => {
     const last = port.postMessage.mock.calls.at(-1)?.[0] as Envelope & { id: string };
     port.emit({ v: 1, kind: "response", id: last.id, error: { code: "proto.unknown_method", message: "nope" } } as PortMessage);
     await expect(req).rejects.toThrow(/proto.unknown_method/);
+    client.close();
   });
 
   test("port disconnect → state disconnected; next request reconnects + re-hellos", async () => {
@@ -150,6 +152,7 @@ describe("GatewayClient (P1-08)", () => {
     const last = port.postMessage.mock.calls.at(-1)?.[0] as Envelope & { id: string };
     port.emit({ v: 1, kind: "response", id: last.id, result: {} } as PortMessage);
     await req;
+    client.close();
   });
 
   test("ack posts ack envelope without awaiting", async () => {
@@ -167,6 +170,7 @@ describe("GatewayClient (P1-08)", () => {
     expect(ack.kind).toBe("ack");
     expect((ack as { stream?: string }).stream).toBe("task");
     expect((ack as { seq?: number }).seq).toBe(12);
+    client.close();
   });
 
   test("server-initiated request is answered via onRequest", async () => {
@@ -188,6 +192,7 @@ describe("GatewayClient (P1-08)", () => {
       expect((last as { id?: string }).id).toBe("srv-1");
       expect((last as { result?: { echoed?: string } }).result?.echoed).toBe("browser.tool.request");
     });
+    client.close();
   });
 
   test("request timeout rejects", async () => {
@@ -204,6 +209,57 @@ describe("GatewayClient (P1-08)", () => {
     const assertion = expect(req).rejects.toThrow(/timed out/);
     await vi.advanceTimersByTimeAsync(60);
     await assertion;
+    client.close();
+    vi.useRealTimers();
+  });
+
+  test("disconnect auto-reconnects without any request (S5 gateway respawn)", async () => {
+    vi.useFakeTimers();
+    const port = createFakePort();
+    stubChrome(port);
+    autoHello(port);
+    const client = new GatewayClient({
+      hello: async () => ({ protocolVersion: 1 as const, clientId: "c", profileId: "p", browserInstanceId: null, hostInstanceId: "", lastSeqByTask: {}, lastSeqByGateway: 0 }),
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1_000,
+    });
+    await client.connect();
+    expect(client.state).toBe("ready");
+
+    port.disconnect();
+    expect(client.state).toBe("disconnected");
+
+    // No request() call — the reconnect timer alone must restore the
+    // connection so the gateway sees our hello and re-registers the host.
+    await vi.advanceTimersByTimeAsync(150);
+    expect(client.state).toBe("ready");
+    const hellos = port.postMessage.mock.calls
+      .map((c) => c[0] as Envelope)
+      .filter((e) => e.method === "hello");
+    expect(hellos.length).toBe(2);
+
+    client.close();
+    vi.useRealTimers();
+  });
+
+  test("close() stops the reconnect loop", async () => {
+    vi.useFakeTimers();
+    const port = createFakePort();
+    stubChrome(port);
+    autoHello(port);
+    const client = new GatewayClient({
+      hello: async () => ({ protocolVersion: 1 as const, clientId: "c", profileId: "p", browserInstanceId: null, hostInstanceId: "", lastSeqByTask: {}, lastSeqByGateway: 0 }),
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1_000,
+    });
+    await client.connect();
+    port.disconnect();
+    client.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+    const hellos = port.postMessage.mock.calls
+      .map((c) => c[0] as Envelope)
+      .filter((e) => e.method === "hello");
+    expect(hellos.length).toBe(1);
     vi.useRealTimers();
   });
 });
