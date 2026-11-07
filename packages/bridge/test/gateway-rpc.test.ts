@@ -313,7 +313,7 @@ describe("gateway RPC surface (P1-07)", () => {
     expect(up.bytes).toBe(14);
     expect(up.sha256).toMatch(/^[0-9a-f]{64}$/);
     // oversize → artifact.too_large
-    const big = Buffer.alloc(600 * 1024, 1).toString("base64");
+    const big = Buffer.alloc(513 * 1024, 1).toString("base64");
     await expect(
       rpc(s, "u2", "artifact.upload", {
         taskId: created.taskId,
