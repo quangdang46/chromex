@@ -1,20 +1,59 @@
 {
   "name": "turnid-race",
-  "description": "Provider events arriving before startTurn() promise resolves must buffer by gatewayTurnId (§4.4.1 step 4)",
+  "description": "Provider events arriving before startTurn() promise resolves must buffer by gatewayTurnId (\u00a74.4.1 step 4)",
   "gatewayTurnId": "gt-4",
   "scenario": "startTurn(input{gatewayTurnId:'gt-4'}) is in-flight; provider notifications arrive referencing provider turn 'pt-4' before the startTurn promise resolves",
   "notifications": [
-    { "method": "item/agentMessage/delta", "params": { "turnId": "pt-4", "itemId": "m9", "delta": "early " } },
-    { "method": "turn/started", "params": { "turn": { "id": "pt-4", "status": "inProgress" } } },
-    { "method": "item/completed", "params": { "turnId": "pt-4", "item": { "id": "m9", "type": "agentMessage", "text": "early done" } } }
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "turnId": "pt-4",
+        "itemId": "m9",
+        "delta": "early "
+      }
+    },
+    {
+      "method": "turn/started",
+      "params": {
+        "turn": {
+          "id": "pt-4",
+          "status": "inProgress"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "turnId": "pt-4",
+        "item": {
+          "id": "m9",
+          "type": "agentMessage",
+          "text": "early done"
+        }
+      }
+    }
   ],
   "expectedBehavior": [
-    "events tagged with provider turnId 'pt-4' are BUFFERED until startTurn resolves and maps pt-4 → gatewayTurnId 'gt-4'",
+    "events tagged with provider turnId 'pt-4' are BUFFERED until startTurn resolves and maps pt-4 \u2192 gatewayTurnId 'gt-4'",
     "after resolution, buffered events flush in order with turnId='gt-4'",
     "events with NO turnId are assigned only when exactly one active turn exists; otherwise dropped + diagnostic"
   ],
   "expectedDurableEvents": [
-    { "type": "turn.started", "turnId": "gt-4" },
-    { "type": "assistant.message", "turnId": "gt-4", "text": "early done" }
+    {
+      "type": "turn.started",
+      "turnId": "gt-4"
+    },
+    {
+      "type": "assistant.message",
+      "turnId": "gt-4",
+      "text": "early done"
+    }
+  ],
+  "expectedEphemeralEvents": [
+    {
+      "type": "assistant.delta",
+      "turnId": "gt-4",
+      "deltaOffset": 0
+    }
   ]
 }
