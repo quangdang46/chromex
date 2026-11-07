@@ -171,4 +171,35 @@ describe("gateway RPC surface (P1-07)", () => {
     });
     s.destroy();
   });
+
+  test("task.purge cascades + emits gateway.task_purged tombstone", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "purge me" })) as {
+      taskId: string;
+    };
+    const tid = created.taskId;
+    expect(gw!.store.getTask(tid)).toBeTruthy();
+
+    const res = (await rpc(s, "p1", "task.purge", { taskId: tid })) as { purged: boolean };
+    expect(res.purged).toBe(true);
+    expect(gw!.store.getTask(tid)).toBeUndefined();
+
+    // tombstone on gateway stream — replayable via gateway.sync
+    const sync = (await rpc(s, "gs", "gateway.sync", { fromSeq: 0 })) as {
+      mode: string;
+      events: Array<{ type: string; payload?: { taskId?: string; reason?: string } }>;
+    };
+    const tomb = sync.events.find(
+      (e) => e.type === "gateway.task_purged" && e.payload?.taskId === tid,
+    );
+    expect(tomb).toBeTruthy();
+    expect(tomb!.payload?.reason).toBe("user");
+
+    // second purge → task.not_found
+    await expect(rpc(s, "p2", "task.purge", { taskId: tid })).rejects.toMatchObject({
+      code: "task.not_found",
+    });
+    s.destroy();
+  });
 });

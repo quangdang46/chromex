@@ -80,6 +80,10 @@ export const taskSnapshotChunkSchema = z.object({
   chunkIndex: z.number().int().min(0),
 });
 
+export const taskPurgeSchema = z.object({
+  taskId: z.string().min(1),
+});
+
 export const gatewaySyncSchema = z.object({
   fromSeq: z.number().int().min(0).optional(),
   maxEvents: z.number().int().min(1).max(10_000).optional(),

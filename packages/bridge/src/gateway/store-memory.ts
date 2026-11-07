@@ -225,6 +225,16 @@ export class InMemoryStore {
     };
   }
 
+  /** Explicit task purge — mirrors SQLiteStore.purgeTask cascade. */
+  purgeTask(taskId: string): void {
+    this.#guard();
+    this.tasks.delete(taskId);
+    for (const [id, t] of this.turns) if (t.taskId === taskId) this.turns.delete(id);
+    this.taskEvents.delete(taskId);
+    this.taskSeq.delete(taskId);
+    for (const [id, a] of this.approvals) if (a.taskId === taskId) this.approvals.delete(id);
+  }
+
   stats(): MemoryStoreStats {
     return {
       tasks: this.tasks.size,

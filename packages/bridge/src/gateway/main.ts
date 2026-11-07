@@ -28,6 +28,7 @@ import {
   providerCatalogSchema,
   taskCreateSchema,
   taskIdSchema,
+  taskPurgeSchema,
   taskSendSchema,
   taskSnapshotChunkSchema,
   taskSnapshotSchema,
@@ -431,6 +432,22 @@ async function handleGatewayRequest(
         p.maxEvents,
       );
       return { mode: "replay", stream: "task", taskId: p.taskId, events, nextSeq, hasMore };
+    }
+    case "task.purge": {
+      const p = parsePayload(taskPurgeSchema, req.payload) as z.infer<typeof taskPurgeSchema>;
+      if (!ctx.store.getTask(p.taskId)) {
+        throw perr("task.not_found", `task ${p.taskId} not found`);
+      }
+      ctx.store.purgeTask(p.taskId);
+      // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
+      // own retention; NOT a task-stream event.
+      ctx.store.appendGatewayEvent({
+        type: "gateway.task_purged",
+        taskId: p.taskId,
+        purgedAt: Date.now(),
+        reason: "user",
+      } as never);
+      return { purged: true, taskId: p.taskId };
     }
     case "task.snapshot": {
       const p = parsePayload(taskSnapshotSchema, req.payload) as { taskId: string };

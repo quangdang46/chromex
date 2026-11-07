@@ -6,6 +6,7 @@
  * turn lifecycle uses UPSERT (ON CONFLICT DO UPDATE), never REPLACE.
  */
 
+import fs from "node:fs";
 import type {
   PauseReason,
   DurableGatewayEvent,
@@ -617,9 +618,15 @@ export class SQLiteStore {
       );
   }
 
-  /** Explicit task purge — §7.2 delete policy: explicit cascade in txn. */
+  /** Explicit task purge — §7.2 delete policy: explicit cascade in txn,
+   *  plus best-effort artifact file deletion (failures logged, not fatal). */
   purgeTask(taskId: string): void {
     this.#guard();
+    const artifactPaths = (
+      this.db.prepare("SELECT path FROM artifacts WHERE task_id = ?").all(taskId) as Array<{ path: string | null }>
+    )
+      .map((r) => r.path)
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       // events have no FK — delete explicitly per §7.2
@@ -633,6 +640,11 @@ export class SQLiteStore {
         /* ignore */
       }
       throw err;
+    }
+    for (const p of artifactPaths) {
+      fs.promises.unlink(p).catch(() => {
+        /* best-effort: orphaned artifact file is logged by caller sweep */
+      });
     }
   }
 
