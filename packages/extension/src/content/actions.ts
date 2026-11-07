@@ -326,6 +326,10 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         await fillDomActionElement(element, step.value ?? "");
         message = `Filled ${getElementLabel(element) || "the target field"}.`;
         break;
+      case "type":
+        await typeDomActionElement(element, step.value ?? "");
+        message = `Typed into ${getElementLabel(element) || "the target field"}.`;
+        break;
       case "select":
         selectDomActionElement(element, step.value ?? "");
         message = `Selected a value for ${getElementLabel(element) || "the target field"}.`;
@@ -426,6 +430,82 @@ export async function fillDomActionElement(element: HTMLElement, value: string):
   }
 
   throw new Error("Target element cannot be filled.");
+}
+
+
+/** Char-level key events for browser.page.type — same untrusted-event
+ *  caveat as dispatchPressSequence: listeners observe them, browser
+ *  default actions (Enter submit, Tab focus) do NOT run. */
+function dispatchCharKeyEvents(target: EventTarget, ch: string): void {
+  if (ch === "\n" || ch === "\r") {
+    const init: KeyboardEventInit = { key: "Enter", code: "Enter", bubbles: true, cancelable: true };
+    target.dispatchEvent(new KeyboardEvent("keydown", init));
+    target.dispatchEvent(new KeyboardEvent("keyup", init));
+    return;
+  }
+  const init: KeyboardEventInit = { key: ch, bubbles: true, cancelable: true };
+  target.dispatchEvent(new KeyboardEvent("keydown", init));
+  target.dispatchEvent(new KeyboardEvent("keypress", init));
+  target.dispatchEvent(new KeyboardEvent("keyup", init));
+}
+
+/** browser.page.type — per-character insertion at the caret (moved to
+ *  end first), matching playwright pressSequentially append semantics.
+ *  Distinct from fill: never clears existing content, fires input per
+ *  char so autocomplete/validation/masking handlers observe typing. */
+export async function typeDomActionElement(element: HTMLElement, value: string): Promise<void> {
+  const directTarget = resolveDirectEditableTarget(element);
+  const target = directTarget ?? (await resolveEditableTargetAfterActivation(element));
+  if (!target) {
+    throw new Error("Target element cannot be typed into.");
+  }
+  target.focus();
+  await waitForDomActionTick();
+
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    try {
+      const end = target.value.length;
+      target.setSelectionRange(end, end);
+    } catch {
+      // input types without a text selection (number, date, …) — value
+      // append still applies.
+    }
+    for (const ch of value) {
+      dispatchCharKeyEvents(target, ch);
+      setNativeTextControlValue(target, target.value + ch);
+      target.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
+      );
+    }
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  if (target.isContentEditable) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    for (const ch of value) {
+      dispatchCharKeyEvents(target, ch);
+      if (!document.execCommand("insertText", false, ch === "\n" || ch === "\r" ? "\n" : ch)) {
+        target.textContent = (target.textContent ?? "") + ch;
+      }
+      target.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
+      );
+    }
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  if (isTextEntryCandidate(target)) {
+    target.textContent = (target.textContent ?? "") + value;
+    target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  throw new Error("Target element cannot be typed into.");
 }
 
 

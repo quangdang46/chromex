@@ -126,6 +126,16 @@ export function verifyDomAction(
       return "unknown";
     }
 
+    case "type": {
+      // Append semantics: exact before+typed match confirms. Anything
+      // else is "unknown" — masked inputs reformat the value, so a
+      // changed-but-different value is not proof of failure.
+      const typed = step.value ?? "";
+      if (targetGone) return "unknown";
+      if (targetAfter && targetBefore && targetAfter.value === targetBefore.value + typed) return true;
+      return "unknown";
+    }
+
     case "select": {
       const expected = step.value ?? "";
       if (targetGone) return "unknown";

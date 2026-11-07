@@ -528,6 +528,7 @@ export interface AgenticRouteInput {
 export type BrowserDomActionKind =
   | "click"
   | "fill"
+  | "type"
   | "select"
   | "scroll"
   | "focus"

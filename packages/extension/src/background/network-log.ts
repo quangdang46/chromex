@@ -111,6 +111,7 @@ function installNetworkLogInner(): void {
     if (typeof details.tabId === "number" && details.tabId >= 0 && details.requestId) {
       trackStart(details.tabId, details.requestId);
     }
+    return undefined;
   }, filters);
   onCompleted.addListener((details) => {
     if (typeof details.tabId === "number" && details.tabId >= 0 && details.requestId) {

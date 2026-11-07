@@ -980,8 +980,12 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
     case "browser.page.focus":
       return { ...base, action: "focus" };
     case "browser.page.fill":
-    case "browser.page.type":
       return { ...base, action: "fill", value: typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : "" };
+    case "browser.page.type":
+      // Real append semantics (parity with playwright pressSequentially)
+      // — NOT fill: type inserts char-by-char at the caret/end and does
+      // not clear existing content.
+      return { ...base, action: "type", value: typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : "" };
     case "browser.page.select":
       return { ...base, action: "select", value: typeof args.value === "string" ? args.value : "" };
     case "browser.page.submit":
@@ -1073,7 +1077,7 @@ function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
     ...(text ? { text } : {}),
     ...(urlContains ? { urlContains } : {}),
     ...(goneSelector ? { goneSelector } : {}),
-    ...(readyState ? { readyState: readyState as BrowserExpectCondition["readyState"] } : {}),
+    ...(readyState ? { readyState: readyState as "loading" | "interactive" | "complete" } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
   return cond.selector || cond.text || cond.urlContains || cond.goneSelector || cond.readyState ? cond : null;
