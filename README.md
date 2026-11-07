@@ -10,7 +10,7 @@
 [![日本語](https://img.shields.io/badge/readme-日本語-dc2626.svg)](./readmes/README.ja.md)
 [![简体中文](https://img.shields.io/badge/readme-简体中文-16a34a.svg)](./readmes/README.zh-CN.md)
 
-Chromex is a Chrome MV3 side-panel assistant that connects Chrome to Codex through a local native bridge. It helps users work with the current page, selected tabs, uploaded files, voice input, images, and browser workflows while keeping credentials out of extension storage.
+Chromex is a Chrome MV3 side-panel coding agent that connects Chrome to Codex/Claude through a local native bridge. The agent can own browser work end-to-end: it plans, opens and coordinates tabs, reads and acts on pages, runs code and tests, verifies results, and hands back evidence — while credentials stay out of extension storage. See `docs/product-acceptance-matrix.md` for the current product acceptance target.
 
 Published by **GenexisAI CHOI**.
 
