@@ -60,7 +60,8 @@ try {
   // (fixture copies plan→hidden input at Next-click time, so the POST
   // carries the default; we assert the field round-trips).
   await call("browser.page.select", { tabId, selector: "#plan", value: "pro" });
-  await call("browser.page.click", { tabId, selector: "#submit" });
+  // page.submit exercises requestSubmit — covers the submit tool itself
+  await call("browser.page.submit", { tabId, selector: "#submit" });
 
   const waited = await call("browser.page.wait", { tabId, text: "Submitted", timeoutMs: 8000 });
   assert(waited?.ok === true || waited !== undefined, "page.wait text=Submitted resolved");
@@ -76,8 +77,14 @@ try {
   // ── Loop 2: negative check — broken page must report failure ───────
   const buggy = await call("browser.tab.create", { url: fixture.url("/buggy"), active: false });
   const bTab = buggy?.tabId ?? buggy?.id;
+  // arm console capture BEFORE the error fires, then read it back
+  await call("browser.page.console", { tabId: bTab });
   await call("browser.page.click", { tabId: bTab, selector: "#fix" });
   await call("browser.page.wait", { tabId: bTab, ms: 400 });
+  const consoleRes = await call("browser.page.console", { tabId: bTab, level: "error" });
+  const errs = JSON.stringify(consoleRes?.entries ?? []);
+  assert(errs.includes("nonExistentFixFunction") || errs.includes("ReferenceError") || errs.length > 2,
+    "console captured the page error");
   const statusRes = await call("browser.page.extract", { tabId: bTab, selector: "#status" });
   const statusText = String(statusRes?.text ?? "");
   assert(statusText.includes("broken") && !statusText.includes("fixed"),
@@ -112,6 +119,26 @@ try {
   await call("browser.page.scroll", { tabId: tTab, direction: "down", amountPx: 1200 });
   const pos = await call("browser.page.get", { tabId: tTab });
   assert((pos?.scroll?.scrollY ?? 0) > 0, `scroll moved viewport (scrollY=${pos?.scroll?.scrollY})`);
+
+  // ── Loop 7: find / hover / screenshot / tab activate+close ─────────
+  const found = await call("browser.page.find", { tabId: cTab, text: "coord-hit" });
+  const matchCount = Array.isArray(found?.matches) ? found.matches.length : found?.count ?? 0;
+  assert(matchCount > 0, `page.find located "coord-hit" (${matchCount} matches)`);
+
+  const hov = await call("browser.page.hover", { tabId: cTab, x: 100, y: 70 });
+  assert(hov?.hovered === true, "coordinate hover dispatched");
+
+  const shot = await call("browser.page.screenshot", { tabId: cTab });
+  assert(typeof shot?.dataBase64 === "string" && shot.dataBase64.length > 100 && shot?.mimeType === "image/jpeg",
+    `screenshot returned jpeg payload (${shot?.bytes} bytes)`);
+
+  await call("browser.tab.activate", { tabId: bTab });
+  const tabsBefore = await call("browser.tabs.list", {});
+  const nBefore = Array.isArray(tabsBefore) ? tabsBefore.length : tabsBefore?.tabs?.length ?? 0;
+  await call("browser.tab.close", { tabId: tTab });
+  const tabsAfter = await call("browser.tabs.list", {});
+  const nAfter = Array.isArray(tabsAfter) ? tabsAfter.length : tabsAfter?.tabs?.length ?? 0;
+  assert(nAfter === nBefore - 1, `tab.close removed one tab (${nBefore}→${nAfter})`);
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;
