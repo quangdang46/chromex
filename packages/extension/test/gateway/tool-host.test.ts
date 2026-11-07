@@ -97,6 +97,35 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: -3, dropY: 4 }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("tab.update/discard resolve scoped tab and validate args", async () => {
+    const d = deps();
+    const updCalls: Array<[number, Record<string, unknown>]> = [];
+    const discarded: number[] = [];
+    d.updateTab = async (id, opts) => { updCalls.push([id, opts as Record<string, unknown>]); };
+    d.discardTab = async (id) => { discarded.push(id); };
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    await h(scopedReq("browser.tab.update", { pinned: true, muted: true }, scope));
+    expect(updCalls).toEqual([[7, { pinned: true, muted: true }]]);
+    await h(scopedReq("browser.tab.discard", {}, scope));
+    expect(discarded).toEqual([7]);
+    await expect(h(scopedReq("browser.tab.update", {}, scope))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(scopedReq("browser.tab.update", { pinned: "yes" }, scope))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(scopedReq("browser.tab.discard", { tabId: 99 }, scope))).rejects.toMatchObject({ code: "browser.not_in_scope" });
+  });
+
+  test("tab.create forwards pinned/muted to chrome.tabs.create", async () => {
+    const d = deps();
+    let created: Record<string, unknown> | undefined;
+    d.createTab = async (opts) => {
+      created = opts as Record<string, unknown>;
+      return { id: 9, url: "https://a.example/", title: "", active: true } as chrome.tabs.Tab;
+    };
+    const h = createToolHostHandler(d);
+    await h(req("browser.tab.create", { url: "https://a.example/", pinned: true, muted: true, active: false }));
+    expect(created).toMatchObject({ pinned: true, muted: true, active: false });
+  });
+
   test("windows.list maps chrome.windows entries", async () => {
     const d = deps();
     d.listWindows = async () => [

@@ -256,12 +256,20 @@ const toolHostHandler = createToolHostHandler({
     closeTab: async (tabId) => {
       await chrome.tabs.remove(tabId);
     },
-    createTab: async ({ url, active, windowId }) =>
+    createTab: async ({ url, active, windowId, pinned, muted }) =>
       chrome.tabs.create({
         ...(url ? { url } : {}),
         ...(active !== undefined ? { active } : {}),
         ...(windowId !== undefined ? { windowId } : {}),
+        ...(pinned !== undefined ? { pinned } : {}),
+        ...(muted !== undefined ? { muted } : {}),
       }),
+    updateTab: async (tabId, opts) =>
+      chrome.tabs.update(tabId, {
+        ...(opts.pinned !== undefined ? { pinned: opts.pinned } : {}),
+        ...(opts.muted !== undefined ? { muted: opts.muted } : {}),
+      }),
+    discardTab: async (tabId) => chrome.tabs.discard(tabId),
     duplicateTab: async (tabId) => {
       const tab = await chrome.tabs.duplicate(tabId);
       if (!tab) throw new Error(`chrome.tabs.duplicate(${tabId}) returned no tab`);

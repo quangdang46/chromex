@@ -311,6 +311,13 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       });
     }
 
+    case "browser.tab.update":
+    case "browser.tab.discard":
+      // Scoped tab chrome ops — pin/mute are trivially reversible;
+      // discard unloads the page (state loss possible) but only on
+      // task-owned tabs, same blast radius as tab.close/reload.
+      return verdict("low", { reason: "scoped tab lifecycle op" });
+
     case "browser.windows.update":
       // Focus/state changes are reversible window chrome ops — no page
       // mutation, no egress.

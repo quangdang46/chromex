@@ -241,12 +241,28 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     inputSchema: objectSchema({
       url: { type: "string", description: "Optional http(s) URL to open; omit for a blank tab." },
       active: { type: "boolean", description: "Focus the new tab (default true)." },
-      windowId: { type: "integer", description: "Optional window to open the tab in (from browser.tabs.list windowId)." },
+      windowId: { type: "integer", description: "Optional window to open the tab in (from browser.windows.list or browser.tabs.list windowId)." },
+      pinned: { type: "boolean", description: "Pin the new tab." },
+      muted: { type: "boolean", description: "Mute the new tab's audio." },
     }),
   },
   "browser.tab.duplicate": {
     description:
       "Clone a scoped tab with its session — fork a page to experiment without losing the original's state. The new tab enters this task's scope and is returned as openedTabId. chrome-extension backend only; always requires approval since the target URL is resolved host-side.",
+    inputSchema: objectSchema(TAB_TARGET_PROPS),
+  },
+  "browser.tab.update": {
+    description:
+      "Update a scoped tab's chrome state — pinned and/or muted. tabId optional (defaults like other tab tools). Low-risk reversible op.",
+    inputSchema: objectSchema({
+      ...TAB_TARGET_PROPS,
+      pinned: { type: "boolean", description: "Pin or unpin the tab." },
+      muted: { type: "boolean", description: "Mute or unmute the tab's audio." },
+    }),
+  },
+  "browser.tab.discard": {
+    description:
+      "Discard a scoped tab — Chrome unloads the page to free memory; the tab reloads on next activation. Page state (form input, scroll) is lost. tabId optional (defaults like other tab tools).",
     inputSchema: objectSchema(TAB_TARGET_PROPS),
   },
   "browser.page.snapshot": {

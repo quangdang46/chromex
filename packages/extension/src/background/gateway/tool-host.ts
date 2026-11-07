@@ -31,7 +31,11 @@ export interface ToolHostDeps {
    *  quality when the first capture exceeds the artifact byte cap. */
   captureVisibleTab?(windowId: number, opts?: { quality?: number }): Promise<string>;
   /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
-  createTab?(opts: { url?: string; active?: boolean; windowId?: number }): Promise<chrome.tabs.Tab>;
+  createTab?(opts: { url?: string; active?: boolean; windowId?: number; pinned?: boolean; muted?: boolean }): Promise<chrome.tabs.Tab>;
+  /** chrome.tabs.update — tab.update tool (pinned/muted). */
+  updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean }): Promise<unknown>;
+  /** chrome.tabs.discard — tab.discard tool (memory hygiene). */
+  discardTab?(tabId: number): Promise<unknown>;
   /** chrome.tabs.duplicate — clone a tab preserving its session
    *  (browser.tab.duplicate); absent dep → proto.unsupported. */
   duplicateTab?(tabId: number): Promise<chrome.tabs.Tab>;
@@ -181,6 +185,8 @@ const SUPPORTED = new Set([
   "browser.tab.close",
   "browser.tab.create",
   "browser.tab.duplicate",
+  "browser.tab.update",
+  "browser.tab.discard",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.console",
@@ -417,6 +423,35 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         await deps.closeTab(tabId);
         return { closed: tabId, resolvedTabId: tabId };
       }
+      case "browser.tab.update": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (!deps.updateTab) {
+          throw toolError("proto.unsupported", "tab update is not available on this host");
+        }
+        const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
+        const muted = typeof args.muted === "boolean" ? args.muted : undefined;
+        if (pinned === undefined && muted === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned and/or args.muted");
+        }
+        await deps.updateTab(tabId, {
+          ...(pinned !== undefined ? { pinned } : {}),
+          ...(muted !== undefined ? { muted } : {}),
+        });
+        return {
+          updated: tabId,
+          resolvedTabId: tabId,
+          ...(pinned !== undefined ? { pinned } : {}),
+          ...(muted !== undefined ? { muted } : {}),
+        };
+      }
+      case "browser.tab.discard": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (!deps.discardTab) {
+          throw toolError("proto.unsupported", "tab discard is not available on this host");
+        }
+        await deps.discardTab(tabId);
+        return { discarded: tabId, resolvedTabId: tabId };
+      }
       case "browser.tab.create": {
         // chromex-he2: opens a NEW tab — no existing tab to scope-check.
         // The created tab enters this task's scope via the result's
@@ -441,6 +476,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           url = parsed.href;
         }
         const active = typeof args.active === "boolean" ? args.active : true;
+        const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
+        const muted = typeof args.muted === "boolean" ? args.muted : undefined;
         // windowId targets a specific browser window — must be a real
         // window or chrome.tabs.create throws; validate as non-negative
         // int and let the API surface unknown-window errors honestly.
@@ -455,6 +492,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(url ? { url } : {}),
           active,
           ...(windowId !== undefined ? { windowId } : {}),
+          ...(pinned !== undefined ? { pinned } : {}),
+          ...(muted !== undefined ? { muted } : {}),
         });
         if (typeof tab.id !== "number") {
           throw toolError("browser.action_failed", "chrome.tabs.create returned no tab id");

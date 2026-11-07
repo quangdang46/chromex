@@ -11,6 +11,8 @@ export type BrowserToolName =
   | "browser.tab.close"
   | "browser.tab.create"
   | "browser.tab.duplicate"
+  | "browser.tab.update"
+  | "browser.tab.discard"
   | "browser.page.snapshot"
   | "browser.page.get"
   | "browser.page.extract"
@@ -44,6 +46,8 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tab.close",
   "browser.tab.create",
   "browser.tab.duplicate",
+  "browser.tab.update",
+  "browser.tab.discard",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.extract",

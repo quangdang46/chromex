@@ -259,6 +259,8 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.tab.close": { tabId: 3 },
   "browser.tab.create": { url: "https://example.com", active: false },
   "browser.tab.duplicate": { tabId: 3 },
+  "browser.tab.update": { tabId: 3, pinned: true },
+  "browser.tab.discard": { tabId: 3 },
   "browser.page.snapshot": {},
   "browser.page.get": { key: "text" },
   "browser.page.extract": { selector: "main", maxChars: 4000 },
@@ -285,6 +287,9 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
+  "browser.windows.list": {},
+  "browser.windows.create": { url: "https://example.com", focused: false },
+  "browser.windows.update": { windowId: 1, focused: true },
 };
 
 describe("tools/list schemas + descriptions (chromex-23y5)", () => {
@@ -334,6 +339,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.page.upload",
           "browser.page.history",
           "browser.downloads.save",
+          "browser.windows.update",
         ].includes(internal)
           ? false
           : true,
