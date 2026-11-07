@@ -23,13 +23,21 @@ export { ensureGateway };
 
 // Real-browser scenarios spawn Chromium + fixture servers + gateways.
 // They are OFF by default so routine work (agents, watchers, editors)
-// never opens browser windows on the user's machine. Opt in explicitly:
-//   CHROMEX_ACCEPTANCE_ENABLE=1 node scripts/acceptance/run-all.mjs
-if (process.env.CHROMEX_ACCEPTANCE_ENABLE !== "1") {
-  console.error(
-    "[acceptance] real-browser scenarios are disabled. " +
-      "Set CHROMEX_ACCEPTANCE_ENABLE=1 to run them.",
-  );
+// never opens browser windows on the user's machine. Arm a run by
+// writing a token file once, then passing it via env:
+//   echo "$(uuidgen)" > /tmp/chromex-acceptance-token
+//   CHROMEX_ACCEPTANCE_TOKEN=$(cat /tmp/chromex-acceptance-token) \
+//     node scripts/acceptance/run-all.mjs
+import { readFileSync } from "node:fs";
+const __acceptTokenPath = "/tmp/chromex-acceptance-token";
+let __acceptExpected = null;
+try {
+  __acceptExpected = readFileSync(__acceptTokenPath, "utf8").trim();
+} catch {
+  /* no token file → disabled */
+}
+if (!__acceptExpected || process.env.CHROMEX_ACCEPTANCE_TOKEN !== __acceptExpected) {
+  console.error("[acceptance] real-browser scenarios are disabled.");
   process.exit(3);
 }
 
