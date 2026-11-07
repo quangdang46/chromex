@@ -1,0 +1,60 @@
+{
+  "scenario": "s5-interruption",
+  "runId": "2026-11-07T15-20-32-695Z-e6e341",
+  "status": "FAIL",
+  "summary": "call2=failed completed=29 started=29 dup=false",
+  "durationMs": 122600,
+  "details": {
+    "call1Status": "completed",
+    "call2": {
+      "toolCallId": "rpc-mw6jyb1d-tgj9tk",
+      "tool": "browser.page.get",
+      "status": "failed",
+      "error": {
+        "code": "browser.no_host",
+        "message": "no browser host for task scope (no_host)"
+      }
+    },
+    "completed": 29,
+    "started": 29,
+    "duplicateCompletions": false
+  },
+  "notes": [
+    "[2026-11-07T15:20:39.908Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-07T15:20:41.160Z] task 01M6V9HX842NRSC2Z2ZJXT1FCM",
+    "[2026-11-07T15:20:47.900Z] pre-kill page.get → {\"toolCallId\":\"rpc-mw6jvx2p-1x6ym5\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1891140391,\"url\":\"http://127.0.0.1:62250/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":189114",
+    "[2026-11-07T15:20:47.902Z] gateway pid=4202 — sending SIGKILL",
+    "[2026-11-07T15:20:48.408Z] spawn_in_flight window: waiting 6s before respawn",
+    "[2026-11-07T15:20:55.554Z] gateway respawned",
+    "[2026-11-07T15:21:00.622Z] sidepanel opened to wake NM host → gateway reconnect",
+    "[2026-11-07T15:21:05.152Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:09.379Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:14.292Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:17.509Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:20.539Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:23.577Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:26.709Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:29.731Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:32.816Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:35.873Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:38.883Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:41.892Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:44.922Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:47.935Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:50.991Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:54.150Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:21:57.182Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:00.221Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:04.827Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:07.875Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:10.927Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:15.433Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:18.442Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:21.507Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:24.736Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:29.184Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:32.210Z] browser.no_host — waiting for extension host re-register, retrying",
+    "[2026-11-07T15:22:35.248Z] post-respawn page.get → {\"toolCallId\":\"rpc-mw6jyb1d-tgj9tk\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-07T15:22:35.291Z] durable: tool.started=29 tool.completed=29"
+  ]
+}
