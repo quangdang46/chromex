@@ -35,7 +35,10 @@ import { SQLiteStore } from "../store/sqlite-store.js";
 import { runRecoveryScan } from "../store/recovery.js";
 import type { GatewayDb } from "../store/db.js";
 import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
-import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
+import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
+import { ProviderRegistry } from "../agents/registry.js";
+import { SessionManager } from "./session-manager.js";
+import { NO_CAPABILITIES, protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
   /** override CHROMEX_GATEWAY_HOME */
@@ -110,6 +113,24 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       store = new InMemoryStore({ assertOwnership });
     }
 
+    // provider registry + session manager (P1-04/P1-05/P1-06)
+    const registry = new ProviderRegistry(config.providers);
+    if (config.providers.codex.enabled) {
+      await registry.register("codex", async () => new CodexAgentProvider());
+    }
+    const sessionManager = new SessionManager({
+      store: store as ConstructorParameters<typeof SessionManager>[0]["store"],
+      registry,
+      config,
+      // durable envelopes broadcast to all authed connections; ephemeral
+      // agent deltas are dropped here until P1-08 wires the delta channel
+      publish: (_taskId, event, ephemeral) => {
+        if (!ephemeral && typeof event === "object" && "kind" in event) {
+          ipc?.broadcast(event as import("@codex-sidepanel/shared").Envelope);
+        }
+      },
+    });
+
     const providers: HelloResponseProviders = [
       {
         id: "codex",
@@ -125,7 +146,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
 
     ipc = new GatewayIpcServer(dataDir, config.gateway.maxEnvelopeBytes, async (req, conn) => {
       try {
-        return await handleGatewayRequest(req, { store, config, providers, conn });
+        return await handleGatewayRequest(req, { store, config, providers, conn, sessionManager, registry });
       } catch (err) {
         if (err instanceof StaleFenceError) {
           log("stale fence detected — self-shutdown");
@@ -198,6 +219,8 @@ async function handleGatewayRequest(
     config: GatewayConfig;
     providers: HelloResponseProviders;
     conn: IpcConnection;
+    sessionManager: SessionManager;
+    registry: ProviderRegistry;
   },
 ): Promise<unknown> {
   switch (req.method) {
@@ -215,6 +238,75 @@ async function handleGatewayRequest(
         config: ctx.config,
         providers: ctx.providers,
       });
+    }
+    case "task.create": {
+      const p = req.payload as Record<string, unknown> | undefined;
+      if (!p || typeof p.cwd !== "string") {
+        throw perr("proto.invalid", "task.create requires cwd");
+      }
+      const task = ctx.sessionManager.createTask({
+        profileId: String(p.profileId ?? "codex"),
+        providerId: (p.providerId as never) ?? "codex",
+        cwd: p.cwd,
+        title: (p.title as string | null | undefined) ?? null,
+        model: (p.model as string | null | undefined) ?? null,
+        modeId: (p.modeId as string | null | undefined) ?? null,
+        thinkingOptionId: (p.thinkingOptionId as string | null | undefined) ?? null,
+        providerOptions: (p.providerOptions as Record<string, unknown> | null | undefined) ?? null,
+        backend: (p.backend as never) ?? {
+          backendId: ctx.config.browser.defaultBackend === "auto" ? "chrome-extension" : ctx.config.browser.defaultBackend,
+          pinnedBy: "default",
+        },
+        tabIntent: (p.tabIntent as never) ?? { scope: "untitled" },
+        originBrowserInstanceId: (p.browserInstanceId as string | null | undefined) ?? null,
+      });
+      return { taskId: task.taskId, status: task.status };
+    }
+    case "task.send": {
+      const p = req.payload as { taskId?: string; clientMessageId?: string; content?: unknown; ctx?: unknown } | undefined;
+      if (!p?.taskId || !p.clientMessageId || !Array.isArray(p.content)) {
+        throw perr("proto.invalid", "task.send requires taskId + clientMessageId + content");
+      }
+      const res = await ctx.sessionManager.sendMessage(p.taskId, {
+        clientMessageId: p.clientMessageId,
+        content: p.content as never,
+        ...(p.ctx ? { ctx: p.ctx as never } : {}),
+      });
+      return res;
+    }
+    case "task.cancel": {
+      const p = req.payload as { taskId?: string; reason?: string } | undefined;
+      if (!p?.taskId) throw perr("proto.invalid", "task.cancel requires taskId");
+      await ctx.sessionManager.cancelTask(p.taskId, p.reason ?? "user");
+      return { ok: true };
+    }
+    case "task.pause": {
+      const p = req.payload as { taskId?: string } | undefined;
+      if (!p?.taskId) throw perr("proto.invalid", "task.pause requires taskId");
+      ctx.sessionManager.pauseTask(p.taskId);
+      return { ok: true };
+    }
+    case "task.resume": {
+      const p = req.payload as { taskId?: string } | undefined;
+      if (!p?.taskId) throw perr("proto.invalid", "task.resume requires taskId");
+      ctx.sessionManager.resumeTask(p.taskId);
+      return { ok: true };
+    }
+    case "task.interrupt": {
+      const p = req.payload as { taskId?: string; turnId?: string } | undefined;
+      if (!p?.taskId) throw perr("proto.invalid", "task.interrupt requires taskId");
+      await ctx.sessionManager.interruptTurn(p.taskId, p.turnId);
+      return { ok: true };
+    }
+    case "permission.respond": {
+      const p = req.payload as { requestId?: string; optionId?: string } | undefined;
+      if (!p?.requestId || !p.optionId) {
+        throw perr("proto.invalid", "permission.respond requires requestId + optionId");
+      }
+      return ctx.sessionManager.respondToPermission(p.requestId, p.optionId);
+    }
+    case "task.list": {
+      return { tasks: ctx.store.listTasks().map((t) => ({ taskId: t.taskId, status: t.status, lastSeq: t.lastSeq })) };
     }
     case "task.sync": {
       const p = req.payload as { taskId?: string; fromSeq?: number; maxEvents?: number };
@@ -250,8 +342,22 @@ async function handleGatewayRequest(
       }
       return { mode: "replay", stream: "gateway", events, nextSeq, hasMore };
     }
-    default:
+    default: {
+      // capability-gated provider feature RPCs (§8.2/§10): dotted
+      // provider.feature.<provider>.<feature> — each feature validated
+      // by its own Zod schema inside the provider; no free-form call.
+      const m = /^provider\.feature\.([a-z0-9-]+)\.(.+)$/u.exec(req.method);
+      if (m) {
+        const target = ctx.sessionManager.providerFor(m[1]!);
+        if (!target) throw perr("provider.unavailable", `provider ${m[1]} not registered`);
+        const provider = target.provider as { callFeature?: (method: string, payload: unknown) => Promise<unknown> };
+        if (!provider.callFeature) {
+          throw perr("proto.unsupported", `provider ${m[1]} has no feature RPCs`);
+        }
+        return provider.callFeature(req.method, req.payload);
+      }
       throw protocolError("proto.unknown_method", `unknown method ${req.method}`);
+    }
   }
 }
 

@@ -142,6 +142,13 @@ export class GatewayIpcServer {
     return this.publishEndpoint("0.0.0-gateway");
   }
 
+  /** Push an envelope to every authenticated connection. */
+  broadcast(envelope: Envelope): void {
+    for (const c of this.connections) {
+      if (c.authed) this.sendRaw(c, envelope);
+    }
+  }
+
   markReady(): void {
     this.ready = true;
     this.starting = false;

@@ -445,6 +445,42 @@ export class SessionManager {
     }
   }
 
+  /** task.pause (user): no new turns, no interrupt (§5.2.1). */
+  pauseTask(taskId: string, reason: PauseReason = "user_requested"): void {
+    const task = this.#requireTask(taskId);
+    if (["completed", "failed", "cancelled"].includes(task.status)) return;
+    this.#setTaskStatus(task, "paused", reason);
+  }
+
+  /** task.resume: back to active; queued turns stay queued for user. */
+  resumeTask(taskId: string): void {
+    const task = this.#requireTask(taskId);
+    if (task.status !== "paused") return;
+    this.#setTaskStatus(task, "active");
+  }
+
+  /**
+   * Route a permission decision to the owning session. The approval
+   * store (P1-06 full) is the source of truth; this resolves the
+   * provider-side mirror. Returns false when no session owns requestId.
+   */
+  async respondToPermission(
+    requestId: string,
+    optionId: string,
+  ): Promise<{ followUpPrompt?: import("@codex-sidepanel/shared").TurnInput }> {
+    for (const live of this.conversations.values()) {
+      if (live.session.getPendingPermissions().some((p) => p.requestId === requestId)) {
+        return live.session.respondToPermission(requestId, { requestId, optionId });
+      }
+    }
+    return {};
+  }
+
+  /** Exposed for gateway wiring: provider feature RPC entry. */
+  providerFor(profileOrProviderId: string) {
+    return this.opts.registry.resolve(profileOrProviderId);
+  }
+
   // ---- provider event intake ----
 
   #handleAgentEvent(taskId: string, event: AgentEvent): void {
@@ -458,7 +494,7 @@ export class SessionManager {
     if (event.type === "turn.started") {
       const turn = this.opts.store.getTurn((event as { turnId: string }).turnId);
       if (turn?.startedAt) {
-        this.#publish(taskId, event, false);
+        // duplicate of Gateway's own 1b persist — already on the stream
         return;
       }
     }

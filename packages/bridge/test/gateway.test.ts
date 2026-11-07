@@ -335,3 +335,81 @@ describe("stale-fence write refusal (§3.3.2)", () => {
     }
   });
 });
+
+describe("gateway task RPCs (SessionManager wiring)", () => {
+  function connect2(socketPath: string): Promise<net.Socket> {
+    return new Promise((resolve, reject) => {
+      const s = net.createConnection(socketPath, () => resolve(s));
+      s.once("error", reject);
+    });
+  }
+  function rpc2(socket: net.Socket, id: string, method: string, payload?: unknown): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const body = Buffer.from(
+        JSON.stringify({ v: 1, kind: "request", id, method, ...(payload !== undefined ? { payload } : {}) }),
+      );
+      const header = Buffer.alloc(4);
+      header.writeUInt32LE(body.length, 0);
+      let buf = Buffer.alloc(0);
+      const onData = (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        if (buf.length < 4) return;
+        const len = buf.readUInt32LE(0);
+        if (buf.length < 4 + len) return;
+        socket.off("data", onData);
+        const env = JSON.parse(buf.subarray(4, 4 + len).toString("utf8"));
+        if (env.kind === "response" && env.error) reject(env.error);
+        else resolve(env.result ?? env);
+      };
+      socket.on("data", onData);
+      socket.write(Buffer.concat([header, body]));
+    });
+  }
+  async function authedConn(gw: { ipc: GatewayIpcServer }): Promise<net.Socket> {
+    const ep = gw.ipc.endpointPath();
+    const s = await connect2(ep.path);
+    const token = gw.ipc.tokenBytes.toString("hex");
+    await rpc2(s, "hello", "hello", {
+      token,
+      clientVersion: "test",
+      protocolVersion: 1,
+      clientId: "c1",
+      profileId: "p1",
+      browserInstanceId: null,
+      hostInstanceId: "h1",
+    });
+    return s;
+  }
+
+  test("task.create → task.list → pause/resume/cancel over IPC", async () => {
+    const { startGateway } = await import("../src/gateway/main.js");
+    const gw = await startGateway({ dataDir: dir, log: () => {} });
+    try {
+      const s = await authedConn(gw);
+      const created = (await rpc2(s, "t1", "task.create", {
+        cwd: "/tmp",
+        title: "smoke",
+      })) as { taskId: string; status: string };
+      expect(created.taskId).toBeTruthy();
+
+      const list = (await rpc2(s, "t2", "task.list", {})) as { tasks: Array<{ taskId: string; status: string }> };
+      expect(list.tasks.some((t) => t.taskId === created.taskId)).toBe(true);
+
+      await rpc2(s, "t3", "task.pause", { taskId: created.taskId });
+      let task = gw.store.getTask(created.taskId)!;
+      expect(task.status).toBe("paused");
+      expect(task.pauseReason).toBe("user_requested");
+
+      await rpc2(s, "t4", "task.resume", { taskId: created.taskId });
+      task = gw.store.getTask(created.taskId)!;
+      expect(task.status).toBe("active");
+
+      await rpc2(s, "t5", "task.cancel", { taskId: created.taskId });
+      task = gw.store.getTask(created.taskId)!;
+      expect(task.status).toBe("cancelled");
+      s.destroy();
+    } finally {
+      await gw.shutdown("test");
+    }
+  });
+});
