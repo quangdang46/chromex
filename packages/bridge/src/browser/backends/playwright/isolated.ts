@@ -223,10 +223,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // aria snapshot per spike-B4; bounded text fallback
     try {
       const aria = await page.locator("body").ariaSnapshot();
-      return { snapshot: boundText(aria ?? "", MAX_EXTRACT_CHARS), url: stripQuery(page.url()) };
+      const b = boundText(aria ?? "", MAX_EXTRACT_CHARS);
+      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
     } catch {
       const text = await page.locator("body").innerText().catch(() => "");
-      return { snapshot: boundText(text, MAX_EXTRACT_CHARS), url: stripQuery(page.url()) };
+      const b = boundText(text, MAX_EXTRACT_CHARS);
+      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
     }
   }
 
@@ -235,7 +237,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const key = typeof args.key === "string" ? args.key : "text";
     if (key === "text") {
       const text = await page.locator("body").innerText().catch(() => "");
-      return { value: boundText(text, MAX_EXTRACT_CHARS), url: stripQuery(page.url()) };
+      return { value: boundText(text, MAX_EXTRACT_CHARS).text, url: stripQuery(page.url()) };
     }
     if (key === "title") return { value: await page.title(), url: stripQuery(page.url()) };
     if (key === "url") return { value: stripQuery(page.url()) };
@@ -374,6 +376,8 @@ function boundText(text: string, max: number): { text: string; truncated: boolea
 
 /** Never leak query strings into tool results (§privacy). */
 function stripQuery(url: string): string {
+  // data:/blob: URLs embed their entire payload — never echo them back
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url.slice(0, url.indexOf(":") + 1);
   try {
     const u = new URL(url);
     u.search = "";
