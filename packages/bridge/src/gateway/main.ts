@@ -420,6 +420,11 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           appendTaskEvent?: (taskId: string, e: unknown) => unknown;
           approvalStatus?: (id: string) => string | null;
           approvalDecision?: (id: string) => { optionId: string; scope?: string } | null;
+          resolveApproval?: (
+            id: string,
+            s: "allowed" | "denied" | "expired",
+            d?: { optionId: string; kind: string; decidedAt: number; scope?: string },
+          ) => void;
         };
         const request = {
           requestId: approvalId,
@@ -467,6 +472,23 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         }
         diagnostics.recordApprovalLatency(Date.now() - approvalStartedAt);
         broadcastDiagnostics();
+        // 60s poll expired — close the row + emit permission.expired so
+        // replayed clients clear the card instead of waiting forever.
+        storeAny.resolveApproval?.(approvalId, "expired", {
+          optionId: "timeout",
+          kind: "deny",
+          decidedAt: Date.now(),
+        });
+        const expiredEnv = (
+          store as { appendTaskEvent?: (id: string, e: unknown) => { kind?: string } | null }
+        ).appendTaskEvent?.(tctx.taskId, {
+          type: "permission.expired",
+          requestId: approvalId,
+          reason: "timeout",
+        });
+        if (expiredEnv && expiredEnv.kind === "event") {
+          ipc?.broadcast(expiredEnv as import("@codex-sidepanel/shared").Envelope);
+        }
         return { verdict: "timeout" as const };
       },
       allowTaskGranted: async (taskId, scope) => {

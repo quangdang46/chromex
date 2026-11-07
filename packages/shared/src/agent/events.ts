@@ -52,7 +52,7 @@ export type AgentEvent =
     }
   | { type: "permission.requested"; turnId?: string; request: PermissionRequest }
   | { type: "permission.resolved"; requestId: string; decision: PermissionDecision }
-  | { type: "permission.expired"; requestId: string; reason: "task_terminal" | "restart" | "provider_unavailable" }
+  | { type: "permission.expired"; requestId: string; reason: "task_terminal" | "restart" | "provider_unavailable" | "timeout" }
   | { type: "usage"; turnId?: string; usage: Usage }
   | { type: "turn.completed"; turnId: string; stopReason?: string }
   | { type: "turn.failed"; turnId: string; error: ProtocolError }
