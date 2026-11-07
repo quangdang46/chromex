@@ -393,7 +393,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const buf = this.#ensureConsoleCapture(page);
     const level = typeof args.level === "string" ? args.level : "";
     const limit = typeof args.limit === "number" ? Math.min(Math.max(Math.floor(args.limit), 1), MAX_CONSOLE_ENTRIES) : 100;
-    const filtered = level ? buf.filter((e) => e.level === level) : buf;
+    // playwright msg.type() emits "warning"; the extension host records
+    // the console method name "warn" — accept both spellings.
+    const wanted = level === "warn" ? "warning" : level;
+    const filtered = wanted ? buf.filter((e) => e.level === wanted) : buf;
     return { entries: filtered.slice(-limit), captured: true };
   }
 
