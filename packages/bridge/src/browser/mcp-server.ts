@@ -360,7 +360,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.wait": {
     description:
-      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains, readyState — polls the page until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout.",
+      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains, readyState, networkIdle — waits until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout. networkIdle waits for in-flight requests to drain (SPA data loads).",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       frameId: FRAME_ID,
@@ -374,6 +374,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         type: "string",
         enum: ["loading", "interactive", "complete"],
         description: "Condition: wait until document.readyState reaches at least this level (interactive ≈ DOMContentLoaded, complete ≈ load event).",
+      },
+      networkIdle: {
+        type: "boolean",
+        description: "Condition: wait until no network requests are in flight for the tab (SPA data-load barrier).",
       },
     }),
   },

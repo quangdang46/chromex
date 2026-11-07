@@ -35,6 +35,10 @@ const MAX_ENTRIES_PER_TAB = 300;
 const MAX_TABS = 50;
 
 const buffers = new Map<number, NetworkLogEntry[]>();
+/** requestId sets per tab — drives the network-idle wait. Entries are
+ *  removed on completion/error/tab-close; a missed removal only delays
+ *  idle detection until the next event, never fakes it. */
+const inFlight = new Map<number, Set<string>>();
 let installed = false;
 
 function safeUrl(raw: string): string {
@@ -74,11 +78,44 @@ export function installNetworkLog(): void {
   }
 }
 
+function trackStart(tabId: number, requestId: string): void {
+  let set = inFlight.get(tabId);
+  if (!set) {
+    set = new Set();
+    inFlight.set(tabId, set);
+  }
+  set.add(requestId);
+}
+
+function trackEnd(tabId: number, requestId: string): void {
+  inFlight.get(tabId)?.delete(requestId);
+}
+
+/** In-flight request count for a tab — browser.page.wait networkIdle. */
+export function getNetworkInflightCount(tabId: number): number {
+  return inFlight.get(tabId)?.size ?? 0;
+}
+
+/** Drop all state for a closed tab (called from tabs.onRemoved). */
+export function resetNetworkTab(tabId: number): void {
+  buffers.delete(tabId);
+  inFlight.delete(tabId);
+}
+
 function installNetworkLogInner(): void {
   const onCompleted = chrome.webRequest!.onCompleted;
   const onError = chrome.webRequest.onErrorOccurred;
+  const onBefore = chrome.webRequest.onBeforeRequest;
   const filters = { urls: ["<all_urls>"] };
+  onBefore.addListener((details) => {
+    if (typeof details.tabId === "number" && details.tabId >= 0 && details.requestId) {
+      trackStart(details.tabId, details.requestId);
+    }
+  }, filters);
   onCompleted.addListener((details) => {
+    if (typeof details.tabId === "number" && details.tabId >= 0 && details.requestId) {
+      trackEnd(details.tabId, details.requestId);
+    }
     if (typeof details.tabId !== "number" || details.tabId < 0) return;
     const mime = details.responseHeaders
       ?.find((h) => h.name.toLowerCase() === "content-type")
@@ -94,6 +131,9 @@ function installNetworkLogInner(): void {
     });
   }, filters);
   onError.addListener((details) => {
+    if (typeof details.tabId === "number" && details.tabId >= 0 && details.requestId) {
+      trackEnd(details.tabId, details.requestId);
+    }
     if (typeof details.tabId !== "number" || details.tabId < 0) return;
     push(details.tabId, {
       method: details.method,

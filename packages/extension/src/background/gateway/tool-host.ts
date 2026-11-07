@@ -76,6 +76,9 @@ export interface ToolHostDeps {
     mimeType?: string;
     ts?: number;
   }>;
+  /** in-flight request count for a tab (browser.page.wait args.networkIdle)
+   *  — absent dep → proto.unsupported. */
+  networkInflightCount?(tabId: number): number;
   /** chrome.downloads.download (browser.downloads.save) — starts a
    *  download into the profile's download dir; absent dep →
    *  proto.unsupported. */
@@ -543,6 +546,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.wait": {
         // Conditional wait (text/textGone/selector/urlContains) polls in
         // the content script; bare `ms` stays a bounded host-side sleep.
+        const networkIdle = args.networkIdle === true;
         const hasCondition =
           str(args.text) !== undefined ||
           str(args.textGone) !== undefined ||
@@ -553,17 +557,35 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
         }
-        if (!hasCondition) {
+        if (networkIdle && typeof deps.networkInflightCount !== "function") {
+          throw toolError("proto.unsupported", "network-idle wait is unavailable on this host");
+        }
+        if (!hasCondition && !networkIdle) {
           const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
           await new Promise((r) => setTimeout(r, ms));
           return { ok: true, waitedMs: ms };
         }
-        const tabId = await resolveScopedTabId(deps, args, tabScope);
-        const frameId = frameIdArg(args);
-        const timeoutMs = Math.min(
+        const waitTimeoutMs = Math.min(
           Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
           30_000,
         );
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (networkIdle) {
+          const deadline = Date.now() + waitTimeoutMs;
+          while (deps.networkInflightCount!(tabId) > 0) {
+            if (Date.now() >= deadline) {
+              throw toolError(
+                "browser.timeout",
+                `network idle not reached: ${deps.networkInflightCount!(tabId)} request(s) still in flight`,
+              );
+            }
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          if (!hasCondition) {
+            return { ok: true, matched: "networkIdle", resolvedTabId: tabId };
+          }
+        }
+        const frameId = frameIdArg(args);
         const res = (await deps.sendToTab(tabId, {
           type: "page.dom.wait",
           ...(str(args.text) ? { text: str(args.text) } : {}),
@@ -571,7 +593,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
           ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
           ...(str(args.readyState) ? { readyState: str(args.readyState) } : {}),
-          timeoutMs,
+          timeoutMs: waitTimeoutMs,
         }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
         if (res?.ok !== true) {
           throw toolError(

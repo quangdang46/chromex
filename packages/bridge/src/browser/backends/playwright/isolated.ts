@@ -535,8 +535,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const text = typeof args.text === "string" ? args.text : null;
     const textGone = typeof args.textGone === "string" ? args.textGone : null;
     const readyState = typeof args.readyState === "string" ? args.readyState : null;
+    const networkIdle = args.networkIdle === true;
     const hasCondition =
-      selector !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null;
+      selector !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
+      networkIdle;
     if (!hasCondition) {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
@@ -556,6 +558,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           .catch(() => {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           });
+      }
+    }
+    if (networkIdle) {
+      const remaining = Math.max(0, deadline - Date.now());
+      await page
+        .waitForLoadState("networkidle", { timeout: Math.min(remaining, 30_000) })
+        .catch(() => {
+          throw protocolError("browser.timeout", "network idle not reached before timeout");
+        });
+      if (selector === null && urlContains === null && text === null && textGone === null && readyState === null) {
+        return { ok: true, matched: "networkIdle", elapsedMs: Date.now() - started };
       }
     }
     for (;;) {

@@ -263,6 +263,36 @@ describe("tool host (P1-09)", () => {
     expect(res.waitedMs).toBe(1);
   });
 
+  test("page.wait networkIdle drains in-flight requests then resolves", async () => {
+    let inflight = 2;
+    const d = deps({
+      networkInflightCount: vi.fn(() => {
+        inflight = Math.max(0, inflight - 1);
+        return inflight;
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.wait", { networkIdle: true, timeoutMs: 5000, tabId: 7 }),
+    )) as { ok: boolean; matched: string };
+    expect(res).toMatchObject({ ok: true, matched: "networkIdle" });
+  });
+
+  test("page.wait networkIdle times out while requests stay in flight", async () => {
+    const d = deps({ networkInflightCount: vi.fn(() => 3) });
+    const h = createToolHostHandler(d);
+    await expect(
+      h(req("browser.page.wait", { networkIdle: true, timeoutMs: 50, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+  });
+
+  test("page.wait networkIdle without dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(
+      h(req("browser.page.wait", { networkIdle: true, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.find forwards text/regex/scope to page.dom.find and returns matches", async () => {
     const sentMsgs: Array<Record<string, unknown>> = [];
     const d = deps({

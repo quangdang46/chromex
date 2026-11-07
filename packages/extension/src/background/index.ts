@@ -104,7 +104,7 @@ import {
   validateRuntimeMessage,
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
-import { installNetworkLog, listNetworkRequests } from "./network-log.js";
+import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
 import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
@@ -238,6 +238,7 @@ const toolHostHandler = createToolHostHandler({
     },
     getTab: async (tabId) => chrome.tabs.get(tabId),
     listNetworkRequests: (tabId, query) => listNetworkRequests(tabId, query),
+    networkInflightCount: (tabId) => getNetworkInflightCount(tabId),
     listFrames: async (tabId) => {
       const frames = await chrome.webNavigation.getAllFrames({ tabId });
       return (frames ?? []).map((f) => ({
@@ -658,6 +659,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   toolHostSnapshotRegistry().invalidateTab(tabId);
+  resetNetworkTab(tabId);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
