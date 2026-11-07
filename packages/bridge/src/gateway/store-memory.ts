@@ -97,8 +97,12 @@ export class InMemoryStore {
   /** Allocate next durable seq for a task stream and append. */
   appendTaskEvent(taskId: string, event: DurableTaskEvent): DurableTaskEventEnvelope {
     this.#guard();
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error(`task ${taskId} not found`);
     const seq = (this.taskSeq.get(taskId) ?? 0) + 1;
     this.taskSeq.set(taskId, seq);
+    task.lastSeq = seq;
+    task.updatedAt = Date.now();
     const envelope = {
       v: 1,
       kind: "event",

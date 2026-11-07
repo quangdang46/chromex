@@ -403,8 +403,8 @@ describe("store parity: identical op sequence → identical observable state", (
   });
 });
 
-describe("known divergences (documented, expected to fail until fixed)", () => {
-  test.fails("parity: getTask().lastSeq tracks appended events", async () => {
+describe("previously divergent behaviors (now fixed)", () => {
+  test("parity: getTask().lastSeq tracks appended events", async () => {
     const memory = new InMemoryStore() as unknown as ParityStore;
     const sqlite = (await makeSqliteStore()) as unknown as ParityStore;
 
@@ -425,7 +425,7 @@ describe("known divergences (documented, expected to fail until fixed)", () => {
     expect(memory.getTask("t-seq")!.lastSeq).toBe(sqlite.getTask("t-seq")!.lastSeq);
   });
 
-  test.fails("parity: appendTaskEvent on an unknown task", async () => {
+  test("parity: appendTaskEvent on an unknown task", async () => {
     const memory = new InMemoryStore() as unknown as ParityStore;
     const sqlite = (await makeSqliteStore()) as unknown as ParityStore;
 
