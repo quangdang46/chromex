@@ -102,6 +102,7 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
             requestId?: string;
             kind?: string;
             summary?: string;
+            options?: Array<{ id?: string; label?: string; kind?: string }>;
             details?: { argsPreview?: { questions?: unknown[] } };
           }
         | undefined;
@@ -124,10 +125,24 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
               id: "decision",
               header: "Approval",
               question: summary,
-              options: [
-                { label: "Allow", description: "Allow this browser action once" },
-                { label: "Deny", description: "Reject this browser action" },
-              ],
+              options:
+                (req.options ?? []).filter((o) => typeof o?.label === "string").length > 0
+                  ? (req.options ?? [])
+                      .filter((o) => typeof o?.label === "string")
+                      .map((o) => ({
+                        label: o.label as string,
+                        description:
+                          o.kind === "allow_task"
+                            ? "Allow this action scope for the rest of the task"
+                            : o.kind === "deny"
+                              ? "Reject this browser action"
+                              : "Allow this browser action once",
+                        ...(typeof o.id === "string" ? { id: o.id } : {}),
+                      }))
+                  : [
+                      { label: "allow_once", description: "Allow this browser action once" },
+                      { label: "deny", description: "Reject this browser action" },
+                    ],
             },
           ],
         };

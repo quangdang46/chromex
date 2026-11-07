@@ -536,7 +536,7 @@ export class SQLiteStore {
   /** Approval rows for snapshot rebuild — request + decision + status. */
   listApprovals(taskId: string): Array<{
     request: unknown;
-    decision: { optionId: string; kind: string; decidedAt: number } | null;
+    decision: { optionId: string; kind: string; decidedAt: number; scope?: string } | null;
     status: string;
     createdAt: number;
   }> {
@@ -696,10 +696,32 @@ export class SQLiteStore {
   }
 
   /** Resolve a pending approval; idempotent — already-resolved is a no-op. */
-  resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
+  resolveApproval(
+    approvalId: string,
+    status: "allowed" | "denied" | "expired",
+    decision?: { optionId: string; kind: string; decidedAt: number; scope?: string },
+  ): void {
     this.db
-      .prepare("UPDATE approvals SET status = ? WHERE approval_id = ? AND status = 'pending'")
-      .run(status, approvalId);
+      .prepare(
+        "UPDATE approvals SET status = ?, decision_json = ?, decided_at = ? WHERE approval_id = ? AND status = 'pending'",
+      )
+      .run(status, decision ? JSON.stringify(decision) : null, decision?.decidedAt ?? null, approvalId);
+  }
+
+  approvalRequest(approvalId: string): unknown {
+    const row = this.db
+      .prepare("SELECT request_json FROM approvals WHERE approval_id = ?")
+      .get(approvalId) as { request_json: string } | undefined;
+    return row ? JSON.parse(row.request_json) : null;
+  }
+
+  approvalDecision(
+    approvalId: string,
+  ): { optionId: string; kind: string; decidedAt: number; scope?: string } | null {
+    const row = this.db
+      .prepare("SELECT decision_json FROM approvals WHERE approval_id = ?")
+      .get(approvalId) as { decision_json: string | null } | undefined;
+    return row?.decision_json ? JSON.parse(row.decision_json) : null;
   }
 
   insertArtifact(row: {

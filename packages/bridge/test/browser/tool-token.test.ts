@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { canonicalJson, ToolTokenError, ToolTokenManager, TOOL_TOKEN_TTL_MS } from "../../src/browser/tool-token.js";
-import { BrowserToolServer, classifyToolCall, HARD_BLOCKED_TOOLS } from "../../src/browser/tool-server.js";
+import { BrowserToolServer, buildActionContext, browserActionDigest, HARD_BLOCKED_TOOLS } from "../../src/browser/tool-server.js";
+import { classifyActionRisk } from "@codex-sidepanel/shared";
 import type { ToolHostChannel } from "../../src/browser/tool-server.js";
 
 const SECRET = "ab".repeat(32);
@@ -112,7 +113,7 @@ describe("BrowserToolServer", () => {
       send: async () => ({ ok: true }),
       onDisconnect: () => {},
     };
-    const s2 = new BrowserToolServer({ tokens, resolveHost: () => host, requestApproval: async () => "approved", now: () => NOW });
+    const s2 = new BrowserToolServer({ tokens, resolveHost: () => host, requestApproval: async () => ({ verdict: "approved" as const }), now: () => NOW });
     const first = await s2.execute({ ...REQ, token });
     expect(first.status).toBe("completed");
     const second = await s2.execute({ ...REQ, token });
@@ -145,10 +146,73 @@ describe("BrowserToolServer", () => {
     expect(s2.cancelForTask("other-task")).toHaveLength(0);
   });
 
-  it("classifies mutating tools as needs_approval, reads as allow", () => {
-    const base = { taskId: "t", tool: "x", args: {}, backendId: "chrome-extension" as const, dataEgress: false };
-    expect(classifyToolCall({ ...base, tool: "browser.page.snapshot" }).kind).toBe("allow");
-    expect(classifyToolCall({ ...base, tool: "browser.page.click" }).kind).toBe("needs_approval");
-    expect(classifyToolCall({ ...base, tool: "browser.page.evaluate" }).kind).toBe("deny");
+  it("classifies via §4.8 risk engine: reads allow, unresolved mutations approve, hard-blocks deny", () => {
+    const req = (tool: string, args: Record<string, unknown> = {}) => ({
+      toolCallId: "tc-x",
+      taskId: "t",
+      tool,
+      args,
+      token: "",
+      profileId: "p",
+    });
+    const risk = (tool: string, args: Record<string, unknown> = {}) =>
+      classifyActionRisk(buildActionContext(req(tool, args) as never));
+    expect(risk("browser.page.snapshot").risk).toBe("read");
+    // unresolved click context → fail closed approval
+    expect(risk("browser.page.click").needsApproval).toBe(true);
+    // evaluate is hard-blocked upstream; classifier fails closed too
+    expect(risk("browser.page.evaluate").needsApproval).toBe(true);
+  });
+
+  it("actionDigest binds tool+args+snapshot+url+origin", () => {
+    const req = {
+      toolCallId: "tc-d", taskId: "t", tool: "browser.page.click",
+      args: { ref: "e1", snapshotId: "snap:1" }, token: "", profileId: "p",
+    };
+    const actx = buildActionContext(req as never);
+    const d1 = browserActionDigest(req as never, actx);
+    const d2 = browserActionDigest({ ...(req as object), args: { ref: "e2", snapshotId: "snap:1" } } as never, actx);
+    expect(d1).not.toBe(d2);
+    expect(d1).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("allow_task grant skips approval for matching scope only", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens);
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async () => ({ ok: true }),
+      onDisconnect: () => {},
+    };
+    const granted = new Set<string>();
+    let approvalCalls = 0;
+    const s = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async () => {
+        approvalCalls += 1;
+        return { verdict: "approved" as const, optionId: "allow_task" };
+      },
+      allowTaskGranted: async (_t, scope) => granted.has(scope),
+      grantAllowTask: (_t, scope) => granted.add(scope),
+      now: () => NOW,
+    });
+    const req = { ...REQ, token, args: { ref: "e1", label: "Pay now" } };
+    const first = await s.execute({ ...req, toolCallId: "tc-at-1" });
+    expect(first.status).toBe("completed");
+    expect(approvalCalls).toBe(1);
+    expect(granted.size).toBe(1);
+    // same scope → no second approval
+    const second = await s.execute({ ...req, toolCallId: "tc-at-2" });
+    expect(second.status).toBe("completed");
+    expect(approvalCalls).toBe(1);
+    // different origin → new scope → approval again
+    const third = await s.execute({
+      ...req,
+      toolCallId: "tc-at-3",
+      args: { ref: "e1", label: "Pay now", url: "https://other.example.com/" },
+    });
+    expect(third.status).toBe("completed");
+    expect(approvalCalls).toBe(2);
   });
 });

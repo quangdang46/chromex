@@ -330,9 +330,13 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       },
       requestApproval: async (tctx) => {
         const approvalId = `appr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const actionDigest = createHash("sha256")
-          .update(JSON.stringify({ tool: tctx.tool, args: tctx.args }))
-          .digest("hex");
+        const options: Array<{ id: string; label: string; kind: "allow_once" | "allow_task" | "deny" }> = [
+          { id: "allow_once", label: "Allow once", kind: "allow_once" },
+          ...(tctx.allowTaskScope
+            ? [{ id: "allow_task", label: "Allow for this task", kind: "allow_task" as const }]
+            : []),
+          { id: "deny", label: "Deny", kind: "deny" },
+        ];
         const storeAny = store as unknown as {
           insertApproval?: (r: {
             approvalId: string; taskId: string; turnId?: string;
@@ -341,38 +345,80 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           }) => void;
           appendTaskEvent?: (taskId: string, e: unknown) => unknown;
           approvalStatus?: (id: string) => string | null;
+          approvalDecision?: (id: string) => { optionId: string; scope?: string } | null;
+        };
+        const request = {
+          requestId: approvalId,
+          taskId: tctx.taskId,
+          ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
+          kind: tctx.kind,
+          risk: tctx.risk,
+          summary: `${tctx.tool} requires approval (${tctx.reason})`,
+          actionDigest: tctx.actionDigest,
+          options,
+          details: {
+            tool: tctx.tool,
+            argsPreview: tctx.details.argsPreview,
+            origin: tctx.details.origin,
+            ...(tctx.details.targetLabel ? { targetLabel: tctx.details.targetLabel } : {}),
+            ...(tctx.details.allowTaskScope ? { allowTaskScope: tctx.details.allowTaskScope } : {}),
+          },
         };
         storeAny.insertApproval?.({
           approvalId,
           taskId: tctx.taskId,
           ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
-          request: { tool: tctx.tool, args: tctx.args },
-          actionDigest,
+          request,
+          actionDigest: tctx.actionDigest,
           status: "pending",
           createdAt: Date.now(),
         });
         storeAny.appendTaskEvent?.(tctx.taskId, {
           type: "permission.requested",
           ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
-          request: {
-            requestId: approvalId,
-            taskId: tctx.taskId,
-            ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
-            kind: "browser_action",
-            risk: "external_mutation",
-            summary: `Browser tool ${tctx.tool} requires approval`,
-            actionDigest,
-            details: { tool: tctx.tool },
-          },
+          request,
         });
         // poll for resolution up to 60s (UI answers via permission.respond)
         for (let i = 0; i < 240; i++) {
           const st = storeAny.approvalStatus?.(approvalId);
-          if (st === "allowed") return "approved";
-          if (st === "denied" || st === "expired") return "denied";
+          if (st === "allowed") {
+            const optionId = storeAny.approvalDecision?.(approvalId)?.optionId;
+            return { verdict: "approved" as const, ...(optionId ? { optionId } : {}) };
+          }
+          if (st === "denied" || st === "expired") {
+            const optionId = storeAny.approvalDecision?.(approvalId)?.optionId;
+            return { verdict: "denied" as const, ...(optionId ? { optionId } : {}) };
+          }
           await sleep(250);
         }
-        return "timeout";
+        return { verdict: "timeout" as const };
+      },
+      allowTaskGranted: async (taskId, scope) => {
+        const rows = (store as { listApprovals?: (id: string) => Array<{ status: string; decision: { optionId: string; scope?: string } | null }> }).listApprovals?.(taskId) ?? [];
+        return rows.some(
+          (r) => r.status === "allowed" && r.decision?.optionId === "allow_task" && r.decision.scope === scope,
+        );
+      },
+      grantAllowTask: (taskId, scope) => {
+        // grant is recorded by permission.respond → resolveApproval
+        // decision.scope; this hook exists for symmetry/audit.
+        void taskId;
+        void scope;
+      },
+      onClassified: (taskId, actx, v) => {
+        // §4.8 audit: redacted ActionContext — args values are NOT
+        // logged, only classification + target metadata.
+        const storeAny = store as { appendTaskEvent?: (id: string, e: unknown) => unknown };
+        storeAny.appendTaskEvent?.(taskId, {
+          type: "browser.tool.classified",
+          action: actx.action,
+          risk: v.risk,
+          needsApproval: v.needsApproval,
+          reason: v.reason,
+          origin: actx.origin || null,
+          targetLabel: actx.target?.label ?? null,
+          contextResolved: actx.contextResolved,
+        });
       },
       onOutcome: (outcome) => {
         const storeAny = store as { appendTaskEvent?: (taskId: string, e: unknown) => unknown };
@@ -691,11 +737,34 @@ async function handleGatewayRequest(
       // browser-tool approvals live in the approvals table, not provider
       // sessions — resolve the row directly (idempotent no-op if the
       // provider path already handled it).
-      const storeAny = ctx.store as { approvalStatus?: (id: string) => string | null; resolveApproval?: (id: string, s: "allowed" | "denied" | "expired") => void };
+      const storeAny = ctx.store as {
+        approvalStatus?: (id: string) => string | null;
+        approvalRequest?: (id: string) => unknown;
+        resolveApproval?: (
+          id: string,
+          s: "allowed" | "denied" | "expired",
+          d?: { optionId: string; kind: string; decidedAt: number; scope?: string },
+        ) => void;
+      };
       if (storeAny.approvalStatus?.(p.requestId) === "pending") {
+        const optionId = String(p.optionId ?? "");
+        const denied = optionId.toLowerCase() === "deny";
+        // allow_task scope comes from the stored request details —
+        // the digest-bound scope, never client-supplied.
+        const reqRow = storeAny.approvalRequest?.(p.requestId) as
+          | { details?: { allowTaskScope?: string } }
+          | null
+          | undefined;
+        const scope = optionId === "allow_task" ? reqRow?.details?.allowTaskScope : undefined;
         storeAny.resolveApproval?.(
           p.requestId,
-          String(p.optionId).toLowerCase() === "deny" ? "denied" : "allowed",
+          denied ? "denied" : "allowed",
+          {
+            optionId,
+            kind: denied ? "deny" : optionId === "allow_task" ? "allow_task" : "allow_once",
+            decidedAt: Date.now(),
+            ...(scope ? { scope } : {}),
+          },
         );
       }
       return result;

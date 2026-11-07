@@ -525,7 +525,7 @@ type PlanUserInputQuestion = {
   question: string;
   isOther?: boolean;
   isSecret?: boolean;
-  options?: Array<{ label: string; description: string }>;
+  options?: Array<{ label: string; description: string; id?: string }>;
 };
 
 type PlanUserInputRequestState = {
@@ -5948,7 +5948,7 @@ function buildPlanInputAnswers(questions: PlanUserInputQuestion[]): Record<strin
       continue;
     }
     const option = typeof draft.selectedIndex === "number" ? question.options?.[draft.selectedIndex] : undefined;
-    answers[question.id] = { answers: option?.label ? [option.label] : [] };
+    answers[question.id] = { answers: option ? [option.id ?? option.label] : [] };
   }
   return answers;
 }

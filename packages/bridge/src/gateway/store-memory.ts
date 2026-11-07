@@ -175,7 +175,7 @@ export class InMemoryStore {
       taskId: string;
       status: string;
       request?: unknown;
-      decision?: { optionId: string; kind: string; decidedAt: number } | null;
+      decision?: { optionId: string; kind: string; decidedAt: number; scope?: string } | null;
       createdAt?: number;
     }
   >();
@@ -201,7 +201,7 @@ export class InMemoryStore {
   /** Approval rows for snapshot rebuild (mirror of SQLiteStore.listApprovals). */
   listApprovals(taskId: string): Array<{
     request: unknown;
-    decision: { optionId: string; kind: string; decidedAt: number } | null;
+    decision: { optionId: string; kind: string; decidedAt: number; scope?: string } | null;
     status: string;
     createdAt: number;
   }> {
@@ -232,9 +232,26 @@ export class InMemoryStore {
     return a ? (a.status as never) : null;
   }
 
-  resolveApproval(approvalId: string, status: "allowed" | "denied" | "expired"): void {
+  resolveApproval(
+    approvalId: string,
+    status: "allowed" | "denied" | "expired",
+    decision?: { optionId: string; kind: string; decidedAt: number; scope?: string },
+  ): void {
     const a = this.approvals.get(approvalId);
-    if (a && a.status === "pending") a.status = status;
+    if (a && a.status === "pending") {
+      a.status = status;
+      if (decision) a.decision = decision;
+    }
+  }
+
+  approvalRequest(approvalId: string): unknown {
+    return this.approvals.get(approvalId)?.request ?? null;
+  }
+
+  approvalDecision(
+    approvalId: string,
+  ): { optionId: string; kind: string; decidedAt: number; scope?: string } | null {
+    return this.approvals.get(approvalId)?.decision ?? null;
   }
 
   /** §4.6 self-sufficient snapshot rebuilt from the durable event

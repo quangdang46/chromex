@@ -11,7 +11,18 @@
  * host_lost_after_dispatch. Full affinity/stranded rules are P2-03.
  */
 
-import type { ActionContext, BrowserBackendId, BrowserToolName } from "@codex-sidepanel/shared";
+import { createHash } from "node:crypto";
+
+import {
+  allowTaskScope,
+  canonicalJson,
+  classifyActionRisk,
+  urlOriginPath,
+  type ActionContext,
+  type BrowserBackendId,
+  type BrowserToolName,
+  type RiskLevel,
+} from "@codex-sidepanel/shared";
 
 import { ToolTokenError, ToolTokenManager } from "./tool-token.js";
 
@@ -54,51 +65,100 @@ export interface ToolHostChannel {
   onDisconnect(listener: (reason: "disconnect" | "timeout") => void): void;
 }
 
-/** ActionContext skeleton (§4.8) — populated enough for classification. */
-export interface ToolActionContext {
-  profileId?: string;
+/** Approval request handed to the host-side approval hook (§4.8). */
+export interface ToolApprovalRequest {
   taskId: string;
   turnId?: string;
   tool: string;
   args: Record<string, unknown>;
   backendId: BrowserBackendId;
-  tabId?: number;
-  url?: string;
-  origin?: string;
-  dataEgress: boolean;
+  risk: RiskLevel;
+  kind: "browser_action" | "provider_permission" | "data_entry_sensitive" | "agent_egress";
+  reason: string;
+  /** canonical allow_task scope — present only when allowTaskEligible */
+  allowTaskScope?: string;
+  /** hash(tool,args,targetRef,snapshotId,url,origin) — approval binds to this */
+  actionDigest: string;
+  details: {
+    tool: string;
+    argsPreview: unknown;
+    origin: string;
+    targetLabel?: string;
+    allowTaskScope?: string;
+  };
 }
 
-export type ToolClassification =
-  | { kind: "allow" }
-  | { kind: "needs_approval"; reason: string }
-  | { kind: "deny"; reason: string };
+export type ToolApprovalVerdict =
+  | { verdict: "approved"; optionId?: string }
+  | { verdict: "denied" | "timeout"; optionId?: string };
 
-/**
- * Policy skeleton classifier. Deterministic table — the full §4.8
- * engine (agentEgress, provenance, risk tiers) lands in P2-04.
- * Fail-closed: anything unrecognized that looks mutating → approval.
- */
-export function classifyToolCall(ctx: ToolActionContext): ToolClassification {
-  if (HARD_BLOCKED_TOOLS.has(ctx.tool)) {
-    return { kind: "deny", reason: "tool is hard-blocked" };
+/** Build the §4.8 ActionContext for a tool call. `contextResolved`
+ *  is honest: mutating tools need an explicit target/url arg —
+ *  anything less fails closed inside the classifier. */
+export function buildActionContext(req: ToolCallRequest): ActionContext {
+  const args = req.args ?? {};
+  const url = typeof args.url === "string" ? args.url : "";
+  let origin = "";
+  try {
+    origin = url ? new URL(url).origin : "";
+  } catch {
+    origin = "";
   }
-  const mutating = /\.(click|fill|submit|navigate|type|select|press|scroll|hover|drag|upload)$/.test(ctx.tool);
-  const egress = ctx.dataEgress || /\.(fetch|request|post|send)/.test(ctx.tool);
-  if (egress) {
-    return { kind: "needs_approval", reason: "data egress requires approval" };
-  }
-  if (mutating) {
-    return { kind: "needs_approval", reason: "mutating action requires approval" };
-  }
-  return { kind: "allow" };
+  const hasTarget =
+    typeof args.ref === "string" || typeof args.selector === "string" || typeof args.label === "string";
+  const mutating = /\.(click|fill|submit|navigate|type|select|press|scroll|hover|drag|upload)$/.test(req.tool);
+  const targetLabel = typeof args.label === "string" ? args.label : undefined;
+  return {
+    backendId: req.backendId ?? "chrome-extension",
+    profileId: req.profileId,
+    tabId: typeof args.tabId === "number" ? args.tabId : "unknown",
+    url,
+    origin,
+    action: req.tool as BrowserToolName,
+    ...(hasTarget || targetLabel
+      ? {
+          target: {
+            ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
+            ...(targetLabel ? { label: targetLabel } : {}),
+          },
+        }
+      : {}),
+    ...(typeof args.text === "string" || typeof args.value === "string"
+      ? { dataEgress: "network-form" as const }
+      : {}),
+    withinTabScope: true, // scope enforcement is the host registry's job (P2-03)
+    contextResolved: !mutating || hasTarget || (req.tool.endsWith("navigate") && url !== "") || req.tool.endsWith("scroll") || req.tool.endsWith("wait"),
+  };
+}
+
+/** §4.8 actionDigest: hash(canonical(tool,args,target ref,snapshotId,url,origin)). */
+export function browserActionDigest(req: ToolCallRequest, actx: ActionContext): string {
+  return createHash("sha256")
+    .update(
+      canonicalJson({
+        tool: req.tool,
+        args: req.args ?? {},
+        targetRef: actx.target?.ref ?? null,
+        snapshotId: typeof req.args?.snapshotId === "string" ? req.args.snapshotId : null,
+        url: actx.url || null,
+        origin: actx.origin || null,
+      }),
+    )
+    .digest("hex");
 }
 
 export interface ToolServerDeps {
   tokens: ToolTokenManager;
   /** Resolve which host instance serves a task (minimal registry). */
   resolveHost(taskId: string): ToolHostChannel | null;
-  /** Approval hook — P1-09 skeleton; P2-04 replaces with full engine. */
-  requestApproval?(ctx: ToolActionContext): Promise<"approved" | "denied" | "timeout">;
+  /** Approval hook — full §4.8 engine (P2-04). */
+  requestApproval?(ctx: ToolApprovalRequest): Promise<ToolApprovalVerdict>;
+  /** allow_task scope check — granted scopes persist for task lifetime. */
+  allowTaskGranted?(taskId: string, scope: string): Promise<boolean>;
+  /** Record an allow_task grant after user approval. */
+  grantAllowTask?(taskId: string, scope: string): void;
+  /** Redacted ActionContext audit hook (§4.8: logged for audit). */
+  onClassified?(taskId: string, ctx: ActionContext, verdict: { risk: RiskLevel; needsApproval: boolean; reason: string }): void;
   onOutcome?(outcome: ToolCallOutcome): void;
   now?: () => number;
   defaultTimeoutMs?: number;
@@ -153,23 +213,52 @@ export class BrowserToolServer {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.no_host", message: "no host registered for task" } });
     }
 
-    // 5. Classify + approval.
-    const ctx: ToolActionContext = {
-      taskId: req.taskId,
-      ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
-      tool: req.tool,
-      args: req.args,
-      backendId: req.backendId ?? "chrome-extension",
-      dataEgress: /\.(fetch|request|post|send)/.test(req.tool),
-    };
-    const classification = classifyToolCall(ctx);
-    if (classification.kind === "deny") {
-      return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.policy_denied", message: classification.reason } });
+    // 5. §4.8 classify + approval.
+    const actx = buildActionContext(req);
+    const verdict = classifyActionRisk(actx);
+    this.deps.onClassified?.(req.taskId, actx, verdict);
+    if (verdict.risk === "deny" || verdict.risk === "hard_block") {
+      return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.policy_denied", message: verdict.reason } });
     }
-    if (classification.kind === "needs_approval") {
-      const verdict = await this.deps.requestApproval?.(ctx);
-      if (verdict !== "approved") {
-        return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.approval_denied", message: verdict === "timeout" ? "approval timed out" : "approval denied" } });
+    if (verdict.needsApproval) {
+      const scope = verdict.allowTaskEligible ? allowTaskScope(actx) : undefined;
+      const alreadyGranted =
+        scope !== undefined && (await this.deps.allowTaskGranted?.(req.taskId, scope)) === true;
+      if (!alreadyGranted) {
+        const approval = await this.deps.requestApproval?.({
+          taskId: req.taskId,
+          ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
+          tool: req.tool,
+          args: req.args,
+          backendId: req.backendId ?? "chrome-extension",
+          risk: verdict.risk,
+          kind: verdict.kind ?? "browser_action",
+          reason: verdict.reason,
+          ...(scope !== undefined ? { allowTaskScope: scope } : {}),
+          actionDigest: browserActionDigest(req, actx),
+          details: {
+            tool: req.tool,
+            argsPreview: req.args,
+            origin: actx.origin,
+            ...(actx.target?.label ? { targetLabel: actx.target.label } : {}),
+            ...(scope !== undefined ? { allowTaskScope: scope } : {}),
+          },
+        });
+        const approved = approval?.verdict === "approved";
+        if (!approved) {
+          return this.finish({
+            toolCallId: req.toolCallId,
+            tool: req.tool,
+            status: "failed",
+            error: {
+              code: "browser.approval_denied",
+              message: approval?.verdict === "timeout" ? "approval timed out" : "approval denied",
+            },
+          });
+        }
+        if (scope !== undefined && approval?.optionId === "allow_task") {
+          this.deps.grantAllowTask?.(req.taskId, scope);
+        }
       }
     }
 

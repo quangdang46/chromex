@@ -61,7 +61,23 @@ describe("gatewayEventToLegacy", () => {
       type: "plan.user_input.requested", requestId: "appr-1", threadId: "t1",
     });
     const qs = (out as { questions: { options: { label: string }[] }[] }).questions;
-    expect(qs[0]!.options.map((o) => o.label)).toEqual(["Allow", "Deny"]);
+    expect(qs[0]!.options.map((o) => o.label)).toEqual(["allow_once", "deny"]);
+  });
+  it("browser_action approval passes through allow_task option id", () => {
+    const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
+      turnId: "g1",
+      request: {
+        requestId: "appr-2", kind: "browser_action", risk: "external_mutation",
+        summary: "s", options: [
+          { id: "allow_once", label: "Allow once", kind: "allow_once" },
+          { id: "allow_task", label: "Allow for this task", kind: "allow_task" },
+          { id: "deny", label: "Deny", kind: "deny" },
+        ],
+        details: { tool: "browser.page.click" },
+      },
+    }));
+    const qs = (out as { questions: { options: { label: string; id?: string }[] }[] }).questions;
+    expect(qs[0]!.options.map((o) => o.id)).toEqual(["allow_once", "allow_task", "deny"]);
   });
   it("provider_permission with questions → plan.user_input.requested", () => {
     const questions = [{ id: "q1", header: "H", question: "Pick one", options: [{ label: "A" }] }];
