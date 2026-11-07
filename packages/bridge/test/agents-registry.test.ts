@@ -1,10 +1,18 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test, vi } from "vitest";
 
 import type { AgentProvider, ProviderCatalog } from "@codex-sidepanel/shared";
 import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
 
 import { ProviderRegistry, effectiveCapabilities } from "../src/agents/registry.js";
-import { CatalogCache, CATALOG_TTL_MS } from "../src/agents/catalog-cache.js";
+import {
+  CatalogCache,
+  CATALOG_TTL_MS,
+  FileCatalogSnapshotStore,
+} from "../src/agents/catalog-cache.js";
 import type { GatewayProviderConfig } from "../src/gateway/config.js";
 
 function providerCfg(enabled = true): GatewayProviderConfig {
@@ -139,6 +147,67 @@ describe("CatalogCache", () => {
     cache.invalidate("codex");
     await cache.fetch("codex");
     expect(calls).toBe(3);
+  });
+
+  test("snapshot store: fresh disk snapshot is served without a provider fetch", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "catalog-snap-"));
+    try {
+      let now = 1_000_000;
+      let calls = 0;
+      const provider: AgentProvider = {
+        ...fakeProvider("codex"),
+        fetchCatalog: async () => {
+          calls += 1;
+          return {
+            providerId: "codex",
+            models: [{ id: "gpt-5", label: "GPT-5" }],
+            modes: [],
+            fetchedAt: now,
+          };
+        },
+      };
+      const store = new FileCatalogSnapshotStore(dir);
+      const first = new CatalogCache(() => [provider], () => now, store);
+      await first.fetch("codex");
+      expect(calls).toBe(1);
+      // let the fire-and-forget save land
+      await vi.waitFor(async () => {
+        expect(await store.load("codex")).not.toBeNull();
+      });
+
+      // "restart": brand-new cache over the same dir
+      const second = new CatalogCache(() => [provider], () => now, store);
+      const catalog = await second.fetch("codex");
+      expect(calls).toBe(1);
+      expect(catalog.models[0]?.id).toBe("gpt-5");
+
+      // stale snapshot (> TTL) is ignored → provider refetch
+      now += CATALOG_TTL_MS + 1;
+      const third = new CatalogCache(() => [provider], () => now, store);
+      await third.fetch("codex");
+      expect(calls).toBe(2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("snapshot store: corrupt/missing files load as null", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "catalog-snap-"));
+    try {
+      const store = new FileCatalogSnapshotStore(dir);
+      expect(await store.load("codex")).toBeNull();
+      await store.save("codex", {
+        catalog: { providerId: "codex", models: [], modes: [], fetchedAt: 1 },
+        fetchedAt: 1,
+      });
+      expect(await store.load("codex")).not.toBeNull();
+      // overwrite with garbage → tolerant null
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(join(dir, "codex.json"), "not json");
+      expect(await store.load("codex")).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("deadline: hanging fetch rejects with CatalogFetchTimeoutError", async () => {

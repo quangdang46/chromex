@@ -20,7 +20,11 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import type { GatewayProviderConfig } from "../gateway/config.js";
-import { CatalogCache } from "./catalog-cache.js";
+import {
+  CatalogCache,
+  FileCatalogSnapshotStore,
+  resolveCatalogSnapshotDir,
+} from "./catalog-cache.js";
 
 export type ProviderFactory = () => AgentProvider | Promise<AgentProvider>;
 
@@ -54,12 +58,32 @@ export interface ResolvedSessionTarget {
   profileOf?: string;
 }
 
+export interface ProviderRegistryOptions {
+  /**
+   * Directory for persisted catalog snapshots (`<dataDir>/catalog`).
+   * `undefined` (default) auto-resolves from CHROMEX_GATEWAY_HOME;
+   * `null` disables disk persistence entirely.
+   */
+  catalogDir?: string | null;
+}
+
 export class ProviderRegistry {
   private entries = new Map<ProviderId, RegistryProviderEntry>();
   private profileIndex = new Map<string, { providerId: ProviderId; profile: DerivedProfile }>();
-  private readonly catalogCache = new CatalogCache(() => this.providerValues());
+  private readonly catalogCache: CatalogCache;
 
-  constructor(private readonly providerConfigs: Record<string, GatewayProviderConfig>) {}
+  constructor(
+    private readonly providerConfigs: Record<string, GatewayProviderConfig>,
+    options: ProviderRegistryOptions = {},
+  ) {
+    const catalogDir =
+      options.catalogDir === undefined ? resolveCatalogSnapshotDir() : options.catalogDir;
+    this.catalogCache = new CatalogCache(
+      () => this.providerValues(),
+      () => Date.now(),
+      catalogDir ? new FileCatalogSnapshotStore(catalogDir) : undefined,
+    );
+  }
 
   private *providerValues(): Iterable<AgentProvider> {
     for (const e of this.entries.values()) yield e.provider;

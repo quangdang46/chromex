@@ -210,8 +210,9 @@ const bridge = new NativeBridgeClient();
 
 // P1-09: answer gateway browser.tool.request envelopes. Registered
 // unconditionally — the runtime only exists when gatewayMode is on.
-setGatewayServerRequestHandler(
-  createToolHostHandler({
+// The runtime calls handler(method, payload); the tool host takes the
+// payload only, so dispatch on the method here.
+const toolHostHandler = createToolHostHandler({
     sendToTab: async (tabId, message) => {
       const tab = await chrome.tabs.get(tabId);
       if (!tab.id || !tab.url) throw new Error(`tab ${tabId} has no url`);
@@ -242,8 +243,16 @@ setGatewayServerRequestHandler(
         bytes: number;
       };
     },
-  }),
-);
+  });
+
+setGatewayServerRequestHandler(async (method, payload) => {
+  if (method !== "browser.tool.request") {
+    const e = new Error(`no handler for ${method}`) as Error & { code?: string };
+    e.code = "proto.unsupported";
+    throw e;
+  }
+  return toolHostHandler(payload);
+});
 
 // P1-08: when gatewayMode is on, route agent-domain bridge.request calls
 // through the Gateway runtime (compat layer returns legacy shapes).
@@ -485,6 +494,13 @@ chrome.runtime.onInstalled.addListener(() => {
   registerContextMenus();
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined);
 });
+
+// chromex-w2h: prewarm the provider/model catalog at service-worker start
+// so the first ui.init doesn't pay catalog latency. The gateway serves
+// its persisted snapshot instantly (agents/catalog-cache.ts); a
+// workspace-scoped refresh still runs from ensureStateLoaded when the
+// root differs, and catalog.updated keeps it fresh afterwards.
+void triggerCatalogRefresh();
 
 chrome.commands.onCommand.addListener((command) => {
   void handleCommand(command);
