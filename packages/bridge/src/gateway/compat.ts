@@ -17,6 +17,8 @@ import os from "node:os";
 
 import { protocolError as perr } from "@codex-sidepanel/shared";
 
+import { mapMcpServerStatusResponse, mapSkills } from "../app-server-mappers.js";
+
 export interface CompatRewrite {
   method: string;
   payload: unknown;
@@ -246,8 +248,17 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
   "goal.set": { toRequest: (p) => ({ method: "provider.feature.codex.goal.set", payload: p }), fromResult: (r) => r },
   "goal.get": { toRequest: (p) => ({ method: "provider.feature.codex.goal.get", payload: p }), fromResult: (r) => r },
   "goal.clear": { toRequest: (p) => ({ method: "provider.feature.codex.goal.clear", payload: p }), fromResult: (r) => r },
-  "skills.list": { toRequest: (p) => ({ method: "provider.feature.codex.skills.list", payload: p }), fromResult: (r) => r },
-  "mcp.servers.list": { toRequest: (p) => ({ method: "provider.feature.codex.mcp.list", payload: p }), fromResult: (r) => r },
+  // skills/list returns {data:[...]}; sidecar contract is a flat array.
+  "skills.list": {
+    toRequest: (p) => ({ method: "provider.feature.codex.skills.list", payload: p }),
+    fromResult: (r) => mapSkills(((r as { data?: unknown[] }).data ?? []) as never),
+  },
+  // mcpServerStatus/list returns {data,nextCursor}; the sidecar contract is a
+  // flat CodexMcpServerOption[] — map the first page here.
+  "mcp.servers.list": {
+    toRequest: (p) => ({ method: "provider.feature.codex.mcp.list", payload: p }),
+    fromResult: (r) => mapMcpServerStatusResponse(r as never).servers,
+  },
   "mcp.tool.call": { toRequest: (p) => ({ method: "provider.feature.codex.mcp.tool.call", payload: p }), fromResult: (r) => r },
   "mcp.oauth.login.start": { toRequest: (p) => ({ method: "provider.feature.codex.mcp.oauth.login", payload: p }), fromResult: (r) => r },
   // ---- runtime surfaces ----

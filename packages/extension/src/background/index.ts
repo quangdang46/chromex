@@ -4578,8 +4578,10 @@ async function refreshAppServerCatalog(
     bridge.request<CodexRateLimits | null>("account.rate_limits.read").catch(() => null),
   ]);
 
+  // customModels applies to providers that accept free-form model ids
+  // (codex app-server model, claude --model via SDK options).
   state.models =
-    state.selectedProviderId === "codex"
+    state.selectedProviderId === "codex" || state.selectedProviderId === "claude"
       ? mergeCustomCatalogModels(models, catalogSettings?.customModels ?? [])
       : models;
   state.serverThreads = serverThreads;

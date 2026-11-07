@@ -60,9 +60,13 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
     },
   },
   "provider.feature.codex.mcp.list": {
-    schema: z.object({}),
+    schema: z.object({
+      detail: z.enum(["full", "toolsAndAuthOnly"]).optional(),
+      limit: z.number().int().positive().optional(),
+      cursor: z.string().optional(),
+    }),
     appServerMethod: "mcpServerStatus/list",
-    toParams: () => ({}),
+    toParams: (p) => p as Record<string, unknown>,
   },
   "provider.feature.codex.mcp.oauth.login": {
     schema: z.object({ serverName: z.string().min(1) }),
@@ -79,9 +83,16 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
     toParams: (p) => p as Record<string, unknown>,
   },
   "provider.feature.codex.skills.list": {
-    schema: z.object({ cwd: z.string().optional() }),
+    schema: z.object({ cwd: z.string().optional(), forceReload: z.boolean().optional() }),
     appServerMethod: "skills/list",
-    toParams: (p) => p as Record<string, unknown>,
+    // app-server expects cwds[] not cwd; forceReload passes through
+    toParams: (p) => {
+      const v = p as { cwd?: string; forceReload?: boolean };
+      return {
+        ...(v.cwd ? { cwds: [v.cwd] } : {}),
+        ...(v.forceReload ? { forceReload: true } : {}),
+      };
+    },
   },
 };
 
