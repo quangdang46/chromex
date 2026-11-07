@@ -116,4 +116,15 @@ describe("S7 approval resume (browser_action)", () => {
     expect(allowed.status).toBe("completed");
     expect(sent).toHaveLength(1);
   });
+
+  test("non-numeric args.tabId is rejected, not silently scope-bypassed", async () => {
+    const { server, token, sent } = makeServer({ approvalVerdicts: ["approved"] });
+    const out = await server.execute({
+      ...tabsListReq(token, "tc-bad-tab"),
+      args: { tabId: "123" },
+    });
+    expect(out.status).toBe("failed");
+    expect(out.error?.code).toBe("browser.invalid_args");
+    expect(sent).toHaveLength(0);
+  });
 });

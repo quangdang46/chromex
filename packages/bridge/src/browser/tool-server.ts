@@ -524,6 +524,20 @@ export class BrowserToolServer {
     // check for an explicit args.tabId; implicit tab resolution is
     // enforced by the host against the tabScope payload (step 6).
     const backendId = req.backendId ?? "chrome-extension";
+    // A present-but-non-numeric tabId must not silently degrade to the
+    // implicit own-tab path — that would skip the §4.8 scope check
+    // entirely (acceptance s3 caught a string tabId doing exactly this).
+    if (req.args?.tabId !== undefined && req.args?.tabId !== null && typeof req.args.tabId !== "number") {
+      return this.finish({
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: {
+          code: "browser.invalid_args",
+          message: "args.tabId must be a number",
+        },
+      });
+    }
     const explicitTabId = typeof req.args?.tabId === "number" ? req.args.tabId : null;
     // chromex-jtl: tabIds are namespaced by (profileId, backendId,
     // browserInstanceId) — the same numeric id under another profile or
