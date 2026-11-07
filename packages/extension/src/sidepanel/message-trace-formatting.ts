@@ -75,7 +75,7 @@ export function formatTraceDetail(item: ConversationMessageTraceItem, title: str
 }
 
 export function formatTraceTitle(item: ConversationMessageTraceItem, trace: TraceTitleStrings): string {
-  const completed = item.status === "completed";
+  const completed = item.status !== "running";
   const explicitTitle = item.title.trim();
   if (item.kind === "reasoning" && explicitTitle && !isNoisyTraceText(explicitTitle)) {
     return explicitTitle;

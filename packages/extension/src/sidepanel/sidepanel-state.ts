@@ -521,7 +521,7 @@ function serializeConversationTraceForStorage(
   return arrayOrEmpty(trace)
     .map((item, index) => {
       const status: NonNullable<ConversationMessage["trace"]>[number]["status"] =
-        item.status === "completed" ? "completed" : "running";
+        item.status === "completed" ? "completed" : item.status === "failed" ? "failed" : "running";
       return {
         id: stringOrDefault(item.id, `trace-${index + 1}`),
         kind: normalizeTraceKind(item.kind),
@@ -533,6 +533,7 @@ function serializeConversationTraceForStorage(
         ...(typeof item.input === "string" && item.input ? { input: item.input.slice(0, 4000) } : {}),
         ...(typeof item.output === "string" && item.output ? { output: item.output.slice(0, 4000) } : {}),
         ...(typeof item.error === "string" && item.error ? { error: item.error.slice(0, 1000) } : {}),
+        ...(typeof item.thinking === "string" && item.thinking ? { thinking: item.thinking.slice(0, 8000) } : {}),
         ...(Number.isFinite(item.durationMs) ? { durationMs: Math.max(0, Number(item.durationMs)) } : {}),
       };
     })

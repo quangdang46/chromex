@@ -3551,15 +3551,39 @@ button.primary,
 
 .message-trace-line {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  gap: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   color: rgba(231, 233, 237, 0.5);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0;
   overflow-wrap: anywhere;
+}
+
+.message-trace-line-status {
+  display: inline-grid;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  place-items: center;
+  color: rgba(134, 239, 172, 0.75);
+}
+
+.message-trace-line-status.running {
+  color: rgba(147, 197, 253, 0.85);
+  animation: trace-status-spin 1.1s linear infinite;
+}
+
+.message-trace-line-status.failed {
+  color: #f87171;
+}
+
+@keyframes trace-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .message-trace-summary-icon {
@@ -3604,7 +3628,8 @@ button.primary,
   display: none;
 }
 
-.message-trace-line-summary .message-trace-line-text {
+.message-trace-line-summary .message-trace-line-text,
+.message-trace-line > .message-trace-line-text {
   flex: 1;
   min-width: 0;
 }
@@ -3673,6 +3698,16 @@ button.primary,
 
 .message-trace-payload-error {
   color: #fca5a5;
+}
+
+.message-trace-line.failed .message-trace-line-main,
+.message-trace-line.failed .message-trace-line-text {
+  color: #fca5a5;
+}
+
+.message-trace-payload-thinking {
+  color: rgba(196, 181, 253, 0.75);
+  font-style: italic;
 }
 
 .message-trace-line.running .message-trace-line-text {

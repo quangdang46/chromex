@@ -170,6 +170,7 @@ export class CodexEventMapper {
         }
         if (itemType && TOOL_ITEM_TYPES.has(itemType)) {
           const toolCallId = str(item.id) ?? str(item.callId) ?? "unknown";
+          const output = boundOutput(item);
           this.withTurn(str(p.turnId) ?? str(item.turnId), (turnId) =>
             this.emitDurable({
               type: "tool.completed",
@@ -177,6 +178,7 @@ export class CodexEventMapper {
               toolCallId,
               tool: itemType,
               outcome: toolOutcome(item),
+              ...(output !== undefined ? { output } : {}),
             }),
           );
         }
@@ -287,7 +289,36 @@ export class CodexEventMapper {
 
 function boundInput(item: Record<string, unknown>): unknown {
   const out: Record<string, unknown> = {};
-  for (const key of ["command", "query", "url", "path", "changes", "arguments"]) {
+  for (const key of [
+    "command",
+    "commandLine",
+    "cmd",
+    "argv",
+    "query",
+    "url",
+    "path",
+    "file_path",
+    "notebook_path",
+    "changes",
+    "arguments",
+  ]) {
+    if (item[key] !== undefined) out[key] = item[key];
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function boundOutput(item: Record<string, unknown>): unknown {
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "aggregatedOutput",
+    "aggregated_output",
+    "output",
+    "outputText",
+    "output_text",
+    "result",
+    "exitCode",
+    "changes",
+  ]) {
     if (item[key] !== undefined) out[key] = item[key];
   }
   return Object.keys(out).length ? out : undefined;

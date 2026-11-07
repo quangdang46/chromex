@@ -41,6 +41,8 @@ interface TurnBuf {
   textOffset: number;
   reasoningOffset: number;
   sawTerminal: boolean;
+  /** tool_use_id → tool name, so tool_result completions keep identity */
+  toolNames: Map<string, string>;
 }
 
 type RawDelta =
@@ -74,6 +76,7 @@ export class ClaudeEventMapper {
       textOffset: 0,
       reasoningOffset: 0,
       sawTerminal: false,
+      toolNames: new Map(),
     };
     this.turns.set(uuid, buf);
     this.turns.set(gatewayTurnId, buf);
@@ -175,11 +178,14 @@ export class ClaudeEventMapper {
       } else if (b.type === "thinking" && typeof b.thinking === "string") {
         turn.reasoning += b.thinking;
       } else if (b.type === "tool_use") {
+        const id = String(b.id ?? "");
+        const name = String(b.name ?? "unknown");
+        turn.toolNames.set(id, name);
         this.#emit({
           type: "tool.started",
           turnId: turn.gatewayTurnId,
-          toolCallId: String(b.id ?? ""),
-          tool: String(b.name ?? "unknown"),
+          toolCallId: id,
+          tool: name,
           ...(b.input !== undefined ? { input: b.input } : {}),
           source: "provider",
         });
@@ -192,11 +198,14 @@ export class ClaudeEventMapper {
     for (const block of msg.message.content ?? []) {
       const b = block as { type?: string; id?: string; name?: string; input?: unknown };
       if (b.type === "tool_use") {
+        const id = String(b.id ?? "");
+        const name = `subagent:${String(b.name ?? "unknown")}`;
+        turn.toolNames.set(id, name);
         this.#emit({
           type: "tool.started",
           turnId: turn.gatewayTurnId,
-          toolCallId: String(b.id ?? ""),
-          tool: `subagent:${String(b.name ?? "unknown")}`,
+          toolCallId: id,
+          tool: name,
           ...(b.input !== undefined ? { input: b.input } : {}),
           source: "provider",
         });
@@ -223,7 +232,7 @@ export class ClaudeEventMapper {
         type: "tool.completed",
         turnId: turn.gatewayTurnId,
         toolCallId: String(b.tool_use_id ?? ""),
-        tool: "",
+        tool: turn.toolNames.get(String(b.tool_use_id ?? "")) ?? "",
         outcome: failed ? "failed" : "succeeded",
         ...(b.content !== undefined ? { output: b.content } : {}),
       });

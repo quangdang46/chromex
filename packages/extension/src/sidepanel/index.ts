@@ -512,12 +512,13 @@ type SidepanelBridgeEvent = {
   kind?: ConversationMessageTraceItem["kind"];
   title?: string;
   detail?: string;
-  status?: "running" | "completed";
+  status?: "running" | "completed" | "failed";
   timestampMs?: number;
   tool?: string;
   inputText?: string;
   outputText?: string;
   errorText?: string;
+  thinkingText?: string;
   conversationId?: string;
   requestId?: string;
   questions?: PlanUserInputQuestion[];
@@ -1755,7 +1756,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     shouldRender = state.activeView === "chat";
   }
   if (event.type === "turn.activity" && event.threadId && event.turnId) {
-    const activityStatus = event.status === "completed" ? "completed" : "running";
+    const activityStatus = event.status === "failed" ? "failed" : event.status === "completed" ? "completed" : "running";
     if (!isCurrentConversationEvent && eventConversationId) {
       if (activityStatus === "running" && !completedTurnIds.has(event.turnId)) {
         activeTurnsByConversationId.set(eventConversationId, {
@@ -1779,6 +1780,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         ...(typeof event.inputText === "string" && event.inputText ? { input: event.inputText } : {}),
         ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
         ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
+        ...(typeof event.thinkingText === "string" && event.thinkingText ? { thinking: event.thinkingText } : {}),
       });
       renderConversationListIfVisible();
       return;
@@ -1799,7 +1801,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         current: state.promptActivity,
         activeTurn: imageActiveTurn,
         kind: event.kind,
-        status: activityStatus,
+        status: activityStatus === "failed" ? "completed" : activityStatus,
       });
       if (state.promptActivity?.clientRequestId) {
         ensurePendingImageWorkflowMessage(state.promptActivity.clientRequestId, "generated-image");
@@ -1831,12 +1833,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       kind: normalizeTraceEventKind(event.kind),
       title: event.title ?? "",
       detail: event.detail ?? "",
-      status: completedTurnIds.has(event.turnId) || activityStatus === "completed" ? "completed" : "running",
+      status: completedTurnIds.has(event.turnId) ? "completed" : activityStatus,
       timestampMs: Number.isFinite(event.timestampMs) ? Number(event.timestampMs) : Date.now(),
       ...(typeof event.tool === "string" && event.tool ? { tool: event.tool } : {}),
       ...(typeof event.inputText === "string" && event.inputText ? { input: event.inputText } : {}),
       ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
       ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
+      ...(typeof event.thinkingText === "string" && event.thinkingText ? { thinking: event.thinkingText } : {}),
     });
     shouldRender = state.activeView === "chat";
   }
@@ -2755,7 +2758,7 @@ function applyBufferedConversationBridgeEvent(conversationId: string, event: Sid
       if (!event.threadId || !event.turnId) {
         break;
       }
-      const activityStatus = event.status === "completed" ? "completed" : "running";
+      const activityStatus = event.status === "failed" ? "failed" : event.status === "completed" ? "completed" : "running";
       if (activityStatus === "running" && !completedTurnIds.has(event.turnId)) {
         activeTurnsByConversationId.set(conversationId, {
           threadId: event.threadId,
@@ -7370,11 +7373,15 @@ function renderMessageTrace(messageId: string, trace: ConversationMessage["trace
   }
   const shouldOpen = messageTraceOpenByMessageId.get(messageId) ?? shouldOpenByDefault;
   const summaryKind = resolveTraceSummaryKind(items);
+  const elapsedMs = traceElapsedMs(items);
+  const summaryText = `${formatTraceSummary(items, stringsForState().trace, formatTraceCount)}${
+    elapsedMs !== null ? ` · ${formatTraceDuration(elapsedMs)}` : ""
+  }`;
   return `
     <details class="message-trace-text"${shouldOpen ? " open" : ""} data-message-trace-id="${escapeAttribute(messageId)}">
       <summary class="message-trace-summary">
         <span class="message-trace-summary-icon" aria-hidden="true">${renderTraceKindIcon(summaryKind, "message-trace-summary-lucide-icon")}</span>
-        <span class="message-trace-summary-text">${escapeHtml(formatTraceSummary(items, stringsForState().trace, formatTraceCount))}</span>
+        <span class="message-trace-summary-text">${escapeHtml(summaryText)}</span>
         <span class="message-trace-caret" aria-hidden="true">${renderUiIcon("chevron-down")}</span>
       </summary>
       <div class="message-trace-lines" role="list">
@@ -7387,12 +7394,19 @@ function renderMessageTrace(messageId: string, trace: ConversationMessage["trace
 function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[number]): string {
   const title = formatTraceTitle(item, stringsForState().trace);
   const detail = formatTraceDetail(item, title);
-  const expandable = Boolean(item.input || item.output || item.error);
+  const expandable = Boolean(item.input || item.output || item.error || item.thinking);
   const meta = [
     item.tool ? `<span class="message-trace-line-tool">${escapeHtml(item.tool)}</span>` : "",
     item.durationMs !== undefined ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(item.durationMs))}</span>` : "",
   ].join("");
+  const statusIcon =
+    item.status === "running"
+      ? `<span class="message-trace-line-status running" aria-hidden="true">${renderUiIcon("refresh")}</span>`
+      : item.status === "failed"
+        ? `<span class="message-trace-line-status failed" aria-hidden="true">${renderUiIcon("x")}</span>`
+        : `<span class="message-trace-line-status" aria-hidden="true">${renderUiIcon("check")}</span>`;
   const body = `
+      ${statusIcon}
       <span class="message-trace-line-text">
         <span class="message-trace-line-main">${escapeHtml(title)}</span>
         ${detail ? `<span class="message-trace-line-detail">${escapeHtml(detail)}</span>` : ""}
@@ -7415,9 +7429,17 @@ function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[
         ${item.input ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label">Input</p><pre class="message-trace-payload">${escapeHtml(item.input)}</pre></div>` : ""}
         ${item.output ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label">Output</p><pre class="message-trace-payload">${escapeHtml(item.output)}</pre></div>` : ""}
         ${item.error ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label message-trace-payload-label-error">Error</p><pre class="message-trace-payload message-trace-payload-error">${escapeHtml(item.error)}</pre></div>` : ""}
+        ${item.thinking ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label">Thinking</p><pre class="message-trace-payload message-trace-payload-thinking">${escapeHtml(item.thinking)}</pre></div>` : ""}
       </div>
     </details>
   `;
+}
+
+function traceElapsedMs(items: NonNullable<ConversationMessage["trace"]>): number | null {
+  if (!items.length) return null;
+  const start = Math.min(...items.map((i) => i.timestampMs));
+  const end = Math.max(...items.map((i) => i.timestampMs + (i.durationMs ?? 0)));
+  return end > start ? end - start : null;
 }
 
 function formatTraceDuration(durationMs: number): string {
@@ -16039,12 +16061,13 @@ type TurnTraceActivityInput = {
   kind: NonNullable<ConversationMessage["trace"]>[number]["kind"];
   title: string;
   detail: string;
-  status: "running" | "completed";
+  status: "running" | "completed" | "failed";
   timestampMs: number;
   tool?: string;
   input?: string;
   output?: string;
   error?: string;
+  thinking?: string;
 };
 
 function upsertTurnActivityTrace(activity: TurnTraceActivityInput): void {
@@ -16099,6 +16122,7 @@ function upsertTurnActivityTraceInMessages(
     ...(activity.input ? { input: activity.input } : {}),
     ...(activity.output ? { output: activity.output } : {}),
     ...(activity.error ? { error: activity.error } : {}),
+    ...(activity.thinking ? { thinking: activity.thinking } : {}),
     // measure wall-clock run time on the running→completed transition
     ...(activity.status === "completed" && existing?.status === "running"
       ? { durationMs: Math.max(0, activity.timestampMs - existing.timestampMs) }

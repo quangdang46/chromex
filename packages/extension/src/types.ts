@@ -283,7 +283,7 @@ export interface ConversationMessageTraceItem {
   kind: "reasoning" | "web" | "file" | "command" | "tool" | "browser" | "image" | "response";
   title: string;
   detail: string;
-  status: "running" | "completed";
+  status: "running" | "completed" | "failed";
   timestampMs: number;
   /** provider tool name (e.g. "Bash", "commandExecution") when known */
   tool?: string;
@@ -295,6 +295,8 @@ export interface ConversationMessageTraceItem {
   error?: string;
   /** wall-clock duration measured start→complete */
   durationMs?: number;
+  /** accumulated reasoning/thinking text for kind=reasoning items */
+  thinking?: string;
 }
 
 export interface ConversationMessageContext {

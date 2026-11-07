@@ -65,11 +65,23 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       };
     }
     if (payload.type === "reasoning.delta") {
-      return {
-        type: "reasoning.delta",
-        ...base,
-        delta: typeof payload.text === "string" ? payload.text : "",
-      };
+      // accumulate per turn → ONE reasoning trace item, throttled
+      const text = typeof payload.text === "string" ? payload.text : "";
+      if (text) accumulateReasoning(taskId, turnId, text);
+      const throttled = maybeEmitReasoning(taskId, turnId);
+      return throttled
+        ? {
+            type: "turn.activity",
+            ...base,
+            itemId: `reasoning-${turnId}`,
+            kind: "reasoning",
+            title: "Thinking",
+            detail: "",
+            thinkingText: reasoningText(taskId, turnId),
+            status: "running",
+            timestampMs: Date.now(),
+          }
+        : null;
     }
     return null;
   }
@@ -84,17 +96,36 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       };
     case "turn.started":
       return { type: "turn.started", ...base, activeTurn: { turnId, threadId: taskId } };
+    case "reasoning.summary":
+      return {
+        type: "turn.activity",
+        ...base,
+        itemId: `reasoning-${turnId}`,
+        kind: "reasoning",
+        title: "Thinking",
+        detail: "",
+        thinkingText:
+          typeof (payload as { summary?: unknown }).summary === "string"
+            ? ((payload as { summary: string }).summary)
+            : reasoningText(taskId, turnId),
+        status: "completed",
+        timestampMs: Date.now(),
+      };
     case "turn.completed":
+      clearReasoning(taskId, turnId);
       return { type: "turn.completed", ...base, stopReason: payload.stopReason };
     case "turn.failed":
+      clearReasoning(taskId, turnId);
       return {
         type: "turn.failed",
         ...base,
         error: payload.error?.message ?? payload.error?.code ?? "turn failed",
       };
     case "turn.cancelled":
+      clearReasoning(taskId, turnId);
       return { type: "turn.completed", ...base, stopReason: "cancelled" };
     case "turn.unknown":
+      clearReasoning(taskId, turnId);
       return { type: "turn.failed", ...base, error: "turn outcome unknown after restart" };
     case "permission.requested": {
       const req = payload.request as
@@ -176,7 +207,8 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       // users see what the coding agent is doing, Paseo-style.
       const toolCallId = typeof payload.toolCallId === "string" ? payload.toolCallId : "";
       const started = payload.type === "tool.started";
-      const status = started ? "running" : "completed";
+      const failed = !started && (payload.outcome === "failed" || payload.outcome === "cancelled");
+      const status = started ? "running" : failed ? "failed" : "completed";
       if (started && toolCallId) {
         rememberToolContext(toolCallId, {
           tool: typeof payload.tool === "string" ? payload.tool : "",
@@ -189,7 +221,6 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       };
       const activity = describeGatewayTool(ctx.tool, ctx.input, status);
       if (toolCallId) toolContext.delete(toolCallId);
-      const failed = !started && payload.outcome === "failed";
       return {
         type: "turn.activity",
         ...base,
@@ -210,6 +241,41 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
   }
 }
 
+// ---- reasoning accumulation (one trace item per turn, throttled) ----
+
+const REASONING_THROTTLE_MS = 200;
+const REASONING_MAX_CHARS = 8000;
+const reasoningBuf = new Map<string, { text: string; lastEmit: number }>();
+
+function reasoningKey(taskId: string, turnId: string): string {
+  return `${taskId}${turnId}`;
+}
+
+function accumulateReasoning(taskId: string, turnId: string, delta: string): void {
+  const key = reasoningKey(taskId, turnId);
+  const buf = reasoningBuf.get(key) ?? { text: "", lastEmit: 0 };
+  buf.text = (buf.text + delta).slice(-REASONING_MAX_CHARS);
+  reasoningBuf.set(key, buf);
+}
+
+function reasoningText(taskId: string, turnId: string): string {
+  return reasoningBuf.get(reasoningKey(taskId, turnId))?.text ?? "";
+}
+
+function maybeEmitReasoning(taskId: string, turnId: string): boolean {
+  const key = reasoningKey(taskId, turnId);
+  const buf = reasoningBuf.get(key);
+  if (!buf) return false;
+  const now = Date.now();
+  if (now - buf.lastEmit < REASONING_THROTTLE_MS) return false;
+  buf.lastEmit = now;
+  return true;
+}
+
+function clearReasoning(taskId: string, turnId: string): void {
+  reasoningBuf.delete(reasoningKey(taskId, turnId));
+}
+
 // tool.completed arrives without tool/input on some providers (claude
 // mapper emits tool:"" ) — remember the started payload per call id.
 const toolContext = new Map<string, { tool: string; input?: unknown }>();
@@ -228,20 +294,12 @@ type TraceKind = "command" | "file" | "web" | "image" | "browser" | "tool";
 function describeGatewayTool(
   tool: string,
   input: unknown,
-  status: "running" | "completed",
+  status: "running" | "completed" | "failed",
 ): { kind: TraceKind; title: string; detail: string } {
   const name = tool.toLowerCase();
   const rec = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-  const detail =
-    str(rec.command) ||
-    str(rec.query) ||
-    str(rec.url) ||
-    str(rec.path) ||
-    str(rec.file_path) ||
-    str(rec.filePath) ||
-    str(rec.pattern) ||
-    summarizeInput(input);
+  const detail = extractToolDetail(rec) || summarizeInput(input);
   const running = status === "running";
   const pick = (run: string, done: string) => (running ? run : done);
 
@@ -300,6 +358,46 @@ function humanizeToolName(tool: string): string {
   const cleaned = tool.replace(/^subagent:/, "").replace(/[_-]+/g, " ").trim();
   if (!cleaned) return "Tool";
   return cleaned.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function extractToolDetail(rec: Record<string, unknown>): string {
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  for (const key of [
+    "command",
+    "commandLine",
+    "cmd",
+    "query",
+    "url",
+    "path",
+    "file_path",
+    "filePath",
+    "notebook_path",
+    "pattern",
+    "prompt",
+  ]) {
+    const v = rec[key];
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, 300);
+    if (Array.isArray(v)) {
+      const joined = v
+        .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+        .join(" ")
+        .trim();
+      if (joined) return joined.slice(0, 300);
+    }
+  }
+  const changes = rec.changes;
+  if (Array.isArray(changes) && changes.length) {
+    const parts = changes
+      .map((c) => {
+        const r = c && typeof c === "object" ? (c as Record<string, unknown>) : {};
+        return str(r.path) || str(r.file_path) || str(r.filePath) || "";
+      })
+      .filter(Boolean);
+    if (parts.length) {
+      return parts.slice(0, 6).join(", ") + (parts.length > 6 ? ` +${parts.length - 6} more` : "");
+    }
+  }
+  return "";
 }
 
 function boundText(value: unknown, max = 1200): string {
