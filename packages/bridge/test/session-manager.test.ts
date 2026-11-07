@@ -224,6 +224,46 @@ describe("SessionManager", () => {
     expect(mock.turns.map((t) => t.gatewayTurnId)).toContain(r2.turnId);
   });
 
+  test("paused task does not auto-drain queued turns (chromex-94z)", async () => {
+    const { sm, store } = await makeManager({ queueWhileRunning: true });
+    const task = sm.createTask(taskParams());
+    const taskRec = store.getTask(task.taskId)!;
+    const live = await sm.ensureConversation(taskRec);
+    const mock = live.session as MockSession;
+    mock.autoTerminal = false;
+
+    const r1 = await sm.sendMessage(task.taskId, { clientMessageId: "cm-1", content: [{ type: "text", text: "one" }] });
+    await new Promise((r) => setTimeout(r, 5));
+    const r2 = await sm.sendMessage(task.taskId, { clientMessageId: "cm-2", content: [{ type: "text", text: "two" }] });
+    expect(store.getTurn(r2.turnId)!.status).toBe("queued");
+
+    // pause the task (user pause / recovery pause) while turn1 still runs
+    store.putTask(transitionTask(store.getTask(task.taskId)!, "paused", "user_requested"));
+
+    mock.emit({ type: "turn.completed", turnId: r1.turnId });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // queued turn must stay queued — resumeTask owns paused-task dispatch
+    expect(store.getTurn(r2.turnId)!.status).toBe("queued");
+    expect(store.getTurn(r2.turnId)!.startedAt).toBeNull();
+    expect(mock.turns.map((t) => t.gatewayTurnId)).not.toContain(r2.turnId);
+    expect(store.getTask(task.taskId)!.status).toBe("paused");
+  });
+
+  test("sendMessage on paused task dispatches turn but stays paused", async () => {
+    const { sm, store } = await makeManager();
+    const task = sm.createTask(taskParams());
+    store.putTask(transitionTask(store.getTask(task.taskId)!, "paused", "user_requested"));
+
+    const res = await sm.sendMessage(task.taskId, { clientMessageId: "cm-9", content: [{ type: "text", text: "back" }] });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // turn dispatched; task stays paused — pause is sticky until
+    // explicit task.resume (paused ≠ auto-complete, §5.3)
+    expect(store.getTurn(res.turnId)!.status).not.toBe("queued");
+    expect(store.getTask(task.taskId)!.status).toBe("paused");
+  });
+
   test("interruptTurn timeout → turn.unknown + task paused", async () => {
     const { sm, store } = await makeManager({ interruptTimeoutMs: 50 });
     const task = sm.createTask(taskParams());

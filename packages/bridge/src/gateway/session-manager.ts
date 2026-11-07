@@ -768,7 +768,12 @@ export class SessionManager {
       this.#pauseTask(task, "provider_unavailable");
       return;
     }
-    const queued = this.opts.store.listTurns(taskId).find((t) => t.status === "queued");
+    // auto-drain only while the task is active — a paused task keeps its
+    // queued turns for explicit task.resume (chromex-94z)
+    const queued =
+      task.status === "active"
+        ? this.opts.store.listTurns(taskId).find((t) => t.status === "queued")
+        : undefined;
     if (queued) {
       void this.#resumeQueued(task, queued);
       return;
