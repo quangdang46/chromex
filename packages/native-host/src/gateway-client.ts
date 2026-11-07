@@ -342,9 +342,14 @@ export async function ensureGateway(
         spawned = true;
         opts.log?.(`spawning gateway: ${bin}`);
         const { spawn } = await import("node:child_process");
+        const { appendFileSync, openSync } = await import("node:fs");
+        // stderr → gateway.log: the gateway is detached, so without this
+        // a crash is undiagnosable (stdio:"ignore" leaves no trace).
+        const logPath = path.join(dataDir, "gateway.log");
+        const logFd = openSync(logPath, "a");
         const child = spawn(process.execPath, [bin], {
           detached: true,
-          stdio: "ignore",
+          stdio: ["ignore", logFd, logFd],
           windowsHide: true,
           env: {
             ...process.env,
@@ -353,8 +358,7 @@ export async function ensureGateway(
           },
         });
         child.unref();
-        // gateway.log rotation lands with diagnostics (P2-08); stderr is
-        // ignored per §3.3.1 (spawn detached, stdio ignore).
+        appendFileSync(logPath, `\n--- spawn ${new Date().toISOString()} pid=${child.pid ?? "?"} ---\n`);
       }
 
       const wait = Math.min(backoff + Math.floor(Math.random() * 100), 5_000);

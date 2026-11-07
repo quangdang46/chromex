@@ -539,11 +539,15 @@ export class SessionManager {
    */
   async respondToPermission(
     requestId: string,
-    optionId: string,
+    response: { optionId?: string; answers?: Record<string, string[]> },
   ): Promise<{ followUpPrompt?: import("@codex-sidepanel/shared").TurnInput }> {
     for (const [conversationKey, live] of this.conversations) {
       if (!live.session.getPendingPermissions().some((p) => p.requestId === requestId)) continue;
-      const result = await live.session.respondToPermission(requestId, { requestId, optionId });
+      const result = await live.session.respondToPermission(requestId, {
+        requestId,
+        ...(response.optionId !== undefined ? { optionId: response.optionId } : {}),
+        ...(response.answers !== undefined ? { answers: response.answers } : {}),
+      });
       // §4.8: a followUpPrompt is a NEW turn with a NEW gatewayTurnId —
       // never folded into the resolved turn.
       if (result.followUpPrompt) {
@@ -586,7 +590,18 @@ export class SessionManager {
     return fallback;
   }
 
+  /** First terminal event wins — providers occasionally emit frames
+   *  after their terminal result (late tool completions, duplicate
+   *  results); persisting them corrupts the durable stream. */
+  #isPostTerminal(event: AgentEvent): boolean {
+    const turnId = (event as { turnId?: unknown }).turnId;
+    if (typeof turnId !== "string" || !turnId) return false;
+    const turn = this.opts.store.getTurn(turnId);
+    return !!turn && ["completed", "failed", "cancelled", "unknown"].includes(turn.status);
+  }
+
   #handleAgentEvent(subscribedTaskId: string, event: AgentEvent): void {
+    if (this.#isPostTerminal(event)) return;
     const taskId = this.#owningTaskId(subscribedTaskId, event);
     const ephemeral = (EPHEMERAL_EVENT_TYPES as readonly string[]).includes(event.type);
     if (ephemeral) {
