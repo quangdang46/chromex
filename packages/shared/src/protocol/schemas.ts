@@ -86,6 +86,16 @@ const ephemeralGatewayNoticeSchema = z.object({
   ts: z.number(),
 });
 
+const ephemeralDiagnosticsSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal("event"),
+  reliability: z.literal("ephemeral"),
+  stream: z.literal("gateway"),
+  type: z.literal("gateway.diagnostics"),
+  diagnostics: z.unknown(),
+  ts: z.number(),
+});
+
 const durableEventBase = {
   v: z.literal(1),
   kind: z.literal("event"),
@@ -124,6 +134,7 @@ export const envelopeSchema = z.union([
   ackSchema,
   ephemeralDeltaSchema,
   ephemeralGatewayNoticeSchema,
+  ephemeralDiagnosticsSchema,
   durableTaskEventSchema,
   durableGatewayEventSchema,
 ]) as z.ZodType<Envelope>;

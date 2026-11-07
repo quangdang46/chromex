@@ -35,13 +35,20 @@ function rpc(socket: net.Socket, id: string, method: string, payload?: unknown):
     let buf = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
       buf = Buffer.concat([buf, chunk]);
-      if (buf.length < 4) return;
-      const len = buf.readUInt32LE(0);
-      if (buf.length < 4 + len) return;
-      socket.off("data", onData);
-      const env = JSON.parse(buf.subarray(4, 4 + len).toString("utf8"));
-      if (env.kind === "response" && env.error) reject(env.error);
-      else resolve(env.result ?? env);
+      for (;;) {
+        if (buf.length < 4) return;
+        const len = buf.readUInt32LE(0);
+        if (buf.length < 4 + len) return;
+        const env = JSON.parse(buf.subarray(4, 4 + len).toString("utf8"));
+        buf = buf.subarray(4 + len);
+        // match by id — broadcasts (e.g. gateway.diagnostics) interleave
+        if (env.kind === "response" && env.id === id) {
+          socket.off("data", onData);
+          if (env.error) reject(env.error);
+          else resolve(env.result ?? env);
+          return;
+        }
+      }
     };
     socket.on("data", onData);
     socket.write(Buffer.concat([header, body]));
@@ -322,6 +329,35 @@ describe("gateway RPC surface (P1-07)", () => {
         dataBase64: big,
       }),
     ).rejects.toMatchObject({ code: "artifact.too_large" });
+    s.destroy();
+  });
+
+  test("diagnostics.snapshot exposes metrics without secrets", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "diag" })) as {
+      taskId: string;
+    };
+    const res = (await rpc(s, "d1", "diagnostics.snapshot", {})) as {
+      diagnostics: {
+        uptimeMs: number;
+        locks: { lifetime: { held: boolean; fence: string } };
+        endpoint: { path: string; authedConnections: number } | null;
+        streams: { gateway: { lastSeq: number }; tasks: Array<{ taskId: string; lastSeq: number }> };
+        tools: { total: number };
+        approvals: { requested: number; resolved: number };
+      };
+    };
+    const d = res.diagnostics;
+    expect(d.uptimeMs).toBeGreaterThanOrEqual(0);
+    expect(d.locks.lifetime.held).toBe(true);
+    expect(d.locks.lifetime.fence).toBeTruthy();
+    expect(d.endpoint?.authedConnections).toBeGreaterThanOrEqual(1);
+    expect(d.streams.tasks.some((t) => t.taskId === created.taskId)).toBe(true);
+    // redaction: serialized snapshot must not contain token material
+    const json = JSON.stringify(d);
+    expect(json).not.toContain("tool-secret");
+    expect(json).not.toMatch(/sk-[A-Za-z0-9]/);
     s.destroy();
   });
 });

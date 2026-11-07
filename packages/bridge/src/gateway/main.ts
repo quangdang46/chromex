@@ -70,6 +70,7 @@ import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
 import { DeltaCoalescer } from "./delta-coalescer.js";
+import { GatewayDiagnostics } from "./diagnostics.js";
 import { BrowserToolServer } from "../browser/tool-server.js";
 import { BrowserHostRegistry } from "../browser/host-registry.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
@@ -128,6 +129,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         throw new StaleFenceError("lifetime");
       }
     };
+    // P2-08 diagnostics: in-memory counters + live lock/endpoint/stream
+    // state; snapshot is counts/ids/seqs only — no tokens or values.
+    const diagnostics = new GatewayDiagnostics();
     let store: InMemoryStore | SQLiteStore;
     let db: GatewayDb | null = null;
     let recoveredTurns = 0;
@@ -145,6 +149,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       if (recoveredTurns || recoveredTasks) {
         log(`recovery: ${recoveredTurns} turns unknown, ${recoveredTasks} tasks paused`);
       }
+      diagnostics.recordRecovery(recoveredTurns, recoveredTasks);
       store = sqlite;
     } else {
       store = new InMemoryStore({ assertOwnership });
@@ -175,7 +180,13 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       flushMs: config.gateway.deltaFlushMs,
       coalesceWindowMs: config.gateway.coalesceWindowMs,
       maxCharsPerTurn: config.gateway.deltaBufferMaxPerTurn,
-      emit: (envelope) => ipc?.broadcast(envelope),
+      emit: (envelope) => {
+        const e = envelope as { type?: string; backpressure?: string };
+        if (e.type === "gateway.notice" && e.backpressure === "deltas_dropped") {
+          diagnostics.recordDeltaDropped();
+        }
+        ipc?.broadcast(envelope);
+      },
     });
     const sessionManager = new SessionManager({
       store: store as ConstructorParameters<typeof SessionManager>[0]["store"],
@@ -292,6 +303,31 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       };
     };
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    // P2-08: surface metrics on the gateway stream — throttled to one
+    // broadcast per 5s so tool-heavy turns don't flood clients.
+    let lastDiagBroadcast = 0;
+    const broadcastDiagnostics = () => {
+      const now = Date.now();
+      if (!ipc || now - lastDiagBroadcast < 5000) return;
+      lastDiagBroadcast = now;
+      const ep = ipc.endpointPath();
+      ipc.broadcast({
+        v: 1,
+        kind: "event",
+        reliability: "ephemeral",
+        stream: "gateway",
+        type: "gateway.diagnostics",
+        ts: now,
+        diagnostics: diagnostics.snapshot({
+          store,
+          lifetime: { held: true, fence: lifetimeLock!.fence },
+          endpoint: {
+            path: `${ep.transport}://${ep.path}`,
+            authedConnections: ipc.authedConnections().length,
+          },
+        }),
+      });
+    };
     const hostRegistry = new BrowserHostRegistry();
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
@@ -333,6 +369,8 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       },
       requestApproval: async (tctx) => {
         const approvalId = `appr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const approvalStartedAt = Date.now();
+        diagnostics.recordApprovalRequested();
         const options: Array<{ id: string; label: string; kind: "allow_once" | "allow_task" | "deny" }> = [
           { id: "allow_once", label: "Allow once", kind: "allow_once" },
           ...(tctx.allowTaskScope
@@ -384,16 +422,18 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         // poll for resolution up to 60s (UI answers via permission.respond)
         for (let i = 0; i < 240; i++) {
           const st = storeAny.approvalStatus?.(approvalId);
-          if (st === "allowed") {
+          if (st === "allowed" || st === "denied" || st === "expired") {
+            diagnostics.recordApprovalLatency(Date.now() - approvalStartedAt);
+            broadcastDiagnostics();
             const optionId = storeAny.approvalDecision?.(approvalId)?.optionId;
-            return { verdict: "approved" as const, ...(optionId ? { optionId } : {}) };
-          }
-          if (st === "denied" || st === "expired") {
-            const optionId = storeAny.approvalDecision?.(approvalId)?.optionId;
-            return { verdict: "denied" as const, ...(optionId ? { optionId } : {}) };
+            return st === "allowed"
+              ? { verdict: "approved" as const, ...(optionId ? { optionId } : {}) }
+              : { verdict: "denied" as const, ...(optionId ? { optionId } : {}) };
           }
           await sleep(250);
         }
+        diagnostics.recordApprovalLatency(Date.now() - approvalStartedAt);
+        broadcastDiagnostics();
         return { verdict: "timeout" as const };
       },
       allowTaskGranted: async (taskId, scope) => {
@@ -424,9 +464,8 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         });
       },
       onOutcome: (outcome) => {
-        const storeAny = store as { appendTaskEvent?: (taskId: string, e: unknown) => unknown };
-        // outcome doesn't carry taskId — toolCallId prefix mcp-*; task
-        // resolution happens in the RPC handler which wraps execute()
+        diagnostics.recordToolOutcome(outcome);
+        broadcastDiagnostics();
       },
     });
     // config is mutable via config.update; the resolved object is
@@ -438,6 +477,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       try {
         return await handleGatewayRequest(req, {
           store,
+          diagnostics,
+          lifetimeLock: lifetimeLock!,
+          getIpc: () => ipc!,
           config: liveConfig,
           getConfig: () => liveConfig,
           setConfig: (next) => {
@@ -582,6 +624,9 @@ async function handleGatewayRequest(
   req: Extract<Envelope, { kind: "request" }>,
   ctx: {
     store: InMemoryStore | SQLiteStore;
+    diagnostics: GatewayDiagnostics;
+    lifetimeLock: { fence: string; held?: boolean };
+    getIpc: () => GatewayIpcServer;
     config: GatewayConfig;
     getConfig: () => GatewayConfig;
     setConfig: (next: GatewayConfig) => void;
@@ -953,6 +998,21 @@ async function handleGatewayRequest(
     case "browser.backend.status": {
       parsePayload(browserBackendSchema, req.payload);
       return { playwrightIsolated: await ctx.playwrightRuntime.readStatus() };
+    }
+    case "diagnostics.snapshot": {
+      parsePayload(configReadSchema, req.payload);
+      const server = ctx.getIpc();
+      const ep = server.endpointPath();
+      return {
+        diagnostics: ctx.diagnostics.snapshot({
+          store: ctx.store,
+          lifetime: { held: true, fence: ctx.lifetimeLock.fence },
+          endpoint: {
+            path: `${ep.transport}://${ep.path}`,
+            authedConnections: server.authedConnections().length,
+          },
+        }),
+      };
     }
     case "browser.backend.install": {
       const p = parsePayload(browserBackendSchema, req.payload) as z.infer<typeof browserBackendSchema>;

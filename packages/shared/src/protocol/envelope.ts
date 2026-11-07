@@ -57,6 +57,19 @@ export interface EphemeralDeltaEnvelope {
   ts: number;
 }
 
+/** Ephemeral diagnostics snapshot — P2-08. No seq, no persist. The
+ *  payload is the GatewayDiagnosticsSnapshot (counts/ids/seqs only —
+ *  the contract forbids tokens, field values and full URLs inside). */
+export interface EphemeralDiagnosticsEnvelope {
+  v: 1;
+  kind: "event";
+  reliability: "ephemeral";
+  stream: "gateway";
+  type: "gateway.diagnostics";
+  diagnostics: unknown;
+  ts: number;
+}
+
 /** Ephemeral gateway notice — no seq, no persist, no replay. */
 export interface EphemeralGatewayNoticeEnvelope {
   v: 1;
@@ -77,6 +90,7 @@ export type Envelope =
   | DurableGatewayEventEnvelope
   | EphemeralDeltaEnvelope
   | EphemeralGatewayNoticeEnvelope
+  | EphemeralDiagnosticsEnvelope
   // ack = client rendered up to seq — NOT a persistence signal
   | { v: 1; kind: "ack"; stream: "task"; taskId: string; seq: number; renderedAt?: number }
   | { v: 1; kind: "ack"; stream: "gateway"; seq: number; renderedAt?: number };
