@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import readline from "node:readline";
 
-import { NativeMessageStreamDecoder, encodeNativeMessage } from "./framing.js";
+import {
+  MAX_NATIVE_MESSAGE_BYTES,
+  NativeMessageStreamDecoder,
+  encodeNativeMessage,
+} from "./framing.js";
 import { createBridgeProcessEnv, mergeShellProviderEnv } from "./environment.js";
 
 export class NativeHostRelay {
@@ -44,7 +48,13 @@ export class NativeHostRelay {
     });
 
     process.stdin.on("data", (chunk: Buffer) => {
-      const messages = this.#decoder.push(chunk);
+      let messages: unknown[];
+      try {
+        messages = this.#decoder.push(chunk);
+      } catch (error) {
+        this.#fail(`stdin frame rejected: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
       for (const message of messages) {
         if (!this.#writeToBridge(`${JSON.stringify(message)}\n`)) {
           return;
@@ -59,8 +69,18 @@ export class NativeHostRelay {
       if (!line.trim()) {
         return;
       }
+      // A line longer than the NM limit can never be delivered anyway; reject
+      // before JSON.parse allocates the parsed object.
+      if (line.length > MAX_NATIVE_MESSAGE_BYTES) {
+        this.#fail(`bridge stdout line too large: ${line.length} bytes`);
+        return;
+      }
 
-      this.#writeToStdout(encodeNativeMessage(JSON.parse(line)));
+      try {
+        this.#writeToStdout(encodeNativeMessage(JSON.parse(line)));
+      } catch (error) {
+        this.#fail(`bridge stdout frame rejected: ${error instanceof Error ? error.message : String(error)}`);
+      }
     });
   }
 
@@ -97,14 +117,19 @@ export class NativeHostRelay {
     return true;
   }
 
-  #shutdown(): void {
+  #fail(reason: string): void {
+    console.error(`codex-sidepanel-native-host: ${reason}`);
+    this.#shutdown(1);
+  }
+
+  #shutdown(exitCode = 0): void {
     if (this.#shuttingDown) {
       return;
     }
 
     this.#shuttingDown = true;
     this.#bridge?.kill();
-    process.exit(0);
+    process.exit(exitCode);
   }
 
   #resolveBridgeEntry(): string {
