@@ -119,6 +119,32 @@ describe("BrowserToolServer", () => {
     expect(second.error?.code).toBe("browser.duplicate_tool_call");
   });
 
+  it("cancelForTask propagates browser.tool.cancel and resolves unknown (P2-06)", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens, { allowedTools: ["browser.page.snapshot"] });
+    const sent: string[] = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: (method) => {
+        sent.push(method);
+        return method === "browser.tool.request" ? new Promise(() => {}) : Promise.resolve({ ok: true });
+      },
+      onDisconnect: () => {},
+    };
+    const s2 = new BrowserToolServer({ tokens, resolveHost: () => host, now: () => NOW });
+    const pending = s2.execute({ ...REQ, toolCallId: "tc-cancel", tool: "browser.page.snapshot", token });
+    await new Promise((r) => setTimeout(r, 0)); // let dispatch register
+    const outcomes = s2.cancelForTask("task-1");
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]!.status).toBe("unknown"); // stop unconfirmed
+    expect(outcomes[0]!.error?.code).toBe("browser.cancel_unconfirmed");
+    expect(sent).toContain("browser.tool.cancel");
+    const result = await pending;
+    expect(result.status).toBe("unknown");
+    // other tasks untouched
+    expect(s2.cancelForTask("other-task")).toHaveLength(0);
+  });
+
   it("classifies mutating tools as needs_approval, reads as allow", () => {
     const base = { taskId: "t", tool: "x", args: {}, backendId: "chrome-extension" as const, dataEgress: false };
     expect(classifyToolCall({ ...base, tool: "browser.page.snapshot" }).kind).toBe("allow");

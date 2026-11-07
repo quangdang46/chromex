@@ -50,7 +50,7 @@ export interface ToolCallOutcome {
  *  await its result (or timeout / disconnect). */
 export interface ToolHostChannel {
   readonly hostInstanceId: string;
-  send(method: "browser.tool.request", payload: unknown): Promise<unknown>;
+  send(method: "browser.tool.request" | "browser.tool.cancel", payload: unknown): Promise<unknown>;
   onDisconnect(listener: (reason: "disconnect" | "timeout") => void): void;
 }
 
@@ -107,7 +107,7 @@ export interface ToolServerDeps {
 export class BrowserToolServer {
   /** toolCallId → outcome — duplicate-execution protection (§9.1). */
   private readonly outcomes = new Map<string, ToolCallOutcome>();
-  private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout }>();
+  private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout; taskId: string; host: ToolHostChannel }>();
   private readonly deps: ToolServerDeps;
 
   constructor(deps: ToolServerDeps) {
@@ -196,6 +196,8 @@ export class BrowserToolServer {
           resolve(this.finish(outcome));
         },
         timer,
+        taskId: req.taskId,
+        host,
       });
       host.send("browser.tool.request", { toolCallId: req.toolCallId, taskId: req.taskId, turnId: req.turnId, tool: req.tool, args: req.args })
         .then((result) => {
@@ -234,12 +236,40 @@ export class BrowserToolServer {
     }
   }
 
+  /** Explicit per-call cancel (browser.tool.cancel RPC): the caller
+   *  targeted this call, so `cancelled` records the accepted cancel;
+   *  task-level propagation uses `unknown` instead — see cancelForTask. */
   cancel(toolCallId: string): ToolCallOutcome | null {
     const p = this.pending.get(toolCallId);
     if (!p) return null;
+    void p.host.send("browser.tool.cancel", { toolCallId, taskId: p.taskId }).catch(() => {});
     clearTimeout(p.timer);
     this.pending.delete(toolCallId);
     return this.finish({ toolCallId, tool: "", status: "cancelled" });
+  }
+
+  /** P2-06: task interrupt/cancel propagates browser.tool.cancel to
+   *  every in-flight call of that task. Stop confirmation is not
+   *  guaranteed (host may not implement cancel) — unconfirmed stops
+   *  resolve `unknown`, never a guessed `cancelled`. */
+  cancelForTask(taskId: string): ToolCallOutcome[] {
+    const outcomes: ToolCallOutcome[] = [];
+    for (const [toolCallId, p] of [...this.pending]) {
+      if (p.taskId !== taskId) continue;
+      // best-effort notify; outcome stays unknown until the host
+      // confirms via a late tool.result (which is dropped — pending
+      // entry is gone) — conservative per §9.2.
+      void p.host.send("browser.tool.cancel", { toolCallId, taskId }).catch(() => {});
+      p.resolve({
+        toolCallId,
+        tool: "",
+        status: "unknown",
+        error: { code: "browser.cancel_unconfirmed", message: "task cancelled; tool stop unconfirmed" },
+      });
+      const recorded = this.outcomes.get(toolCallId);
+      if (recorded) outcomes.push(recorded);
+    }
+    return outcomes;
   }
 
   private finish(outcome: ToolCallOutcome): ToolCallOutcome {

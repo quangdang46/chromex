@@ -66,6 +66,7 @@ import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
 import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
+import { DeltaCoalescer } from "./delta-coalescer.js";
 import { BrowserToolServer } from "../browser/tool-server.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
 import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
@@ -154,23 +155,32 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     // earlier simply get no browser MCP — honest, never fake.
     let spawnBrowserMcpForTask: ((task: TaskRecord) => Promise<Record<string, unknown> | null>) | null =
       null;
+    // P2-06: ephemeral deltas are coalesced (50ms silence window, 750ms
+    // cap, per-turn char budget → deltas_dropped notice) before broadcast.
+    const deltaCoalescer = new DeltaCoalescer({
+      flushMs: config.gateway.deltaFlushMs,
+      coalesceWindowMs: config.gateway.coalesceWindowMs,
+      maxCharsPerTurn: config.gateway.deltaBufferMaxPerTurn,
+      emit: (envelope) => ipc?.broadcast(envelope),
+    });
     const sessionManager = new SessionManager({
       store: store as ConstructorParameters<typeof SessionManager>[0]["store"],
       registry,
       config,
       browserMcpSpawn: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
-      // durable envelopes broadcast to all authed connections; ephemeral
-      // agent deltas are dropped here until P1-08 wires the delta channel
+      // P2-06: interrupt/cancel propagates browser.tool.cancel to
+      // in-flight tool calls; unconfirmed stops resolve `unknown`.
+      onTaskStop: (taskId) => toolServer.cancelForTask(taskId),
       publish: (taskId, event, ephemeral) => {
         if (ephemeral) {
           // §4.1/§4.6: deltas are RAM-only — wrapped as
-          // EphemeralDeltaEnvelope, broadcast to clients, never stored.
+          // EphemeralDeltaEnvelope, buffered by the coalescer, never stored.
           const e = event as { type?: string; turnId?: string; deltaOffset?: number; text?: string };
           if (
             (e.type === "assistant.delta" || e.type === "reasoning.delta") &&
             typeof e.turnId === "string"
           ) {
-            ipc?.broadcast({
+            deltaCoalescer.push({
               v: 1,
               kind: "event",
               reliability: "ephemeral",
@@ -184,6 +194,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           }
           return;
         }
+        // durable event → flush pending deltas first so clients see
+        // causal order (deltas before the terminal/durable marker)
+        deltaCoalescer.flushTask(taskId);
         if (typeof event === "object" && "kind" in event) {
           ipc?.broadcast(event as import("@codex-sidepanel/shared").Envelope);
         }
@@ -417,6 +430,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       ipc?.markStarting();
       // no self-exit while active work — in-memory store has no active
       // turns yet; real check lands with P1-05 SessionManager.
+      deltaCoalescer.dispose();
       db?.close();
       await ipc?.close().catch(() => {});
       await lifetimeLock?.release().catch(() => {});
@@ -649,6 +663,16 @@ async function handleGatewayRequest(
         backendId: task.backend.backendId ?? "chrome-extension",
       });
       return outcome;
+    }
+    case "browser.tool.cancel": {
+      const p = parsePayload(
+        z.object({ toolCallId: z.string().min(1), taskId: z.string().min(1) }),
+        req.payload,
+      ) as { toolCallId: string; taskId: string };
+      const task = ctx.store.getTask(p.taskId);
+      if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
+      const outcome = ctx.toolServer.cancel(p.toolCallId);
+      return { cancelled: outcome !== null, outcome: outcome ?? null };
     }
     case "browser.mcp.spawn": {
       // §9.3: same path SessionManager uses at session open — issue a

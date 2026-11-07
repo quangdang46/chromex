@@ -70,6 +70,9 @@ interface ConnState {
   helloSeen: boolean;
   hostInstanceId: string;
   pending: Map<string, PendingServerRequest>;
+  /** P2-06: client fell behind on ephemeral deltas — drop them until
+   *  the socket drains (durable events are never dropped). */
+  deltaThrottled: boolean;
 }
 
 const HEADER_BYTES = 4;
@@ -192,6 +195,7 @@ export class GatewayIpcServer {
       helloSeen: false,
       hostInstanceId: "",
       pending: new Map(),
+      deltaThrottled: false,
     };
     this.connections.add(state);
     socket.on("data", (chunk) => this.onData(state, chunk));
@@ -376,13 +380,44 @@ export class GatewayIpcServer {
     this.sendRaw(state, { v: 1, kind: "response", id: "", error });
   }
 
+  /** §4.1 backpressure: a client whose socket buffer exceeds this is
+   *  sent one gateway.notice{deltas_dropped} then skipped for ephemeral
+   *  envelopes until it drains. Durable traffic is unaffected. */
+  private static readonly DELTA_SLOW_CLIENT_BYTES = 512 * 1024;
+  private static readonly DELTA_SLOW_CLIENT_LOW_BYTES = 256 * 1024;
+
   private sendRaw(state: ConnState, envelope: Envelope): void {
     if (state.socket.destroyed) return;
+    if ((envelope as { reliability?: string }).reliability === "ephemeral") {
+      const queued = state.socket.writableLength;
+      if (state.deltaThrottled) {
+        if (queued > GatewayIpcServer.DELTA_SLOW_CLIENT_LOW_BYTES) return;
+        state.deltaThrottled = false;
+      } else if (queued > GatewayIpcServer.DELTA_SLOW_CLIENT_BYTES) {
+        state.deltaThrottled = true;
+        this.#writeFrame(state, {
+          v: 1,
+          kind: "event",
+          reliability: "ephemeral",
+          type: "gateway.notice",
+          level: "warn",
+          message: "client is slow; dropping ephemeral deltas",
+          backpressure: "deltas_dropped",
+          ts: Date.now(),
+        } as unknown as Envelope);
+        return;
+      }
+    }
     const body = Buffer.from(JSON.stringify(envelope), "utf8");
     if (body.length > this.maxEnvelopeBytes) {
       this.sendError(state, protocolError("proto.payload_too_large", "Outbound envelope too large"));
       return;
     }
+    this.#writeFrame(state, envelope);
+  }
+
+  #writeFrame(state: ConnState, envelope: Envelope): void {
+    const body = Buffer.from(JSON.stringify(envelope), "utf8");
     const header = Buffer.allocUnsafe(HEADER_BYTES);
     header.writeUInt32LE(body.length, 0);
     state.socket.write(Buffer.concat([header, body]));

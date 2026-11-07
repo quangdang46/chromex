@@ -179,6 +179,9 @@ export interface SessionManagerOptions {
    *  null when the task/provider shouldn't get browser tools. The
    *  result lands in session config.options.mcpServers. */
   browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
+  /** P2-06: fired when a task is interrupted/cancelled — the gateway
+   *  uses it to propagate browser.tool.cancel to in-flight tool calls. */
+  onTaskStop?: (taskId: string) => void;
 }
 
 const INTERRUPT_TIMEOUT_MS = 30_000;
@@ -193,6 +196,8 @@ export class SessionManager {
   private readonly cancelling = new Set<string>();
   /** last emitted attention per task — for task.attention_changed diffs */
   private readonly lastAttention = new Map<string, TaskAttention | null>();
+  /** P2-06 turn budget timers, keyed by gateway turnId */
+  private readonly turnTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly opts: SessionManagerOptions) {}
 
@@ -359,6 +364,7 @@ export class SessionManager {
     const started = transitionTurn(turn, "running", { startedAt: Date.now() });
     store.upsertTurn(started);
     this.#persist(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
+    this.#armTurnTimeout(task.taskId, turn.turnId);
     if (task.status === "queued") {
       this.#setTaskStatus(task, "active");
     }
@@ -387,6 +393,7 @@ export class SessionManager {
         error: failed.error!,
       } as DurableTaskEvent);
       this.activeTurns.delete(task.taskId);
+      this.#clearTurnTimeout(turn.turnId);
       throw err;
     }
   }
@@ -411,6 +418,7 @@ export class SessionManager {
    */
   async interruptTurn(taskId: string, turnId?: string): Promise<void> {
     const task = this.#requireTask(taskId);
+    this.opts.onTaskStop?.(taskId);
     const target = turnId ?? this.opts.store.activeTurn(taskId)?.turnId;
     if (!target) return;
     const live = this.conversations.get(task.conversationKey);
@@ -440,6 +448,7 @@ export class SessionManager {
   async cancelTask(taskId: string, reason = "user"): Promise<void> {
     const task = this.#requireTask(taskId);
     const store = this.opts.store;
+    this.opts.onTaskStop?.(taskId);
     this.cancelling.add(taskId);
     try {
       const active = store.activeTurn(taskId);
@@ -658,6 +667,7 @@ export class SessionManager {
     }
     this.opts.store.upsertTurn(transitionTurn(turn, to, patch));
     this.activeTurns.delete(taskId);
+    this.#clearTurnTimeout(turnId);
 
     // drain queue or complete task (§5.2: all turns terminal → completed)
     const task = this.opts.store.getTask(taskId);
@@ -721,6 +731,55 @@ export class SessionManager {
     return next;
   }
 
+  /** P2-06 turn budget: armed at turn.started, cleared on any terminal
+   *  transition. On expiry we attempt interrupt; a confirmed stop is
+   *  recorded as provider.notice, an unconfirmed one as turn.unknown —
+   *  same honesty rule as §5.3 interrupt ownership. */
+  #armTurnTimeout(taskId: string, turnId: string): void {
+    const ms = this.opts.config.tasks.turnTimeoutMs;
+    if (!ms || ms <= 0) return;
+    this.#clearTurnTimeout(turnId);
+    const timer = setTimeout(() => {
+      this.turnTimers.delete(turnId);
+      void this.#onTurnTimeout(taskId, turnId, ms).catch(() => {});
+    }, ms);
+    timer.unref?.();
+    this.turnTimers.set(turnId, timer);
+  }
+
+  #clearTurnTimeout(turnId: string): void {
+    const t = this.turnTimers.get(turnId);
+    if (t) {
+      clearTimeout(t);
+      this.turnTimers.delete(turnId);
+    }
+  }
+
+  async #onTurnTimeout(taskId: string, turnId: string, budgetMs: number): Promise<void> {
+    const task = this.opts.store.getTask(taskId);
+    const turn = this.opts.store.getTurn(turnId);
+    if (!task || !turn) return;
+    if (["completed", "failed", "cancelled", "unknown"].includes(turn.status)) return;
+
+    const live = this.conversations.get(task.conversationKey);
+    const interruptWait = live?.session.interrupt?.().then(() => true).catch(() => false);
+    const grace = new Promise<false>((r) =>
+      setTimeout(() => r(false), this.opts.interruptTimeoutMs ?? INTERRUPT_TIMEOUT_MS).unref(),
+    );
+    if (interruptWait) await Promise.race([interruptWait, grace]);
+    const after = this.opts.store.getTurn(turnId);
+    if (after && ["completed", "failed", "cancelled", "unknown"].includes(after.status)) {
+      this.#persist(taskId, {
+        type: "provider.notice",
+        level: "warn",
+        message: `turn exceeded budget ${budgetMs}ms; stop confirmed`,
+      } as DurableTaskEvent);
+      return;
+    }
+    this.#markTurnUnknown(taskId, turnId, "turn.timeout");
+    this.#pauseTask(task, "provider_unavailable");
+  }
+
   #pauseTask(task: TaskRecord, reason: PauseReason): void {
     if (task.status === "paused") return;
     if (["completed", "failed", "cancelled"].includes(task.status)) return;
@@ -730,6 +789,7 @@ export class SessionManager {
   #markTurnUnknown(taskId: string, turnId: string, reason: string): void {
     const turn = this.opts.store.getTurn(turnId);
     if (!turn) return;
+    this.#clearTurnTimeout(turnId);
     if (TURN_TRANSITIONS[turn.status].has("unknown")) {
       this.opts.store.upsertTurn(transitionTurn(turn, "unknown", { stopReason: reason }));
     } else if (turn.status === "running") {

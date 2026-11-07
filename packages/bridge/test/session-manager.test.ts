@@ -91,6 +91,7 @@ class MockSession implements AgentSession {
 }
 
 const sessions: MockSession[] = [];
+let sessionPreset: ((s: MockSession) => void) | null = null;
 function makeProvider(): AgentProvider {
   return {
     id: "codex",
@@ -100,31 +101,36 @@ function makeProvider(): AgentProvider {
     fetchCatalog: async () => ({ providerId: "codex", models: [], modes: [], fetchedAt: 0 }),
     createSession: async () => {
       const s = new MockSession();
+      sessionPreset?.(s);
       sessions.push(s);
       return s;
     },
     resumeSession: async () => {
       const s = new MockSession();
+      sessionPreset?.(s);
       sessions.push(s);
       return s;
     },
   };
 }
 
-async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number } = {}) {
+async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void } = {}) {
   sessions.length = 0;
+  sessionPreset = opts.presetSession ?? null;
   const store = new InMemoryStore() as unknown as SessionStore;
   const registry = new ProviderRegistry(DEFAULT_GATEWAY_CONFIG.providers);
   await registry.register("codex", async () => makeProvider());
   const published: Array<{ taskId: string; event: unknown; ephemeral: boolean }> = [];
   const config = structuredClone(DEFAULT_GATEWAY_CONFIG);
   if (opts.queueWhileRunning !== undefined) config.tasks.queueWhileRunning = opts.queueWhileRunning;
+  if (opts.turnTimeoutMs !== undefined) config.tasks.turnTimeoutMs = opts.turnTimeoutMs;
   const sm = new SessionManager({
     store,
     registry,
     config,
     publish: (taskId, event, ephemeral) => published.push({ taskId, event, ephemeral }),
     ...(opts.interruptTimeoutMs ? { interruptTimeoutMs: opts.interruptTimeoutMs } : {}),
+    ...(opts.onTaskStop ? { onTaskStop: opts.onTaskStop } : {}),
   });
   return { sm, store, registry, published, sessions };
 }
@@ -243,6 +249,50 @@ describe("SessionManager", () => {
     await sm.interruptTurn(task.taskId);
     const t = store.listTurns(task.taskId).at(-1)!;
     expect(["unknown", "cancelled", "completed"]).toContain(t.status);
+  });
+
+  test("onTaskStop fires on interruptTurn and cancelTask (P2-06)", async () => {
+    const stops: string[] = [];
+    const { sm } = await makeManager({ onTaskStop: (id) => stops.push(id) });
+    const task = sm.createTask(taskParams());
+    const { turnId } = await sm.sendMessage(task.taskId, INPUT);
+    await sm.interruptTurn(task.taskId, turnId);
+    expect(stops).toContain(task.taskId);
+    const task2 = sm.createTask({ ...taskParams(), cwd: "/tmp2" });
+    await sm.sendMessage(task2.taskId, { clientMessageId: "cm-2", content: [{ type: "text", text: "hi" }] });
+    await sm.cancelTask(task2.taskId);
+    expect(stops.filter((id) => id === task2.taskId)).toHaveLength(1);
+  });
+
+  test("turnTimeoutMs: confirmed stop → provider.notice; timer cleared on terminal", async () => {
+    const { sm, store } = await makeManager({
+      turnTimeoutMs: 30,
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 80));
+    const events = store.taskEventsAfter(task.taskId, 0, 100).events.map((e) => e.type);
+    expect(events).toContain("provider.notice");
+    expect(events).toContain("turn.cancelled"); // mock interrupt emits cancelled
+    expect(events).not.toContain("turn.unknown");
+  });
+
+  test("turnTimeoutMs: unconfirmed stop → turn.unknown + task paused", async () => {
+    const { sm, store } = await makeManager({
+      turnTimeoutMs: 30,
+      interruptTimeoutMs: 30,
+      presetSession: (s) => {
+        s.autoTerminal = false;
+        s.interruptImpl = () => new Promise(() => {}); // never resolves
+      },
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 120));
+    const turn = store.listTurns(task.taskId)[0]!;
+    expect(turn.status).toBe("unknown");
+    expect(store.getTask(task.taskId)?.status).toBe("paused");
   });
 
   test("cancelTask cancels running turn + task cancelled", async () => {

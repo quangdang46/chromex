@@ -31,6 +31,10 @@ export interface GatewayConfig {
     startupTimeoutMs: number;
     reconnectGraceMs: number;
     deltaFlushMs: number;
+    /** merge delta chunks arriving within this window (plan §4.1: 50ms) */
+    coalesceWindowMs: number;
+    /** per-turn buffered delta char cap; excess → deltas_dropped notice */
+    deltaBufferMaxPerTurn: number;
     maxEnvelopeBytes: number;
   };
   providers: {
@@ -54,6 +58,8 @@ export interface GatewayConfig {
     queueWhileRunning: boolean;
     retentionDays: number;
     maxEventsPerTask: number;
+    /** wall-clock budget per running turn; 0 = disabled (P2-06) */
+    turnTimeoutMs: number;
   };
   storeReasoning: boolean;
   /** P1-02: "memory" | "sqlite" — default memory until PR-D flips */
@@ -76,6 +82,8 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
     startupTimeoutMs: 15_000,
     reconnectGraceMs: 15_000,
     deltaFlushMs: 750,
+    coalesceWindowMs: 50,
+    deltaBufferMaxPerTurn: 65_536,
     maxEnvelopeBytes: MAX_ENVELOPE_BYTES_HARD,
   },
   providers: {
@@ -112,6 +120,7 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
     queueWhileRunning: true,
     retentionDays: 14,
     maxEventsPerTask: 20_000,
+    turnTimeoutMs: 0,
   },
   storeReasoning: false,
   store: "memory",
@@ -228,6 +237,8 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
       startupTimeoutMs: num(g.startupTimeoutMs, 100, 120_000, 15_000),
       reconnectGraceMs: num(g.reconnectGraceMs, 0, 600_000, 15_000),
       deltaFlushMs: num(g.deltaFlushMs, 0, 10_000, 750),
+      coalesceWindowMs: num(g.coalesceWindowMs, 0, 10_000, 50),
+      deltaBufferMaxPerTurn: num(g.deltaBufferMaxPerTurn, 1024, 4 * 1024 * 1024, 65_536),
       maxEnvelopeBytes: maxEnvelope,
     },
     providers: {
@@ -260,6 +271,7 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
       queueWhileRunning: bool(t.queueWhileRunning, true),
       retentionDays: num(t.retentionDays, 1, 3650, 14),
       maxEventsPerTask: num(t.maxEventsPerTask, 100, 10_000_000, 20_000),
+      turnTimeoutMs: num(t.turnTimeoutMs, 0, 24 * 60 * 60 * 1000, 0),
     },
     storeReasoning: bool(raw.storeReasoning, false),
     store: raw.store === "sqlite" ? "sqlite" : "memory",
