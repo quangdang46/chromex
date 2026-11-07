@@ -159,7 +159,13 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     }
 
     // provider registry + session manager (P1-04/P1-05/P1-06)
-    const registry = new ProviderRegistry(config.providers);
+    // flat provider-config map: built-ins + Phase 4 ACP entries keyed by id
+    const providerConfigs: Record<string, GatewayConfig["providers"]["codex"]> = {
+      codex: config.providers.codex,
+      claude: config.providers.claude,
+      ...config.providers.acp,
+    };
+    const registry = new ProviderRegistry(providerConfigs);
     if (config.providers.codex.enabled) {
       await registry.register("codex", async () => new CodexAgentProvider());
     }
@@ -171,6 +177,21 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           new ClaudeAgentProvider(
             config.providers.claude.command ? { command: config.providers.claude.command } : {},
           ),
+      );
+    }
+    // Phase 4: ACP agents — one adapter, data-driven entries (P4-00/01/02)
+    for (const [acpId, acpCfg] of Object.entries(config.providers.acp)) {
+      if (!acpCfg.enabled) continue;
+      const { AcpAgentProvider } = await import("../agents/providers/acp/provider.js");
+      await registry.register(
+        acpId,
+        async () =>
+          new AcpAgentProvider({
+            id: acpId,
+            command: acpCfg.command,
+            ...(acpCfg.args ? { args: acpCfg.args } : {}),
+            ...(Object.keys(acpCfg.env).length ? { env: acpCfg.env } : {}),
+          }),
       );
     }
     // assigned once toolRefresher exists (below); sessions opened
@@ -1072,10 +1093,17 @@ async function handleGatewayRequest(
         ...pc,
         env: Object.fromEntries(Object.keys(pc.env).map((k) => [k, "•••"])),
       });
+      const acpRedacted = Object.fromEntries(
+        Object.entries(cfg.providers.acp).map(([id, pc]) => [id, redact(pc)]),
+      );
       return {
         config: {
           ...cfg,
-          providers: { codex: redact(cfg.providers.codex), claude: redact(cfg.providers.claude) },
+          providers: {
+            codex: redact(cfg.providers.codex),
+            claude: redact(cfg.providers.claude),
+            acp: acpRedacted,
+          },
         },
       };
     }

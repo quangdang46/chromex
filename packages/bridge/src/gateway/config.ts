@@ -21,6 +21,11 @@ export interface GatewayProviderConfig {
   defaultModel: string | null;
 }
 
+/** Phase 4: extra ACP agent entries (docs/adr/acp-provider.md). */
+export interface GatewayAcpProviderConfig extends GatewayProviderConfig {
+  args: string[] | null;
+}
+
 export interface GatewayConfig {
   version: 1;
   gateway: {
@@ -40,6 +45,8 @@ export interface GatewayConfig {
   providers: {
     codex: GatewayProviderConfig;
     claude: GatewayProviderConfig;
+    /** ACP agents keyed by provider id ("opencode", "gemini", …) */
+    acp: Record<string, GatewayAcpProviderConfig>;
   };
   browser: {
     /** "auto" resolves via §6.6 intent-source ordering */
@@ -95,6 +102,7 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
       additionalModels: null,
       defaultModel: null,
     },
+    acp: {},
     claude: {
       enabled: false,
       command: null,
@@ -174,6 +182,19 @@ function envRecord(v: unknown): Record<string, string> {
   return out;
 }
 
+function acpProviderConfig(raw: unknown): GatewayAcpProviderConfig {
+  const base = providerConfig(raw, {
+    enabled: false,
+    command: null,
+    env: {},
+    models: null,
+    additionalModels: null,
+    defaultModel: null,
+  });
+  const args = isRecord(raw) ? strListOrNull(raw.args) : null;
+  return { ...base, args };
+}
+
 function providerConfig(raw: unknown, dflt: GatewayProviderConfig): GatewayProviderConfig {
   if (!isRecord(raw)) return { ...dflt };
   return {
@@ -244,6 +265,12 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
     providers: {
       codex: providerConfig(p.codex, base.providers.codex),
       claude: providerConfig(p.claude, base.providers.claude),
+      acp: Object.fromEntries(
+        Object.entries(isRecord(p.acp) ? p.acp : {}).map(([id, cfg]) => [
+          id,
+          acpProviderConfig(cfg),
+        ]),
+      ),
     },
     browser: {
       defaultBackend,

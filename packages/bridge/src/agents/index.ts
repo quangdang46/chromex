@@ -4,3 +4,7 @@ export * from "./providers/codex/provider.js";
 export * from "./providers/codex/session.js";
 export * from "./providers/codex/mapper.js";
 export * from "./providers/codex/features.js";
+export * from "./providers/acp/client.js";
+export * from "./providers/acp/mapper.js";
+export * from "./providers/acp/session.js";
+export * from "./providers/acp/provider.js";
