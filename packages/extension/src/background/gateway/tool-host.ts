@@ -1043,7 +1043,16 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       if (button !== undefined && !["left", "right", "middle"].includes(button)) {
         throw toolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
       }
-      return { ...base, action: "click", ...(button && button !== "left" ? { button } : {}) };
+      const clickCount = typeof args.clickCount === "number" ? args.clickCount : undefined;
+      if (clickCount !== undefined && clickCount !== 1 && clickCount !== 2) {
+        throw toolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
+      }
+      return {
+        ...base,
+        action: "click",
+        ...(button && button !== "left" ? { button } : {}),
+        ...(clickCount === 2 ? { clickCount: 2 } : {}),
+      };
     }
     case "browser.page.focus":
       return { ...base, action: "focus" };

@@ -315,7 +315,27 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         dispatchHoverSequence(element);
         dispatchClickSequence(element);
         element.click();
-        message = `Clicked ${getElementLabel(element) || "the target element"}.`;
+        const clickCount = typeof step.clickCount === "number" ? step.clickCount : 1;
+        if (clickCount === 2) {
+          // Second full sequence then the dblclick event — same order
+          // the browser produces (click, click, dblclick).
+          dispatchClickSequence(element);
+          element.click();
+          const rect = element.getBoundingClientRect();
+          element.dispatchEvent(
+            new MouseEvent("dblclick", {
+              bubbles: true,
+              cancelable: true,
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              view: window,
+              button: 0,
+            }),
+          );
+          message = `Double-clicked ${getElementLabel(element) || "the target element"}.`;
+        } else {
+          message = `Clicked ${getElementLabel(element) || "the target element"}.`;
+        }
         break;
       }
       case "focus":

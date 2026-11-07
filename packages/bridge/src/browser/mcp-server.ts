@@ -292,10 +292,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     }),
   },
   "browser.page.click": {
-    description: `Click an element. Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). ${SNAPSHOT_FIRST}`,
+    description: `Click an element. Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       button: { type: "string", enum: ["left", "right", "middle"], description: "Mouse button (default left)." },
+      clickCount: { type: "integer", enum: [1, 2], description: "1 (default) or 2 for a double-click." },
     }),
     expectable: true,
   },

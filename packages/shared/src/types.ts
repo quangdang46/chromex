@@ -618,6 +618,9 @@ export interface BrowserDomActionStep {
   /** click: mouse button — "left" (default) | "right" | "middle".
    *  right dispatches the contextmenu sequence; middle fires auxclick. */
   button?: string;
+  /** click: 1 (default) or 2 — two full click sequences then a dblclick
+   *  event, matching browser double-click semantics. */
+  clickCount?: number;
   /** drag: destination element — same target triple as the source
    *  (targetRef/selector/label on this step). At least one must be set. */
   dropTargetRef?: string;

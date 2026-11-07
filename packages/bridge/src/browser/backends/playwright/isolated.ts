@@ -325,11 +325,27 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #get(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const key = typeof args.key === "string" ? args.key : "text";
+    // Scroll/viewport parity with the extension host's page.scrollpos
+    // probe — evaluate is backend-internal, not the agent-facing tool.
+    const scroll = await page
+      .evaluate(() => ({
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        documentWidth: document.documentElement.scrollWidth,
+        documentHeight: document.documentElement.scrollHeight,
+      }))
+      .catch(() => undefined);
+    const base = {
+      url: stripQuery(page.url()),
+      ...(scroll ? { scroll } : {}),
+    };
     if (key === "text") {
       const text = await page.locator("body").innerText().catch(() => "");
-      return { value: boundText(text, MAX_EXTRACT_CHARS).text, url: stripQuery(page.url()) };
+      return { value: boundText(text, MAX_EXTRACT_CHARS).text, ...base };
     }
-    if (key === "title") return { value: await page.title(), url: stripQuery(page.url()) };
+    if (key === "title") return { value: await page.title(), ...base };
     if (key === "url") return { value: stripQuery(page.url()) };
     throw protocolError("proto.invalid", `unsupported page.get key ${key}`);
   }
@@ -427,6 +443,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         const button = typeof args.button === "string" ? args.button : "left";
         if (!["left", "right", "middle"].includes(button)) {
           throw protocolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
+        }
+        const clickCount = typeof args.clickCount === "number" ? args.clickCount : 1;
+        if (clickCount !== 1 && clickCount !== 2) {
+          throw protocolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
+        }
+        if (clickCount === 2) {
+          await locator.dblclick({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+          return { clicked: true, clickCount: 2 };
         }
         await locator.click({ button: button as "left" | "right" | "middle", timeout: DEFAULT_NAV_TIMEOUT_MS });
         return { clicked: true };
