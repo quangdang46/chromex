@@ -638,6 +638,26 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } catch {
           safeTabUrl = "";
         }
+        // args.key parity with playwright-isolated: text|title|url read
+        // the top-frame page value via the content script. Absent content
+        // script → value omitted, not faked (same rule as scroll).
+        const key = str(args.key);
+        if (key !== undefined && key !== "text" && key !== "title" && key !== "url") {
+          throw toolError("proto.invalid", "browser.page.get args.key must be text|title|url");
+        }
+        let value: string | undefined;
+        if (key !== undefined) {
+          try {
+            const res = (await deps.sendToTab(tabId, {
+              type: "page.extract",
+              maxChars: key === "text" ? 50_000 : 1,
+            })) as { text?: string; url?: string; title?: string };
+            const raw = key === "text" ? res.text : key === "title" ? res.title : res.url;
+            value = typeof raw === "string" ? (key === "url" ? urlOriginPath(raw) : raw) : "";
+          } catch {
+            value = undefined;
+          }
+        }
         return {
           id: tab.id,
           tabId: tab.id,
@@ -645,6 +665,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           title: tab.title ?? "",
           active: tab.active === true,
           resolvedTabId: tabId,
+          ...(value !== undefined ? { value } : {}),
           ...(typeof tab.windowId === "number" ? { windowId: tab.windowId } : {}),
           ...(typeof tab.status === "string" ? { status: tab.status } : {}),
           ...(typeof tab.pinned === "boolean" ? { pinned: tab.pinned } : {}),

@@ -1234,5 +1234,23 @@ describe("tool host expect verification (chromex-0fza)", () => {
       { frameId: 7, url: "https://cdn.example.com/widget.js", parentFrameId: 0 },
     ]);
   });
+
+  test("page.get key=text returns value via page.extract; invalid key rejected", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async (_tabId: number, msg: { type: string }) => {
+        if (msg.type === "page.scrollpos") return { scrollY: 0 };
+        if (msg.type === "page.extract") return { text: "hello page", url: "https://x.test/p?a=1", title: "T" };
+        return {};
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.get", { key: "text" }))) as { value?: string };
+    expect(res.value).toBe("hello page");
+    const resUrl = (await h(req("browser.page.get", { key: "url" }))) as { value?: string };
+    expect(resUrl.value).toBe("https://x.test/p");
+    await expect(h(req("browser.page.get", { key: "bogus" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
 });
 

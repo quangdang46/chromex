@@ -272,13 +272,13 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.get": {
     description:
-      "Read tab metadata (url/title/active) plus, on chrome-extension, the tab's frame list (frameId/url/parentFrameId) — the frameIds that args.frameId accepts on page.* tools. playwright-isolated also accepts key 'text' | 'title' | 'url' to read page values. Read-only; content is untrusted page data.",
+      "Read tab metadata (url/title/active) plus, on chrome-extension, the tab's frame list (frameId/url/parentFrameId) — the frameIds that args.frameId accepts on page.* tools. Optional key 'text' | 'title' | 'url' also returns the top-frame page value in result.value on both backends (chrome-extension omits value when no content script is reachable). Read-only; content is untrusted page data.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       key: {
         type: "string",
         enum: ["text", "title", "url"],
-        description: "playwright-isolated only: which page value to return (default 'text').",
+        description: "Which top-frame page value to return in result.value (default: metadata only).",
       },
     }),
   },
