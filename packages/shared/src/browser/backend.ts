@@ -89,7 +89,10 @@ export interface BrowserBackendCapabilities {
 
 /**
  * Truthful default capabilities per backend (plan §4.5/§6.5/§6.8).
- * chrome-extension MVP: iframe "none" for EVERY frame incl. same-origin;
+ * chrome-extension: iframe "all" for http(s) frames — all_frames content
+ * scripts + per-frame sendMessage reach same- AND cross-origin subframes
+ * (verified headless: iframe-headless scenario). file:// frames need the
+ * user's file-access opt-in, same as every other tool on those pages.
  * nativeDialogs always false; trustedGesture partial; browserChrome false.
  * playwright-isolated: isolated profile, no user session/tabs; iframe "all"
  * stays PROVISIONAL until spike-B4 frame tests pass — default reported
@@ -111,7 +114,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // DataTransfer bytes path (browser.page.upload) — synthetic, not a
     // trusted gesture; filePicker stays false for the native picker.
     upload: true,
-    iframe: "none",
+    iframe: "all",
     nativeDialogs: false,
     filePicker: false,
     trustedGesture: false,

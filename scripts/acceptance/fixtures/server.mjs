@@ -108,6 +108,16 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 </script>
 </body></html>`,
 
+  // iframe proof: child frame with an observable button + text field.
+  // ?mark=<src> is echoed into the fetch so same- and cross-origin hits
+  // are distinguishable in the requests log.
+  "/iframe-child": `<!doctype html><html><head><title>Frame Child</title></head><body>
+<h1>Frame Child</h1>
+<button id="fb" onclick="fetch('/api/frame-hit?src='+encodeURIComponent(location.origin)).then(()=>{document.getElementById('fout').textContent='frame-hit'})">frame-btn</button>
+<p id="fout">idle</p>
+<input id="fin" />
+</body></html>`,
+
   // keyboard + file-input proof: echoes the last key pressed, shows
   // uploaded file names — deterministic observable state for focus/press/upload.
   "/keys": `<!doctype html><html><body>
@@ -139,6 +149,26 @@ export async function startFixtureServer() {
     if (url.pathname === "/api/ping") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ v: "ok" }));
+      return;
+    }
+    // iframe parent: one same-origin child (127.0.0.1) and one
+    // cross-origin child (localhost — different origin, same server).
+    if (url.pathname === "/iframe-parent") {
+      const same = `http://127.0.0.1:${port}/iframe-child`;
+      const cross = `http://localhost:${port}/iframe-child`;
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(`<!doctype html><html><head><title>Iframe Parent</title></head><body>
+<h1>Iframe Parent</h1><p id="pout">parent-idle</p>
+<iframe id="f-same" src="${same}"></iframe>
+<iframe id="f-cross" src="${cross}"></iframe>
+</body></html>`);
+      return;
+    }
+    // child-frame click beacon — records which origin fired it
+    if (url.pathname === "/api/frame-hit") {
+      requests.push({ method: "GET", path: "/api/frame-hit", src: url.searchParams.get("src"), at: Date.now() });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
     // attachment download — Content-Disposition triggers a real

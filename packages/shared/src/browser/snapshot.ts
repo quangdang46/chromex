@@ -13,7 +13,7 @@ export interface BrowserElement {
   type?: string;
   /** [x, y, width, height] bucketed */
   bounds?: [number, number, number, number];
-  /** iframe path for nested frames (model only — iframe capability is "none" in MVP) */
+  /** iframe path for nested frames (model only — chrome-extension addresses frames by frameId, not path) */
   framePath?: string[];
 }
 

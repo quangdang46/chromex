@@ -7,9 +7,9 @@ import {
 } from "../src/browser/backend.js";
 
 describe("backend capabilities", () => {
-  test("chrome-extension claims match plan §4.5 (iframe none, no dialogs)", () => {
+  test("chrome-extension claims match plan §4.5 (iframe all on http(s), no dialogs)", () => {
     const caps = DEFAULT_BACKEND_CAPABILITIES["chrome-extension"];
-    expect(caps.iframe).toBe("none");
+    expect(caps.iframe).toBe("all");
     expect(caps.nativeDialogs).toBe(false);
     expect(caps.accessibility).toBe(false);
     expect(caps.existingUserTabs).toBe(true);
@@ -26,10 +26,14 @@ describe("backend capabilities", () => {
   test("runtime may narrow but never widen capabilities", () => {
     const narrowed = effectiveBackendCapabilities("chrome-extension", {
       screenshot: false,
-      iframe: "all", // ignored: cannot widen
     });
     expect(narrowed.screenshot).toBe(false);
-    expect(narrowed.iframe).toBe("none");
+    // runtime iframe claims are ignored entirely — the advertised level
+    // is the verified default, never a runtime assertion.
+    const iframeAttempt = effectiveBackendCapabilities("playwright-isolated", {
+      iframe: "all", // ignored: cannot widen
+    });
+    expect(iframeAttempt.iframe).toBe("none");
     const widened = effectiveBackendCapabilities("playwright-isolated", {
       accessibility: false,
     });
