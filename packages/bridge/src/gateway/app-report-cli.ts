@@ -175,6 +175,11 @@ class GatewayIpc {
       this.#send(sock, { v: 1, kind: "request", id, method, payload });
     });
   }
+
+  dispose(): void {
+    this.#socket?.destroy();
+    this.#socket = null;
+  }
 }
 
 function intFlag(flags: Record<string, string>, key: string): number | undefined {
@@ -202,6 +207,7 @@ async function main(): Promise<void> {
   if (command === "list") {
     const result = await ipc.request("app.list", { taskId });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    ipc.dispose();
     return;
   }
 
@@ -219,6 +225,7 @@ async function main(): Promise<void> {
 
   const result = await ipc.request("app.report", payload);
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  ipc.dispose();
 }
 
 const invokedAsScript =
