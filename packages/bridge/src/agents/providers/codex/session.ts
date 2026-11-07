@@ -128,14 +128,37 @@ export class CodexAgentSession implements AgentSession {
       ) ?? null;
   }
 
+  /** §9.3: config.options.mcpServers (spawn descriptors from
+   *  browser.mcp.spawn) → codex config override `mcp_servers.*`.
+   *  thread/start|resume both accept `config` per the app-server
+   *  protocol schema. */
+  #mcpConfigOverride(): Record<string, unknown> | undefined {
+    const servers = this.config.options?.mcpServers as
+      | Record<string, { command?: string; args?: string[]; env?: Record<string, string> }>
+      | undefined;
+    if (!servers || Object.keys(servers).length === 0) return undefined;
+    const mcp_servers: Record<string, unknown> = {};
+    for (const [name, srv] of Object.entries(servers)) {
+      if (!srv?.command) continue;
+      mcp_servers[name] = {
+        command: srv.command,
+        ...(srv.args?.length ? { args: srv.args } : {}),
+        ...(srv.env ? { env: srv.env } : {}),
+      };
+    }
+    return Object.keys(mcp_servers).length ? { mcp_servers } : undefined;
+  }
+
   async #ensureThread(): Promise<string> {
     if (this.threadId) return this.threadId;
     const cwd = this.ctx.cwd;
+    const configOverride = this.#mcpConfigOverride();
     if (this.config.resume?.persistence) {
       const result = (await this.client.request("thread/resume", {
         threadId: this.config.resume.persistence.ref,
         excludeTurns: true,
         personality: "pragmatic",
+        ...(configOverride ? { config: configOverride } : {}),
       })) as { thread: { id: string } };
       this.threadId = result.thread.id;
     } else {
@@ -146,6 +169,7 @@ export class CodexAgentSession implements AgentSession {
         personality: "pragmatic",
         serviceName: "chromex-gateway",
         sessionStartSource: "startup",
+        ...(configOverride ? { config: configOverride } : {}),
       })) as { thread: { id: string } };
       this.threadId = result.thread.id;
     }

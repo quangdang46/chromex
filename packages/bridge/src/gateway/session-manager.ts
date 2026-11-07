@@ -175,6 +175,10 @@ export interface SessionManagerOptions {
   newId?: () => string;
   /** interrupt ownership timeout (§5.3) — default 30s */
   interruptTimeoutMs?: number;
+  /** §9.3: spawn a scoped browser-tool MCP descriptor for a task;
+   *  null when the task/provider shouldn't get browser tools. The
+   *  result lands in session config.options.mcpServers. */
+  browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
 }
 
 const INTERRUPT_TIMEOUT_MS = 30_000;
@@ -262,8 +266,18 @@ export class SessionManager {
     });
     if (!target) throw new Error(`no provider for profile ${task.profileId}`);
 
+    const mcpServers = this.opts.browserMcpSpawn
+      ? await this.opts.browserMcpSpawn(task).catch(() => null)
+      : null;
     const session = await target.provider.createSession(
-      { ...target.config, provider: target.providerId },
+      {
+        ...target.config,
+        provider: target.providerId,
+        options: {
+          ...(target.config.options ?? {}),
+          ...(mcpServers ? { mcpServers } : {}),
+        },
+      },
       { cwd: task.cwd },
     );
     const live: LiveConversation = { session, conversationKey: task.conversationKey };

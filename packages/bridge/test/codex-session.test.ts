@@ -87,10 +87,13 @@ class FakeCodexClient {
   }
 }
 
-function makeSession(client = new FakeCodexClient()) {
+function makeSession(
+  client = new FakeCodexClient(),
+  config: Record<string, unknown> = { provider: "codex" },
+) {
   const session = new CodexAgentSession(
     client as never,
-    { provider: "codex" },
+    config as never,
     {},
     "sess-test-1",
   );
@@ -215,4 +218,45 @@ describe("CodexAgentSession", () => {
 runAgentSessionConformance("codex", async () => {
   const { session } = makeSession();
   return { session, turnInput: INPUT };
+});
+
+describe("CodexAgentSession — MCP config override (§9.3)", () => {
+  test("options.mcpServers → thread/start config.mcp_servers", async () => {
+    const { session, client } = makeSession(new FakeCodexClient(), {
+      provider: "codex",
+      options: {
+        mcpServers: {
+          chromex_browser: {
+            command: "/usr/bin/node",
+            args: ["/x/mcp-stdio.js"],
+            env: { CHROMEX_MCP_SCOPE_FILE: "/data/mcp/t1.json" },
+          },
+        },
+      },
+    });
+    await session.startTurn({
+      gatewayTurnId: "gt-mcp",
+      clientMessageId: "cm-mcp",
+      content: [{ type: "text", text: "hi" }],
+    });
+    const start = client.calls.find((c) => c.method === "thread/start");
+    expect(start).toBeDefined();
+    const cfg = (start!.params as { config?: { mcp_servers?: Record<string, unknown> } }).config;
+    expect(cfg?.mcp_servers?.chromex_browser).toEqual({
+      command: "/usr/bin/node",
+      args: ["/x/mcp-stdio.js"],
+      env: { CHROMEX_MCP_SCOPE_FILE: "/data/mcp/t1.json" },
+    });
+  });
+
+  test("no mcpServers → no config override sent", async () => {
+    const { session, client } = makeSession();
+    await session.startTurn({
+      gatewayTurnId: "gt-plain",
+      clientMessageId: "cm-plain",
+      content: [{ type: "text", text: "hi" }],
+    });
+    const start = client.calls.find((c) => c.method === "thread/start");
+    expect((start!.params as { config?: unknown }).config).toBeUndefined();
+  });
 });

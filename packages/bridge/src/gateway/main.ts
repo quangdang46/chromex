@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { protocolError } from "@codex-sidepanel/shared";
-import type { Envelope, ProtocolError } from "@codex-sidepanel/shared";
+import type { Envelope, ProtocolError, TaskRecord } from "@codex-sidepanel/shared";
 import { z } from "zod";
 
 import { LEGACY_COMPAT, LEGACY_SIDECAR_METHODS } from "./compat.js";
@@ -150,10 +150,15 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     if (config.providers.codex.enabled) {
       await registry.register("codex", async () => new CodexAgentProvider());
     }
+    // assigned once toolRefresher exists (below); sessions opened
+    // earlier simply get no browser MCP — honest, never fake.
+    let spawnBrowserMcpForTask: ((task: TaskRecord) => Promise<Record<string, unknown> | null>) | null =
+      null;
     const sessionManager = new SessionManager({
       store: store as ConstructorParameters<typeof SessionManager>[0]["store"],
       registry,
       config,
+      browserMcpSpawn: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
       // durable envelopes broadcast to all authed connections; ephemeral
       // agent deltas are dropped here until P1-08 wires the delta channel
       publish: (taskId, event, ephemeral) => {
@@ -223,6 +228,42 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         );
       },
     });
+
+    /** §9.3 shared spawn path — used by SessionManager (per-session
+     *  MCP registration) and the browser.mcp.spawn RPC. */
+    spawnBrowserMcpForTask = async (task: TaskRecord) => {
+      // browser tools only make sense for providers that speak MCP —
+      // capability comes from the provider registry at session open;
+      // here we gate on the task actually having a browser backend.
+      const backendId = task.backend.backendId ?? "chrome-extension";
+      if (backendId !== "chrome-extension" && backendId !== "playwright-cdp" && backendId !== "playwright-isolated") {
+        return null;
+      }
+      const issued = toolRefresher.track({
+        taskId: task.taskId,
+        profileId: task.profileId,
+        backendId: backendId as never,
+        allowedTools: [...BROWSER_TOOL_NAMES],
+      });
+      const scopeFile = await writeMcpScopeFile(dataDir, {
+        taskId: task.taskId,
+        token: issued.token,
+        tokenExpiresAt: issued.expiresAt,
+        profileId: task.profileId,
+        backendId: backendId as never,
+        allowedTools: [...BROWSER_TOOL_NAMES],
+        gatewayEndpoint: ipcEndpointPath(dataDir),
+        gatewayTokenFile: path.join(dataDir, "auth", "token"),
+      });
+      const mcpStdioJs = fileURLToPath(new URL("../browser/mcp-stdio.js", import.meta.url));
+      return {
+        chromex_browser: {
+          command: process.execPath,
+          args: [mcpStdioJs],
+          env: { CHROMEX_MCP_SCOPE_FILE: scopeFile },
+        },
+      };
+    };
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
@@ -312,6 +353,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           playwrightRuntime,
           toolServer,
           toolRefresher,
+          spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
       } catch (err) {
         if (err instanceof StaleFenceError) {
@@ -451,6 +493,7 @@ async function handleGatewayRequest(
     playwrightRuntime: PlaywrightRuntimeManager;
     toolServer: BrowserToolServer;
     toolRefresher: ToolTokenRefresher;
+    spawnBrowserMcp?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
   },
 ): Promise<unknown> {
   switch (req.method) {
@@ -608,39 +651,24 @@ async function handleGatewayRequest(
       return outcome;
     }
     case "browser.mcp.spawn": {
-      // §9.3: issue a scoped tool token, write the 0600 scope file, and
-      // return the stdio spawn descriptor for the provider adapter.
-      // Per-session MCP registration is adapter-owned (Claude SDK:
-      // per-query mcpServers; Codex: see ADR open question).
+      // §9.3: same path SessionManager uses at session open — issue a
+      // scoped token, write the 0600 scope file, return the descriptor.
       const p = parsePayload(z.object({ taskId: z.string().min(1) }), req.payload) as {
         taskId: string;
       };
       const task = ctx.store.getTask(p.taskId);
       if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
-      const issued = ctx.toolRefresher.track({
-        taskId: task.taskId,
-        profileId: task.profileId,
-        backendId: (task.backend.backendId ?? "chrome-extension") as never,
-        allowedTools: [...BROWSER_TOOL_NAMES],
-      });
-      const scopeFile = await writeMcpScopeFile(ctx.dataDir, {
-        taskId: task.taskId,
-        token: issued.token,
-        tokenExpiresAt: issued.expiresAt,
-        profileId: task.profileId,
-        backendId: (task.backend.backendId ?? "chrome-extension") as never,
-        allowedTools: [...BROWSER_TOOL_NAMES],
-        gatewayEndpoint: ipcEndpointPath(ctx.dataDir),
-        gatewayTokenFile: path.join(ctx.dataDir, "auth", "token"),
-      });
-      const mcpStdioJs = fileURLToPath(new URL("../browser/mcp-stdio.js", import.meta.url));
-      return {
-        scopeFile,
-        command: process.execPath,
-        args: [mcpStdioJs],
-        env: { CHROMEX_MCP_SCOPE_FILE: scopeFile },
-        tokenExpiresAt: issued.expiresAt,
+      const servers = ctx.spawnBrowserMcp ? await ctx.spawnBrowserMcp(task) : null;
+      if (!servers) {
+        throw perr("proto.unsupported", "browser MCP not available for this task");
+      }
+      const scopeFile = mcpScopePath(ctx.dataDir, task.taskId);
+      const entry = Object.values(servers)[0] as {
+        command: string;
+        args: string[];
+        env: Record<string, string>;
       };
+      return { scopeFile, command: entry.command, args: entry.args, env: entry.env };
     }
     case "browser.mcp.stop": {
       const p = parsePayload(z.object({ taskId: z.string().min(1) }), req.payload) as {
