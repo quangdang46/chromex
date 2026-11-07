@@ -1,6 +1,7 @@
 import type {
   ActionCard,
   BrowserActionPermissionMode,
+  BrowserBackendCapabilities,
   CodexActiveTurn,
   CodexAppOption,
   CodexMcpServerOption,
@@ -105,6 +106,11 @@ export interface UiInitPayload {
   settings: ExtensionSettings;
   runtimeConfig: RuntimeConfigSnapshot;
   playwrightRuntime: PlaywrightRuntimeCapability;
+  browserBackends?: Array<{
+    id: "chrome-extension" | "playwright-isolated" | "playwright-cdp";
+    available: boolean;
+    capabilities: BrowserBackendCapabilities;
+  }>;
   skills: SkillOption[];
   appServerSkills: CodexSkillOption[];
   connectedApps: CodexAppOption[];

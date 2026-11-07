@@ -40,6 +40,7 @@ import {
   type SkillArchiveInstallResult,
   type UserFileAttachment,
   type WorkspaceHarnessSnapshot,
+  DEFAULT_BACKEND_CAPABILITIES,
 } from "@codex-sidepanel/shared";
 
 import { createYouTubeCurrentMomentPromptResult } from "../youtube-current-moment.js";
@@ -1317,6 +1318,18 @@ async function buildUiInitPayload(
     settings,
     runtimeConfig,
     playwrightRuntime,
+    browserBackends: [
+      {
+        id: "chrome-extension",
+        available: true,
+        capabilities: DEFAULT_BACKEND_CAPABILITIES["chrome-extension"],
+      },
+      {
+        id: "playwright-isolated",
+        available: playwrightRuntime.available && settings.playwrightBrowserControlEnabled,
+        capabilities: DEFAULT_BACKEND_CAPABILITIES["playwright-isolated"],
+      },
+    ],
     skills: [],
     appServerSkills: state.appServerSkills,
     connectedApps: state.connectedApps,
