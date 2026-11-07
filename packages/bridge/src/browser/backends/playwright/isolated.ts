@@ -354,7 +354,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const page = await this.#pageFor(taskId, args);
     const selector = typeof args.selector === "string" && args.selector ? args.selector : "body";
     const maxChars = typeof args.maxChars === "number" ? args.maxChars : MAX_EXTRACT_CHARS;
-    const format = args.format === "html" ? "html" : "text";
+    const format = args.format === undefined ? "text" : args.format === "html" ? "html" : null;
+    if (format === null) {
+      throw protocolError("proto.invalid", "browser.page.extract args.format must be text|html");
+    }
     const locator = page.locator(selector).first();
     const raw =
       format === "html"
