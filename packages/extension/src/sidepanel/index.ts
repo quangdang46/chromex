@@ -3278,7 +3278,10 @@ function renderNow(): void {
     runtimeConfig: state.runtimeConfig,
     modelCatalogState: state.modelCatalogState,
   });
-  const showAuthOnboarding = shouldShowAuthOnboarding(state.accountStatus);
+  // Gateway mode is provider-agnostic: ChatGPT/Codex auth onboarding does
+  // not apply — provider availability comes from the gateway hello instead.
+  const showAuthOnboarding =
+    shouldShowAuthOnboarding(state.accountStatus) && !state.settings.gatewayMode;
   const showUsageNoticeOnboarding = shouldShowUsageNoticeOnboarding({
     accountStatus: state.accountStatus,
     usageNoticeAccepted: state.settings.usageNoticeAccepted,
