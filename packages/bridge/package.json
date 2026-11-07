@@ -13,6 +13,7 @@
   "dependencies": {
     "@codex-sidepanel/shared": "0.1.8",
     "duplexer2": "^0.1.4",
+    "fs-ext": "^2.1.1",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "playwright-core": "^1.59.1",
