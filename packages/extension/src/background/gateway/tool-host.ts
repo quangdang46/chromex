@@ -538,12 +538,25 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } catch {
           scroll = undefined;
         }
+        // Same privacy rule as tabs.list/frames — query/hash can carry
+        // tokens; strip to origin+pathname.
+        let safeTabUrl = "";
+        try {
+          const u = new URL(tab.url ?? "");
+          safeTabUrl = `${u.origin}${u.pathname}`;
+        } catch {
+          safeTabUrl = "";
+        }
         return {
           id: tab.id,
-          url: tab.url ?? "",
+          url: safeTabUrl,
           title: tab.title ?? "",
           active: tab.active === true,
           resolvedTabId: tabId,
+          ...(typeof tab.windowId === "number" ? { windowId: tab.windowId } : {}),
+          ...(typeof tab.status === "string" ? { status: tab.status } : {}),
+          ...(typeof tab.pinned === "boolean" ? { pinned: tab.pinned } : {}),
+          ...(typeof tab.groupId === "number" ? { groupId: tab.groupId } : {}),
           ...(scroll ? { scroll } : {}),
           ...(frames ? { frames } : {}),
         };
@@ -578,7 +591,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             capturedAt: Date.now(),
           });
         }
-        return { ...snap, resolvedTabId: tabId };
+        // metadata.url arrives as full location.href — strip query/hash
+        // before it reaches the provider (same rule as tabs.list).
+        const safeSnap =
+          snap.metadata && typeof snap.metadata.url === "string"
+            ? { ...snap, metadata: { ...snap.metadata, url: urlOriginPath(snap.metadata.url) } }
+            : snap;
+        return { ...safeSnap, resolvedTabId: tabId };
       }
       case "browser.page.wait": {
         // Conditional wait (text/textGone/selector/urlContains) polls in
@@ -916,7 +935,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         return {
           text: res.text ?? "",
           truncated: res.truncated === true,
-          url: res.url ?? "",
+          url: res.url ? urlOriginPath(res.url) : "",
           title: res.title ?? "",
           ...(res.error ? { error: res.error } : {}),
           resolvedTabId: tabId,
