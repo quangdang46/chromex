@@ -325,10 +325,15 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #extract(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    const selector = typeof args.selector === "string" ? args.selector : "body";
+    const selector = typeof args.selector === "string" && args.selector ? args.selector : "body";
     const maxChars = typeof args.maxChars === "number" ? args.maxChars : MAX_EXTRACT_CHARS;
-    const text = await page.locator(selector).first().innerText().catch(() => "");
-    const bounded = boundText(text, Math.min(maxChars, MAX_EXTRACT_CHARS));
+    const format = args.format === "html" ? "html" : "text";
+    const locator = page.locator(selector).first();
+    const raw =
+      format === "html"
+        ? await locator.evaluate((el) => (el as Element).outerHTML).catch(() => "")
+        : await locator.innerText().catch(() => "");
+    const bounded = boundText(raw, Math.min(maxChars, MAX_EXTRACT_CHARS));
     return { text: bounded.text, truncated: bounded.truncated, url: stripQuery(page.url()) };
   }
 

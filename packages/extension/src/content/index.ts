@@ -187,10 +187,29 @@ function chromexRuntimeMessageListener(
 
   if (message.type === "page.extract") {
     const maxChars = typeof message.maxChars === "number" ? message.maxChars : 12_000;
-    const text = collectBodyText();
+    const selector = typeof message.selector === "string" && message.selector ? message.selector : null;
+    const format = message.format === "html" ? "html" : "text";
+    let el: Element | null = null;
+    if (selector) {
+      try {
+        el = document.querySelector(selector);
+      } catch {
+        sendResponse({ text: "", truncated: false, url: window.location.href, title: document.title, error: "invalid selector" });
+        return false;
+      }
+      if (!el) {
+        sendResponse({ text: "", truncated: false, url: window.location.href, title: document.title, error: "selector matched no element" });
+        return false;
+      }
+    }
+    const raw =
+      format === "html"
+        ? el ? el.outerHTML : document.documentElement.outerHTML
+        : el ? el.innerText : collectBodyText();
+    const text = raw.slice(0, maxChars);
     sendResponse({
-      text: text.slice(0, maxChars),
-      truncated: text.length > maxChars,
+      text,
+      truncated: raw.length > maxChars,
       url: window.location.href,
       title: document.title,
     });

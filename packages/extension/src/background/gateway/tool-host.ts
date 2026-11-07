@@ -733,15 +733,22 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const frameId = frameIdArg(args);
         const maxChars = typeof args.maxChars === "number" ? Math.min(args.maxChars, 50_000) : 12_000;
+        const format = str(args.format);
+        if (format !== undefined && format !== "text" && format !== "html") {
+          throw toolError("proto.invalid", "browser.page.extract args.format must be text|html");
+        }
         const res = (await deps.sendToTab(tabId, {
           type: "page.extract",
           maxChars,
-        }, { frameId })) as { text?: string; truncated?: boolean; url?: string; title?: string };
+          ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+          ...(format ? { format } : {}),
+        }, { frameId })) as { text?: string; truncated?: boolean; url?: string; title?: string; error?: string };
         return {
           text: res.text ?? "",
           truncated: res.truncated === true,
           url: res.url ?? "",
           title: res.title ?? "",
+          ...(res.error ? { error: res.error } : {}),
           resolvedTabId: tabId,
         };
       }
