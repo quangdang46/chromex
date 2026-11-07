@@ -64,17 +64,24 @@ class GatewayIpc {
     string,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
-  #helloPromise: Promise<void> | null = null;
-  readonly #token: string;
+  // hello is per-connection: track WHICH socket was helloed so a
+  // reconnect re-hellos, and never cache a rejected hello forever.
+  #helloedSocket: net.Socket | null = null;
+  #helloInflight = new Map<net.Socket, Promise<void>>();
+  readonly #tokenFile: string;
 
   constructor(
     private readonly endpoint: string,
     tokenFile: string,
   ) {
+    this.#tokenFile = tokenFile;
+  }
+
+  #readToken(): string {
     try {
-      this.#token = fs.readFileSync(tokenFile, "utf8").trim();
+      return fs.readFileSync(this.#tokenFile, "utf8").trim();
     } catch {
-      this.#token = "";
+      return "";
     }
   }
 
@@ -98,6 +105,7 @@ class GatewayIpc {
     for (const p of this.#pending.values()) p.reject(err);
     this.#pending.clear();
     this.#socket = null;
+    this.#helloedSocket = null;
   }
 
   #onData(d: Buffer): void {
@@ -140,30 +148,49 @@ class GatewayIpc {
     sock.write(frame);
   }
 
-  async #ensureHello(): Promise<void> {
-    this.#helloPromise ??= (async () => {
-      const sock = await this.#connect();
-      const id = `hello-${randomUUID()}`;
-      await new Promise<void>((resolve, reject) => {
-        this.#pending.set(id, { resolve: () => resolve(), reject });
-        this.#send(sock, {
-          v: 1,
-          kind: "request",
-          id,
-          method: "hello",
-          payload: {
-            protocolVersion: 1,
-            clientVersion: "chromex-app-report/0.1.0",
-            clientId: `app-report-${process.pid}`,
-            profileId: "",
-            browserInstanceId: null,
-            hostInstanceId: "",
-            token: this.#token,
-          },
+  #helloOnce(sock: net.Socket): Promise<void> {
+    let p = this.#helloInflight.get(sock);
+    if (!p) {
+      p = (async () => {
+        const id = `hello-${randomUUID()}`;
+        await new Promise<void>((resolve, reject) => {
+          this.#pending.set(id, { resolve: () => resolve(), reject });
+          this.#send(sock, {
+            v: 1,
+            kind: "request",
+            id,
+            method: "hello",
+            payload: {
+              protocolVersion: 1,
+              clientVersion: "chromex-app-report/0.1.0",
+              clientId: `app-report-${process.pid}`,
+              profileId: "",
+              browserInstanceId: null,
+              hostInstanceId: "",
+              token: this.#readToken(),
+            },
+          });
         });
+        this.#helloedSocket = sock;
+      })().finally(() => {
+        this.#helloInflight.delete(sock);
       });
-    })();
-    return this.#helloPromise;
+      this.#helloInflight.set(sock, p);
+    }
+    return p;
+  }
+
+  async #ensureHello(): Promise<void> {
+    for (;;) {
+      const sock = await this.#connect();
+      if (this.#helloedSocket === sock) return;
+      try {
+        await this.#helloOnce(sock);
+        return;
+      } catch (err) {
+        if (this.#socket === sock && !sock.destroyed) throw err;
+      }
+    }
   }
 
   async request(method: string, payload: unknown): Promise<unknown> {

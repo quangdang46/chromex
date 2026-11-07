@@ -18,7 +18,7 @@ not sufficient.
 | S2 | Debug a live website: observe page → locate cause in code → fix → reproduce → verify | Real run on a logged-in tab with an actual bug | **PASS**: agent edited code, re-drove real browser, verified token end-to-end |
 | S3 | Multi-tab/multi-app work without scope bleed | Task A and B concurrently on different tabs; no cross-talk | **PASS**: two tasks held isolated tab scopes; cross-task tab access refused |
 | S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff (CAPTCHA/MFA → user) | Real run on a real web app | BLOCKED-by-design — requires real credentials/site; manual runbook: `docs/s4-manual-runbook.md` |
-| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicate actions | kill -9 style test + live run | **FAIL**→fixes landed + IPC proofs: `8409af2` ext auto-reconnect; `040b328`/`e5c8702` conn-level host routing (zombie conn); `371fe7a` durable toolCallId dedup. `gateway-kill9.test.ts` C: restart → host re-register → live routing; D: mid-call kill → same id deduped, no duplicate dispatch. Awaiting real-browser re-run on new dist |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicate actions | kill -9 style test + live run | **PARTIAL**→fixes landed + IPC proofs: `8409af2` ext auto-reconnect; `040b328`/`e5c8702` conn-level host routing (zombie conn); `371fe7a` durable toolCallId dedup; native-host self-heal (conn close → proactive reconnect + re-hello → ensureGateway respawn) proven tokenless in `native-host-relay` gateway-restart leg; IPC clients re-hello per connection; gateway auth token stable across restarts. Awaiting real-browser re-run on new dist |
 | S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, continue; never fake success | Injected failure run | **PASS**: stale `snapshotId` rejected loudly (`element_not_found`), re-observe + retry succeeded |
 | S7 | Protection: sensitive actions (send/post/delete/pay) → contextual approval; denial is honored, never bypassed | Approval-flow run incl. deny path | **PASS**: deny→`browser.approval_denied`, allow→navigated, `hostAliveAfterApproval=true` |
 | S8 | Verifiable deliverable: diff, changed files, test results, browser evidence, known limits | Deliverable rendered in sidepanel | **PASS**: task.sync carries full tool evidence; sidepanel renders in real Chrome |
@@ -77,7 +77,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   hello without token → host injects token + hostInstanceId +
   browserInstanceId → MCP tool call round-trips browser.tool.request
   down to the "extension" and back; kill → browser.no_host → respawn
-  → recovery (10 asserts)
+  → recovery; **gateway kill → native-host self-heals with zero
+  extension traffic** (conn close → proactive reconnect → ensureGateway
+  respawns gateway → cached hello re-registers host → calls recover,
+  sqlite store keeps task + durable events) (11 asserts)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)

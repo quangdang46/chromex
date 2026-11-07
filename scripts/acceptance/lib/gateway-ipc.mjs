@@ -12,7 +12,11 @@ export class GatewayIpc {
   #socket = null;
   #buf = Buffer.alloc(0);
   #pending = new Map();
-  #helloDone = null;
+  // hello is per-connection — a cached promise is not enough: the
+  // socket can die and reconnect underneath us (gateway restart) and
+  // a rejected hello must not poison later requests.
+  #helloedSocket = null;
+  #helloInflight = new Map();
   #requestHandler = null;
   constructor(endpoint, token, hello = {}) {
     this.endpoint = endpoint;
@@ -50,6 +54,7 @@ export class GatewayIpc {
     for (const p of this.#pending.values()) p.reject(err);
     this.#pending.clear();
     this.#socket = null;
+    this.#helloedSocket = null;
   }
   #onData(d) {
     this.#buf = Buffer.concat([this.#buf, d]);
@@ -95,19 +100,38 @@ export class GatewayIpc {
     body.copy(frame, FRAME_HEADER);
     sock.write(frame);
   }
-  async request(method, payload) {
-    this.#helloDone ??= (async () => {
-      const sock = await this.#connect();
-      const id = `hello-${randomUUID()}`;
-      await new Promise((resolve, reject) => {
-        this.#pending.set(id, { resolve, reject });
-        this.#send(sock, {
-          v: 1, kind: "request", id, method: "hello",
-          payload: { ...this.hello, token: this.token },
+  #helloOnce(sock) {
+    let p = this.#helloInflight.get(sock);
+    if (!p) {
+      p = (async () => {
+        const id = `hello-${randomUUID()}`;
+        await new Promise((resolve, reject) => {
+          this.#pending.set(id, { resolve, reject });
+          this.#send(sock, {
+            v: 1, kind: "request", id, method: "hello",
+            payload: { ...this.hello, token: this.token },
+          });
         });
-      });
-    })();
-    await this.#helloDone;
+        this.#helloedSocket = sock;
+      })().finally(() => this.#helloInflight.delete(sock));
+      this.#helloInflight.set(sock, p);
+    }
+    return p;
+  }
+  async #ensureHello() {
+    for (;;) {
+      const sock = await this.#connect();
+      if (this.#helloedSocket === sock) return;
+      try {
+        await this.#helloOnce(sock);
+        return;
+      } catch (err) {
+        if (this.#socket === sock && !sock.destroyed) throw err;
+      }
+    }
+  }
+  async request(method, payload) {
+    await this.#ensureHello();
     const sock = await this.#connect();
     const id = `req-${randomUUID()}`;
     return new Promise((resolve, reject) => {

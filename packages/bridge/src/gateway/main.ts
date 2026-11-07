@@ -738,7 +738,14 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     // snapshot.
     let liveConfig = config;
 
-    ipc = new GatewayIpcServer(dataDir, config.gateway.maxEnvelopeBytes, async (req, conn) => {
+    // Keep the auth token stable across restarts: clients (native
+    // host, mcp-stdio children) cache it, and a fresh random token on
+    // every respawn would strand them all behind proto.auth_failed.
+    const existingToken = await GatewayIpcServer.readToken(dataDir);
+    ipc = new GatewayIpcServer(
+      dataDir,
+      config.gateway.maxEnvelopeBytes,
+      async (req, conn) => {
       try {
         return await handleGatewayRequest(req, {
           store,
@@ -775,7 +782,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         }
         throw err;
       }
-    });
+      },
+      existingToken ?? undefined,
+    );
     await ipc.writeTokenFile();
     await ipc.listen();
 

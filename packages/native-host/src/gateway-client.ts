@@ -176,14 +176,28 @@ export class GatewayConnection {
   private nextId = 1;
   private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private eventListeners = new Set<(e: Envelope) => void>();
+  private closeListeners = new Set<(err: Error) => void>();
+  private closeNotified = false;
   private closed = false;
   hello!: HelloResponse;
 
   private constructor(socket: net.Socket, maxEnvelopeBytes: number) {
     this.socket = socket;
     socket.on("data", (chunk) => this.onData(chunk, maxEnvelopeBytes));
-    socket.on("close", () => this.failAll(new GatewayClientError("gateway connection closed", "unresponsive")));
-    socket.on("error", () => this.failAll(new GatewayClientError("gateway socket error", "connect_failed")));
+    // remote close/error must mark the conn dead — otherwise isClosed
+    // stays false and the relay keeps writing to a destroyed socket
+    // forever instead of reconnecting (S5: gateway restart stranded
+    // every browser tool call behind browser.no_host).
+    socket.on("close", () => {
+      this.closed = true;
+      this.failAll(new GatewayClientError("gateway connection closed", "unresponsive"));
+      this.notifyClosed(new GatewayClientError("gateway connection closed", "unresponsive"));
+    });
+    socket.on("error", () => {
+      this.closed = true;
+      this.failAll(new GatewayClientError("gateway socket error", "connect_failed"));
+      this.notifyClosed(new GatewayClientError("gateway socket error", "connect_failed"));
+    });
   }
 
   static async connect(
@@ -237,6 +251,28 @@ export class GatewayConnection {
   onEvent(listener: (e: Envelope) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
+  }
+
+  /** Fires once when the socket dies (remote close, error, or local
+   *  close()). Lets the relay proactively reconnect instead of waiting
+   *  for the next inbound envelope — without this a gateway restart
+   *  leaves the host unregistered forever while the extension's NM
+   *  port stays alive (S5). */
+  onClose(listener: (err: Error) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
+  private notifyClosed(err: Error): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
+    for (const l of this.closeListeners) {
+      try {
+        l(err);
+      } catch {
+        /* listener errors must not break the socket path */
+      }
+    }
   }
 
   request(method: string, payload?: unknown, timeoutMs = 30_000): Promise<unknown> {

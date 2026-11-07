@@ -67,6 +67,14 @@ export class GatewayModeRelay {
   #token: string | null = null;
   #browserInstanceId: string | null = null;
   #shuttingDown = false;
+  // S5 self-healing: cache the extension's raw hello payload and which
+  // conn it was hellod on. When the gateway conn dies, the relay
+  // reconnects proactively and re-hellos — otherwise the host stays
+  // unregistered forever because the extension's NM port never drops.
+  #lastHelloPayload: unknown = null;
+  #connWithHello: GatewayConnection | null = null;
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  #reconnectAttempt = 0;
   readonly #opts: GatewayModeOptions;
   readonly #sidecar: LegacyBridgeSidecar;
 
@@ -113,7 +121,14 @@ export class GatewayModeRelay {
    *  Rejections clear #gatewayPromise so a later message retries —
    *  e.g. the gateway was still spawning when the first request landed. */
   #ensureGatewayConn(): Promise<GatewayConnection> {
-    if (this.#conn && !this.#conn.isClosed) return Promise.resolve(this.#conn);
+    if (this.#conn) {
+      if (!this.#conn.isClosed) return Promise.resolve(this.#conn);
+      // Dead conn (gateway restarted/crashed): drop it AND the stale
+      // resolved promise — otherwise every later call returns the same
+      // corpse and the host never re-hellos into the host registry.
+      this.#conn = null;
+      this.#gatewayPromise = null;
+    }
     if (!this.#gatewayPromise) {
       this.#gatewayPromise = this.#connectGateway().catch((err) => {
         this.#gatewayPromise = null;
@@ -134,8 +149,50 @@ export class GatewayModeRelay {
       ...(this.#opts.log ? { log: this.#opts.log } : {}),
     });
     conn.onEvent((env) => this.#writeEnvelope(env));
+    conn.onClose(() => this.#onGatewayConnClosed(conn));
     this.#conn = conn;
     return conn;
+  }
+
+  #onGatewayConnClosed(conn: GatewayConnection): void {
+    if (this.#shuttingDown || conn !== this.#conn) return;
+    this.#conn = null;
+    this.#gatewayPromise = null;
+    this.#connWithHello = null;
+    this.#scheduleReconnect();
+  }
+
+  #scheduleReconnect(): void {
+    if (this.#shuttingDown || this.#reconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * 2 ** this.#reconnectAttempt);
+    this.#reconnectAttempt += 1;
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = null;
+      void this.#reconnect();
+    }, delay);
+    this.#reconnectTimer.unref?.();
+  }
+
+  async #reconnect(): Promise<void> {
+    if (this.#shuttingDown) return;
+    try {
+      const conn = await this.#ensureGatewayConn();
+      await this.#rehelloIfNeeded(conn);
+      this.#reconnectAttempt = 0;
+    } catch {
+      this.#scheduleReconnect();
+    }
+  }
+
+  /** The gateway allows exactly one hello per conn and it must carry
+   *  host-injected token + ids. Re-send the cached extension hello so
+   *  the host re-registers without waiting for extension traffic. */
+  async #rehelloIfNeeded(conn: GatewayConnection): Promise<void> {
+    if (this.#lastHelloPayload === null || this.#connWithHello === conn) return;
+    const payload = this.#injectHostFields("hello", this.#lastHelloPayload);
+    const res = (await conn.request("hello", payload)) as HelloResponse;
+    this.#connWithHello = conn;
+    this.#opts.onHello?.(res);
   }
 
   async #handleMessage(raw: unknown): Promise<void> {
@@ -154,8 +211,10 @@ export class GatewayModeRelay {
         throw new GatewayClientError("gateway connection closed", "unresponsive");
       }
       if (env.kind === "request") {
+        if (env.method === "hello") this.#lastHelloPayload = env.payload;
         const payload = this.#injectHostFields(env.method, env.payload);
         const result = await conn.request(env.method, payload);
+        if (env.method === "hello") this.#connWithHello = conn;
         this.#writeEnvelope({ v: 1, kind: "response", id: env.id, result } as Envelope);
       } else if (env.kind === "ack") {
         conn.sendAck(env.stream, env.seq, env.stream === "task" ? env.taskId : undefined);
@@ -237,6 +296,10 @@ export class GatewayModeRelay {
   #shutdown(exitCode = 0): void {
     if (this.#shuttingDown) return;
     this.#shuttingDown = true;
+    if (this.#reconnectTimer) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = null;
+    }
     this.#sidecar.shutdown();
     this.#conn?.close();
     if (this.#opts.exitProcess !== false) process.exit(exitCode);

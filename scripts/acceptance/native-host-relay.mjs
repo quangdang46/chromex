@@ -7,7 +7,10 @@
 //   hostInstanceId/browserInstanceId injection, framing, lazy gateway
 //   connect) → gateway IPC → host registry → MCP stdio → tool server
 //   → browser.tool.request back down the same path → typed result.
-// Plus host kill → browser.no_host → respawn → recovery (real S5 tail).
+// Plus host kill → browser.no_host → respawn → recovery, and gateway
+// kill → native-host self-heal (proactive reconnect + re-hello →
+// ensureGateway respawn) → calls recover with NO extension traffic —
+// the real S5 tail that used to strand every call behind no_host.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -102,11 +105,16 @@ class NativeHostClient {
 }
 
 const dataDir = await mkdtemp(join(tmpdir(), "chromex-nm-relay-"));
+// sqlite store so tasks survive the gateway respawn — the spawned
+// gateway reads the same <dataDir>/gateway.json (production parity).
+await mkdir(join(dataDir, "run"), { recursive: true });
+await writeFile(join(dataDir, "gateway.json"), JSON.stringify({ version: 1, store: "sqlite" }));
 let gateway = null;
 const conns = [];
 let mcp = null;
 let nm = null;
 let taskIdForDebug = null;
+let spawnedGatewayPid = null;
 const hostRequests = [];
 
 const makeHost = () => {
@@ -195,7 +203,45 @@ try {
   assert(JSON.stringify(recovered.data ?? recovered.raw).includes("nm.example.test"),
     "respawned native host serves calls again — real S5 recovery tail");
 
-  const sync = await ipc.request("task.sync", { taskId, fromSeq: 0, maxEvents: 300 });
+  // ---- gateway restart → native host self-heals (real S5) --------
+  // Kill the GATEWAY, not the host. The extension's NM port stays
+  // alive, so nothing pokes the relay — recovery must come from the
+  // native host itself: conn close → proactive reconnect → ensureGateway
+  // respawns the gateway → cached hello re-registers the host.
+  await gateway.shutdown("e2e gateway restart");
+  gateway = null;
+  spawnedGatewayPid = null;
+  const healDeadline = Date.now() + 90_000;
+  let healed = null;
+  let healErr = null;
+  while (Date.now() < healDeadline) {
+    try {
+      healed = await callTool("browser_tabs_list", {});
+      break;
+    } catch (e) {
+      healErr = e;
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+  }
+  // the respawned gateway is a detached child of the native host —
+  // record its pid so cleanup can stop it (also retried in finally)
+  let respawnedEndpoint = ep.path;
+  try {
+    const epJson = JSON.parse(await readFile(join(dataDir, "run", "gateway.json"), "utf8"));
+    spawnedGatewayPid = epJson.gatewayPid ?? null;
+    if (typeof epJson.path === "string") respawnedEndpoint = epJson.path;
+    else if (typeof epJson.endpoint === "string") respawnedEndpoint = epJson.endpoint;
+  } catch {}
+  assert(
+    healed && JSON.stringify(healed.data ?? healed.raw).includes("nm.example.test"),
+    `gateway restart → native host self-healed without extension traffic ` +
+      `(last err: ${healErr ? String(healErr?.rpcMessage ?? healErr?.message ?? healErr).slice(0, 120) : "none"})`,
+  );
+
+  // old ipc socket died with the old gateway — reconnect for task.sync
+  const ipc2 = new GatewayIpc(respawnedEndpoint, token, { clientId: "nm-relay-client-2", profileId: "e2e" });
+  conns.push(ipc2);
+  const sync = await ipc2.request("task.sync", { taskId, fromSeq: 0, maxEvents: 300 });
   const toolEvents = (sync?.events ?? []).filter((e) => e.type === "tool.completed" || e.type === "tool.started");
   assert(toolEvents.length >= 4, `task.sync shows ${toolEvents.length} durable tool events`);
 
@@ -230,6 +276,19 @@ try {
   try { nm?.close(); } catch {}
   for (const c of conns) { try { c.close(); } catch {} }
   try { await gateway?.shutdown("e2e done"); } catch {}
+  // detached gateway spawned by the native host's ensureGateway during
+  // the self-heal leg — SIGTERM it so no orphan survives the run
+  if (!spawnedGatewayPid) {
+    try {
+      const epJson = JSON.parse(await readFile(join(dataDir, "run", "gateway.json"), "utf8"));
+      spawnedGatewayPid = epJson.gatewayPid ?? null;
+    } catch {}
+  }
+  if (spawnedGatewayPid) {
+    try { process.kill(spawnedGatewayPid, "SIGTERM"); } catch {}
+    await new Promise((r) => setTimeout(r, 500));
+    try { process.kill(spawnedGatewayPid, 0); process.kill(spawnedGatewayPid, "SIGKILL"); } catch {}
+  }
   try { await rm(dataDir, { recursive: true, force: true }); } catch {}
 }
 process.exit(process.exitCode ?? 0);

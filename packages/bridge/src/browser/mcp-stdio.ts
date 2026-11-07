@@ -73,8 +73,13 @@ class GatewayIpc {
   #socket: net.Socket | null = null;
   #buf = Buffer.alloc(0);
   #pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-  #helloPromise: Promise<void> | null = null;
-  #helloToken: string;
+  // hello is per-CONNECTION: the gateway allows exactly one hello per
+  // socket and demands it first. A cached promise is not enough — the
+  // socket can die and reconnect underneath us (gateway restart), and
+  // a rejected hello must not poison every later request.
+  #helloedSocket: net.Socket | null = null;
+  #helloInflight = new Map<net.Socket, Promise<void>>();
+  readonly #tokenFile: string;
   currentTaskId = "";
   currentProfileId = "";
 
@@ -82,10 +87,14 @@ class GatewayIpc {
     private readonly endpoint: string,
     tokenFile: string,
   ) {
+    this.#tokenFile = tokenFile;
+  }
+
+  #readToken(): string {
     try {
-      this.#helloToken = fs.readFileSync(tokenFile, "utf8").trim();
+      return fs.readFileSync(this.#tokenFile, "utf8").trim();
     } catch {
-      this.#helloToken = "";
+      return "";
     }
   }
 
@@ -109,6 +118,7 @@ class GatewayIpc {
     for (const p of this.#pending.values()) p.reject(err);
     this.#pending.clear();
     this.#socket = null;
+    this.#helloedSocket = null;
   }
 
   #onData(d: Buffer): void {
@@ -146,33 +156,54 @@ class GatewayIpc {
     sock.write(frame);
   }
 
-  async #ensureHello(): Promise<void> {
-    this.#helloPromise ??= (async () => {
-      const sock = await this.#connect();
-      const id = `hello-${randomUUID()}`;
-      await new Promise<void>((resolve, reject) => {
-        this.#pending.set(id, {
-          resolve: () => resolve(),
-          reject,
+  #helloOnce(sock: net.Socket): Promise<void> {
+    let p = this.#helloInflight.get(sock);
+    if (!p) {
+      p = (async () => {
+        const id = `hello-${randomUUID()}`;
+        await new Promise<void>((resolve, reject) => {
+          this.#pending.set(id, {
+            resolve: () => resolve(),
+            reject,
+          });
+          this.#send(sock, {
+            v: 1,
+            kind: "request",
+            id,
+            method: "hello",
+            payload: {
+              protocolVersion: 1,
+              clientVersion: "chromex-browser-mcp/0.1.0",
+              clientId: `mcp-${this.currentTaskId}`,
+              profileId: this.currentProfileId,
+              browserInstanceId: null,
+              hostInstanceId: "",
+              token: this.#readToken(),
+            },
+          });
         });
-        this.#send(sock, {
-          v: 1,
-          kind: "request",
-          id,
-          method: "hello",
-          payload: {
-            protocolVersion: 1,
-            clientVersion: "chromex-browser-mcp/0.1.0",
-            clientId: `mcp-${this.currentTaskId}`,
-            profileId: this.currentProfileId,
-            browserInstanceId: null,
-            hostInstanceId: "",
-            token: this.#helloToken,
-          },
-        });
+        this.#helloedSocket = sock;
+      })().finally(() => {
+        this.#helloInflight.delete(sock);
       });
-    })();
-    return this.#helloPromise;
+      this.#helloInflight.set(sock, p);
+    }
+    return p;
+  }
+
+  async #ensureHello(): Promise<void> {
+    for (;;) {
+      const sock = await this.#connect();
+      if (this.#helloedSocket === sock) return;
+      try {
+        await this.#helloOnce(sock);
+        return;
+      } catch (err) {
+        // Socket died mid-hello → loop re-hellos on the new conn.
+        // A live socket that rejected hello is a real error — surface it.
+        if (this.#socket === sock && !sock.destroyed) throw err;
+      }
+    }
   }
 
   async request(method: string, payload: unknown): Promise<unknown> {
