@@ -3,6 +3,23 @@ import { collectGoogleWorkspaceAdapterPayload, isGoogleWorkspaceUrl } from "../a
 import { collectPdfAdapterPayload, isLikelyPdfUrl } from "../adapters/pdf.js";
 import { collectYouTubeAdapterPayload, collectYouTubePlaybackState, isYouTubeUrl } from "../adapters/youtube.js";
 import { collectBodyText } from "./dom-text.js";
+import {
+  collectBrowserDomSnapshot,
+} from "./snapshot.js";
+import {
+  performBrowserDomActions,
+  setAiControlCancelled,
+  showAiControlOverlay,
+  scheduleHideAiControlOverlay,
+  removeStaleAiControlOverlays,
+} from "./actions.js";
+import {
+  EDITOR_LIKE_SELECTOR,
+  isDomActionElementVisible,
+  isTextEntryCandidate,
+  safeRemoveElement,
+  setNativeTextControlValue,
+} from "./refs.js";
 import { extractCssImageUrls, sortEditablePageImageCandidates, type EditablePageImageCandidate } from "../page-image-target.js";
 import { createSelectedTextContextExcerpt } from "../page-selection-context.js";
 import { resolveImagePreviewRefForUi } from "../sidepanel/image-preview-assets.js";
@@ -30,10 +47,6 @@ type PageSelectionContextSnapshot = {
 };
 
 let overlayNode: HTMLDivElement | null = null;
-let aiControlOverlayNode: HTMLDivElement | null = null;
-let aiControlOverlayTimer: number | null = null;
-let aiControlOverlayWatchdogTimer: number | null = null;
-let aiControlCancelled = false;
 let imagePromptHoverInstalled = false;
 let imagePromptHoverEnabled = true;
 let imagePromptHoverAbortController: AbortController | null = null;
@@ -69,7 +82,6 @@ const IMAGE_PROMPT_HOVER_ICON_DATA_URL =
   "data:image/png;base64,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";
 const highlightedElements = new Set<HTMLElement>();
 const domActionElementRefs = new Map<string, HTMLElement>();
-const AI_CONTROL_OVERLAY_MAX_MS = 45_000;
 type ImagePromptAttachmentPayload = {
   id: string;
   name: string;
@@ -80,18 +92,6 @@ type ImagePromptAttachmentPayload = {
   kind: "image";
   sourceUrl?: string;
 };
-const EDITOR_LIKE_SELECTOR = [
-  'input:not([type="hidden"])',
-  "textarea",
-  '[contenteditable="true"]',
-  '[contenteditable="plaintext-only"]',
-  '[role="textbox"]',
-  '[aria-multiline="true"]',
-  '[data-lexical-editor="true"]',
-  '[data-slate-editor="true"]',
-  ".ProseMirror",
-  ".ql-editor",
-].join(",");
 const EDITOR_DISCOVERY_TIMEOUT_MS = 900;
 
 cleanupPreviousContentScriptInstance();
@@ -159,19 +159,6 @@ function stopContentScriptRuntimeWatchdog(): void {
   chromexRuntimeWatchdogTimer = null;
 }
 
-function safeRemoveElement(element: Element | null | undefined): void {
-  if (!element) {
-    return;
-  }
-  try {
-    element.remove();
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError") {
-      return;
-    }
-    throw error;
-  }
-}
 
 function chromexRuntimeMessageListener(
   message: Record<string, any>,
@@ -233,21 +220,21 @@ function chromexRuntimeMessageListener(
   }
 
   if (message.type === "page.ai-control.start") {
-    aiControlCancelled = false;
+    setAiControlCancelled(false);
     showAiControlOverlay(normalizeBrowserAutomationMode(message.mode), typeof message.label === "string" ? message.label : undefined);
     sendResponse({ ok: true });
     return true;
   }
 
   if (message.type === "page.ai-control.stop") {
-    aiControlCancelled = true;
+    setAiControlCancelled(true);
     scheduleHideAiControlOverlay(Number(message.delayMs) || 0);
     sendResponse({ ok: true });
     return true;
   }
 
   if (message.type === "page.dom.snapshot") {
-    sendResponse(collectBrowserDomSnapshot());
+    void collectBrowserDomSnapshot().then(sendResponse);
     return true;
   }
 
@@ -536,173 +523,6 @@ async function collectPageProbe() {
 
 function normalizeBrowserAutomationMode(value: unknown): BrowserAutomationMode {
   return value === "playwright" || value === "computer-use" ? value : "dom";
-}
-
-function showAiControlOverlay(mode: BrowserAutomationMode, label = "Codex is controlling this page"): void {
-  clearAiControlOverlayTimers();
-  ensureAiControlStyle();
-  if (!aiControlOverlayNode) {
-    removeStaleAiControlOverlays();
-    aiControlOverlayNode = document.createElement("div");
-    aiControlOverlayNode.className = "codex-ai-control-border";
-    aiControlOverlayNode.setAttribute("aria-hidden", "true");
-    const pill = document.createElement("div");
-    pill.className = "codex-ai-control-pill";
-    const modeLabel = document.createElement("span");
-    modeLabel.className = "codex-ai-control-mode";
-    const text = document.createElement("span");
-    text.className = "codex-ai-control-label";
-    pill.append(modeLabel, text);
-    aiControlOverlayNode.append(pill);
-    document.documentElement.append(aiControlOverlayNode);
-  }
-
-  aiControlOverlayNode.dataset.mode = mode;
-  const modeLabel = aiControlOverlayNode.querySelector<HTMLElement>(".codex-ai-control-mode");
-  const text = aiControlOverlayNode.querySelector<HTMLElement>(".codex-ai-control-label");
-  if (modeLabel) {
-    modeLabel.textContent = mode === "dom" ? "DOM" : mode === "playwright" ? "Playwright" : "Computer Use";
-  }
-  if (text) {
-    text.textContent = label;
-  }
-  scheduleAiControlOverlayWatchdog();
-}
-
-function removeStaleAiControlOverlays(): void {
-  for (const node of Array.from(document.querySelectorAll(".codex-ai-control-border"))) {
-    if (node !== aiControlOverlayNode) {
-      safeRemoveElement(node);
-    }
-  }
-}
-
-function hideAiControlOverlay(): void {
-  clearAiControlOverlayTimers();
-  safeRemoveElement(aiControlOverlayNode);
-  aiControlOverlayNode = null;
-}
-
-function scheduleHideAiControlOverlay(delayMs: number): void {
-  clearAiControlOverlayTimers();
-  if (delayMs <= 0) {
-    hideAiControlOverlay();
-    return;
-  }
-  aiControlOverlayTimer = window.setTimeout(() => {
-    hideAiControlOverlay();
-    aiControlOverlayTimer = null;
-  }, Math.max(0, delayMs));
-}
-
-function scheduleAiControlOverlayWatchdog(): void {
-  if (aiControlOverlayWatchdogTimer !== null) {
-    window.clearTimeout(aiControlOverlayWatchdogTimer);
-  }
-  aiControlOverlayWatchdogTimer = window.setTimeout(() => {
-    aiControlOverlayWatchdogTimer = null;
-    scheduleHideAiControlOverlay(0);
-  }, AI_CONTROL_OVERLAY_MAX_MS);
-}
-
-function clearAiControlOverlayTimers(): void {
-  if (aiControlOverlayTimer !== null) {
-    window.clearTimeout(aiControlOverlayTimer);
-    aiControlOverlayTimer = null;
-  }
-  if (aiControlOverlayWatchdogTimer !== null) {
-    window.clearTimeout(aiControlOverlayWatchdogTimer);
-    aiControlOverlayWatchdogTimer = null;
-  }
-}
-
-function ensureAiControlStyle(): void {
-  if (document.getElementById("codex-ai-control-style")) {
-    return;
-  }
-  const style = document.createElement("style");
-  style.id = "codex-ai-control-style";
-  style.textContent = `
-    @keyframes codexAiControlPulse {
-      0%, 100% {
-        box-shadow: 0 0 0 1px rgba(84, 155, 255, 0.46), 0 0 30px rgba(84, 155, 255, 0.22), inset 0 0 22px rgba(84, 155, 255, 0.1);
-      }
-      50% {
-        box-shadow: 0 0 0 2px rgba(84, 155, 255, 0.62), 0 0 58px rgba(84, 155, 255, 0.36), inset 0 0 34px rgba(84, 155, 255, 0.16);
-      }
-    }
-    @keyframes codexAiControlAura {
-      0%, 100% {
-        opacity: 0.46;
-        transform: scale(1);
-      }
-      50% {
-        opacity: 0.82;
-        transform: scale(1.012);
-      }
-    }
-    .codex-ai-control-border {
-      position: fixed;
-      inset: 6px;
-      z-index: 2147483647;
-      pointer-events: none;
-      border: 1px solid rgba(84, 155, 255, 0.78);
-      border-radius: 16px;
-      animation: codexAiControlPulse 2.8s ease-in-out infinite;
-      box-sizing: border-box;
-    }
-    .codex-ai-control-border::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      border-radius: 20px;
-      background:
-        radial-gradient(circle at 12% 8%, rgba(84, 155, 255, 0.32), transparent 28%),
-        radial-gradient(circle at 88% 12%, rgba(90, 200, 255, 0.22), transparent 30%),
-        radial-gradient(circle at 50% 100%, rgba(84, 155, 255, 0.24), transparent 36%);
-      filter: blur(18px);
-      animation: codexAiControlAura 3.6s ease-in-out infinite;
-    }
-    .codex-ai-control-pill {
-      position: absolute;
-      z-index: 1;
-      left: 50%;
-      bottom: 18px;
-      transform: translateX(-50%);
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      max-width: min(720px, calc(100vw - 48px));
-      padding: 10px 14px;
-      border-radius: 16px;
-      background: rgba(15, 23, 42, 0.94);
-      color: #f8fafc;
-      font: 600 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      box-shadow: 0 16px 44px rgba(15, 23, 42, 0.34);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .codex-ai-control-mode {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 44px;
-      padding: 5px 8px;
-      border-radius: 10px;
-      background: rgba(59, 130, 246, 0.95);
-      color: #ffffff;
-      font-size: 12px;
-      letter-spacing: 0.01em;
-    }
-    .codex-ai-control-label {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-  `;
-  document.documentElement.append(style);
 }
 
 async function collectAdapterPayload(): Promise<Record<string, unknown> | null> {
@@ -1854,293 +1674,6 @@ function handlePageNavigation(command: VoiceNavigationCommand): { ok: boolean; m
   }
 }
 
-function collectBrowserDomSnapshot(): BrowserDomSnapshot {
-  domActionElementRefs.clear();
-  const elements = collectInteractiveElements()
-    .slice(0, 80)
-    .map<BrowserDomElementSnapshot>((element, index) => {
-      const ref = `dom-${index + 1}`;
-      domActionElementRefs.set(ref, element);
-      return describeDomActionElement(ref, element);
-    });
-
-  return {
-    snapshotId: `snap:${crypto.randomUUID()}`,
-    metadata: {
-      url: window.location.href,
-      title: document.title,
-      domain: window.location.hostname,
-    },
-    elements,
-    capabilities: {
-      supportsDomAutomation: true,
-      supportsVisualControlIndicator: true,
-      preferredAutomationMode: "dom",
-    },
-  };
-}
-
-async function performBrowserDomActions(steps: BrowserDomActionStep[]): Promise<BrowserDomActionResult> {
-  aiControlCancelled = false;
-  showAiControlOverlay("dom", "Codex is controlling this page");
-  const results: BrowserDomActionResult["results"] = [];
-  try {
-    for (const step of steps.slice(0, 4)) {
-      await waitForDomActionTick();
-      if (aiControlCancelled) {
-        results.push({
-          step,
-          ok: false,
-          message: "Browser control was stopped by the user.",
-        });
-        return {
-          ok: false,
-          summary: "Browser control was stopped.",
-          results,
-          controlMode: "dom",
-          cancelled: true,
-        };
-      }
-      results.push(await performBrowserDomAction(step));
-    }
-    return {
-      ok: results.every((result) => result.ok),
-      summary: summarizeDomActionResults(results),
-      results,
-      controlMode: "dom",
-    };
-  } finally {
-    scheduleHideAiControlOverlay(0);
-  }
-}
-
-function waitForDomActionTick(): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, 0);
-  });
-}
-
-function collectInteractiveElements(): HTMLElement[] {
-  const selectors = [
-    "button",
-    "a[href]",
-    'input:not([type="hidden"])',
-    "textarea",
-    "select",
-    "summary",
-    '[role="button"]',
-    '[role="link"]',
-    '[role="menuitem"]',
-    '[role="option"]',
-    '[role="checkbox"]',
-    '[role="radio"]',
-    '[role="switch"]',
-    '[role="tab"]',
-    '[role="textbox"]',
-    '[aria-haspopup]',
-    '[aria-controls]',
-    '[aria-expanded]',
-    '[aria-multiline="true"]',
-    '[contenteditable="true"]',
-    '[contenteditable="plaintext-only"]',
-    '[data-lexical-editor="true"]',
-    '[data-slate-editor="true"]',
-    "[data-placeholder]",
-    ".ProseMirror",
-    ".ql-editor",
-    "[tabindex]",
-  ];
-
-  return Array.from(document.querySelectorAll<HTMLElement>(selectors.join(",")))
-    .filter((element) => isDomActionElementVisible(element) && !isDomActionElementDisabled(element))
-    .sort((left, right) => {
-      const leftRect = left.getBoundingClientRect();
-      const rightRect = right.getBoundingClientRect();
-      return leftRect.top - rightRect.top || leftRect.left - rightRect.left;
-    });
-}
-
-function describeDomActionElement(ref: string, element: HTMLElement): BrowserDomElementSnapshot {
-  const rect = element.getBoundingClientRect();
-  const input = element instanceof HTMLInputElement ? element : null;
-  const anchor = element instanceof HTMLAnchorElement ? element : null;
-  const value = getElementValue(element);
-  const placeholder = getElementPlaceholder(element);
-  const ariaExpanded = element.getAttribute("aria-expanded") || "";
-  const ariaHasPopup = element.getAttribute("aria-haspopup") || "";
-  const ariaControls = element.getAttribute("aria-controls") || "";
-  return {
-    ref,
-    role: element.getAttribute("role") || inferDomActionRole(element),
-    tagName: element.tagName.toLowerCase(),
-    label: getElementLabel(element),
-    text: normalizeDomActionText(element.innerText || element.textContent || "").slice(0, 180),
-    selector: buildElementSelector(element),
-    ...(value ? { value } : {}),
-    ...(anchor?.href ? { href: anchor.href } : {}),
-    ...(input?.type ? { inputType: input.type } : {}),
-    ...(placeholder ? { placeholder } : {}),
-    ...(element.getAttribute("contenteditable") ? { contentEditable: element.getAttribute("contenteditable") ?? "" } : {}),
-    ...(ariaExpanded ? { ariaExpanded } : {}),
-    ...(ariaHasPopup ? { ariaHasPopup } : {}),
-    ...(ariaControls ? { ariaControls } : {}),
-    ...(element.tabIndex >= 0 ? { tabIndex: element.tabIndex } : {}),
-    isTextEntryCandidate: isTextEntryCandidate(element),
-    opensEditableSurface: opensEditableSurface(element),
-    disabled: isDomActionElementDisabled(element),
-    viewportRect: {
-      left: Math.round(rect.left),
-      top: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    },
-  };
-}
-
-async function performBrowserDomAction(step: BrowserDomActionStep): Promise<BrowserDomActionResult["results"][number]> {
-  try {
-    if (step.action === "navigate") {
-      performNavigateAction(step);
-      return { step, ok: true, message: "Navigated the current page." };
-    }
-
-    const element = resolveDomActionTarget(step);
-    if (!element && step.action !== "scroll") {
-      return { step, ok: false, message: "Target element was not found." };
-    }
-
-    if (step.action === "scroll") {
-      performScrollAction(element, step);
-      return { step, ok: true, message: "Scrolled the page." };
-    }
-
-    if (!element || isDomActionElementDisabled(element)) {
-      return { step, ok: false, message: "Target element is unavailable." };
-    }
-
-    element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-
-    switch (step.action) {
-      case "click":
-        element.click();
-        await waitForDomActionTick();
-        return { step, ok: true, message: `Clicked ${getElementLabel(element) || "the target element"}.` };
-      case "focus":
-        element.focus();
-        return { step, ok: true, message: `Focused ${getElementLabel(element) || "the target element"}.` };
-      case "fill":
-        await fillDomActionElement(element, step.value ?? "");
-        return { step, ok: true, message: `Filled ${getElementLabel(element) || "the target field"}.` };
-      case "select":
-        selectDomActionElement(element, step.value ?? "");
-        return { step, ok: true, message: `Selected a value for ${getElementLabel(element) || "the target field"}.` };
-      case "submit":
-        submitDomActionElement(element);
-        return { step, ok: true, message: "Submitted the nearest form." };
-      default:
-        return { step, ok: false, message: "Unsupported action." };
-    }
-  } catch (error) {
-    return { step, ok: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-function performNavigateAction(step: BrowserDomActionStep): void {
-  const url = step.url || step.value || "";
-  if (!url) {
-    throw new Error("No navigation URL was provided.");
-  }
-  const destination = new URL(url, window.location.href);
-  if (destination.protocol !== "http:" && destination.protocol !== "https:") {
-    throw new Error("Only http and https page navigation is supported.");
-  }
-  window.location.assign(destination.href);
-}
-
-function resolveDomActionTarget(step: BrowserDomActionStep): HTMLElement | null {
-  if (step.targetRef && domActionElementRefs.has(step.targetRef)) {
-    return domActionElementRefs.get(step.targetRef) ?? null;
-  }
-  if (step.selector) {
-    const element = document.querySelector(step.selector);
-    return element instanceof HTMLElement ? element : null;
-  }
-  if (step.label) {
-    const normalizedLabel = normalizeDomActionText(step.label).toLowerCase();
-    return collectInteractiveElements().find((element) => getElementLabel(element).toLowerCase() === normalizedLabel) ?? null;
-  }
-  return null;
-}
-
-async function fillDomActionElement(element: HTMLElement, value: string): Promise<void> {
-  const directTarget = resolveDirectEditableTarget(element);
-  if (directTarget) {
-    setEditableTargetValue(directTarget, value);
-    return;
-  }
-
-  const activatedTarget = await resolveEditableTargetAfterActivation(element);
-  if (activatedTarget) {
-    setEditableTargetValue(activatedTarget, value);
-    return;
-  }
-
-  throw new Error("Target element cannot be filled.");
-}
-
-function resolveDirectEditableTarget(element: HTMLElement): HTMLElement | HTMLInputElement | HTMLTextAreaElement | null {
-  if (isTextEntryCandidate(element)) {
-    return element;
-  }
-  const descendant = Array.from(element.querySelectorAll<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(EDITOR_LIKE_SELECTOR))
-    .find((candidate) => isTextEntryCandidate(candidate) && isDomActionElementVisible(candidate));
-  return descendant ?? null;
-}
-
-async function resolveEditableTargetAfterActivation(element: HTMLElement): Promise<HTMLElement | HTMLInputElement | HTMLTextAreaElement | null> {
-  const before = new Set(collectVisibleEditableTargets());
-  element.focus();
-  element.click();
-  await waitForDomActionTick();
-
-  const deadline = Date.now() + EDITOR_DISCOVERY_TIMEOUT_MS;
-  while (Date.now() <= deadline) {
-    const target = findNewEditableTarget(element, before);
-    if (target) {
-      return target;
-    }
-    await sleepDomActionTick(80);
-  }
-  return null;
-}
-
-function findNewEditableTarget(
-  activatedElement: HTMLElement,
-  before: Set<HTMLElement | HTMLInputElement | HTMLTextAreaElement>,
-): HTMLElement | HTMLInputElement | HTMLTextAreaElement | null {
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLElement && isTextEntryCandidate(activeElement) && isDomActionElementVisible(activeElement)) {
-    return activeElement;
-  }
-
-  const directTarget = resolveDirectEditableTarget(activatedElement);
-  if (directTarget) {
-    return directTarget;
-  }
-
-  const candidates = collectVisibleEditableTargets();
-  const newCandidate = candidates.find((candidate) => !before.has(candidate));
-  if (newCandidate) {
-    return newCandidate;
-  }
-  return candidates.find((candidate) => isLikelyEditorNearActivatedElement(candidate, activatedElement)) ?? null;
-}
-
-function collectVisibleEditableTargets(): Array<HTMLElement | HTMLInputElement | HTMLTextAreaElement> {
-  return Array.from(document.querySelectorAll<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(EDITOR_LIKE_SELECTOR))
-    .filter((candidate) => isTextEntryCandidate(candidate) && isDomActionElementVisible(candidate));
-}
-
 function insertDictationTextIntoFocusedEditable(text: string): { ok: boolean; error?: string; summary?: string } {
   const value = text.trim();
   if (!value) {
@@ -2239,280 +1772,6 @@ function insertTextIntoEditableTarget(element: HTMLElement | HTMLInputElement | 
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function setEditableTargetValue(element: HTMLElement | HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    element.focus();
-    setNativeTextControlValue(element, value);
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
-  }
-  if (isTextEntryCandidate(element)) {
-    element.focus();
-    if (element.isContentEditable) {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      if (!document.execCommand("insertText", false, value)) {
-        element.textContent = value;
-      }
-    } else {
-      element.textContent = value;
-    }
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
-  }
-  throw new Error("Target element cannot be filled.");
-}
-
-function setNativeTextControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
-  if (descriptor?.set) {
-    descriptor.set.call(element, value);
-    return;
-  }
-  element.value = value;
-}
-
-function sleepDomActionTick(delayMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs);
-  });
-}
-
-function selectDomActionElement(element: HTMLElement, value: string): void {
-  if (!(element instanceof HTMLSelectElement)) {
-    throw new Error("Target element is not a select field.");
-  }
-  const normalizedValue = normalizeDomActionText(value).toLowerCase();
-  const option = Array.from(element.options).find(
-    (item) =>
-      item.value.toLowerCase() === normalizedValue ||
-      normalizeDomActionText(item.label || item.textContent || "").toLowerCase() === normalizedValue,
-  );
-  if (!option) {
-    throw new Error("Requested select option was not found.");
-  }
-  element.value = option.value;
-  element.dispatchEvent(new Event("input", { bubbles: true }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-function submitDomActionElement(element: HTMLElement): void {
-  const form = element instanceof HTMLFormElement ? element : element.closest("form");
-  if (!form) {
-    throw new Error("No form was found near the target element.");
-  }
-  if (typeof form.requestSubmit === "function") {
-    form.requestSubmit();
-    return;
-  }
-  form.submit();
-}
-
-function performScrollAction(element: HTMLElement | null, step: BrowserDomActionStep): void {
-  const amount = step.amountPx ?? Math.round((window.innerHeight || 800) * 0.75);
-  const target = element ?? window;
-  const direction = step.direction ?? "down";
-  if (target === window) {
-    if (direction === "top") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    if (direction === "bottom") {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
-      return;
-    }
-    window.scrollBy({
-      left: direction === "left" ? -amount : direction === "right" ? amount : 0,
-      top: direction === "up" ? -amount : direction === "down" ? amount : 0,
-      behavior: "smooth",
-    });
-    return;
-  }
-
-  target.scrollBy({
-    left: direction === "left" ? -amount : direction === "right" ? amount : 0,
-    top: direction === "up" ? -amount : direction === "down" ? amount : 0,
-    behavior: "smooth",
-  });
-}
-
-function getElementLabel(element: HTMLElement): string {
-  const labelledBy = element.getAttribute("aria-labelledby");
-  const labelledByText = labelledBy
-    ? labelledBy
-        .split(/\s+/u)
-        .map((id) => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "")
-        .join(" ")
-    : "";
-  const inputLabels = element.id
-    ? Array.from(document.querySelectorAll<HTMLLabelElement>(`label[for="${cssEscapeCompat(element.id)}"]`))
-        .map((label) => label.innerText || label.textContent || "")
-        .join(" ")
-    : "";
-  return normalizeDomActionText(
-    element.getAttribute("aria-label") ||
-      labelledByText ||
-      inputLabels ||
-      element.getAttribute("placeholder") ||
-      element.getAttribute("title") ||
-      (element instanceof HTMLInputElement ? element.value : "") ||
-      element.innerText ||
-      element.textContent ||
-      "",
-  ).slice(0, 160);
-}
-
-function getElementPlaceholder(element: HTMLElement): string {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    return normalizeDomActionText(element.placeholder || "");
-  }
-  return normalizeDomActionText(
-    element.getAttribute("placeholder") ||
-      element.getAttribute("aria-placeholder") ||
-      element.getAttribute("data-placeholder") ||
-      "",
-  );
-}
-
-function getElementValue(element: HTMLElement): string {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
-    return element.value.slice(0, 200);
-  }
-  return "";
-}
-
-function isTextEntryCandidate(element: HTMLElement): boolean {
-  if (element instanceof HTMLTextAreaElement) {
-    return true;
-  }
-  if (element instanceof HTMLInputElement) {
-    const type = (element.type || "text").toLowerCase();
-    return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(type);
-  }
-  return (
-    element.isContentEditable ||
-    element.getAttribute("contenteditable") === "plaintext-only" ||
-    element.getAttribute("role") === "textbox" ||
-    element.getAttribute("aria-multiline") === "true" ||
-    element.getAttribute("data-lexical-editor") === "true" ||
-    element.getAttribute("data-slate-editor") === "true" ||
-    element.classList.contains("ProseMirror") ||
-    element.classList.contains("ql-editor")
-  );
-}
-
-function opensEditableSurface(element: HTMLElement): boolean {
-  if (isTextEntryCandidate(element)) {
-    return false;
-  }
-  return (
-    element instanceof HTMLButtonElement ||
-    element.getAttribute("role") === "button" ||
-    element.getAttribute("aria-haspopup") === "dialog" ||
-    element.getAttribute("aria-haspopup") === "menu" ||
-    Boolean(element.getAttribute("aria-controls")) ||
-    Boolean(element.getAttribute("aria-expanded")) ||
-    element.tabIndex >= 0
-  );
-}
-
-function isLikelyEditorNearActivatedElement(candidate: HTMLElement, activatedElement: HTMLElement): boolean {
-  if (activatedElement.contains(candidate)) {
-    return true;
-  }
-  const candidateRect = candidate.getBoundingClientRect();
-  const activatedRect = activatedElement.getBoundingClientRect();
-  const candidateCenterX = candidateRect.left + candidateRect.width / 2;
-  const candidateCenterY = candidateRect.top + candidateRect.height / 2;
-  const activatedCenterX = activatedRect.left + activatedRect.width / 2;
-  const activatedCenterY = activatedRect.top + activatedRect.height / 2;
-  return Math.hypot(candidateCenterX - activatedCenterX, candidateCenterY - activatedCenterY) < Math.max(window.innerHeight, 720);
-}
-
-function inferDomActionRole(element: HTMLElement): string {
-  if (element instanceof HTMLButtonElement) {
-    return "button";
-  }
-  if (element instanceof HTMLAnchorElement) {
-    return "link";
-  }
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    return "textbox";
-  }
-  if (element instanceof HTMLSelectElement) {
-    return "combobox";
-  }
-  return element.isContentEditable ? "textbox" : element.tagName.toLowerCase();
-}
-
-function isDomActionElementDisabled(element: HTMLElement): boolean {
-  return (
-    element.getAttribute("aria-disabled") === "true" ||
-    (element instanceof HTMLButtonElement && element.disabled) ||
-    (element instanceof HTMLInputElement && element.disabled) ||
-    (element instanceof HTMLTextAreaElement && element.disabled) ||
-    (element instanceof HTMLSelectElement && element.disabled)
-  );
-}
-
-function isDomActionElementVisible(element: HTMLElement): boolean {
-  const style = window.getComputedStyle(element);
-  if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
-    return false;
-  }
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
-}
-
-function buildElementSelector(element: HTMLElement): string {
-  if (element.id) {
-    return `#${cssEscapeCompat(element.id)}`;
-  }
-  const parts: string[] = [];
-  let current: Element | null = element;
-  while (current && current instanceof HTMLElement && current !== document.body && parts.length < 5) {
-    const tag = current.tagName.toLowerCase();
-    const parent: HTMLElement | null = current.parentElement;
-    if (!parent) {
-      parts.unshift(tag);
-      break;
-    }
-    const currentTagName = current.tagName;
-    const siblings = (Array.from(parent.children) as Element[]).filter((child) => child.tagName === currentTagName);
-    const index = siblings.indexOf(current) + 1;
-    parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag);
-    current = parent;
-  }
-  return parts.join(" > ");
-}
-
-function cssEscapeCompat(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/["\\#.:,[\]>+~*]/gu, "\\$&");
-}
-
-function summarizeDomActionResults(results: BrowserDomActionResult["results"]): string {
-  const okCount = results.filter((result) => result.ok).length;
-  if (okCount === results.length) {
-    return "Requested browser action completed.";
-  }
-  if (okCount > 0) {
-    return `Partially completed ${okCount} of ${results.length} browser actions.`;
-  }
-  return "No browser action was completed.";
-}
-
-function normalizeDomActionText(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
-}
 
 function findBestMatchingElement(query: string): HTMLElement | null {
   const normalized = query.trim().toLowerCase();

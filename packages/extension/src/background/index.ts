@@ -98,7 +98,8 @@ import {
 import { resolveVisibleCurrentConversation } from "./conversation-history.js";
 import { NativeBridgeClient } from "./native-bridge-client.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
-import { createToolHostHandler } from "./gateway/tool-host.js";
+import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
+import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
@@ -481,12 +482,45 @@ chrome.action.onClicked.addListener(async (tab) => {
   void broadcastActiveTabSnapshot();
 });
 
+
+function recordDomSnapshotMeta(tabId: number, snapshot: BrowserDomSnapshot): void {
+  const registry = toolHostSnapshotRegistry();
+  if (
+    snapshot.snapshotId &&
+    snapshot.structuralFingerprint &&
+    snapshot.stateFingerprint &&
+    typeof snapshot.saltEpoch === "number"
+  ) {
+    const prior = registry.latestForTab(tabId);
+    if (prior && prior.structuralFingerprint !== snapshot.structuralFingerprint) {
+      registry.invalidateTab(tabId);
+    }
+    registry.put({
+      snapshotId: snapshot.snapshotId,
+      tabId,
+      structuralFingerprint: snapshot.structuralFingerprint,
+      stateFingerprint: snapshot.stateFingerprint,
+      saltEpoch: snapshot.saltEpoch,
+      capturedAt: Date.now(),
+    });
+  }
+}
+
+function isStaleSnapshotPlan(tabId: number, plan: BrowserDomActionPlan): boolean {
+  if (!plan.snapshotId) return false;
+  const meta = toolHostSnapshotRegistry().get(plan.snapshotId);
+  return !meta || meta.tabId !== tabId;
+}
+
 chrome.tabs.onActivated.addListener((activeInfo) => {
   state.browserWindowId = activeInfo.windowId;
   void broadcastActiveTabSnapshot();
 });
 
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    toolHostSnapshotRegistry().invalidateTab(tabId);
+  }
   if (!tab.active) {
     return;
   }
@@ -499,6 +533,10 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 
   state.browserWindowId = tab.windowId;
   void broadcastActiveTabSnapshot();
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  toolHostSnapshotRegistry().invalidateTab(tabId);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -582,6 +620,13 @@ function resolvePendingContextMenuAction(menuItemId: unknown): PendingContextMen
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target === "offscreen") {
     return false;
+  }
+
+  if (message.type === "page.fingerprint.context") {
+    void getFingerprintContext()
+      .then(sendResponse)
+      .catch(() => sendResponse({ error: "fingerprint context unavailable" }));
+    return true;
   }
 
   if (message.type === "page.image-prompt.extract") {
@@ -2505,6 +2550,7 @@ async function maybeHandleBrowserDomActionWorkflow(
     }
     emitStatus("collecting-context");
     const snapshot = (await sendMessageToTab(controlTab, { type: "page.dom.snapshot" })) as BrowserDomSnapshot;
+    recordDomSnapshotMeta(controlTab.id, snapshot);
     if (consumePromptClientRequestCancellation(payload.clientRequestId)) {
       return {
         kind: "handled",
@@ -2553,6 +2599,16 @@ async function maybeHandleBrowserDomActionWorkflow(
     const sensitiveGate = await maybeRequireSensitiveBrowserActionConfirmation(plan, snapshot, payload);
     if (sensitiveGate) {
       return { kind: "blocked", response: sensitiveGate };
+    }
+
+    if (isStaleSnapshotPlan(controlTab.id, plan)) {
+      return {
+        kind: "handled",
+        response: {
+          workflow: "browser-action",
+          assistantText: strings.status.browserActionStale,
+        },
+      };
     }
 
     const actionResult = (await sendMessageToTab(controlTab, {
@@ -2612,6 +2668,7 @@ async function maybeHandleDeferredBrowserDomActionWorkflow(
 
     emitStatus("collecting-context");
     const snapshot = (await sendMessageToTab(controlTab, { type: "page.dom.snapshot" })) as BrowserDomSnapshot;
+    recordDomSnapshotMeta(controlTab.id, snapshot);
     if (consumePromptClientRequestCancellation(payload.clientRequestId)) {
       return {
         kind: "handled",
@@ -2664,6 +2721,16 @@ async function maybeHandleDeferredBrowserDomActionWorkflow(
     const deferredSensitiveGate = await maybeRequireSensitiveBrowserActionConfirmation(plan, snapshot, payload);
     if (deferredSensitiveGate) {
       return { kind: "blocked", response: deferredSensitiveGate };
+    }
+
+    if (isStaleSnapshotPlan(controlTab.id, plan)) {
+      return {
+        kind: "handled",
+        response: {
+          workflow: "browser-action",
+          assistantText: strings.status.browserActionStale,
+        },
+      };
     }
 
     const actionResult = (await sendMessageToTab(controlTab, {

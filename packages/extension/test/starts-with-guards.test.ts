@@ -3,7 +3,18 @@ import { resolve } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-const contentSource = readFileSync(resolve(process.cwd(), "src/content/index.ts"), "utf8");
+const contentSource = [
+  "index",
+  "refs",
+  "snapshot",
+  "actions",
+  "fingerprint",
+  "verify",
+  "transport",
+  "dom-text",
+]
+  .map((name) => readFileSync(resolve(process.cwd(), `src/content/${name}.ts`), "utf8"))
+  .join("\n");
 const pluginConnectionSource = readFileSync(resolve(process.cwd(), "src/plugin-connection-availability.ts"), "utf8");
 const sidepanelSource = readFileSync(resolve(process.cwd(), "src/sidepanel/index.ts"), "utf8");
 

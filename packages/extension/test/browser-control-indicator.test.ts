@@ -4,7 +4,18 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const backgroundSource = readFileSync(resolve(__dirname, "../src/background/index.ts"), "utf8");
-const contentSource = readFileSync(resolve(__dirname, "../src/content/index.ts"), "utf8");
+const contentSource = [
+  "index",
+  "refs",
+  "snapshot",
+  "actions",
+  "fingerprint",
+  "verify",
+  "transport",
+  "dom-text",
+]
+  .map((name) => readFileSync(resolve(process.cwd(), `src/content/${name}.ts`), "utf8"))
+  .join("\n");
 const sidepanelSource = readFileSync(resolve(__dirname, "../src/sidepanel/index.ts"), "utf8");
 const sharedTypesSource = readFileSync(resolve(__dirname, "../../shared/src/types.ts"), "utf8");
 

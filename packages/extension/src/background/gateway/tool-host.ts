@@ -16,6 +16,7 @@
  * `selector`/`label`.
  */
 
+import { SnapshotRegistry } from "@codex-sidepanel/shared";
 import type { BrowserDomActionResult, BrowserDomSnapshot } from "@codex-sidepanel/shared";
 
 export interface ToolHostDeps {
@@ -60,6 +61,14 @@ async function resolveTabId(deps: ToolHostDeps, args: Record<string, unknown>): 
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+/** §6.2 snapshot metadata: TTL 5min, LRU 32/task — used by P2-02
+ *  stale/verify semantics. Registry is per-extension-install. */
+const snapshotRegistry = new SnapshotRegistry();
+
+export function toolHostSnapshotRegistry(): SnapshotRegistry {
+  return snapshotRegistry;
 }
 
 export function createToolHostHandler(deps: ToolHostDeps) {
@@ -109,6 +118,28 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.snapshot": {
         const tabId = await resolveTabId(deps, args);
         const snap = (await deps.sendToTab(tabId, { type: "page.dom.snapshot" })) as BrowserDomSnapshot;
+        if (
+          snap.snapshotId &&
+          snap.structuralFingerprint &&
+          snap.stateFingerprint &&
+          typeof snap.saltEpoch === "number"
+        ) {
+          // §6.2: a structural change on this tab stales every older
+          // snapshot's refs — drop them before registering the new one.
+          const prior = snapshotRegistry.latestForTab(tabId);
+          if (prior && prior.structuralFingerprint !== snap.structuralFingerprint) {
+            snapshotRegistry.invalidateTab(tabId);
+          }
+          snapshotRegistry.put({
+            snapshotId: snap.snapshotId,
+            tabId,
+            ...(req.taskId ? { taskId: req.taskId } : {}),
+            structuralFingerprint: snap.structuralFingerprint,
+            stateFingerprint: snap.stateFingerprint,
+            saltEpoch: snap.saltEpoch,
+            capturedAt: Date.now(),
+          });
+        }
         return snap;
       }
       case "browser.page.wait": {
@@ -119,6 +150,16 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       default: {
         // DOM action tools → single page.dom.perform step
         const tabId = await resolveTabId(deps, args);
+        const snapId = str(args.snapshotId);
+        if (snapId) {
+          const meta = snapshotRegistry.get(snapId);
+          if (!meta || meta.tabId !== tabId) {
+            throw toolError(
+              "browser.stale_snapshot",
+              "snapshot expired or belongs to another tab; call browser.page.snapshot again",
+            );
+          }
+        }
         const step = domStepFor(tool, args);
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",

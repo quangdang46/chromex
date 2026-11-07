@@ -33,6 +33,7 @@ export * from "./protocol/schemas.js";
 export * from "./browser/backend.js";
 export * from "./browser/identity.js";
 export * from "./browser/snapshot.js";
+export * from "./browser/fingerprint.js";
 export * from "./browser/tool.js";
 export * from "./browser/risk.js";
 export * from "./types.js";

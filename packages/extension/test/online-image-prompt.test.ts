@@ -5,7 +5,18 @@ import { describe, expect, test } from "vitest";
 
 import { createOnlineImagePromptExtractionPrompt } from "../src/sidepanel/online-image-prompt.js";
 
-const contentSource = readFileSync(resolve(process.cwd(), "src/content/index.ts"), "utf8");
+const contentSource = [
+  "index",
+  "refs",
+  "snapshot",
+  "actions",
+  "fingerprint",
+  "verify",
+  "transport",
+  "dom-text",
+]
+  .map((name) => readFileSync(resolve(process.cwd(), `src/content/${name}.ts`), "utf8"))
+  .join("\n");
 const normalizedContentSource = contentSource.replace(/\r\n?/gu, "\n");
 const backgroundSource = readFileSync(resolve(process.cwd(), "src/background/index.ts"), "utf8");
 const sidepanelSource = readFileSync(resolve(process.cwd(), "src/sidepanel/index.ts"), "utf8");

@@ -87,4 +87,56 @@ describe("tool host (P1-09)", () => {
     const h = createToolHostHandler(deps({ activeTabId: vi.fn(async () => null) }));
     await expect(h(req("browser.page.snapshot"))).rejects.toMatchObject({ code: "browser.no_tab" });
   });
+
+  test("snapshotId arg validates against registry; unknown/expired → browser.stale_snapshot", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.snapshot") {
+          return {
+            snapshotId: "snap:test-1",
+            structuralFingerprint: "sfp1:aaa",
+            stateFingerprint: "tfp1:bbb",
+            saltEpoch: 1,
+            elements: [{ ref: "e1" }],
+          };
+        }
+        return { ok: true, results: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.snapshot"));
+    // known snapshotId on same tab → proceeds
+    await h(req("browser.page.click", { ref: "e1", snapshotId: "snap:test-1" }));
+    // unknown snapshotId → stale
+    await expect(
+      h(req("browser.page.click", { ref: "e1", snapshotId: "snap:nope" })),
+    ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
+  });
+
+  test("structural fingerprint change on re-snapshot stales earlier refs", async () => {
+    let sfp = "sfp1:first";
+    const d = deps({
+      sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.snapshot") {
+          return {
+            snapshotId: `snap:${sfp}`,
+            structuralFingerprint: sfp,
+            stateFingerprint: "tfp1:x",
+            saltEpoch: 1,
+            elements: [{ ref: "e1" }],
+          };
+        }
+        return { ok: true, results: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.snapshot"));
+    sfp = "sfp1:changed"; // DOM structure changed
+    await h(req("browser.page.snapshot"));
+    await expect(
+      h(req("browser.page.click", { ref: "e1", snapshotId: "snap:sfp1:first" })),
+    ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
+    // newest snapshot still valid
+    await h(req("browser.page.click", { ref: "e1", snapshotId: "snap:sfp1:changed" }));
+  });
 });

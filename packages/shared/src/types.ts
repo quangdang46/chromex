@@ -557,6 +557,10 @@ export interface BrowserDomElementSnapshot {
 export interface BrowserDomSnapshot {
   /** correlation id stamped by content script; echoed into plans for stale detection */
   snapshotId?: string;
+  /** §6.2 fingerprints — present when the content script could hash (salt delivered) */
+  structuralFingerprint?: string;
+  stateFingerprint?: string;
+  saltEpoch?: number;
   metadata: PageMetadata;
   elements: BrowserDomElementSnapshot[];
   capabilities?: {
