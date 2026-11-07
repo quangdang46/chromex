@@ -50,12 +50,13 @@ describe("BrowserHostRegistry — cross-profile isolation", () => {
     r.register(reg("h-p2", { profileId: "p2" }));
     r.noteTabAffinity(key(), "h-p1");
 
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h-p1" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h-p1", connectionId: "conn-h-p1" });
     // same tabId/browserInstanceId/backend, different profile → p2 host,
     // not the p1 affinity entry.
     expect(r.resolveHost(key({ profileId: "p2" }))).toEqual({
       kind: "host",
       hostInstanceId: "h-p2",
+      connectionId: "conn-h-p2",
     });
   });
 
@@ -65,10 +66,12 @@ describe("BrowserHostRegistry — cross-profile isolation", () => {
     expect(r.resolveHost(key({ profileId: "p1" }))).toEqual({
       kind: "host",
       hostInstanceId: "h-any",
+      connectionId: "conn-h-any",
     });
     expect(r.resolveHost(key({ profileId: "p9" }))).toEqual({
       kind: "host",
       hostInstanceId: "h-any",
+      connectionId: "conn-h-any",
     });
   });
 
@@ -95,6 +98,7 @@ describe("BrowserHostRegistry — cross-profile isolation", () => {
     expect(r.resolveHost(key({ backendId: "auto" }))).toEqual({
       kind: "host",
       hostInstanceId: "h1",
+      connectionId: "conn-h1",
     });
     expect(r.resolveHost(key({ backendId: "chrome-extension" }))).toEqual({
       kind: "not_in_scope",
@@ -119,7 +123,7 @@ describe("BrowserHostRegistry — tab affinity updates", () => {
     r.register(reg("h1"));
     r.register(reg("h2")); // same scope — both live
     r.noteTabAffinity(key(), "h2");
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h2" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h2", connectionId: "conn-h2" });
   });
 
   test("re-noting affinity moves the tab to the new host", () => {
@@ -127,9 +131,9 @@ describe("BrowserHostRegistry — tab affinity updates", () => {
     r.register(reg("h1"));
     r.register(reg("h2"));
     r.noteTabAffinity(key(), "h1");
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1", connectionId: "conn-h1" });
     r.noteTabAffinity(key(), "h2");
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h2" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h2", connectionId: "conn-h2" });
   });
 
   test("affinity is per-tabId: neighbouring tabs keep their own host", () => {
@@ -138,8 +142,8 @@ describe("BrowserHostRegistry — tab affinity updates", () => {
     r.register(reg("h2"));
     r.noteTabAffinity(key({ tabId: 42 }), "h1");
     r.noteTabAffinity(key({ tabId: 43 }), "h2");
-    expect(r.resolveHost(key({ tabId: 42 }))).toEqual({ kind: "host", hostInstanceId: "h1" });
-    expect(r.resolveHost(key({ tabId: 43 }))).toEqual({ kind: "host", hostInstanceId: "h2" });
+    expect(r.resolveHost(key({ tabId: 42 }))).toEqual({ kind: "host", hostInstanceId: "h1", connectionId: "conn-h1" });
+    expect(r.resolveHost(key({ tabId: 43 }))).toEqual({ kind: "host", hostInstanceId: "h2", connectionId: "conn-h2" });
   });
 
   test("scope-level key (no tabId) does not match tab-level affinity", () => {
