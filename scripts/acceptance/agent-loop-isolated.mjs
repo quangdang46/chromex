@@ -83,6 +83,22 @@ try {
   assert(statusText.includes("broken") && !statusText.includes("fixed"),
     "broken page honestly still reports 'broken' (no fake success)");
 
+  // ── Loop 3: async page — observe pending, wait for ready ───────────
+  const slow = await call("browser.tab.create", { url: fixture.url("/slow"), active: false });
+  const sTab = slow?.tabId ?? slow?.id;
+  const early = await call("browser.page.extract", { tabId: sTab, selector: "#status" });
+  assert(String(early?.text ?? "").includes("pending"), "slow page observed while pending");
+  await call("browser.page.wait", { tabId: sTab, text: "ready", timeoutMs: 8000 });
+  const late = await call("browser.page.extract", { tabId: sTab, selector: "#status" });
+  assert(String(late?.text ?? "").includes("ready"), "wait text=ready resolved after delay");
+
+  // ── Loop 4: history back returns to previous page ──────────────────
+  await call("browser.page.navigate", { tabId: sTab, url: fixture.url("/") });
+  const hist = await call("browser.page.history", { tabId: sTab, action: "back" });
+  assert(hist?.moved === true, "history back navigated to previous page");
+  const backUrl = await call("browser.page.get", { tabId: sTab, key: "url" });
+  assert(String(backUrl?.value ?? "").includes("/slow"), "back landed on /slow");
+
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;
   assert(count >= 2, `tabs.list sees ${count} task tabs`);
