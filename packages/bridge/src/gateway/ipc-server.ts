@@ -47,6 +47,9 @@ export type IpcRequestHandler = (
 export interface IpcConnection {
   readonly authed: boolean;
   readonly remoteAddress: string;
+  /** unique per-connection id — remoteAddress is "unknown" on unix
+   *  sockets, so it cannot identify a connection (S7 host routing). */
+  readonly connectionId: string;
   /** non-empty when the client's hello declared a host instance —
    *  marks the browser host connection (P1-09 host selection). */
   readonly hostInstanceId: string;
@@ -69,6 +72,7 @@ interface PendingServerRequest {
 }
 
 interface ConnState {
+  id: string;
   socket: net.Socket;
   authed: boolean;
   buffer: Buffer;
@@ -196,6 +200,7 @@ export class GatewayIpcServer {
 
   private onConnection(socket: net.Socket): void {
     const state: ConnState = {
+      id: `conn-${randomBytes(8).toString("hex")}`,
       socket,
       authed: false,
       buffer: Buffer.alloc(0),
@@ -287,7 +292,13 @@ export class GatewayIpcServer {
     const id = `srv-${randomBytes(8).toString("hex")}`;
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (state.pending.delete(id)) reject(new Error(`client request ${method} timed out`));
+        if (state.pending.delete(id)) {
+          reject(
+            Object.assign(new Error(`client request ${method} timed out`), {
+              code: "ipc.request_timeout",
+            }),
+          );
+        }
       }, timeoutMs);
       state.pending.set(id, { resolve, reject, timer });
       const envelope: Envelope = {
@@ -363,6 +374,7 @@ export class GatewayIpcServer {
     return {
       authed: state.authed,
       remoteAddress: state.socket.remoteAddress ?? "unknown",
+      connectionId: state.id,
       hostInstanceId: state.hostInstanceId,
       browserInstanceId: state.browserInstanceId,
       send: (envelope) => this.sendRaw(state, envelope),

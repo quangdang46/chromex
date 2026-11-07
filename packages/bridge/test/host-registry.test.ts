@@ -88,4 +88,42 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     r.register(reg("h2", { browserInstanceId: null }));
     expect(r.resolveHost(dkey)).toEqual({ kind: "host", hostInstanceId: "h2" });
   });
+
+  test("SW restart: newest live registration wins over a lingering zombie host (S7)", () => {
+    const r = new BrowserHostRegistry();
+    // gen-1 host conn lingers after its service worker died
+    r.register(reg("h1"));
+    // gen-2 host registers for the same Chrome run
+    r.register(reg("h2"));
+    // scope-level resolve must pick the current generation, not h1
+    expect(r.resolveHost(key({ tabId: undefined }))).toEqual({
+      kind: "host",
+      hostInstanceId: "h2",
+    });
+    // once the zombie conn finally drops, h2 is unaffected
+    r.unregisterByConnection("conn-h1");
+    expect(r.resolveHost(key({ tabId: undefined }))).toEqual({
+      kind: "host",
+      hostInstanceId: "h2",
+    });
+  });
+
+  test("tab affinity still beats a newer host registration", () => {
+    const r = new BrowserHostRegistry();
+    r.register(reg("h1"));
+    r.noteTabAffinity(key(), "h1");
+    r.register(reg("h2"));
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+  });
+
+  test("unregisterByConnection keeps the host while another conn shares its hostInstanceId", () => {
+    const r = new BrowserHostRegistry();
+    r.register(reg("h1"));
+    // same native-host process reconnected on a second socket
+    r.register({ ...reg("h1"), connectionId: "conn-h1b" });
+    r.unregisterByConnection("conn-h1");
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+    r.unregisterByConnection("conn-h1b");
+    expect(r.resolveHost(key())).toEqual({ kind: "no_host" });
+  });
 });

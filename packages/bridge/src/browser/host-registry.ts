@@ -71,7 +71,11 @@ export class BrowserHostRegistry {
     const hostInstanceId = this.byConnection.get(connectionId);
     if (!hostInstanceId) return;
     this.byConnection.delete(connectionId);
-    this.hosts.delete(hostInstanceId);
+    // another live conn may still serve this hostInstanceId (reconnect
+    // before the old socket closed) — only drop the host when none do
+    if (![...this.byConnection.values()].includes(hostInstanceId)) {
+      this.hosts.delete(hostInstanceId);
+    }
     // affinity entries stay — resolveHost reports "stranded" until a
     // same-browserInstanceId host reconnects.
   }
@@ -128,6 +132,11 @@ export class BrowserHostRegistry {
 
   /** Live host matching the task scope (no affinity needed). */
   #liveHostFor(key: HostAffinityKey): string | null {
+    // Map iteration is insertion-ordered, so the LAST match is the most
+    // recently registered host. A service-worker restart registers a new
+    // hostInstanceId while the old native host can linger as a zombie
+    // conn — preferring the newest registration routes to the current
+    // generation instead of the stale one (S7 allow_once hang).
     let fallback: string | null = null;
     for (const reg of this.hosts.values()) {
       if (reg.profileId && reg.profileId !== key.profileId) continue;
@@ -138,7 +147,7 @@ export class BrowserHostRegistry {
         // binding state machine decides confirmation, not routing.
       }
       if (reg.backendId && key.backendId !== "auto" && reg.backendId !== key.backendId) continue;
-      if (fallback === null) fallback = reg.hostInstanceId;
+      fallback = reg.hostInstanceId;
       // prefer a host that already served this tab
       const affKey = this.#affinityKey(key);
       if (this.affinity.get(affKey)?.hostInstanceId === reg.hostInstanceId) {

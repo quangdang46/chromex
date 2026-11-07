@@ -478,17 +478,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
             },
           };
         }
-        const conn = ipc?.authedConnections().find(
-          (c) => c.hostInstanceId !== "" && c.remoteAddress === res.hostInstanceId,
-        );
-        // hostInstanceId is the conn remoteAddress in the channel impl;
-        // match by hostInstanceId field instead when available.
         const hostConn =
-          conn ??
-          ipc?.authedConnections().find((c) => {
-            // registry keyed by remoteAddress today; fall back to any host conn
-            return c.hostInstanceId !== "";
-          });
+          ipc?.authedConnections().find((c) => c.hostInstanceId === res.hostInstanceId) ??
+          ipc?.authedConnections().find((c) => c.hostInstanceId !== "");
         if (!hostConn) return null;
         hostRegistry.noteTabAffinity(
           {
@@ -500,7 +492,17 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         );
         return {
           hostInstanceId: res.hostInstanceId,
-          send: (method, payload) => hostConn.request(method, payload, 15_000),
+          send: (method, payload) =>
+            hostConn.request(method, payload, 15_000).catch((err) => {
+              // A conn that never answers is a zombie — a dead SW
+              // generation whose native host lingers (S7). Evict it so
+              // the next resolveHost picks a live host instead of
+              // timing out forever.
+              if ((err as { code?: unknown }).code === "ipc.request_timeout") {
+                hostConn.close();
+              }
+              throw err;
+            }),
           onDisconnect: (listener) => hostConn.onClose(() => listener("disconnect")),
         };
       },
@@ -949,9 +951,13 @@ async function handleGatewayRequest(
         });
       }
       if (ctx.conn.hostInstanceId) {
+        // hostInstanceId is the hello-declared per-process id — unique
+        // per native-host process. remoteAddress is "unknown" on unix
+        // sockets and would collapse every host into one registry
+        // entry, letting a zombie conn win host selection forever.
         ctx.hostRegistry.register({
-          hostInstanceId: ctx.conn.remoteAddress,
-          connectionId: ctx.conn.remoteAddress,
+          hostInstanceId: ctx.conn.hostInstanceId,
+          connectionId: ctx.conn.connectionId,
           browserInstanceId: ctx.conn.browserInstanceId,
           // NOTE: hello.profileId is the extension-installation id
           // ("prof-…"), NOT the task profileId (provider key "codex"/…)
@@ -959,7 +965,7 @@ async function handleGatewayRequest(
           // host look wrong_profile. Browser-profile isolation is
           // already carried by browserInstanceId + connection.
         });
-        ctx.conn.onClose(() => ctx.hostRegistry.unregisterByConnection(ctx.conn.remoteAddress));
+        ctx.conn.onClose(() => ctx.hostRegistry.unregisterByConnection(ctx.conn.connectionId));
       }
       return buildHelloResponse(parsed, {
         store: ctx.store,
