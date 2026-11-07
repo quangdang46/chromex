@@ -36,6 +36,76 @@ export const HARD_BLOCKED_TOOLS: ReadonlySet<string> = new Set([
   "browser.page.download",
 ]);
 
+/** Approval details.argsPreview bounds — the preview is persisted to the
+ *  approvals table and broadcast to every client, so it must stay small
+ *  and never carry credential values. */
+const ARGS_PREVIEW_MAX_CHARS = 500;
+const ARGS_PREVIEW_MAX_DEPTH = 5;
+const ARGS_PREVIEW_MAX_STRING = 160;
+const ARGS_PREVIEW_MAX_ITEMS = 16;
+const ARGS_PREVIEW_REDACTED = "•••";
+const ARGS_PREVIEW_TRUNCATED = "[truncated]";
+
+/** camelCase/snake-case normalized key → word-boundary match, so
+ *  "cardPin" and "api_key" match but "shipping" does not. */
+const SENSITIVE_ARG_KEY =
+  /\b(password|passwd|pwd|secret|token|api[-_ ]?key|credit[-_ ]?card|card[-_ ]?number|cvv|cvc|pin|ssn|otp)\b/;
+
+/** Value-bearing fill/type args — redacted when the classifier marks the
+ *  action data_entry_sensitive or financial (the value IS the secret). */
+const VALUE_ARG_KEYS = new Set(["text", "value", "input"]);
+
+function normalizeArgKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[-_]+/g, " ")
+    .toLowerCase();
+}
+
+function previewArgValue(value: unknown, depth: number, redactValues: boolean): unknown {
+  if (typeof value === "string") {
+    return value.length > ARGS_PREVIEW_MAX_STRING
+      ? `${value.slice(0, ARGS_PREVIEW_MAX_STRING)}…`
+      : value;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (depth >= ARGS_PREVIEW_MAX_DEPTH) {
+    return ARGS_PREVIEW_TRUNCATED;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, ARGS_PREVIEW_MAX_ITEMS)
+      .map((item) => previewArgValue(item, depth + 1, redactValues));
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+      key,
+      SENSITIVE_ARG_KEY.test(normalizeArgKey(key)) ||
+      (redactValues && VALUE_ARG_KEYS.has(normalizeArgKey(key)))
+        ? ARGS_PREVIEW_REDACTED
+        : previewArgValue(nested, depth + 1, redactValues),
+    ]),
+  );
+}
+
+/** Build the bounded, redacted args preview for approval details. Sensitive
+ *  keys are always masked; `redactValues` additionally masks fill/type
+ *  payload keys when the classifier flagged the action as sensitive or
+ *  financial. Oversized previews collapse to a truncated JSON string. */
+export function buildArgsPreview(
+  args: Record<string, unknown>,
+  opts: { redactValues?: boolean } = {},
+): unknown {
+  const preview = previewArgValue(args, 0, opts.redactValues === true);
+  const json = JSON.stringify(preview) ?? "null";
+  if (json.length <= ARGS_PREVIEW_MAX_CHARS) {
+    return preview;
+  }
+  return `${json.slice(0, ARGS_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
 export interface ToolCallRequest {
   toolCallId: string;
   taskId: string;
@@ -248,7 +318,11 @@ export class BrowserToolServer {
           actionDigest: browserActionDigest(req, actx),
           details: {
             tool: req.tool,
-            argsPreview: req.args,
+            // redacted + bounded: this preview is persisted to the
+            // approvals table and broadcast to every connected client
+            argsPreview: buildArgsPreview(req.args, {
+              redactValues: verdict.kind === "data_entry_sensitive" || verdict.risk === "financial",
+            }),
             origin: actx.origin,
             ...(actx.target?.label ? { targetLabel: actx.target.label } : {}),
             ...(scope !== undefined ? { allowTaskScope: scope } : {}),
