@@ -29,6 +29,17 @@ export interface GatewayRuntime {
 let runtime: GatewayRuntime | null = null;
 let initPromise: Promise<GatewayRuntime | null> | null = null;
 
+/** Server→client request handler (browser.tool.*). Registered by
+ *  background/index.ts once it can execute tools; default rejects
+ *  proto.unsupported — honest, never fakes a result. */
+let serverRequestHandler: ((method: string, payload: unknown) => Promise<unknown>) | null = null;
+
+export function setGatewayServerRequestHandler(
+  fn: ((method: string, payload: unknown) => Promise<unknown>) | null,
+): void {
+  serverRequestHandler = fn;
+}
+
 async function build(): Promise<GatewayRuntime | null> {
   const settings = await getStoredSettings();
   if (!settings.gatewayMode) return null;
@@ -48,6 +59,14 @@ async function build(): Promise<GatewayRuntime | null> {
       hostInstanceId: "",
       ...tasks.helloCursors(),
     }),
+    onRequest: async (method, payload) => {
+      if (!serverRequestHandler) {
+        const e = new Error(`no handler for ${method}`) as Error & { code?: string };
+        e.code = "proto.unsupported";
+        throw e;
+      }
+      return serverRequestHandler(method, payload);
+    },
     onEvent: (env) => {
       if (env.kind === "event" && env.reliability === "durable" && env.stream === "task") {
         tasks.handleEvent(env as Parameters<TaskController["handleEvent"]>[0]);

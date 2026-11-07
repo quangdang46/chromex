@@ -97,7 +97,8 @@ import {
 } from "./storage.js";
 import { resolveVisibleCurrentConversation } from "./conversation-history.js";
 import { NativeBridgeClient } from "./native-bridge-client.js";
-import { getGatewayRuntime, resetGatewayRuntime } from "./gateway/runtime.js";
+import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
+import { createToolHostHandler } from "./gateway/tool-host.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
@@ -197,6 +198,32 @@ import {
 } from "./pdf-page-context.js";
 
 const bridge = new NativeBridgeClient();
+
+// P1-09: answer gateway browser.tool.request envelopes. Registered
+// unconditionally — the runtime only exists when gatewayMode is on.
+setGatewayServerRequestHandler(
+  createToolHostHandler({
+    sendToTab: async (tabId, message) => {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.id || !tab.url) throw new Error(`tab ${tabId} has no url`);
+      return sendMessageToTab(tab as chrome.tabs.Tab & { id: number; url: string }, message);
+    },
+    getTab: async (tabId) => chrome.tabs.get(tabId),
+    queryTabs: async () => chrome.tabs.query({}),
+    activateTab: async (tabId) => {
+      await chrome.tabs.update(tabId, { active: true });
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true });
+    },
+    closeTab: async (tabId) => {
+      await chrome.tabs.remove(tabId);
+    },
+    activeTabId: async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return typeof tab?.id === "number" ? tab.id : null;
+    },
+  }),
+);
 const UI_BRIDGE_TIMEOUT_MS = 4000;
 const UI_CONTEXT_TIMEOUT_MS = 2500;
 const PLAYWRIGHT_RUNTIME_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
