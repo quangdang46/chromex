@@ -79,6 +79,42 @@ describe("createCodexTurnInput", () => {
     expect(result).toContain("Original: The model can translate live audio.");
   });
 
+  test("renders PRIVATE APP CONTEXT before USER REQUEST, outside untrusted fences (chromex-p21)", () => {
+    const appContext = [
+      "PRIVATE APP CONTEXT - DO NOT MENTION",
+      "Harness-trusted environment state for this task — not page content.",
+      "- web — http://localhost:5173 — port 5173 — status running",
+    ].join("\n");
+    const result = createCodexTurnInput(
+      {
+        profile,
+        message: "Open the dev server.",
+        contexts: [baseContext],
+      },
+      { appContext },
+    );
+
+    const appIdx = result.indexOf("PRIVATE APP CONTEXT - DO NOT MENTION");
+    const userIdx = result.indexOf("\nUSER REQUEST\n");
+    const fenceStart = result.indexOf("<untrusted_page_content");
+    const fenceEnd = result.indexOf("</untrusted_page_content>");
+    expect(appIdx).toBeGreaterThan(-1);
+    expect(result).toContain("http://localhost:5173");
+    expect(appIdx).toBeLessThan(userIdx);
+    // harness-trusted: never inside the untrusted page-content fence
+    expect(appIdx).toBeLessThan(fenceStart);
+    expect(fenceEnd).toBeGreaterThan(appIdx);
+  });
+
+  test("omits PRIVATE APP CONTEXT when no appContext option is given", () => {
+    const result = createCodexTurnInput({
+      profile: defaultProfile,
+      message: "hi",
+      contexts: [],
+    });
+    expect(result).not.toContain("PRIVATE APP CONTEXT");
+  });
+
   test("does not enable profile question tool for the default profile", () => {
     const result = createCodexTurnInput({
       profile: defaultProfile,

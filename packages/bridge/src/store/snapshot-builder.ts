@@ -39,12 +39,31 @@ export interface SnapshotSource {
   checkpointThroughSeq?: number;
   base?: Pick<
     InlineTaskSnapshot,
-    "userMessages" | "assistantMessages" | "toolCalls" | "permissions"
+    "userMessages" | "assistantMessages" | "toolCalls" | "permissions" | "turnDiffs"
   >;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+}
+
+/** ~4KB bound for tool output kept in the snapshot — enough for command
+ *  stdout tails/exit codes; oversized payloads keep only the artifact ref. */
+const OUTPUT_SUMMARY_MAX_CHARS = 4096;
+
+function boundOutputSummary(value: unknown): unknown {
+  let s: string;
+  try {
+    s = JSON.stringify(value) ?? String(value);
+  } catch {
+    s = String(value);
+  }
+  if (s.length <= OUTPUT_SUMMARY_MAX_CHARS) return value;
+  return {
+    truncated: true,
+    bytes: s.length,
+    preview: `${s.slice(0, OUTPUT_SUMMARY_MAX_CHARS - 64)}…[truncated]`,
+  };
 }
 
 export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot {
@@ -69,6 +88,10 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
         : "",
       p,
     ]),
+  );
+  // latest turn diff per turn — checkpoint base diffs merge under new events
+  const turnDiffs = new Map<string, string>(
+    (src.base?.turnDiffs ?? []).map((d) => [d.turnId, d.diff]),
   );
 
   for (const env of src.events) {
@@ -127,6 +150,10 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
             : "unknown";
         if (existing) {
           existing.outcome = outcome;
+          if (p.source === "browser" || existing.source === "browser") {
+            existing.source = "browser";
+          }
+          if (p.output !== undefined) existing.outputSummary = boundOutputSummary(p.output);
           if (p.outputArtifactRef) existing.outputArtifactRef = String(p.outputArtifactRef);
           if (p.verified)
             existing.verified = p.verified as NonNullable<TaskSnapshotToolCall["verified"]>;
@@ -135,8 +162,9 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
             turnId,
             toolCallId,
             tool: typeof p.tool === "string" ? p.tool : "unknown",
-            source: "provider",
+            source: p.source === "browser" ? "browser" : "provider",
             outcome,
+            ...(p.output !== undefined ? { outputSummary: boundOutputSummary(p.output) } : {}),
             ...(typeof p.outputArtifactRef === "string"
               ? { outputArtifactRef: p.outputArtifactRef }
               : {}),
@@ -147,6 +175,11 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
           toolCalls.push(call);
           toolByCallId.set(toolCallId, call);
         }
+        break;
+      }
+      case "turn.diff.updated": {
+        // keep the LATEST diff per turn — earlier diffs are superseded
+        if (turnId && typeof p.diff === "string") turnDiffs.set(turnId, p.diff);
         break;
       }
       case "permission.requested": {
@@ -226,6 +259,7 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
     assistantMessages,
     toolCalls,
     permissions,
+    turnDiffs: [...turnDiffs.entries()].map(([t, diff]) => ({ turnId: t, diff })),
     lastSeq,
     rebuiltFrom: src.rebuiltFrom ?? "event_log",
   };

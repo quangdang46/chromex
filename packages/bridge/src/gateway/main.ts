@@ -19,6 +19,7 @@ import { protocolError } from "@codex-sidepanel/shared";
 import type {
   AgenticRouteInput,
   BrowserDomSnapshot,
+  DurableTaskEvent,
   Envelope,
   ProtocolError,
   TaskRecord,
@@ -31,6 +32,7 @@ import { SnapshotChunkStore } from "./chunks.js";
 import { ulid } from "./ulid.js";
 import {
   browserBackendSchema,
+  appReportSchema,
   configReadSchema,
   configUpdateSchema,
   gatewaySyncSchema,
@@ -78,10 +80,16 @@ import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
 import { InMemoryBridgeSecrets } from "../secrets.js";
 import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
+import { AppServiceRegistry } from "./app-services.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
 import { DeltaCoalescer } from "./delta-coalescer.js";
 import { GatewayDiagnostics } from "./diagnostics.js";
-import { BrowserToolServer } from "../browser/tool-server.js";
+import {
+  BrowserToolServer,
+  buildArgsPreview,
+  type ToolCallOutcome,
+} from "../browser/tool-server.js";
+import { boundJsonPreview } from "../store/event-payload.js";
 import { BrowserHostRegistry } from "../browser/host-registry.js";
 import { PlaywrightIsolatedBackend } from "../browser/backends/playwright/isolated.js";
 import { resolveBackendSelection, backendMismatchFor } from "../browser/backend-selection.js";
@@ -250,10 +258,19 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         ipc?.broadcast(envelope);
       },
     });
+    // chromex-p21: per-task dev-server registry. In-memory for the
+    // gateway lifetime — reported services are re-reported by the agent
+    // after a restart, and the durable stream never stores them.
+    // cliPath points at the compiled agent helper (dist layout mirrors
+    // src); the injected context teaches agents the exact report command.
+    const appServices = new AppServiceRegistry({
+      cliPath: fileURLToPath(new URL("./app-report-cli.js", import.meta.url)),
+    });
     const sessionManager = new SessionManager({
       store: store as ConstructorParameters<typeof SessionManager>[0]["store"],
       registry,
       config,
+      appContextForTask: (taskId) => appServices.contextForTask(taskId),
       browserMcpSpawn: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
       // P2-06: interrupt/cancel propagates browser.tool.cancel to
       // in-flight tool calls; unconfirmed stops resolve `unknown`.
@@ -629,6 +646,29 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         broadcastDiagnostics();
       },
     });
+
+    // S8: browser tool calls are first-class durable evidence — every
+    // call emits tool.started at dispatch and tool.completed with the
+    // real outcome + verified flag at finish, so the task stream (and
+    // the rebuilt snapshot) shows what the agent did in the browser.
+    // Keyed by toolCallId so browser.tool.cancel can close the record
+    // the call handler opened; a later real outcome still wins honesty
+    // (cancelled is only emitted when the server actually finished it).
+    const browserToolCalls = new Map<
+      string,
+      { taskId: string; turnId: string; tool: string }
+    >();
+    const appendTaskEventBroadcast = (taskId: string, event: DurableTaskEvent): void => {
+      const env = (
+        store as {
+          appendTaskEvent?: (id: string, e: DurableTaskEvent) => { kind?: string } | null;
+        }
+      ).appendTaskEvent?.(taskId, event);
+      if (env && env.kind === "event") {
+        ipc?.broadcast(env as import("@codex-sidepanel/shared").Envelope);
+      }
+    };
+
     // config is mutable via config.update; the resolved object is
     // replaced (never mutated) so in-flight readers see a consistent
     // snapshot.
@@ -656,6 +696,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           toolServer,
           toolRefresher,
           hostRegistry,
+          browserToolCalls,
+          appendTaskEventBroadcast,
+          appServices,
           spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
       } catch (err) {
@@ -801,6 +844,27 @@ function ipcEndpointPath(dataDir: string): string {
   return path.join(dataDir, "run", `gw-${hash}.sock`);
 }
 
+/** Per-field budget for browser tool output on the durable stream —
+ *  page snapshots/extracts can be large; the snapshot layer keeps only
+ *  ~4KB anyway, so 32KB here preserves evidence without log bloat. */
+const BROWSER_TOOL_OUTPUT_MAX_CHARS = 32 * 1024;
+
+function browserToolOutputPayload(outcome: ToolCallOutcome): unknown {
+  const parts: Record<string, unknown> = {};
+  if (outcome.result !== undefined) {
+    parts.result = boundJsonPreview(outcome.result, BROWSER_TOOL_OUTPUT_MAX_CHARS);
+  }
+  if (outcome.error) parts.error = outcome.error;
+  return Object.keys(parts).length > 0 ? parts : undefined;
+}
+
+function browserToolOutcomeStatus(
+  status: ToolCallOutcome["status"],
+): "succeeded" | "failed" | "cancelled" | "unknown" {
+  // ToolOutcome vocabulary: provider "completed" == "succeeded".
+  return status === "completed" ? "succeeded" : status;
+}
+
 async function handleGatewayRequest(
   req: Extract<Envelope, { kind: "request" }>,
   ctx: {
@@ -821,6 +885,11 @@ async function handleGatewayRequest(
     toolServer: BrowserToolServer;
     hostRegistry: BrowserHostRegistry;
     toolRefresher: ToolTokenRefresher;
+    /** S8 evidence ledger: toolCallId → owning task/turn/tool for
+     *  browser.tool.* durable events (main.ts scope). */
+    browserToolCalls: Map<string, { taskId: string; turnId: string; tool: string }>;
+    appendTaskEventBroadcast: (taskId: string, event: DurableTaskEvent) => void;
+    appServices: AppServiceRegistry;
     spawnBrowserMcp?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
   },
 ): Promise<unknown> {
@@ -904,6 +973,24 @@ async function handleGatewayRequest(
           updatedAt: t.updatedAt,
         })),
       };
+    }
+    case "app.report": {
+      // chromex-p21: agent registers a dev server it started. Upserts
+      // by (taskId, name); the next turn's PRIVATE APP CONTEXT carries
+      // it to the provider. In-memory only — see AppServiceRegistry.
+      const p = parsePayload(appReportSchema, req.payload) as z.infer<typeof appReportSchema>;
+      if (!ctx.store.getTask(p.taskId)) {
+        throw perr("task.not_found", `task ${p.taskId} not found`);
+      }
+      const service = ctx.appServices.report(p.taskId, p);
+      return { ok: true, service };
+    }
+    case "app.list": {
+      const p = parsePayload(taskIdSchema, req.payload) as { taskId: string };
+      if (!ctx.store.getTask(p.taskId)) {
+        throw perr("task.not_found", `task ${p.taskId} not found`);
+      }
+      return { services: ctx.appServices.list(p.taskId) };
     }
     case "task.send": {
       const p = parsePayload(taskSendSchema, req.payload) as z.infer<typeof taskSendSchema>;
@@ -1158,18 +1245,71 @@ async function handleGatewayRequest(
       const p = parsePayload(browserToolCallSchema, req.payload) as z.infer<typeof browserToolCallSchema>;
       const task = ctx.store.getTask(p.taskId);
       if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
-      const outcome = await ctx.toolServer.execute({
-        toolCallId: p.toolCallId ?? `rpc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        taskId: p.taskId,
-        ...(p.turnId ? { turnId: p.turnId } : {}),
+      const toolCallId =
+        p.toolCallId ?? `rpc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      // attribute to the caller's turn, else the task's live turn —
+      // MCP-spawned calls carry no turnId (scope file has none).
+      const turnId = p.turnId ?? ctx.store.activeTurn(p.taskId)?.turnId ?? "";
+      ctx.browserToolCalls.set(toolCallId, { taskId: p.taskId, turnId, tool: p.tool });
+      ctx.appendTaskEventBroadcast(p.taskId, {
+        type: "tool.started",
+        turnId,
+        toolCallId,
         tool: p.tool,
-        args: p.args ?? {},
-        token: p.token,
-        profileId: task.profileId,
-        backendId: task.backend.backendId ?? "chrome-extension",
-        browserInstanceId:
-          task.originBrowserInstanceId ?? task.binding.browserInstanceId ?? null,
+        source: "browser",
+        input: buildArgsPreview(p.args ?? {}),
       });
+      let outcome: ToolCallOutcome;
+      try {
+        outcome = await ctx.toolServer.execute({
+          toolCallId,
+          taskId: p.taskId,
+          ...(p.turnId ? { turnId: p.turnId } : {}),
+          tool: p.tool,
+          args: p.args ?? {},
+          token: p.token,
+          profileId: task.profileId,
+          backendId: task.backend.backendId ?? "chrome-extension",
+          browserInstanceId:
+            task.originBrowserInstanceId ?? task.binding.browserInstanceId ?? null,
+        });
+      } catch (err) {
+        // dispatch threw before a ToolCallOutcome existed — the stop is
+        // unconfirmed, so record `unknown`, never a guessed failure.
+        ctx.browserToolCalls.delete(toolCallId);
+        ctx.appendTaskEventBroadcast(p.taskId, {
+          type: "tool.completed",
+          turnId,
+          toolCallId,
+          tool: p.tool,
+          source: "browser",
+          outcome: "unknown",
+          output: {
+            error: {
+              code: "gateway.tool_error",
+              message: err instanceof Error ? err.message : String(err),
+            },
+          },
+          verified: "unknown",
+        });
+        throw err;
+      }
+      // a cancel RPC may have already closed this record — first writer
+      // wins so the stream never shows two completions for one call.
+      if (ctx.browserToolCalls.delete(toolCallId)) {
+        ctx.appendTaskEventBroadcast(p.taskId, {
+          type: "tool.completed",
+          turnId,
+          toolCallId,
+          tool: p.tool,
+          source: "browser",
+          outcome: browserToolOutcomeStatus(outcome.status),
+          ...(browserToolOutputPayload(outcome) !== undefined
+            ? { output: browserToolOutputPayload(outcome) }
+            : {}),
+          verified: outcome.verified === undefined ? "unknown" : outcome.verified,
+        });
+      }
       return outcome;
     }
     case "browser.tool.cancel": {
@@ -1180,6 +1320,21 @@ async function handleGatewayRequest(
       const task = ctx.store.getTask(p.taskId);
       if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
       const outcome = ctx.toolServer.cancel(p.toolCallId);
+      // close the durable record only when the server actually finished
+      // the pending call — a null outcome means it was still in approval
+      // or dispatch, and the call handler will record the real result.
+      const tracked = ctx.browserToolCalls.get(p.toolCallId);
+      if (outcome && tracked && tracked.taskId === p.taskId && ctx.browserToolCalls.delete(p.toolCallId)) {
+        ctx.appendTaskEventBroadcast(tracked.taskId, {
+          type: "tool.completed",
+          turnId: tracked.turnId,
+          toolCallId: p.toolCallId,
+          tool: tracked.tool,
+          source: "browser",
+          outcome: "cancelled",
+          verified: "unknown",
+        });
+      }
       return { cancelled: outcome !== null, outcome: outcome ?? null };
     }
     case "browser.mcp.spawn": {
@@ -1231,6 +1386,8 @@ async function handleGatewayRequest(
       // chromex-9e3: release the task's runtime tab scope so its tabs
       // can bind to a future task.
       ctx.toolServer.releaseTask(p.taskId);
+      // chromex-p21: drop the task's reported dev-server registry too.
+      ctx.appServices.clearTask(p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({

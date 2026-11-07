@@ -21,7 +21,8 @@
     "storage",
     "contextMenus",
     "nativeMessaging",
-    "desktopCapture"
+    "desktopCapture",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"

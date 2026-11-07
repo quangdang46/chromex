@@ -82,6 +82,19 @@ All under `CHROMEX_GATEWAY_HOME` (default `~/.chromex/gateway`):
   spawn budget (in-flight suppression + rate cap). Delete `run/` to
   reset both.
 
+## App-context (dev-server reporting)
+
+Agents must not guess dev-server ports. A task's agent registers each
+server it starts via the `app.report` RPC
+(`{taskId, name, url|port, pid?, cwd?, status?}`; upserts by name) or the
+helper `node <pkg>/dist/gateway/app-report-cli.js report --task <id>
+--name <n> --url <u>`. `app.list` reads them back. The gateway injects a
+`PRIVATE APP CONTEXT` block into every turn's `ctx.instructions`
+(`SessionManager.appContextForTask`) — harness-trusted, outside the
+`untrusted_page_content` fences. Services live in memory for the gateway
+lifetime only; `task.purge` drops them, and a gateway restart means the
+agent re-reports on its next turn.
+
 ## Behavior guarantees
 
 - **Survives extension reload and service-worker sleep.** The gateway

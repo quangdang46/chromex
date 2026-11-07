@@ -7,6 +7,8 @@
 export const PAGE_MESSAGE = {
   domSnapshot: "page.dom.snapshot",
   domPerform: "page.dom.perform",
+  domFind: "page.dom.find",
+  domWait: "page.dom.wait",
   aiControlStart: "page.ai-control.start",
   aiControlStop: "page.ai-control.stop",
   fingerprintContext: "page.fingerprint.context",

@@ -3,6 +3,8 @@ import { collectGoogleWorkspaceAdapterPayload, isGoogleWorkspaceUrl } from "../a
 import { collectPdfAdapterPayload, isLikelyPdfUrl } from "../adapters/pdf.js";
 import { collectYouTubeAdapterPayload, collectYouTubePlaybackState, isYouTubeUrl } from "../adapters/youtube.js";
 import { collectBodyText } from "./dom-text.js";
+import { findInPage } from "./find.js";
+import { waitForPageConditions } from "./wait.js";
 import {
   collectBrowserDomSnapshot,
 } from "./snapshot.js";
@@ -261,6 +263,40 @@ function chromexRuntimeMessageListener(
         controlMode: "dom",
       });
     });
+    return true;
+  }
+
+  if (message.type === "page.dom.find") {
+    sendResponse(
+      findInPage({
+        ...(typeof message.text === "string" ? { text: message.text } : {}),
+        ...(typeof message.regex === "string" ? { regex: message.regex } : {}),
+        ...(message.caseSensitive === true ? { caseSensitive: true } : {}),
+        ...(typeof message.limit === "number" ? { limit: message.limit } : {}),
+        ...(typeof message.scopeSelector === "string" ? { scopeSelector: message.scopeSelector } : {}),
+      }),
+    );
+    return true;
+  }
+
+  if (message.type === "page.dom.wait") {
+    const timeoutMs =
+      typeof message.timeoutMs === "number" && Number.isFinite(message.timeoutMs)
+        ? Math.min(Math.max(message.timeoutMs, 0), 30_000)
+        : 10_000;
+    waitForPageConditions(
+      {
+        ...(typeof message.text === "string" ? { text: message.text } : {}),
+        ...(typeof message.textGone === "string" ? { textGone: message.textGone } : {}),
+        ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+        ...(typeof message.urlContains === "string" ? { urlContains: message.urlContains } : {}),
+      },
+      timeoutMs,
+    )
+      .then(sendResponse)
+      .catch((error) =>
+        sendResponse({ ok: false, timedOut: true, elapsedMs: 0, error: error instanceof Error ? error.message : String(error) }),
+      );
     return true;
   }
 

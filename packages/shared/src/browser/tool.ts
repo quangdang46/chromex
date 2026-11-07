@@ -26,7 +26,10 @@ export type BrowserToolName =
   | "browser.page.wait"
   | "browser.page.hover"
   | "browser.page.press"
-  | "browser.page.upload";
+  | "browser.page.upload"
+  | "browser.page.find"
+  | "browser.page.history"
+  | "browser.downloads.list";
 
 export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tabs.list",
@@ -50,6 +53,9 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.hover",
   "browser.page.press",
   "browser.page.upload",
+  "browser.page.find",
+  "browser.page.history",
+  "browser.downloads.list",
 ];
 
 /** Per-call context handed to the browser tool server (plan §9.2). */

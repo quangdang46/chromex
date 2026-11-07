@@ -63,6 +63,9 @@ export interface TaskSnapshotToolCall {
   inputArtifactRef?: string;
   inputMissing?: boolean;
   summary?: string;
+  /** bounded (~4KB) normalized output — command stdout/exit codes etc.
+   *  survive event-log pruning; large outputs keep only outputArtifactRef */
+  outputSummary?: unknown;
   outputArtifactRef?: string;
   outputMissing?: boolean;
 }
@@ -93,6 +96,9 @@ export interface TaskSnapshotData {
   toolCalls: TaskSnapshotToolCall[];
   /** permission requests + decisions — SINGLE SOURCE (pendingApprovals derived) */
   permissions: TaskSnapshotPermission[];
+  /** latest turn.diff.updated per turn — the deliverable diff survives
+   *  event-log pruning (S8). Absent on pre-diff snapshots. */
+  turnDiffs?: Array<{ turnId: string; diff: string }>;
   lastSeq: number;
   /** whether this snapshot was built after pruning, and what was lost */
   rebuiltFrom: "event_log" | "archived_snapshot";

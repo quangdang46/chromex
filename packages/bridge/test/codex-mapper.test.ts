@@ -129,4 +129,36 @@ describe("CodexEventMapper fixture replay", () => {
     });
     expect(durable).toContain("assistant.message:gt-x");
   });
+
+  test("turn/diff/updated buffers pre-bind then emits durable turn.diff.updated (S8)", () => {
+    const mapper = new CodexEventMapper("sess-diff");
+    const durable: Array<{ type: string; turnId?: string; diff?: string }> = [];
+    mapper.onEvent((e) => {
+      if (!e.ephemeral) durable.push(e.event as { type: string; turnId?: string; diff?: string });
+    });
+    // arrives BEFORE bindTurn — must buffer like every turn-scoped event
+    mapper.mapNotification("turn/diff/updated", {
+      turnId: "pt-diff",
+      diff: "diff --git a/x.ts b/x.ts\n+hi",
+    });
+    expect(durable.filter((e) => e.type === "turn.diff.updated")).toEqual([]);
+    mapper.bindTurn("pt-diff", "gt-diff");
+    expect(durable).toContainEqual({
+      type: "turn.diff.updated",
+      turnId: "gt-diff",
+      diff: "diff --git a/x.ts b/x.ts\n+hi",
+    });
+  });
+
+  test("turn/diff/updated with empty/missing diff emits nothing", () => {
+    const mapper = new CodexEventMapper("sess-diff-empty");
+    const durable: string[] = [];
+    mapper.onEvent((e) => {
+      if (!e.ephemeral) durable.push((e.event as { type: string }).type);
+    });
+    mapper.bindTurn("pt-e", "gt-e");
+    mapper.mapNotification("turn/diff/updated", { turnId: "pt-e", diff: "" });
+    mapper.mapNotification("turn/diff/updated", { turnId: "pt-e" });
+    expect(durable).not.toContain("turn.diff.updated");
+  });
 });

@@ -55,6 +55,15 @@ export interface BrowserBackendCapabilities {
    *  actions (e.g. Enter submitting a form) are not guaranteed. Only a
    *  real input path (chrome.debugger / CDP Input domain) is trusted. */
   pagePress?: boolean;
+  /** browser.page.find — in-page text/DOM search returning bounded
+   *  matches with selectors (and content-side refs on the extension) */
+  pageFind?: boolean;
+  /** browser.page.history — back/forward/reload on the task's tab */
+  pageHistory?: boolean;
+  /** browser.downloads.list — chrome.downloads listing (extension only;
+   *  requires the "downloads" permission). Playwright-isolated does NOT
+   *  claim it: download events are not wired. */
+  downloadsList?: boolean;
 }
 
 /**
@@ -77,7 +86,9 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     dom: true,
     accessibility: false,
     screenshot: true,
-    upload: false,
+    // DataTransfer bytes path (browser.page.upload) — synthetic, not a
+    // trusted gesture; filePicker stays false for the native picker.
+    upload: true,
     iframe: "none",
     nativeDialogs: false,
     filePicker: false,
@@ -87,6 +98,9 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     consoleCapture: true,
     pageHover: true,
     pagePress: true,
+    pageFind: true,
+    pageHistory: true,
+    downloadsList: true,
   },
   "playwright-isolated": {
     existingUserTabs: false,
@@ -107,6 +121,9 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     consoleCapture: true,
     pageHover: true,
     pagePress: true,
+    pageFind: true,
+    pageHistory: true,
+    // downloadsList intentionally absent — not implemented on this backend.
   },
   "playwright-cdp": {
     existingUserTabs: false,

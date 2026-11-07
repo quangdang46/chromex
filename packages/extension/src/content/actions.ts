@@ -331,6 +331,14 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         message = `Pressed ${step.key || "key"} ${actionTarget ? `on ${getElementLabel(actionTarget) || "the focused element"}` : "on the page"}.`;
         break;
       }
+      case "upload": {
+        // DataTransfer bytes path — synthetic but functional: page JS
+        // sees real File objects on input.files. NOT a trusted gesture;
+        // sites checking event.isTrusted may still reject.
+        const count = await performUploadAction(element, step.files ?? []);
+        message = `Uploaded ${count} file(s) to ${getElementLabel(element) || "the target element"}.`;
+        break;
+      }
       default:
         ok = false;
         message = "Unsupported action.";
@@ -532,6 +540,72 @@ export function dispatchPressSequence(target: EventTarget, step: BrowserDomActio
     target.dispatchEvent(new KeyboardEvent("keypress", init));
   }
   target.dispatchEvent(new KeyboardEvent("keyup", init));
+}
+
+const UPLOAD_MAX_FILES = 8;
+const UPLOAD_MAX_BASE64_CHARS = 48 * 1024 * 1024; // ~36MB decoded total
+
+function decodeUploadBase64(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/** Resolve the file input for an upload step: the element itself, a
+ *  file input inside it, or the control a <label> points at. */
+function resolveUploadFileInput(element: HTMLElement): HTMLInputElement | null {
+  const isFileInput = (el: unknown): el is HTMLInputElement =>
+    el instanceof HTMLInputElement && (el.type || "").toLowerCase() === "file";
+  if (isFileInput(element)) return element;
+  const nested = element.querySelector('input[type="file"]');
+  if (isFileInput(nested)) return nested;
+  if (element instanceof HTMLLabelElement && isFileInput(element.control)) {
+    return element.control;
+  }
+  return null;
+}
+
+/**
+ * upload: build File objects from base64 bytes, attach via DataTransfer,
+ * then dispatch input+change so page listeners observe the selection.
+ * Returns the number of files attached.
+ */
+export async function performUploadAction(
+  element: HTMLElement,
+  files: ReadonlyArray<{ name: string; mimeType: string; base64: string }>,
+): Promise<number> {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("browser.page.upload requires at least one file.");
+  }
+  if (files.length > UPLOAD_MAX_FILES) {
+    throw new Error(`browser.page.upload accepts at most ${UPLOAD_MAX_FILES} files.`);
+  }
+  const input = resolveUploadFileInput(element);
+  if (!input) {
+    throw new Error("Target element is not a file input.");
+  }
+  let totalBase64 = 0;
+  for (const f of files) {
+    if (typeof f?.name !== "string" || typeof f?.base64 !== "string" || !f.base64) {
+      throw new Error("upload file entries require {name, mimeType, base64}.");
+    }
+    totalBase64 += f.base64.length;
+  }
+  if (totalBase64 > UPLOAD_MAX_BASE64_CHARS) {
+    throw new Error("browser.page.upload payload exceeds the size limit.");
+  }
+  const dataTransfer = new DataTransfer();
+  for (const f of files) {
+    const bytes = decodeUploadBase64(f.base64);
+    dataTransfer.items.add(new File([bytes], f.name, { type: typeof f.mimeType === "string" ? f.mimeType : "" }));
+  }
+  input.files = dataTransfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return files.length;
 }
 
 export function summarizeDomActionResults(results: BrowserDomActionResult["results"]): string {

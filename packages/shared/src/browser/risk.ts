@@ -87,6 +87,8 @@ const READ_TOOLS = new Set([
   "browser.page.extract",
   "browser.page.wait",
   "browser.page.console",
+  "browser.page.find",
+  "browser.downloads.list",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;
@@ -171,7 +173,20 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
   switch (ctx.action) {
     case "browser.page.scroll":
     case "browser.tab.activate":
+    case "browser.page.history":
       return verdict("low", { reason: "low-risk navigation/UI action" });
+
+    case "browser.page.upload": {
+      // File bytes enter the page like typed data — sensitive entry.
+      // The classifier cannot see file contents, so approval is always
+      // required (allow_task is never offered for sensitive entry).
+      return verdict("data_entry_sensitive", {
+        needsApproval: true,
+        kind: "data_entry_sensitive",
+        allowTaskEligible: false,
+        reason: "file upload enters user data into the page",
+      });
+    }
 
     case "browser.page.navigate": {
       const dest = ctx.url || "";

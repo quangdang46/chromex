@@ -119,7 +119,7 @@ function makeProvider(capabilities: Partial<AgentCapabilityFlags> = {}): AgentPr
   };
 }
 
-async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void; providerCapabilities?: Partial<AgentCapabilityFlags>; browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null> } = {}) {
+async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void; providerCapabilities?: Partial<AgentCapabilityFlags>; browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null>; appContextForTask?: (taskId: string) => string | null } = {}) {
   sessions.length = 0;
   sessionConfigs.length = 0;
   sessionPreset = opts.presetSession ?? null;
@@ -138,6 +138,7 @@ async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeout
     ...(opts.interruptTimeoutMs ? { interruptTimeoutMs: opts.interruptTimeoutMs } : {}),
     ...(opts.onTaskStop ? { onTaskStop: opts.onTaskStop } : {}),
     ...(opts.browserMcpSpawn ? { browserMcpSpawn: opts.browserMcpSpawn } : {}),
+    ...(opts.appContextForTask ? { appContextForTask: opts.appContextForTask } : {}),
   });
   return { sm, store, registry, published, sessions };
 }
@@ -201,6 +202,41 @@ describe("SessionManager", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(sessionConfigs.at(-1)?.options?.mcpServers).toEqual(servers);
+  });
+
+  test("appContextForTask injects PRIVATE APP CONTEXT into turn ctx.instructions (chromex-p21)", async () => {
+    const { sm, sessions, store } = await makeManager({
+      appContextForTask: (taskId) =>
+        `PRIVATE APP CONTEXT - DO NOT MENTION\n- web — http://localhost:5173 — task ${taskId}`,
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, {
+      ...INPUT,
+      ctx: { instructions: "client-supplied instructions" },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const sent = sessions[0]!.turns[0] as unknown as {
+      ctx?: { instructions?: string };
+    };
+    expect(sent.ctx?.instructions).toContain("PRIVATE APP CONTEXT - DO NOT MENTION");
+    expect(sent.ctx?.instructions).toContain(`task ${task.taskId}`);
+    expect(sent.ctx?.instructions).toContain("client-supplied instructions");
+    // durable user.message.created keeps the CLIENT ctx — injection is
+    // dispatch-time only, never persisted into the task stream.
+    const created = store
+      .taskEventsAfter(task.taskId, 0, 100)
+      .events.find((e) => e.type === "user.message.created");
+    expect(JSON.stringify(created)).not.toContain("PRIVATE APP CONTEXT");
+  });
+
+  test("no appContextForTask → ctx passes through untouched", async () => {
+    const { sm, sessions } = await makeManager();
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    const sent = sessions[0]!.turns[0] as unknown as { ctx?: unknown };
+    expect(sent.ctx).toBeUndefined();
   });
 
   test("ephemeral deltas never persist and consume no durable seq (§7.3 #9)", async () => {

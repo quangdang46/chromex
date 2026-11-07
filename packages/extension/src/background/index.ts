@@ -257,6 +257,27 @@ const toolHostHandler = createToolHostHandler({
       });
       return res?.result;
     },
+    navigateHistory: async (tabId, action) => {
+      if (action === "back") return chrome.tabs.goBack(tabId);
+      if (action === "forward") return chrome.tabs.goForward(tabId);
+      return chrome.tabs.reload(tabId);
+    },
+    listDownloads: async ({ state, limit, startTime }) => {
+      const items = await chrome.downloads.search({
+        ...(state ? { state: state as chrome.downloads.DownloadQuery["state"] } : {}),
+        limit,
+        ...(startTime !== undefined ? { startedAfter: new Date(startTime).toISOString() } : {}),
+      });
+      return items.map((d) => ({
+        id: d.id,
+        state: d.state,
+        filename: d.filename,
+        bytesReceived: d.bytesReceived,
+        totalBytes: d.totalBytes,
+        ...(d.error ? { error: d.error } : {}),
+        startTime: d.startTime,
+      }));
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
@@ -1003,6 +1024,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         case "plan.user_input.respond":
           sendResponse(await bridge.request("plan.user_input.respond", message.payload ?? {}));
+          return;
+        case "permission.respond":
+          // approval card answers — gateway resolves the approvals row /
+          // provider session and emits permission.resolved durably.
+          sendResponse(await bridge.request("permission.respond", message.payload ?? {}));
           return;
         case "turn.interrupt":
           sendResponse(await handleTurnInterrupt(message.threadId, message.turnId));

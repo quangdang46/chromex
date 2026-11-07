@@ -3,6 +3,8 @@ import type { ProviderId } from "../agent/provider-id.js";
 import type { PauseReason, TaskAttention, TaskStatus } from "./record.js";
 import type { BackendBinding } from "./record.js";
 import type { BrowserBindingState } from "../browser/identity.js";
+import type { BrowserToolName } from "../browser/tool.js";
+import type { RiskLevel } from "../browser/risk.js";
 import type { ProtocolError } from "../protocol/errors.js";
 
 /**
@@ -20,7 +22,21 @@ export type TaskEvent =
   | { type: "task.tab_binding"; state: BrowserBindingState; profileId: string; browserInstanceId: string | null }
   | { type: "task.completed" }
   | { type: "task.failed"; error: ProtocolError }
-  | { type: "task.cancelled"; reason: string };
+  | { type: "task.cancelled"; reason: string }
+  // §4.8 audit: redacted ActionContext classification — args VALUES are
+  // never logged, only classification + target metadata. Durable so the
+  // approval/risk trail survives restart and event-log pruning.
+  | {
+      type: "browser.tool.classified";
+      action: BrowserToolName | string;
+      risk: RiskLevel;
+      needsApproval: boolean;
+      reason: string;
+      origin: string | null;
+      targetLabel: string | null;
+      contextResolved: boolean;
+      turnId?: string;
+    };
 
 export type TaskEventType = TaskEvent["type"];
 

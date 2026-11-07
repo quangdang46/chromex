@@ -534,7 +534,17 @@ export type BrowserDomActionKind =
   | "submit"
   | "navigate"
   | "hover"
-  | "press";
+  | "press"
+  | "upload";
+
+/** upload step payload — in-memory file bytes only (browser.page.upload).
+ *  Local paths/native pickers are NOT expressible here; they stay
+ *  gesture-gated host-side. */
+export interface BrowserDomUploadFile {
+  name: string;
+  mimeType: string;
+  base64: string;
+}
 
 export interface BrowserDomElementSnapshot {
   ref: string;
@@ -592,6 +602,8 @@ export interface BrowserDomActionStep {
   key?: string;
   /** press: modifier names — "Control" | "Alt" | "Shift" | "Meta" */
   modifiers?: string[];
+  /** upload: files to attach via DataTransfer (base64 bytes) */
+  files?: BrowserDomUploadFile[];
   reason: string;
 }
 

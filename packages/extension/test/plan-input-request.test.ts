@@ -41,7 +41,9 @@ describe("plan input request handling", () => {
   });
 
   test("renders plan input inside the composer frame instead of stacking above it", () => {
-    expect(sidepanelSource).toContain('${state.pendingPlanInputRequest ? "plan-input-active" : ""}');
+    expect(sidepanelSource).toContain(
+      '${state.pendingPlanInputRequest || state.pendingApproval ? "plan-input-active" : ""}',
+    );
     expect(sidepanelSource).toContain("state.pendingPlanInputRequest\n              ? renderPlanInputPanel(strings)");
     expect(sidepanelSource).not.toContain("${renderPlanInputPanel(strings)}\n        <div class=\"composer-frame");
     expect(sidepanelCss).toContain(".composer-frame.plan-input-active");

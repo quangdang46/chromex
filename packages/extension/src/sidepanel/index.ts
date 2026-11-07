@@ -531,6 +531,28 @@ type SidepanelBridgeEvent = {
   conversationId?: string;
   requestId?: string;
   questions?: PlanUserInputQuestion[];
+  permissionKind?: string;
+  risk?: string;
+  summary?: string;
+  origin?: string;
+  targetLabel?: string;
+  argsPreviewText?: string;
+  approvalOptions?: Array<{ id: string; label: string; kind?: string }>;
+  verified?: boolean | "unknown";
+};
+
+type PendingApprovalState = {
+  requestId: string;
+  threadId: string;
+  turnId: string;
+  permissionKind: string;
+  risk: string;
+  summary: string;
+  tool: string;
+  origin: string;
+  targetLabel: string;
+  argsPreviewText: string;
+  options: Array<{ id: string; label: string; kind: string }>;
 };
 
 type PlanUserInputQuestion = {
@@ -986,6 +1008,8 @@ const state = {
   } | null,
   pendingAction: "" as "" | "voice" | "image-edit",
   pendingPlanInputRequest: null as PlanUserInputRequestState | null,
+  pendingApproval: null as PendingApprovalState | null,
+  approvalPendingOptionId: "",
   planInputActiveIndex: 0,
   planInputAnswers: {} as Record<string, PlanInputAnswerDraft>,
   conferenceMode: createConferenceModeState(),
@@ -1367,6 +1391,33 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (event.type === "plan.user_input.resolved") {
     if (state.pendingPlanInputRequest?.requestId === event.requestId) {
       clearPlanUserInputRequest();
+      shouldRender = true;
+    }
+    if (state.pendingApproval?.requestId === event.requestId) {
+      clearPendingApproval();
+      shouldRender = true;
+    }
+  }
+
+  if (event.type === "permission.approval.requested") {
+    if (!isCurrentConversationEvent) {
+      return;
+    }
+    applyApprovalRequest(event);
+    shouldRender = true;
+  }
+  if (event.type === "permission.resolved" || event.type === "permission.expired") {
+    // gateway approvals resolve/expire independent of the question
+    // wizard — clear whichever pending surface owns this requestId.
+    const ownsPlanInput = state.pendingPlanInputRequest?.requestId === event.requestId;
+    const ownsApproval = state.pendingApproval?.requestId === event.requestId;
+    if (ownsPlanInput || ownsApproval) {
+      if (ownsPlanInput) {
+        clearPlanUserInputRequest();
+      }
+      if (ownsApproval) {
+        clearPendingApproval();
+      }
       shouldRender = true;
     }
   }
@@ -1813,6 +1864,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
         ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
         ...(typeof event.thinkingText === "string" && event.thinkingText ? { thinking: event.thinkingText } : {}),
+        ...(event.verified !== undefined ? { verified: event.verified } : {}),
       });
       renderConversationListIfVisible();
       return;
@@ -1872,6 +1924,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
       ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
       ...(typeof event.thinkingText === "string" && event.thinkingText ? { thinking: event.thinkingText } : {}),
+      ...(event.verified !== undefined ? { verified: event.verified } : {}),
     });
     shouldRender = state.activeView === "chat";
   }
@@ -2809,12 +2862,29 @@ function applyBufferedConversationBridgeEvent(conversationId: string, event: Sid
         detail: event.detail ?? "",
         status: activityStatus,
         timestampMs: Number.isFinite(event.timestampMs) ? Number(event.timestampMs) : Date.now(),
+        ...(event.verified !== undefined ? { verified: event.verified } : {}),
       });
       break;
     }
     case "turn.plan.updated": {
       if (event.plan) {
         upsertTurnPlanTraceForConversation(conversationId, event.plan);
+      }
+      break;
+    }
+    case "permission.approval.requested": {
+      if (conversationId === state.currentConversationId) {
+        applyApprovalRequest(event);
+      }
+      break;
+    }
+    case "permission.resolved":
+    case "permission.expired": {
+      if (state.pendingApproval?.requestId === event.requestId) {
+        clearPendingApproval();
+      }
+      if (state.pendingPlanInputRequest?.requestId === event.requestId) {
+        clearPlanUserInputRequest();
       }
       break;
     }
@@ -3075,6 +3145,9 @@ function isConversationScopedBridgeEventType(eventType: string): boolean {
     case "goal.cleared":
     case "plan.user_input.requested":
     case "plan.user_input.resolved":
+    case "permission.approval.requested":
+    case "permission.resolved":
+    case "permission.expired":
     case "model.rerouted":
       return true;
     default:
@@ -3411,7 +3484,7 @@ function renderNow(): void {
           : `<footer class="composer-shell ${composerSuggestionsOpen ? "has-suggestions" : ""}">
         ${state.activeView === "chat" && !isEmptyChat ? renderScrollToBottomButton() : ""}
         ${state.activeView === "chat" ? renderPinnedActionSuggestions(strings, quickInteractionLocked) : ""}
-        <div class="composer-frame ${composerSuggestionsOpen ? "has-suggestions" : ""} ${state.composerDragActive ? "drag-active" : ""} ${state.pendingPlanInputRequest ? "plan-input-active" : ""}">
+        <div class="composer-frame ${composerSuggestionsOpen ? "has-suggestions" : ""} ${state.composerDragActive ? "drag-active" : ""} ${state.pendingPlanInputRequest || state.pendingApproval ? "plan-input-active" : ""}">
           <input id="file-attachment-input" type="file" multiple hidden />
           ${state.attachmentMenuOpen ? renderAttachmentMenu(strings) : ""}
           ${
@@ -3420,7 +3493,9 @@ function renderNow(): void {
               : ""
           }
           ${
-            state.pendingPlanInputRequest
+            state.pendingApproval
+              ? renderApprovalPanel(strings)
+              : state.pendingPlanInputRequest
               ? renderPlanInputPanel(strings)
               : state.voiceInputActive
               ? renderComposerDictationPanel(strings)
@@ -6045,6 +6120,220 @@ function buildPlanInputAnswers(questions: PlanUserInputQuestion[]): Record<strin
   return answers;
 }
 
+// ---- permission approval card (gateway approvals) -------------------------
+//
+// permission.approval.requested carries the full PermissionRequest context
+// (risk/origin/target/argsPreview/options). The card answers through
+// permission.respond {requestId, optionId} — option ids are the ones the
+// request itself offered, never invented client-side.
+
+const DEFAULT_APPROVAL_OPTIONS: PendingApprovalState["options"] = [
+  { id: "allow_once", label: "Allow once", kind: "allow_once" },
+  { id: "deny", label: "Deny", kind: "deny" },
+];
+
+function applyApprovalRequest(event: SidepanelBridgeEvent): void {
+  const requestId = (event.requestId ?? "").trim();
+  if (!requestId) {
+    return;
+  }
+  const options = (event.approvalOptions ?? [])
+    .map((option) => ({
+      id: (option.id ?? "").trim(),
+      label: (option.label ?? "").trim(),
+      kind: (option.kind ?? "").trim() || "allow_once",
+    }))
+    .filter((option) => option.id && option.label);
+  const summary = (event.summary ?? "").trim();
+  if (state.currentConversationId && event.threadId?.trim()) {
+    rememberConversationThreadId(state.currentConversationId, event.threadId.trim());
+    if (!state.threadId) {
+      state.threadId = event.threadId.trim();
+    }
+    promptActivitiesByConversationId.delete(state.currentConversationId);
+  }
+  if (event.threadId?.trim() && event.turnId?.trim()) {
+    state.activeTurn = {
+      threadId: event.threadId.trim(),
+      turnId: event.turnId.trim(),
+    };
+  }
+  state.promptActivity = null;
+  state.activeView = "chat";
+  state.pendingApproval = {
+    requestId,
+    threadId: event.threadId ?? "",
+    turnId: event.turnId ?? "",
+    permissionKind: (event.permissionKind ?? "").trim(),
+    risk: (event.risk ?? "").trim(),
+    summary,
+    tool: (event.tool ?? "").trim(),
+    origin: (event.origin ?? "").trim(),
+    targetLabel: (event.targetLabel ?? "").trim(),
+    argsPreviewText: (event.argsPreviewText ?? "").trim(),
+    options: options.length ? options : DEFAULT_APPROVAL_OPTIONS,
+  };
+  state.approvalPendingOptionId = "";
+  recordPendingDeliverableApproval({
+    requestId,
+    threadId: event.threadId ?? "",
+    turnId: event.turnId ?? "",
+    questions: [
+      {
+        id: "decision",
+        header: "",
+        question: summary || (event.tool ?? "").trim() || requestId,
+      },
+    ],
+  });
+  revealApprovalPanel();
+}
+
+function clearPendingApproval(): void {
+  state.pendingApproval = null;
+  state.approvalPendingOptionId = "";
+}
+
+function revealApprovalPanel(): void {
+  queueMicrotask(() => {
+    const panel = document.querySelector<HTMLElement>(".approval-panel");
+    panel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+}
+
+async function submitApprovalResponse(option: { id: string; label: string }): Promise<void> {
+  const approval = state.pendingApproval;
+  const optionId = option.id.trim();
+  if (!approval || !optionId || state.approvalPendingOptionId) {
+    return;
+  }
+  state.approvalPendingOptionId = optionId;
+  renderSync();
+  try {
+    await sendRuntimeMessage<{ ok?: boolean }>({
+      type: "permission.respond",
+      payload: {
+        requestId: approval.requestId,
+        optionId,
+      },
+    });
+    recordDeliverableApprovalAnswer(approval.requestId, option.label || optionId);
+    clearPendingApproval();
+  } catch (error) {
+    state.approvalPendingOptionId = "";
+    state.actionStatus = toUserFacingRuntimeError(error);
+  }
+  render();
+}
+
+function renderApprovalPanel(strings: ReturnType<typeof getUiStrings>): string {
+  const approval = state.pendingApproval;
+  if (!approval) {
+    return "";
+  }
+  const labels = strings.approval;
+  const pendingOptionId = state.approvalPendingOptionId;
+  const metaRows = [
+    approval.tool ? { label: labels.fieldTool, value: approval.tool } : null,
+    approval.origin ? { label: labels.fieldOrigin, value: approval.origin } : null,
+    approval.targetLabel ? { label: labels.fieldTarget, value: approval.targetLabel } : null,
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
+  return `
+    <section class="approval-panel" aria-live="polite">
+      <div class="approval-header">
+        <span class="approval-icon" aria-hidden="true">${renderUiIcon("shield-alert")}</span>
+        <div class="approval-heading">
+          <p class="approval-kicker">
+            <span class="approval-kind">${escapeHtml(approvalKindLabel(approval.permissionKind, labels))}</span>
+            <span class="approval-risk ${escapeAttribute(approval.risk || "unknown")}">${escapeHtml(approvalRiskLabel(approval.risk, labels))}</span>
+          </p>
+          <h2>${escapeHtml(approval.summary || labels.fallbackSummary)}</h2>
+        </div>
+      </div>
+      ${
+        metaRows.length
+          ? `<dl class="approval-meta">
+              ${metaRows
+                .map(
+                  (row) => `<div class="approval-meta-row">
+                    <dt>${escapeHtml(row.label)}</dt>
+                    <dd>${escapeHtml(row.value)}</dd>
+                  </div>`,
+                )
+                .join("")}
+            </dl>`
+          : ""
+      }
+      ${
+        approval.argsPreviewText
+          ? `<div class="approval-args">
+              <p class="approval-args-label">${escapeHtml(labels.fieldArguments)}</p>
+              <pre class="approval-args-preview">${escapeHtml(approval.argsPreviewText)}</pre>
+            </div>`
+          : ""
+      }
+      <div class="approval-options">
+        ${approval.options
+          .map((option) => {
+            const isPending = pendingOptionId === option.id;
+            const isDanger = option.kind === "deny";
+            const disabled = Boolean(pendingOptionId);
+            return `
+              <button
+                type="button"
+                class="approval-option ${isDanger ? "danger" : ""}"
+                data-approval-option="${escapeAttribute(option.id)}"
+                data-approval-option-label="${escapeAttribute(option.label)}"
+                ${disabled ? "disabled" : ""}
+              >
+                ${isPending ? escapeHtml(labels.sending) : escapeHtml(option.label)}
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function approvalKindLabel(kind: string, labels: ReturnType<typeof getUiStrings>["approval"]): string {
+  switch (kind) {
+    case "browser_action":
+      return labels.kindBrowserAction;
+    case "provider_permission":
+      return labels.kindProviderPermission;
+    case "data_entry_sensitive":
+      return labels.kindDataEntrySensitive;
+    case "agent_egress":
+      return labels.kindAgentEgress;
+    default:
+      return labels.kindUnknown;
+  }
+}
+
+function approvalRiskLabel(risk: string, labels: ReturnType<typeof getUiStrings>["approval"]): string {
+  switch (risk) {
+    case "read":
+      return labels.riskRead;
+    case "low":
+      return labels.riskLow;
+    case "data_entry":
+      return labels.riskDataEntry;
+    case "data_entry_sensitive":
+      return labels.riskDataEntrySensitive;
+    case "external_mutation":
+      return labels.riskExternalMutation;
+    case "financial":
+      return labels.riskFinancial;
+    case "deny":
+      return labels.riskDeny;
+    case "hard_block":
+      return labels.riskHardBlock;
+    default:
+      return labels.riskUnknown;
+  }
+}
+
 async function acceptTurnPlan(messageId: string | undefined): Promise<void> {
   const message = findTurnPlanMessage(messageId);
   if (!message?.plan) {
@@ -7462,8 +7751,16 @@ function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[
   const title = formatTraceTitle(item, stringsForState().trace);
   const detail = formatTraceDetail(item, title);
   const expandable = Boolean(item.input || item.output || item.error || item.thinking);
+  const traceStrings = stringsForState().trace;
+  const verifiedBadge =
+    item.verified === true
+      ? `<span class="message-trace-line-verified" title="${escapeAttribute(traceStrings.verified)}">${renderUiIcon("shield-check")}<span>${escapeHtml(traceStrings.verified)}</span></span>`
+      : item.verified === "unknown"
+        ? `<span class="message-trace-line-verified unknown" title="${escapeAttribute(traceStrings.verifyUnknown)}">${renderUiIcon("question")}<span>${escapeHtml(traceStrings.verifyUnknown)}</span></span>`
+        : "";
   const meta = [
     item.tool ? `<span class="message-trace-line-tool">${escapeHtml(item.tool)}</span>` : "",
+    verifiedBadge,
     item.status === "running"
       ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(Math.max(0, traceElapsedNow - item.timestampMs)))}</span>`
       : item.durationMs !== undefined
@@ -13807,6 +14104,15 @@ function bindEvents(): void {
     void continuePlanInputRequest();
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-approval-option]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const optionId = button.dataset.approvalOption ?? "";
+      const optionLabel = button.dataset.approvalOptionLabel ?? optionId;
+      const option = state.pendingApproval?.options.find((entry) => entry.id === optionId);
+      void submitApprovalResponse({ id: option?.id ?? optionId, label: option?.label ?? optionLabel });
+    });
+  });
+
   root.querySelector<HTMLInputElement>("#file-attachment-input")?.addEventListener("change", async (event) => {
     const input = event.currentTarget as HTMLInputElement;
     if (!input.files?.length) {
@@ -16193,6 +16499,7 @@ type TurnTraceActivityInput = {
   output?: string;
   error?: string;
   thinking?: string;
+  verified?: boolean | "unknown";
 };
 
 function upsertTurnActivityTrace(activity: TurnTraceActivityInput): void {
@@ -16248,6 +16555,7 @@ function upsertTurnActivityTraceInMessages(
     ...(activity.output ? { output: activity.output } : {}),
     ...(activity.error ? { error: activity.error } : {}),
     ...(activity.thinking ? { thinking: activity.thinking } : {}),
+    ...(activity.verified !== undefined ? { verified: activity.verified } : {}),
     // measure wall-clock run time on the running→completed transition
     ...(activity.status === "completed" && existing?.status === "running"
       ? { durationMs: Math.max(0, activity.timestampMs - existing.timestampMs) }

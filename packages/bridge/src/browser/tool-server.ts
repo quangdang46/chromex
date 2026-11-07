@@ -201,7 +201,17 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   // console entries are page-generated content — same egress class as
   // extracted text (may carry tokens/PII the page logged).
   "browser.page.console": "page-text",
+  // find returns page text + element selectors — same egress class.
+  "browser.page.find": "page-text",
 };
+
+/** Tools that never target a tab — the implicit-target ambiguity check
+ *  (chromex-ykj) does not apply: there is no tab to disambiguate. */
+const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
+  "browser.tabs.list",
+  "browser.tab.create",
+  "browser.downloads.list",
+]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
  *  pages sensitive for egress purposes. */
@@ -516,6 +526,7 @@ export class BrowserToolServer {
     if (
       backendId === "chrome-extension" &&
       explicitTabId === null &&
+      !TAB_LESS_TOOLS.has(req.tool) &&
       this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs)
     ) {
       return this.finish({

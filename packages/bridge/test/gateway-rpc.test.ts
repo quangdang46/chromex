@@ -437,4 +437,71 @@ describe("gateway RPC surface (P1-07)", () => {
     host.destroy();
     s.destroy();
   }, 30_000);
+
+  test("app.report/app.list round-trip, upsert, validation (chromex-p21)", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "svc" })) as {
+      taskId: string;
+    };
+    const tid = created.taskId;
+
+    // schema: url or port required
+    await expect(
+      rpc(s, "ar0", "app.report", { taskId: tid, name: "web" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // unknown task
+    await expect(
+      rpc(s, "ar1", "app.report", { taskId: "nope", name: "web", url: "http://localhost:1" }),
+    ).rejects.toMatchObject({ code: "task.not_found" });
+    await expect(rpc(s, "al0", "app.list", { taskId: "nope" })).rejects.toMatchObject({
+      code: "task.not_found",
+    });
+
+    const rep = (await rpc(s, "ar2", "app.report", {
+      taskId: tid,
+      name: "web",
+      url: "http://localhost:5173",
+      port: 5173,
+      pid: 4242,
+      cwd: "/repo/app",
+    })) as { ok: boolean; service: { name: string; status: string; port: number } };
+    expect(rep.ok).toBe(true);
+    expect(rep.service.name).toBe("web");
+    expect(rep.service.status).toBe("running");
+    expect(rep.service.port).toBe(5173);
+
+    // re-report same name → upsert (new port wins), still one entry
+    await rpc(s, "ar3", "app.report", {
+      taskId: tid,
+      name: "web",
+      url: "http://localhost:6000",
+      port: 6000,
+    });
+    await rpc(s, "ar4", "app.report", {
+      taskId: tid,
+      name: "api",
+      port: 8787,
+    });
+    const list = (await rpc(s, "al1", "app.list", { taskId: tid })) as {
+      services: Array<{ name: string; port?: number; url?: string }>;
+    };
+    expect(list.services).toHaveLength(2);
+    expect(list.services.find((x) => x.name === "web")?.port).toBe(6000);
+    expect(list.services.find((x) => x.name === "api")?.port).toBe(8787);
+
+    // services are per-task
+    const other = (await rpc(s, "c2", "task.create", { cwd: "/tmp" })) as { taskId: string };
+    const otherList = (await rpc(s, "al2", "app.list", { taskId: other.taskId })) as {
+      services: unknown[];
+    };
+    expect(otherList.services).toHaveLength(0);
+
+    // purge drops the registry entry
+    await rpc(s, "pp", "task.purge", { taskId: tid });
+    await expect(rpc(s, "al3", "app.list", { taskId: tid })).rejects.toMatchObject({
+      code: "task.not_found",
+    });
+    s.destroy();
+  });
 });

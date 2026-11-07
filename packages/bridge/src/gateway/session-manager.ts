@@ -187,6 +187,10 @@ export interface SessionManagerOptions {
   /** P2-06: fired when a task is interrupted/cancelled — the gateway
    *  uses it to propagate browser.tool.cancel to in-flight tool calls. */
   onTaskStop?: (taskId: string) => void;
+  /** chromex-p21: rendered PRIVATE APP CONTEXT block for the task's
+   *  agent-reported dev servers. Prepended to ctx.instructions at
+   *  dispatch/steer — harness-trusted, never inside untrusted fences. */
+  appContextForTask?: (taskId: string) => string | null;
 }
 
 const INTERRUPT_TIMEOUT_MS = 30_000;
@@ -383,12 +387,13 @@ export class SessionManager {
       this.#setTaskStatus(task, "active");
     }
 
+    const ctx = this.#withAppContext(task.taskId, input.ctx);
     try {
       const res = await live.session.startTurn({
         gatewayTurnId: turn.turnId,
         clientMessageId: turn.clientMessageId,
         content: input.content,
-        ...(input.ctx ? { ctx: input.ctx } : {}),
+        ...(ctx ? { ctx } : {}),
       });
       this.activeTurns.set(task.taskId, {
         turnId: turn.turnId,
@@ -418,12 +423,30 @@ export class SessionManager {
     if (!live.session.steer) return { status: "unavailable" };
     const active = this.opts.store.activeTurn(taskId);
     if (!active || active.status !== "running") return { status: "unavailable" };
+    const ctx = this.#withAppContext(taskId, input.ctx);
     return live.session.steer({
       gatewayTurnId: active.turnId,
       clientMessageId: input.clientMessageId,
       content: input.content,
-      ...(input.ctx ? { ctx: input.ctx } : {}),
+      ...(ctx ? { ctx } : {}),
     });
+  }
+
+  /** chromex-p21: merge the harness-rendered app context into the
+   *  turn's ctx.instructions. Applied at dispatch only — the durable
+   *  user.message.created event keeps the client-supplied ctx, and
+   *  re-dispatches (queued/resume/follow-up) re-inject fresh state. */
+  #withAppContext(
+    taskId: string,
+    ctx: import("@codex-sidepanel/shared").TurnInput["ctx"],
+  ): import("@codex-sidepanel/shared").TurnInput["ctx"] | undefined {
+    const appContext = this.opts.appContextForTask?.(taskId);
+    if (!appContext) return ctx;
+    const instructions = [appContext, ctx?.instructions]
+      .map((s) => s?.trim())
+      .filter((s): s is string => !!s)
+      .join("\n\n");
+    return { ...(ctx ?? {}), instructions };
   }
 
   /**

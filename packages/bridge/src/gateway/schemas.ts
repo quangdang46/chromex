@@ -54,6 +54,25 @@ export const taskSendSchema = z.object({
 
 export const taskIdSchema = z.object({ taskId });
 
+/**
+ * app.report / app.list — chromex-p21. Agents register dev servers they
+ * started so later turns get harness-trusted URLs instead of guessed
+ * ports. url OR port required; the rest is metadata.
+ */
+export const appReportSchema = z
+  .object({
+    taskId,
+    name: z.string().min(1).max(128),
+    url: z.string().min(1).max(2048).optional(),
+    port: z.number().int().min(1).max(65535).optional(),
+    pid: z.number().int().min(0).optional(),
+    cwd: z.string().min(1).max(4096).optional(),
+    status: z.string().min(1).max(64).optional(),
+  })
+  .refine((v) => v.url !== undefined || v.port !== undefined, {
+    message: "app.report requires url or port",
+  });
+
 export const taskSteerSchema = taskSendSchema; // same TurnInput shape
 
 export const turnInterruptSchema = z.object({

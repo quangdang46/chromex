@@ -297,6 +297,8 @@ export interface ConversationMessageTraceItem {
   output?: string;
   /** failure summary when the tool call errored */
   error?: string;
+  /** post-condition verification reported by the gateway (tool.completed.verified) */
+  verified?: boolean | "unknown";
   /** wall-clock duration measured start→complete */
   durationMs?: number;
   /** accumulated reasoning/thinking text for kind=reasoning items */

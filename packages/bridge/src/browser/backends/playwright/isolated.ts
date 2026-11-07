@@ -52,6 +52,10 @@ const SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.hover",
   "browser.page.press",
   "browser.page.upload",
+  "browser.page.find",
+  "browser.page.history",
+  // browser.downloads.list intentionally absent — download events are
+  // not wired on this backend; the tool stays proto.unsupported.
 ]);
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -192,6 +196,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#wait(taskId, args);
       case "browser.page.upload":
         return this.#upload(taskId, args);
+      case "browser.page.find":
+        return this.#find(taskId, args);
+      case "browser.page.history":
+        return this.#history(taskId, args);
       default:
         throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
@@ -407,40 +415,180 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #wait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000;
+    const started = Date.now();
+    const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : typeof args.ms === "number" ? args.ms : 10_000;
+    const deadline = started + Math.min(timeout, 30_000);
     const selector = typeof args.selector === "string" ? args.selector : null;
     const urlContains = typeof args.urlContains === "string" ? args.urlContains : null;
-    const deadline = Date.now() + Math.min(timeout, 60_000);
+    const text = typeof args.text === "string" ? args.text : null;
+    const textGone = typeof args.textGone === "string" ? args.textGone : null;
+    const hasCondition = selector !== null || urlContains !== null || text !== null || textGone !== null;
+    if (!hasCondition) {
+      // plain timed wait — same contract as the extension host's ms sleep
+      await page.waitForTimeout(Math.min(timeout, 30_000));
+      return { ok: true, waitedMs: Math.min(timeout, 30_000) };
+    }
     for (;;) {
       if (selector) {
         const count = await page.locator(selector).count().catch(() => 0);
-        if (count > 0) return { satisfied: "selector", selector };
+        if (count === 0) {
+          if (Date.now() >= deadline) {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          }
+          await page.waitForTimeout(100);
+          continue;
+        }
       }
-      if (urlContains && page.url().includes(urlContains)) {
-        return { satisfied: "url", url: stripQuery(page.url()) };
+      if (urlContains && !page.url().includes(urlContains)) {
+        if (Date.now() >= deadline) {
+          throw protocolError("browser.timeout", "wait condition not met before timeout");
+        }
+        await page.waitForTimeout(100);
+        continue;
       }
-      if (!selector && !urlContains) {
-        // plain timed wait
-        await page.waitForTimeout(Math.min(timeout, deadline - Date.now()));
-        return { satisfied: "timeout" };
+      if (text !== null || textGone !== null) {
+        const bodyText = await page.locator("body").innerText().catch(() => "");
+        if (text !== null && !bodyText.includes(text)) {
+          if (Date.now() >= deadline) {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          }
+          await page.waitForTimeout(100);
+          continue;
+        }
+        if (textGone !== null && bodyText.includes(textGone)) {
+          if (Date.now() >= deadline) {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          }
+          await page.waitForTimeout(100);
+          continue;
+        }
       }
-      if (Date.now() >= deadline) {
-        throw protocolError("browser.timeout", "wait condition not met before timeout");
-      }
-      await page.waitForTimeout(100);
+      return { ok: true, matched: "conditions", elapsedMs: Date.now() - started };
     }
   }
 
+  /** browser.page.history — page.goBack/goForward/reload parity with
+   *  chrome.tabs.goBack/goForward/reload on the extension host. */
+  async #history(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "";
+    // goBack/goForward resolve null when there is no history entry —
+    // report that honestly instead of claiming a navigation.
+    let moved: boolean | null = null;
+    if (action === "back") {
+      moved = (await page.goBack({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null)) !== null;
+    } else if (action === "forward") {
+      moved = (await page.goForward({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null)) !== null;
+    } else if (action === "reload") {
+      await page.reload({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+      moved = true;
+    } else {
+      throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
+    }
+    return { navigated: action, ...(moved !== null ? { moved } : {}), url: stripQuery(page.url()) };
+  }
+
+  /** browser.page.find — bounded DOM text search. No content-side ref
+   *  map exists on this backend, so matches carry selectors + text only
+   *  (the "bounded text matches with selectors" fallback). */
+  async #find(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const text = typeof args.text === "string" ? args.text : null;
+    const regex = typeof args.regex === "string" ? args.regex : null;
+    if (!text && !regex) {
+      throw protocolError("proto.invalid", "browser.page.find requires args.text or args.regex");
+    }
+    if (regex) {
+      try {
+        new RegExp(regex, args.caseSensitive === true ? "" : "i");
+      } catch {
+        throw protocolError("proto.invalid", "browser.page.find args.regex is not a valid pattern");
+      }
+    }
+    const limit = typeof args.limit === "number" && Number.isFinite(args.limit)
+      ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+      : 50;
+    const scopeSelector = typeof args.scopeSelector === "string" ? args.scopeSelector : null;
+    const matches = (await page.evaluate(
+      ({ text, regex, caseSensitive, limit, scopeSelector }) => {
+        const flags = caseSensitive ? "" : "i";
+        let matcher: (haystack: string) => boolean;
+        if (regex) {
+          const re = new RegExp(regex, flags);
+          matcher = (h) => re.test(h);
+        } else {
+          const needle = caseSensitive ? (text as string) : (text as string).toLowerCase();
+          matcher = (h) => (caseSensitive ? h.includes(needle) : h.toLowerCase().includes(needle));
+        }
+        let root: ParentNode = document;
+        if (scopeSelector) {
+          try {
+            root = document.querySelector(scopeSelector) ?? document;
+          } catch {
+            root = document;
+          }
+        }
+        const out: Array<{ selector: string; tagName: string; role: string; text: string }> = [];
+        const matched: Element[] = [];
+        const candidates = root.querySelectorAll("*");
+        const scanned = Math.min(candidates.length, 5000);
+        for (let i = 0; i < scanned && out.length < limit; i++) {
+          const el = candidates[i] as HTMLElement;
+          if (!(el instanceof HTMLElement)) continue;
+          const raw = el.textContent ?? "";
+          if (!raw || raw.length > 200000) continue;
+          const haystack = raw.replace(/\s+/g, " ").trim();
+          if (!haystack || !matcher(haystack)) continue;
+          if (matched.some((prev) => prev.contains(el))) continue;
+          matched.push(el);
+          const id = el.id ? `#${CSS.escape(el.id)}` : "";
+          const cls =
+            typeof el.className === "string" && el.className.trim()
+              ? "." + el.className.trim().split(/\s+/).slice(0, 2).map((c) => CSS.escape(c)).join(".")
+              : "";
+          out.push({
+            selector: `${el.tagName.toLowerCase()}${id}${cls}`,
+            tagName: el.tagName.toLowerCase(),
+            role: el.getAttribute("role") ?? "",
+            text: haystack.slice(0, 240),
+          });
+        }
+        return { matches: out, scanned, truncated: candidates.length > scanned };
+      },
+      { text, regex, caseSensitive: args.caseSensitive === true, limit, scopeSelector },
+    )) as { matches?: unknown[]; scanned?: number; truncated?: boolean } | undefined;
+    return {
+      ok: true,
+      matches: Array.isArray(matches?.matches) ? matches.matches : [],
+      scanned: matches?.scanned ?? 0,
+      truncated: matches?.truncated === true,
+    };
+  }
+
   async #upload(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    // playwright path = setInputFiles by path — NOT the user's native
-    // picker (capability filePicker:false already reflects this).
+    // playwright path = setInputFiles — file bytes via {name,mimeType,
+    // buffer} or local paths. NOT the user's native picker (capability
+    // filePicker:false already reflects this).
     const page = await this.#pageFor(taskId, args);
     const selector = await this.#requireSelector(args);
-    const files = Array.isArray(args.files) ? args.files.filter((f): f is string => typeof f === "string") : [];
-    if (files.length === 0) {
-      throw protocolError("proto.invalid", "browser.page.upload requires args.files[] paths");
+    const raw = Array.isArray(args.files) ? args.files : [];
+    if (raw.length === 0) {
+      throw protocolError("proto.invalid", "browser.page.upload requires args.files[]");
     }
-    await page.locator(selector).first().setInputFiles(files);
+    const files = raw.map((entry) => {
+      if (typeof entry === "string") return entry;
+      const o = (entry ?? {}) as Record<string, unknown>;
+      if (typeof o.base64 === "string" && o.base64.length > 0) {
+        return {
+          name: typeof o.name === "string" && o.name ? o.name : "file",
+          mimeType: typeof o.mimeType === "string" ? o.mimeType : "",
+          buffer: Buffer.from(o.base64, "base64"),
+        };
+      }
+      if (typeof o.path === "string" && o.path) return o.path;
+      throw protocolError("proto.invalid", "upload file entries require {name, mimeType, base64} or a path");
+    });
+    await page.locator(selector).first().setInputFiles(files as never);
     return { uploaded: files.length };
   }
 

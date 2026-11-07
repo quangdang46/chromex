@@ -30,6 +30,25 @@ export interface ToolHostDeps {
    *  page's main world and resolves its return value (browser.page.console,
    *  chromex-nr8). `func` must be self-contained (serialized source). */
   runInMainWorld?(tabId: number, func: (...fnArgs: unknown[]) => unknown, args?: unknown[]): Promise<unknown>;
+  /** chrome.tabs.goBack/goForward/reload (browser.page.history) */
+  navigateHistory?(tabId: number, action: "back" | "forward" | "reload"): Promise<unknown>;
+  /** chrome.downloads.search (browser.downloads.list) — requires the
+   *  "downloads" permission; absent dep → proto.unsupported. */
+  listDownloads?(query: {
+    state?: string;
+    limit: number;
+    startTime?: number;
+  }): Promise<
+    Array<{
+      id?: number;
+      state?: string;
+      filename?: string;
+      bytesReceived?: number;
+      totalBytes?: number;
+      error?: string;
+      startTime?: string;
+    }>
+  >;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -74,6 +93,9 @@ const SUPPORTED = new Set([
   "browser.page.screenshot",
   "browser.page.extract",
   "browser.page.upload",
+  "browser.page.find",
+  "browser.page.history",
+  "browser.downloads.list",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -332,9 +354,127 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         return { ...snap, resolvedTabId: tabId };
       }
       case "browser.page.wait": {
-        const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
-        await new Promise((r) => setTimeout(r, ms));
-        return { waitedMs: ms };
+        // Conditional wait (text/textGone/selector/urlContains) polls in
+        // the content script; bare `ms` stays a bounded host-side sleep.
+        const hasCondition =
+          str(args.text) !== undefined ||
+          str(args.textGone) !== undefined ||
+          str(args.selector) !== undefined ||
+          str(args.urlContains) !== undefined;
+        if (!hasCondition) {
+          const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
+          await new Promise((r) => setTimeout(r, ms));
+          return { ok: true, waitedMs: ms };
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const timeoutMs = Math.min(
+          Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
+          30_000,
+        );
+        const res = (await deps.sendToTab(tabId, {
+          type: "page.dom.wait",
+          ...(str(args.text) ? { text: str(args.text) } : {}),
+          ...(str(args.textGone) ? { textGone: str(args.textGone) } : {}),
+          ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+          ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
+          timeoutMs,
+        })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
+        if (res?.ok !== true) {
+          throw toolError(
+            res?.timedOut === true ? "browser.timeout" : "browser.action_failed",
+            res?.error ?? "wait condition was not met before timeout",
+          );
+        }
+        return { ok: true, matched: "conditions", elapsedMs: res.elapsedMs ?? 0, resolvedTabId: tabId };
+      }
+      case "browser.page.find": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const text = str(args.text);
+        const regex = str(args.regex);
+        if (!text && !regex) {
+          throw toolError("proto.invalid", "browser.page.find requires args.text or args.regex");
+        }
+        if (regex) {
+          try {
+            new RegExp(regex, args.caseSensitive === true ? "" : "i");
+          } catch {
+            throw toolError("proto.invalid", "browser.page.find args.regex is not a valid pattern");
+          }
+        }
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+            : 50;
+        const res = (await deps.sendToTab(tabId, {
+          type: "page.dom.find",
+          ...(text ? { text } : {}),
+          ...(regex ? { regex } : {}),
+          ...(args.caseSensitive === true ? { caseSensitive: true } : {}),
+          limit,
+          ...(str(args.scopeSelector) ? { scopeSelector: str(args.scopeSelector) } : {}),
+        })) as { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean };
+        if (res?.ok !== true) {
+          throw toolError("proto.invalid", "browser.page.find requires args.text or args.regex");
+        }
+        return {
+          ok: true,
+          matches: Array.isArray(res.matches) ? res.matches : [],
+          scanned: res.scanned ?? 0,
+          truncated: res.truncated === true,
+          resolvedTabId: tabId,
+        };
+      }
+      case "browser.page.history": {
+        const action = str(args.action);
+        if (action !== "back" && action !== "forward" && action !== "reload") {
+          throw toolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
+        }
+        if (!deps.navigateHistory) {
+          throw toolError("proto.unsupported", "history navigation is not available on this host");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        await deps.navigateHistory(tabId, action);
+        return { navigated: action, resolvedTabId: tabId };
+      }
+      case "browser.downloads.list": {
+        // Not tab-scoped: lists the profile's downloads via chrome.downloads.
+        if (!deps.listDownloads) {
+          throw toolError("proto.unsupported", "download listing requires the downloads permission");
+        }
+        const state = str(args.state);
+        if (state && !["in_progress", "interrupted", "complete"].includes(state)) {
+          throw toolError("proto.invalid", "browser.downloads.list args.state must be in_progress|interrupted|complete");
+        }
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+            : 50;
+        let startTime: number | undefined;
+        if (typeof args.since === "number" && Number.isFinite(args.since)) {
+          startTime = args.since;
+        } else if (typeof args.since === "string") {
+          const parsed = Date.parse(args.since);
+          if (Number.isNaN(parsed)) {
+            throw toolError("proto.invalid", "browser.downloads.list args.since must be epoch ms or an ISO date");
+          }
+          startTime = parsed;
+        }
+        const items = await deps.listDownloads({
+          ...(state ? { state } : {}),
+          limit,
+          ...(startTime !== undefined ? { startTime } : {}),
+        });
+        return {
+          downloads: (Array.isArray(items) ? items : []).map((d) => ({
+            id: typeof d.id === "number" ? d.id : undefined,
+            state: d.state ?? "unknown",
+            filename: d.filename ?? "",
+            bytesReceived: d.bytesReceived ?? 0,
+            totalBytes: d.totalBytes ?? -1,
+            ...(d.error ? { error: d.error } : {}),
+            startTime: d.startTime ?? "",
+          })),
+        };
       }
       case "browser.page.screenshot": {
         if (!deps.captureVisibleTab) {
@@ -377,14 +517,6 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           title: res.title ?? "",
           resolvedTabId: tabId,
         };
-      }
-      case "browser.page.upload": {
-        // §6.8: DOM file pickers need a REAL user gesture — synthetic
-        // clicks cannot satisfy file inputs. Honest refusal, never fake.
-        throw toolError(
-          "browser.gesture_required",
-          "file upload requires a real user gesture; ask the user to attach the file in the page",
-        );
       }
       default: {
         // DOM action tools → single page.dom.perform step
@@ -483,7 +615,54 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       if (!url) throw toolError("proto.invalid", "browser.page.navigate requires args.url");
       return { action: "navigate", url, reason: "gateway tool browser.page.navigate" };
     }
+    case "browser.page.upload": {
+      // Bytes path only: {name,mimeType,base64} files become File objects
+      // via DataTransfer in the content script. Local paths / native
+      // picker requests still need a REAL user gesture — refused here.
+      const files = normalizeUploadFiles(args.files);
+      return { ...base, action: "upload", files };
+    }
     default:
       throw toolError("proto.unsupported", `no DOM mapping for ${tool}`);
   }
+}
+
+const UPLOAD_MAX_FILES = 8;
+
+/** Normalize args.files for browser.page.upload. String entries and
+ *  {path|localPath|filePath} objects are local-path/native-picker
+ *  requests → browser.gesture_required (never silently read host fs). */
+function normalizeUploadFiles(raw: unknown): Array<{ name: string; mimeType: string; base64: string }> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw toolError(
+      "proto.invalid",
+      "browser.page.upload requires args.files[] entries of {name, mimeType, base64}",
+    );
+  }
+  if (raw.length > UPLOAD_MAX_FILES) {
+    throw toolError("proto.invalid", `browser.page.upload accepts at most ${UPLOAD_MAX_FILES} files`);
+  }
+  return raw.map((entry) => {
+    if (typeof entry === "string") {
+      throw toolError(
+        "browser.gesture_required",
+        "local file paths require a real user gesture; pass {name, mimeType, base64} bytes instead",
+      );
+    }
+    const o = (entry ?? {}) as Record<string, unknown>;
+    if ("path" in o || "localPath" in o || "filePath" in o) {
+      throw toolError(
+        "browser.gesture_required",
+        "local file paths require a real user gesture; pass {name, mimeType, base64} bytes instead",
+      );
+    }
+    if (typeof o.name !== "string" || o.name.length === 0 || typeof o.base64 !== "string" || o.base64.length === 0) {
+      throw toolError("proto.invalid", "upload file entries require {name, mimeType, base64}");
+    }
+    return {
+      name: o.name,
+      mimeType: typeof o.mimeType === "string" ? o.mimeType : "",
+      base64: o.base64,
+    };
+  });
 }

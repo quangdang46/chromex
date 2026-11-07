@@ -184,6 +184,16 @@ export class CodexEventMapper {
         }
         return;
       }
+      case "turn/diff/updated": {
+        // durable deliverable evidence — was dropped in gateway mode while
+        // the legacy codex-plane emitted turn.diff.updated (S8).
+        const diff = str(p.diff);
+        if (diff === null) return;
+        this.withTurn(str(p.turnId), (turnId) =>
+          this.emitDurable({ type: "turn.diff.updated", turnId, diff }),
+        );
+        return;
+      }
       case "item/tool/requestUserInput": {
         const requestId = str(p.itemId) ?? str(p.requestId) ?? `perm-${Date.now()}`;
         this.withTurn(str(p.turnId), (turnId) =>

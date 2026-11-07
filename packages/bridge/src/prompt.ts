@@ -20,6 +20,10 @@ export function createCodexTurnInput(
     workspaceInstructions?: string;
     promptAppendices?: string[];
     fileSections?: string[];
+    /** chromex-p21: pre-rendered PRIVATE APP CONTEXT section (see
+     *  gateway/app-services renderAppContext) — harness-trusted, placed
+     *  before USER REQUEST, never inside untrusted_page_content fences. */
+    appContext?: string;
 } = {},
 ): string {
   const sections = ["PRIVATE INSTRUCTION PROFILE", params.profile.systemPrompt];
@@ -122,6 +126,11 @@ export function createCodexTurnInput(
     );
   }
 
+  const appContext = options.appContext?.trim();
+  if (appContext) {
+    sections.push("", appContext);
+  }
+
   sections.push("", USER_REQUEST_SECTION_LABEL, applyStructuredInputTokens(params.message.trim(), params.structuredInputs));
 
   for (const fileSection of options.fileSections ?? []) {
@@ -201,6 +210,7 @@ export async function createCodexTurnInputItems(
     workspaceInstructions?: string;
     promptAppendices?: string[];
     fileSections?: string[];
+    appContext?: string;
     uploadedImages?: Array<{ name: string; ref: string }>;
   } = {},
 ): Promise<CodexTurnInputItem[]> {

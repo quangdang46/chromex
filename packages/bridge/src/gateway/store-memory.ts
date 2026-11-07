@@ -17,6 +17,7 @@ import type {
 
 import type { TaskRecord, TurnRecord } from "@codex-sidepanel/shared";
 import { buildSnapshotFromSource } from "../store/snapshot-builder.js";
+import { boundTaskEventPayload } from "../store/event-payload.js";
 
 export interface MemoryStoreStats {
   tasks: number;
@@ -99,6 +100,7 @@ export class InMemoryStore {
     this.#guard();
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
+    const bounded = boundTaskEventPayload(event);
     const seq = (this.taskSeq.get(taskId) ?? 0) + 1;
     this.taskSeq.set(taskId, seq);
     task.lastSeq = seq;
@@ -111,8 +113,8 @@ export class InMemoryStore {
       taskId,
       seq,
       ts: Date.now(),
-      type: event.type,
-      payload: event,
+      type: bounded.type,
+      payload: bounded,
     } as DurableTaskEventEnvelope;
     const log = this.taskEvents.get(taskId) ?? [];
     log.push(envelope);

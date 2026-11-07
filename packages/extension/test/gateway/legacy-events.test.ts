@@ -69,6 +69,22 @@ describe("gatewayEventToLegacy", () => {
     expect(out).toMatchObject({ type: "turn.activity", status: "failed", kind: "command" });
     expect((out as { errorText?: string }).errorText).toContain("exit code 1");
   });
+  it("tool.completed passes verified through to the trace item", () => {
+    const verified = gatewayEventToLegacy(durable("t1", "tool.completed", {
+      turnId: "g1", toolCallId: "tc-v", tool: "browser.page.click",
+      outcome: "succeeded", verified: true,
+    }));
+    expect(verified).toMatchObject({ type: "turn.activity", verified: true });
+    const unknown = gatewayEventToLegacy(durable("t1", "tool.completed", {
+      turnId: "g1", toolCallId: "tc-u", tool: "browser.page.click",
+      outcome: "succeeded", verified: "unknown",
+    }));
+    expect(unknown).toMatchObject({ type: "turn.activity", verified: "unknown" });
+    const absent = gatewayEventToLegacy(durable("t1", "tool.completed", {
+      turnId: "g1", toolCallId: "tc-n", tool: "Bash", outcome: "succeeded",
+    }));
+    expect(absent).not.toHaveProperty("verified");
+  });
   it("claude tool names classify: WebSearch→web, Edit→file, Task→subagent", () => {
     const web = gatewayEventToLegacy(durable("t1", "tool.started", {
       turnId: "g1", toolCallId: "a", tool: "WebSearch", input: { query: "chromex" },
@@ -86,6 +102,18 @@ describe("gatewayEventToLegacy", () => {
   it("turn.cancelled → turn.completed stopReason=cancelled", () => {
     const out = gatewayEventToLegacy(durable("t1", "turn.cancelled", { turnId: "g1" }));
     expect(out).toMatchObject({ type: "turn.completed", stopReason: "cancelled" });
+  });
+  it("turn.diff.updated → legacy turn.diff.updated CodexTurnDiff shape (S8)", () => {
+    const diffText = "diff --git a/x.ts b/x.ts\n+hello";
+    const out = gatewayEventToLegacy(durable("t1", "turn.diff.updated", {
+      turnId: "g1", diff: diffText,
+    }));
+    expect(out).toMatchObject({
+      type: "turn.diff.updated",
+      threadId: "t1",
+      turnId: "g1",
+      diff: { threadId: "t1", turnId: "g1", diff: diffText },
+    });
   });
   it("provider.notice warn → failed turn.activity trace row", () => {
     const out = gatewayEventToLegacy(durable("t1", "provider.notice", {
@@ -152,40 +180,75 @@ describe("gatewayEventToLegacy", () => {
     const req = gatewayEventToLegacy(durable("t1", "permission.requested", {
       turnId: "g1", request: { requestId: "r1", kind: "browser_tool", summary: "click" },
     }));
-    expect(req).toMatchObject({ type: "permission.requested", requestId: "r1", threadId: "t1" });
+    expect(req).toMatchObject({ type: "permission.approval.requested", requestId: "r1", threadId: "t1" });
     const res = gatewayEventToLegacy(durable("t1", "permission.resolved", { requestId: "r1", decision: { kind: "allow" } }));
-    expect(res).toMatchObject({ type: "plan.user_input.resolved", requestId: "r1" });
+    expect(res).toMatchObject({ type: "permission.resolved", requestId: "r1", threadId: "t1" });
   });
-  it("browser_action approval → approve/deny plan.user_input.requested", () => {
+  it("permission.expired → legacy permission.expired so pending cards clear", () => {
+    const out = gatewayEventToLegacy(durable("t1", "permission.expired", {
+      requestId: "appr-9", reason: "timeout",
+    }));
+    expect(out).toMatchObject({
+      type: "permission.expired", threadId: "t1", requestId: "appr-9", reason: "timeout",
+    });
+  });
+  it("browser_action approval → permission.approval.requested with full context", () => {
     const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
       turnId: "g1",
       request: {
         requestId: "appr-1", kind: "browser_action", risk: "external_mutation",
         summary: "Browser tool browser.page.click requires approval",
-        details: { tool: "browser.page.click" },
-      },
-    }));
-    expect(out).toMatchObject({
-      type: "plan.user_input.requested", requestId: "appr-1", threadId: "t1",
-    });
-    const qs = (out as { questions: { options: { label: string }[] }[] }).questions;
-    expect(qs[0]!.options.map((o) => o.label)).toEqual(["allow_once", "deny"]);
-  });
-  it("browser_action approval passes through allow_task option id", () => {
-    const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
-      turnId: "g1",
-      request: {
-        requestId: "appr-2", kind: "browser_action", risk: "external_mutation",
-        summary: "s", options: [
+        options: [
           { id: "allow_once", label: "Allow once", kind: "allow_once" },
           { id: "allow_task", label: "Allow for this task", kind: "allow_task" },
           { id: "deny", label: "Deny", kind: "deny" },
         ],
-        details: { tool: "browser.page.click" },
+        details: {
+          tool: "browser.page.click",
+          origin: "https://example.com",
+          targetLabel: "Submit button",
+          argsPreview: { selector: "#submit" },
+        },
       },
     }));
-    const qs = (out as { questions: { options: { label: string; id?: string }[] }[] }).questions;
-    expect(qs[0]!.options.map((o) => o.id)).toEqual(["allow_once", "allow_task", "deny"]);
+    expect(out).toMatchObject({
+      type: "permission.approval.requested", requestId: "appr-1", threadId: "t1", turnId: "g1",
+      permissionKind: "browser_action", risk: "external_mutation",
+      tool: "browser.page.click", origin: "https://example.com", targetLabel: "Submit button",
+    });
+    const o = out as { options: { id: string; kind: string }[]; argsPreviewText?: string };
+    expect(o.options.map((x) => x.id)).toEqual(["allow_once", "allow_task", "deny"]);
+    expect(o.argsPreviewText).toContain("#submit");
+  });
+  it("data_entry_sensitive and agent_egress approvals reach the card, never the void", () => {
+    for (const kind of ["data_entry_sensitive", "agent_egress"]) {
+      const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
+        turnId: "g1",
+        request: {
+          requestId: `appr-${kind}`, kind, risk: "data_entry_sensitive",
+          summary: `${kind} requires approval`,
+          options: [{ id: "allow_once", label: "Allow once", kind: "allow_once" }],
+          details: { tool: "browser.page.fill", origin: "https://example.com" },
+        },
+      }));
+      expect(out).toMatchObject({
+        type: "permission.approval.requested", requestId: `appr-${kind}`, permissionKind: kind,
+      });
+    }
+  });
+  it("provider_permission without questions → approval card (not silent hang)", () => {
+    const out = gatewayEventToLegacy(durable("t1", "permission.requested", {
+      turnId: "g1",
+      request: {
+        requestId: "appr-pp", kind: "provider_permission", risk: "low",
+        summary: "Agent requests permission: Bash",
+        options: [{ id: "allow_once", label: "Allow once", kind: "allow_once" }],
+        details: { tool: "Bash", argsPreview: { command: "ls" }, origin: "provider" },
+      },
+    }));
+    expect(out).toMatchObject({
+      type: "permission.approval.requested", requestId: "appr-pp", permissionKind: "provider_permission",
+    });
   });
   it("provider_permission with questions → plan.user_input.requested", () => {
     const questions = [{ id: "q1", header: "H", question: "Pick one", options: [{ label: "A" }] }];

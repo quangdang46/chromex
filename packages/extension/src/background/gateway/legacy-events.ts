@@ -20,7 +20,21 @@ interface EnvPayload {
   deltaOffset?: number;
   stopReason?: string;
   error?: { code?: string; message?: string };
-  request?: { requestId?: string; kind?: string; summary?: string; risk?: string };
+  request?: {
+    requestId?: string;
+    kind?: string;
+    risk?: string;
+    summary?: string;
+    options?: Array<{ id?: string; label?: string; kind?: string }>;
+    details?: {
+      tool?: string;
+      argsPreview?: unknown;
+      origin?: string;
+      targetLabel?: string;
+      allowTaskScope?: string;
+    };
+  };
+  verified?: boolean | "unknown";
   decision?: { kind?: string };
   [k: string]: unknown;
 }
@@ -137,62 +151,37 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
     case "turn.cancelled":
       clearReasoning(taskId, turnId);
       return { type: "turn.completed", ...base, stopReason: "cancelled" };
+    case "turn.diff.updated":
+      // gateway durable turn diff → legacy shape the sidepanel diff UI
+      // and deliverable extraction already consume (threadId === taskId).
+      return {
+        type: "turn.diff.updated",
+        ...base,
+        diff: {
+          threadId: taskId,
+          turnId,
+          diff: typeof payload.diff === "string" ? payload.diff : "",
+        },
+      };
     case "turn.unknown":
       clearReasoning(taskId, turnId);
       return { type: "turn.failed", ...base, error: "turn outcome unknown after restart" };
     case "permission.requested": {
-      const req = payload.request as
-        | {
-            requestId?: string;
-            kind?: string;
-            summary?: string;
-            options?: Array<{ id?: string; label?: string; kind?: string }>;
-            details?: { argsPreview?: { questions?: unknown[] } };
-          }
-        | undefined;
-      const questions = req?.details?.argsPreview?.questions;
-      if (req?.kind === "browser_action") {
-        // gateway browser-tool approval — render as a single
-        // approve/deny question through the existing input card;
-        // permission.respond resolves the approvals row.
-        const summary =
-          typeof (req as { summary?: unknown }).summary === "string"
-            ? (req as { summary: string }).summary
-            : "Browser action requires approval";
-        return {
-          type: "plan.user_input.requested",
-          ...base,
-          requestId: req.requestId ?? "",
-          itemId: `appr-${req.requestId ?? ""}`,
-          questions: [
-            {
-              id: "decision",
-              header: "Approval",
-              question: summary,
-              options:
-                (req.options ?? []).filter((o) => typeof o?.label === "string").length > 0
-                  ? (req.options ?? [])
-                      .filter((o) => typeof o?.label === "string")
-                      .map((o) => ({
-                        label: o.label as string,
-                        description:
-                          o.kind === "allow_task"
-                            ? "Allow this action scope for the rest of the task"
-                            : o.kind === "deny"
-                              ? "Reject this browser action"
-                              : "Allow this browser action once",
-                        ...(typeof o.id === "string" ? { id: o.id } : {}),
-                      }))
-                  : [
-                      { label: "allow_once", description: "Allow this browser action once" },
-                      { label: "deny", description: "Reject this browser action" },
-                    ],
-            },
-          ],
-        };
-      }
-      if (req?.kind === "provider_permission" && Array.isArray(questions) && questions.length > 0) {
-        // legacy UI renders provider questions via plan.user_input.*
+      const req = payload.request;
+      const argsPreview = req?.details?.argsPreview;
+      const questions =
+        argsPreview && typeof argsPreview === "object"
+          ? (argsPreview as { questions?: unknown }).questions
+          : undefined;
+      if (
+        req?.kind === "provider_permission" &&
+        Array.isArray(questions) &&
+        questions.length > 0
+      ) {
+        // ask-user prompts keep the question wizard — every other
+        // permission kind (browser_action, data_entry_sensitive,
+        // agent_egress, plain provider_permission) renders the
+        // dedicated approval card so no request silently hangs.
         return {
           type: "plan.user_input.requested",
           ...base,
@@ -201,17 +190,33 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
           questions,
         };
       }
-      return {
-        type: "permission.requested",
-        ...base,
-        requestId: req?.requestId ?? "",
-        request: req,
-      };
+      return permissionApprovalLegacyEvent(taskId, turnId, req);
     }
     case "permission.resolved":
+      // single legacy event clears BOTH the approval card and the
+      // question wizard — either may own this requestId.
       return {
-        type: "plan.user_input.resolved",
-        requestId: (payload as { requestId?: string }).requestId ?? "",
+        type: "permission.resolved",
+        ...base,
+        requestId:
+          typeof (payload as { requestId?: unknown }).requestId === "string"
+            ? ((payload as { requestId: string }).requestId)
+            : "",
+      };
+    case "permission.expired":
+      // approvals time out / tasks go terminal — the panel must drop
+      // the pending card instead of leaving it actionable forever.
+      return {
+        type: "permission.expired",
+        ...base,
+        requestId:
+          typeof (payload as { requestId?: unknown }).requestId === "string"
+            ? ((payload as { requestId: string }).requestId)
+            : "",
+        reason:
+          typeof (payload as { reason?: unknown }).reason === "string"
+            ? ((payload as { reason: string }).reason)
+            : "",
       };
     case "provider.notice": {
       // durable task-level notice (warnings/info from providers or the
@@ -270,11 +275,58 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         ...(started && ctx.input !== undefined ? { inputText: boundText(ctx.input) } : {}),
         ...(!started && payload.output !== undefined ? { outputText: boundText(payload.output) } : {}),
         ...(failed ? { errorText: boundText(payload.output ?? "tool call failed") } : {}),
+        ...(!started && isVerificationResult(payload.verified) ? { verified: payload.verified } : {}),
       };
     }
     default:
       return null;
   }
+}
+
+// ---- permission approval card ---------------------------------------------
+//
+// Every permission kind that is NOT an ask-user question wizard lands
+// here: browser_action, data_entry_sensitive, agent_egress, and plain
+// provider_permission tool approvals. The sidepanel renders one
+// approval card and answers via permission.respond {requestId, optionId}.
+
+function isVerificationResult(value: unknown): value is boolean | "unknown" {
+  return value === true || value === false || value === "unknown";
+}
+
+function permissionApprovalLegacyEvent(
+  taskId: string,
+  turnId: string,
+  req: NonNullable<EnvPayload["request"]> | undefined,
+): Record<string, unknown> {
+  const requestId = typeof req?.requestId === "string" ? req.requestId : "";
+  const options = (req?.options ?? [])
+    .filter((o) => typeof o?.id === "string" && o.id && typeof o?.label === "string" && o.label)
+    .map((o) => ({
+      id: o.id as string,
+      label: o.label as string,
+      kind: typeof o.kind === "string" ? o.kind : "allow_once",
+    }));
+  const details = req?.details;
+  const argsPreviewText =
+    details?.argsPreview !== undefined ? boundText(details.argsPreview, 1500) : "";
+  return {
+    type: "permission.approval.requested",
+    threadId: taskId,
+    ...(turnId ? { turnId } : {}),
+    requestId,
+    itemId: `appr-${requestId}`,
+    permissionKind: typeof req?.kind === "string" ? req.kind : "",
+    risk: typeof req?.risk === "string" ? req.risk : "",
+    summary: typeof req?.summary === "string" ? req.summary : "",
+    tool: typeof details?.tool === "string" ? details.tool : "",
+    origin: typeof details?.origin === "string" ? details.origin : "",
+    ...(typeof details?.targetLabel === "string" && details.targetLabel
+      ? { targetLabel: details.targetLabel }
+      : {}),
+    ...(argsPreviewText ? { argsPreviewText } : {}),
+    options,
+  };
 }
 
 // ---- reasoning accumulation (one trace item per turn, throttled) ----

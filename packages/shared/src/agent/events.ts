@@ -45,6 +45,8 @@ export type AgentEvent =
       toolCallId: string;
       tool: string;
       outcome: ToolOutcome;
+      /** same attribution as tool.started; absent ⇒ treat as provider */
+      source?: "provider" | "browser";
       /** BOUNDED + redacted; large ⇒ outputArtifactRef */
       output?: unknown;
       outputArtifactRef?: string;
@@ -57,6 +59,9 @@ export type AgentEvent =
   | { type: "turn.completed"; turnId: string; stopReason?: string }
   | { type: "turn.failed"; turnId: string; error: ProtocolError }
   | { type: "turn.cancelled"; turnId: string; reason?: string }
+  // DURABLE provider turn diff (codex turn/diff/updated) — the sidepanel
+  // diff UI + deliverable extraction read this after restart/replay.
+  | { type: "turn.diff.updated"; turnId: string; diff: string }
   // crash/reconnect with undetermined outcome — never pretend failed/succeeded
   | { type: "turn.unknown"; turnId: string; reason: string }
   // DURABLE (auditable) provider notice

@@ -20,6 +20,7 @@ import type {
 
 import type { GatewayDb } from "./db.js";
 import { buildSnapshotFromSource } from "./snapshot-builder.js";
+import { boundTaskEventPayload } from "./event-payload.js";
 
 // ---------- row mapping ----------
 
@@ -348,6 +349,9 @@ export class SQLiteStore {
   ): DurableTaskEventEnvelope {
     const ts = Date.now();
     this.#guard();
+    // §4.1: bound BEFORE the transaction — oversized provider payloads
+    // degrade to truncated strings instead of bloating the event log.
+    const bounded = boundTaskEventPayload(event);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const taskRow = this.db
@@ -361,7 +365,7 @@ export class SQLiteStore {
           `INSERT INTO events (stream, task_id, seq, ts, type, turn_id, payload_json, milestone)
            VALUES ('task', ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(taskId, seq, ts, event.type, opts?.turnId ?? null, JSON.stringify(event), opts?.milestone ?? 0);
+        .run(taskId, seq, ts, bounded.type, opts?.turnId ?? null, JSON.stringify(bounded), opts?.milestone ?? 0);
 
       this.db
         .prepare("UPDATE tasks SET last_seq = ?, updated_at = ? WHERE task_id = ?")
@@ -379,8 +383,8 @@ export class SQLiteStore {
         taskId,
         seq,
         ts,
-        type: event.type,
-        payload: event,
+        type: bounded.type,
+        payload: bounded,
       } as DurableTaskEventEnvelope;
     } catch (err) {
       try {
