@@ -310,6 +310,27 @@ describe("SessionManager", () => {
     expect(["cancelled", "unknown"]).toContain(turn.status);
   });
 
+  test("shared conversationKey: follow-up task's events persist under its own taskId", async () => {
+    const { sm, store } = await makeManager();
+    const t1 = sm.createTask({ ...taskParams(), conversationKey: "conv-shared" });
+    await sm.sendMessage(t1.taskId, { clientMessageId: "cm-1", content: [{ type: "text", text: "one" }] });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // second task reuses the same conversation → same provider session,
+    // but its turn must not be persisted under t1.
+    const t2 = sm.createTask({ ...taskParams(), conversationKey: "conv-shared" });
+    await sm.sendMessage(t2.taskId, { clientMessageId: "cm-2", content: [{ type: "text", text: "two" }] });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const ev1 = store.taskEventsAfter(t1.taskId, 0, 200).events.map((e) => e.type);
+    const ev2 = store.taskEventsAfter(t2.taskId, 0, 200).events.map((e) => e.type);
+    expect(ev1).toContain("assistant.message");
+    expect(ev2.filter((t) => t === "user.message.created")).toHaveLength(1);
+    expect(ev2).toContain("assistant.message");
+    expect(ev2).toContain("turn.completed");
+    expect(store.getTask(t2.taskId)!.status).toBe("completed");
+  });
+
   test("invalid task transition throws StateTransitionError", () => {
     const task = { status: "completed" } as TaskRecord;
     expect(() => transitionTask(task, "paused")).toThrow(StateTransitionError);

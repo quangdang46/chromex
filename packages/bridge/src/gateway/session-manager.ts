@@ -571,7 +571,23 @@ export class SessionManager {
 
   // ---- provider event intake ----
 
-  #handleAgentEvent(taskId: string, event: AgentEvent): void {
+  /**
+   * Events arrive on the conversation's subscription, but the task that
+   * owns the turn may differ from the task that created the session
+   * (conversationKey is shared across tasks). Attribute by turnId so a
+   * follow-up task's turn doesn't persist under the first task.
+   */
+  #owningTaskId(fallback: string, event: AgentEvent): string {
+    const turnId = (event as { turnId?: unknown }).turnId;
+    if (typeof turnId === "string" && turnId) {
+      const turn = this.opts.store.getTurn(turnId);
+      if (turn) return turn.taskId;
+    }
+    return fallback;
+  }
+
+  #handleAgentEvent(subscribedTaskId: string, event: AgentEvent): void {
+    const taskId = this.#owningTaskId(subscribedTaskId, event);
     const ephemeral = (EPHEMERAL_EVENT_TYPES as readonly string[]).includes(event.type);
     if (ephemeral) {
       this.#publish(taskId, event, true);
