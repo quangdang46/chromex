@@ -117,6 +117,11 @@ class GatewayIpc {
       this.#send(sock, { v: 1, kind: "request", id, method, payload });
     });
   }
+  close() {
+    try { this.#socket?.destroy(); } catch {}
+    this.#socket = null;
+    this.#failAll(new Error("ipc closed"));
+  }
 }
 
 const fixture = await startFixtureServer();
@@ -125,6 +130,7 @@ let gateway = null;
 let mcpChild = null;
 let taskIdForDebug = null;
 let approver = null;
+let ipc = null;
 
 try {
   gateway = await startGateway({ dataDir, log: (m) => console.log(`[gw] ${m}`) });
@@ -132,7 +138,7 @@ try {
   assert(ep.transport === "unix", `ipc endpoint is unix socket (${ep.path})`);
   const token = (await readFile(join(dataDir, "auth", "token"), "utf8")).trim();
   assert(token.length === 64, "gateway published auth token");
-  const ipc = new GatewayIpc(ep.path, token);
+  ipc = new GatewayIpc(ep.path, token);
 
   // enable the isolated backend + confirm the runtime sees a browser
   await ipc.request("config.update", { patch: { browser: { playwright: { enabledByUser: true } } } });
@@ -280,10 +286,14 @@ try {
   // debug: did the hung tool actually complete server-side?
   try {
     const dbgIpc = new GatewayIpc(gateway.ipc.endpointPath().path, (await readFile(join(dataDir, "auth", "token"), "utf8")).trim());
-    if (taskIdForDebug) {
-      const sync = await dbgIpc.request("task.sync", { taskId: taskIdForDebug, fromSeq: 0, maxEvents: 200 });
-      const evs = (sync?.events ?? []).map((e) => `${e.type}:${e.tool ?? ""}:${e.outcome ?? ""}`).join(" | ");
-      console.log("[debug] events:", evs.slice(0, 1200));
+    try {
+      if (taskIdForDebug) {
+        const sync = await dbgIpc.request("task.sync", { taskId: taskIdForDebug, fromSeq: 0, maxEvents: 200 });
+        const evs = (sync?.events ?? []).map((e) => `${e.type}:${e.tool ?? ""}:${e.outcome ?? ""}`).join(" | ");
+        console.log("[debug] events:", evs.slice(0, 1200));
+      }
+    } finally {
+      dbgIpc.close();
     }
   } catch (e) {
     console.log("[debug] task.list failed:", String(e).slice(0, 200));
@@ -297,8 +307,25 @@ try {
   process.exitCode = 1;
 } finally {
   try { clearInterval(approver); } catch {}
+  try { ipc?.close(); } catch {}
   try { mcpChild?.kill("SIGKILL"); } catch {}
   try { await gateway?.shutdown("e2e done"); } catch {}
   try { await rm(dataDir, { recursive: true, force: true }); } catch {}
   await fixture.close();
+  // diagnostic: what still holds the event loop open?
+  const handles = process._getActiveHandles?.() ?? [];
+  const names = handles.map((h) => {
+    const base = h?.constructor?.name ?? typeof h;
+    const extra = [
+      h?.localPort ? `port=${h.localPort}` : "",
+      h?.localAddress ? `addr=${h.localAddress}` : "",
+      typeof h?.listening === "boolean" ? `listening=${h.listening}` : "",
+      h?.path ? `path=${h.path}` : "",
+    ].filter(Boolean).join(",");
+    return `${base}(${extra})`;
+  });
+  console.log("[debug] active handles:", JSON.stringify(names));
 }
+// One-shot CLI: a closed-but-unreaped Server handle can linger after all
+// resources are torn down — exit explicitly so run-all never waits on it.
+process.exit(process.exitCode ?? 0);

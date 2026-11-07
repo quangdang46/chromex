@@ -837,6 +837,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       // turns yet; real check lands with P1-05 SessionManager.
       deltaCoalescer.dispose();
       db?.close();
+      // playwright-isolated owns a real Chromium child — without this the
+      // browser + its pipes leak past gateway shutdown.
+      await playwrightBackend.close().catch(() => {});
       await ipc?.close().catch(() => {});
       await lifetimeLock?.release().catch(() => {});
       await startupLock.release().catch(() => {});

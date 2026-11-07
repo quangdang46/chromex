@@ -8,8 +8,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { collectResults, writeReport, formatMarkdown } from "./lib/report.mjs";
+import { realBrowserScenariosEnabled } from "./lib/harness.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// Scenarios that run fully in-process/headless — no user Chrome, no
+// acceptance token required.
+const TOKENLESS = new Set([
+  "agent-loop-isolated",
+  "agent-loop-mcp-isolated",
+  "gateway-mcp-isolated",
+  "content-script-isolated",
+]);
 const ALL = [
   "agent-loop-isolated",
   "agent-loop-mcp-isolated",
@@ -30,6 +39,14 @@ const onlyEnv = process.env.CHROMEX_ACCEPTANCE_ONLY?.split(",").map((s) => s.tri
 let scenarios = args.length ? args : onlyEnv ?? ALL;
 if (process.env.CHROMEX_ACCEPTANCE_SKIP_LIVE === "1") {
   scenarios = scenarios.filter((s) => !LIVE.has(s));
+}
+if (!realBrowserScenariosEnabled()) {
+  const skipped = scenarios.filter((s) => !TOKENLESS.has(s));
+  if (skipped.length) {
+    console.log(`[acceptance] no token — skipping real-browser scenarios: ${skipped.join(", ")}`);
+    console.log("[acceptance] arm with: echo \"$(uuidgen)\" > /tmp/chromex-acceptance-token && CHROMEX_ACCEPTANCE_TOKEN=$(cat /tmp/chromex-acceptance-token) node scripts/acceptance/run-all.mjs");
+  }
+  scenarios = scenarios.filter((s) => TOKENLESS.has(s));
 }
 // resolve scenario names → script files present
 const files = await readdir(here);

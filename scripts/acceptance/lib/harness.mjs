@@ -28,6 +28,10 @@ export { ensureGateway };
 //   echo "$(uuidgen)" > /tmp/chromex-acceptance-token
 //   CHROMEX_ACCEPTANCE_TOKEN=$(cat /tmp/chromex-acceptance-token) \
 //     node scripts/acceptance/run-all.mjs
+// The gate lives in runScenario(), NOT at module top level — report.mjs
+// imports ARTIFACTS_ROOT from this file and must stay importable so the
+// tokenless isolated scenarios (agent-loop-*, content-script-*,
+// gateway-mcp-isolated) can still run under run-all.
 import { readFileSync } from "node:fs";
 const __acceptTokenPath = "/tmp/chromex-acceptance-token";
 let __acceptExpected = null;
@@ -36,9 +40,14 @@ try {
 } catch {
   /* no token file → disabled */
 }
-if (!__acceptExpected || process.env.CHROMEX_ACCEPTANCE_TOKEN !== __acceptExpected) {
-  console.error("[acceptance] real-browser scenarios are disabled.");
-  process.exit(3);
+export function realBrowserScenariosEnabled() {
+  return Boolean(__acceptExpected) && process.env.CHROMEX_ACCEPTANCE_TOKEN === __acceptExpected;
+}
+function requireAcceptanceToken() {
+  if (!realBrowserScenariosEnabled()) {
+    console.error("[acceptance] real-browser scenarios are disabled.");
+    process.exit(3);
+  }
 }
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -689,6 +698,7 @@ export async function runScenario(
   fn,
   { needsBrowser = true, needsGateway = true, gatewayProviders = ["codex", "claude"], autoAnswer = "allow", headless } = {},
 ) {
+  requireAcceptanceToken();
   const evidence = new EvidenceWriter(scenario);
   await evidence.init();
   const t0 = Date.now();
