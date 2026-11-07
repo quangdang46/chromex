@@ -19,6 +19,7 @@ import type {
 
 import { CodexAppServerClient } from "../../../codex-app-server.js";
 import { CODEX_CAPABILITIES, CodexAgentSession } from "./session.js";
+import { invokeCodexFeature } from "./features.js";
 
 export interface CodexProviderOptions {
   client?: CodexAppServerClient;
@@ -92,6 +93,15 @@ export class CodexAgentProvider implements AgentProvider {
       { ...config, provider: "codex", resume: { persistence: handle } },
       ctx,
     );
+  }
+
+  /**
+   * Capability-gated feature RPC (§8.2). Only methods registered in
+   * CODEX_FEATURES with their own Zod schema are reachable — there is
+   * no free-form provider.feature.call.
+   */
+  async callFeature(method: string, payload: unknown): Promise<unknown> {
+    return invokeCodexFeature(this.client, method, payload);
   }
 
   async shutdown(): Promise<void> {

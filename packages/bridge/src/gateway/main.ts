@@ -33,6 +33,8 @@ import { openGatewayDb, runIntegrityChecks } from "../store/db.js";
 import { SQLiteStore } from "../store/sqlite-store.js";
 import { runRecoveryScan } from "../store/recovery.js";
 import type { GatewayDb } from "../store/db.js";
+import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
+import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
   /** override CHROMEX_GATEWAY_HOME */
@@ -164,41 +166,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
 
 type HelloResponseProviders = import("@codex-sidepanel/shared").HelloResponse["providers"];
 
-const CODEX_CAPABILITIES = {
-  streaming: true,
-  reasoningSummary: true,
-  toolEvents: true,
-  interrupt: true,
-  steer: true,
-  resume: true,
-  modelSelection: true,
-  modeSelection: true,
-  thinkingOption: true,
-  permissionPrompts: true,
-  mcpTools: true,
-  imageInput: true,
-  slashCommands: true,
-  usage: true,
-  streamHistory: true,
-} as const;
-
-const CLAUDE_CAPABILITIES = {
-  streaming: false,
-  reasoningSummary: false,
-  toolEvents: false,
-  interrupt: false,
-  steer: false,
-  resume: false,
-  modelSelection: false,
-  modeSelection: false,
-  thinkingOption: false,
-  permissionPrompts: false,
-  mcpTools: false,
-  imageInput: false,
-  slashCommands: false,
-  usage: false,
-  streamHistory: false,
-} as const;
+// Honest capability advertisement — sourced from the provider
+// implementations, not hand-maintained literals (§8.1 intersection).
+const CLAUDE_CAPABILITIES = NO_CAPABILITIES;
 
 async function handleGatewayRequest(
   req: Extract<Envelope, { kind: "request" }>,
