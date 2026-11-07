@@ -17,6 +17,7 @@ import type {
 import { ClaudeAgentProvider } from "../src/agents/providers/claude/provider.js";
 import { ClaudeAgentSession, CLAUDE_CAPABILITIES } from "../src/agents/providers/claude/session.js";
 import { ClaudeEventMapper } from "../src/agents/providers/claude/mapper.js";
+import { runAgentSessionConformance } from "./conformance/agent-session.js";
 
 const INPUT = {
   gatewayTurnId: "gt-1",
@@ -105,6 +106,26 @@ function makeSession(
     session,
     getQuery: () => queryInstance as FakeQuery | null,
   };
+}
+
+/** Default happy-path script: assistant text + success result per turn. */
+function autoComplete(_uuid: string, q: FakeQuery): void {
+  q.emit({
+    type: "assistant",
+    session_id: "sess-conf",
+    user_message_uuid: q.lastUuid,
+    parent_tool_use_id: null,
+    message: { content: [{ type: "text", text: "ok" }] },
+  });
+  q.emit({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    session_id: "sess-conf",
+    user_message_uuid: q.lastUuid,
+    result: "ok",
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
 }
 
 function collect(session: ClaudeAgentSession) {
@@ -341,5 +362,12 @@ describe("ClaudeAgentSession", () => {
     await vi.waitFor(() => expect(resolved).not.toBeNull());
     expect(resolved).toMatchObject({ behavior: "deny" });
     await session.close();
+  });
+});
+
+describe("ClaudeAgentSession conformance (GateB-B1)", () => {
+  runAgentSessionConformance("claude", async () => {
+    const { session } = makeSession(autoComplete);
+    return { session, turnInput: INPUT as never };
   });
 });
