@@ -93,7 +93,8 @@ export async function endpointPidAlive(ep: GatewayEndpointFile): Promise<boolean
 }
 
 export interface GatewayConnectOptions {
- hello: Omit<HelloRequest, "clientVersion"> & { clientVersion?: string };
+  /** omit → connect WITHOUT the auth hello (caller hello's later, e.g. gateway-mode passthrough) */
+  hello?: Omit<HelloRequest, "clientVersion"> & { clientVersion?: string };
   timeoutMs?: number;
   maxEnvelopeBytes?: number;
 }
@@ -139,12 +140,16 @@ export class GatewayConnection {
       s.once("connect", () => clearTimeout(timer));
     });
 
+    const conn = new GatewayConnection(socket, maxEnvelope);
+    if (!opts.hello) {
+      // passthrough mode: extension supplies the auth hello itself
+      return conn;
+    }
     const helloPayload: HelloRequest & { token: string } = {
       ...opts.hello,
       clientVersion: opts.hello.clientVersion ?? "native-host",
       token,
     };
-    const conn = new GatewayConnection(socket, maxEnvelope);
     try {
       const result = (await conn.request("hello", helloPayload, timeoutMs)) as HelloResponse;
       conn.hello = result;
@@ -273,7 +278,7 @@ function errorFromProtocol(pe: ProtocolError): Error {
 // ---------- auto-start (§3.3.1) ----------
 
 export interface EnsureGatewayOptions extends Omit<GatewayConnectOptions, "hello"> {
-  hello: GatewayConnectOptions["hello"];
+  hello?: GatewayConnectOptions["hello"];
   /** path to bridge gateway bin (dist/gateway/bin.js); null disables spawn */
   gatewayBin?: string | null;
   /** total deadline covering connect-attempt + spawn + ready (default 15s) */
@@ -315,7 +320,7 @@ export async function ensureGateway(
   for (;;) {
     try {
       return await GatewayConnection.connect(dataDir, {
-        hello: opts.hello,
+        ...(opts.hello ? { hello: opts.hello } : {}),
         timeoutMs: Math.min(5_000, Math.max(500, deadline - Date.now())),
         ...(opts.maxEnvelopeBytes !== undefined ? { maxEnvelopeBytes: opts.maxEnvelopeBytes } : {}),
       });
