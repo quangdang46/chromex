@@ -270,6 +270,7 @@ const toolHostHandler = createToolHostHandler({
         ...(opts.muted !== undefined ? { muted: opts.muted } : {}),
       }),
     discardTab: async (tabId) => chrome.tabs.discard(tabId),
+    setTabZoom: async (tabId, zoomFactor) => chrome.tabs.setZoom(tabId, zoomFactor),
     duplicateTab: async (tabId) => {
       const tab = await chrome.tabs.duplicate(tabId);
       if (!tab) throw new Error(`chrome.tabs.duplicate(${tabId}) returned no tab`);

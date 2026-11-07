@@ -36,6 +36,8 @@ export interface ToolHostDeps {
   updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean }): Promise<unknown>;
   /** chrome.tabs.discard — tab.discard tool (memory hygiene). */
   discardTab?(tabId: number): Promise<unknown>;
+  /** chrome.tabs.setZoom — tab.update zoomFactor (0.25–5). */
+  setTabZoom?(tabId: number, zoomFactor: number): Promise<unknown>;
   /** chrome.tabs.duplicate — clone a tab preserving its session
    *  (browser.tab.duplicate); absent dep → proto.unsupported. */
   duplicateTab?(tabId: number): Promise<chrome.tabs.Tab>;
@@ -425,23 +427,39 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
       case "browser.tab.update": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (!deps.updateTab) {
-          throw toolError("proto.unsupported", "tab update is not available on this host");
-        }
         const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
         const muted = typeof args.muted === "boolean" ? args.muted : undefined;
-        if (pinned === undefined && muted === undefined) {
-          throw toolError("proto.invalid", "browser.tab.update requires args.pinned and/or args.muted");
+        const zoomFactor =
+          typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
+            ? args.zoomFactor
+            : undefined;
+        if (args.zoomFactor !== undefined && (zoomFactor === undefined || zoomFactor < 0.25 || zoomFactor > 5)) {
+          throw toolError("proto.invalid", "browser.tab.update args.zoomFactor must be a number in [0.25, 5]");
         }
-        await deps.updateTab(tabId, {
-          ...(pinned !== undefined ? { pinned } : {}),
-          ...(muted !== undefined ? { muted } : {}),
-        });
+        if (pinned === undefined && muted === undefined && zoomFactor === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted and/or args.zoomFactor");
+        }
+        if ((pinned !== undefined || muted !== undefined) && !deps.updateTab) {
+          throw toolError("proto.unsupported", "tab update is not available on this host");
+        }
+        if (zoomFactor !== undefined && !deps.setTabZoom) {
+          throw toolError("proto.unsupported", "tab zoom is not available on this host");
+        }
+        if (pinned !== undefined || muted !== undefined) {
+          await deps.updateTab!(tabId, {
+            ...(pinned !== undefined ? { pinned } : {}),
+            ...(muted !== undefined ? { muted } : {}),
+          });
+        }
+        if (zoomFactor !== undefined) {
+          await deps.setTabZoom!(tabId, zoomFactor);
+        }
         return {
           updated: tabId,
           resolvedTabId: tabId,
           ...(pinned !== undefined ? { pinned } : {}),
           ...(muted !== undefined ? { muted } : {}),
+          ...(zoomFactor !== undefined ? { zoomFactor } : {}),
         };
       }
       case "browser.tab.discard": {

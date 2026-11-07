@@ -116,6 +116,22 @@ describe("tool host (P1-09)", () => {
     await expect(h(sreq("browser.tab.discard", { tabId: 99 }))).rejects.toMatchObject({ code: "browser.not_in_scope" });
   });
 
+  test("tab.update zoomFactor dispatches setTabZoom with bounds check", async () => {
+    const d = deps();
+    const zooms: Array<[number, number]> = [];
+    d.setTabZoom = async (id, z) => { zooms.push([id, z]); };
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    const sreq = (args: Record<string, unknown>) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool: "browser.tab.update", args, tabScope: scope });
+    const res = (await h(sreq({ zoomFactor: 0.8 }))) as { zoomFactor: number };
+    expect(zooms).toEqual([[7, 0.8]]);
+    expect(res.zoomFactor).toBe(0.8);
+    await expect(h(sreq({ zoomFactor: 9 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq({ zoomFactor: "big" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(zooms).toHaveLength(1); // rejected calls never dispatched
+  });
+
   test("page.wait forwards visibleSelector as a wait condition", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
