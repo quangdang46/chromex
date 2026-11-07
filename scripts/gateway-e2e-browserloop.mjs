@@ -1,3 +1,5 @@
+import "./lib/require-browser-consent.mjs";
+
 // E2E (chromex-cl0): prove a provider actually iterates browser_* MCP
 // tools inside a gateway task — observe → act → observe.
 //

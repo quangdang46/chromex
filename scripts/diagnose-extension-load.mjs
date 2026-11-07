@@ -1,3 +1,5 @@
+import "./lib/require-browser-consent.mjs";
+
 import { createHash } from "node:crypto";
 import { access, cp, mkdir, readFile, readdir } from "node:fs/promises";
 import { homedir, platform } from "node:os";

@@ -1,3 +1,5 @@
+import "./lib/require-browser-consent.mjs";
+
 // E2E (chromex-d9o): browser↔code feedback loop — the agent edits code,
 // drives a browser at the result, observes, verifies, iterates.
 //

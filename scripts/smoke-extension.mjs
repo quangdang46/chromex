@@ -1,3 +1,5 @@
+import "./lib/require-browser-consent.mjs";
+
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, cp, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
