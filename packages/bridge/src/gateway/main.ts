@@ -94,8 +94,12 @@ import { BrowserHostRegistry } from "../browser/host-registry.js";
 import { PlaywrightIsolatedBackend } from "../browser/backends/playwright/isolated.js";
 import { resolveBackendSelection, backendMismatchFor } from "../browser/backend-selection.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
-import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
-import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
+import {
+  writeMcpScopeFile,
+  updateMcpScopeToken,
+  mcpScopePath,
+  supportedToolsForBackend,
+} from "../browser/mcp-scope.js";
 import { protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface GatewayOptions {
@@ -356,11 +360,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       if (backendId !== "chrome-extension" && backendId !== "playwright-cdp" && backendId !== "playwright-isolated") {
         return null;
       }
+      // chromex-51ua: advertise exactly what the pinned backend can
+      // execute — tools/list and the token's allowedTools both derive
+      // from this set, so an unsupported tool fails proto.unsupported
+      // instead of being listed and dying at dispatch.
+      const allowedTools = supportedToolsForBackend(backendId);
       const issued = toolRefresher.track({
         taskId: task.taskId,
         profileId: task.profileId,
         backendId: backendId as never,
-        allowedTools: [...BROWSER_TOOL_NAMES],
+        allowedTools,
       });
       const scopeFile = await writeMcpScopeFile(dataDir, {
         taskId: task.taskId,
@@ -368,7 +377,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         tokenExpiresAt: issued.expiresAt,
         profileId: task.profileId,
         backendId: backendId as never,
-        allowedTools: [...BROWSER_TOOL_NAMES],
+        allowedTools,
         gatewayEndpoint: ipcEndpointPath(dataDir),
         gatewayTokenFile: path.join(dataDir, "auth", "token"),
       });
@@ -499,10 +508,27 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         const approvalId = `appr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const approvalStartedAt = Date.now();
         diagnostics.recordApprovalRequested();
-        const options: Array<{ id: string; label: string; kind: "allow_once" | "allow_task" | "deny" }> = [
+        const options: Array<{
+          id: string;
+          label: string;
+          kind: "allow_once" | "allow_task" | "allow_egress_task" | "deny";
+        }> = [
           { id: "allow_once", label: "Allow once", kind: "allow_once" },
           ...(tctx.allowTaskScope
             ? [{ id: "allow_task", label: "Allow for this task", kind: "allow_task" as const }]
+            : []),
+          // §4.8 egress consent: one pick covers clean page-text egress
+          // to this destination for the task's lifetime. The classifier
+          // only sets egressTaskScope for non-sensitive page-text —
+          // screenshots and sensitiveContent never see this option.
+          ...(tctx.egressTaskScope
+            ? [
+                {
+                  id: "allow_egress_task",
+                  label: "Allow page content for this task",
+                  kind: "allow_egress_task" as const,
+                },
+              ]
             : []),
           { id: "deny", label: "Deny", kind: "deny" },
         ];
@@ -536,6 +562,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
             origin: tctx.details.origin,
             ...(tctx.details.targetLabel ? { targetLabel: tctx.details.targetLabel } : {}),
             ...(tctx.details.allowTaskScope ? { allowTaskScope: tctx.details.allowTaskScope } : {}),
+            ...(tctx.details.egressTaskScope ? { egressTaskScope: tctx.details.egressTaskScope } : {}),
           },
         };
         storeAny.insertApproval?.({
@@ -621,6 +648,24 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         });
       },
       grantAllowTask: (taskId, scope) => {
+        // grant is recorded by permission.respond → resolveApproval
+        // decision.scope; this hook exists for symmetry/audit.
+        void taskId;
+        void scope;
+      },
+      egressTaskGranted: async (taskId, scope) => {
+        // Same approvals-table source as allowTaskGranted, but the
+        // grant is scope-bound only (no actionDigest): it covers the
+        // egress class for the task lifetime by design.
+        const rows = (store as { listApprovals?: (id: string) => Array<{ status: string; request?: unknown; decision: { optionId: string; scope?: string } | null }> }).listApprovals?.(taskId) ?? [];
+        return rows.some(
+          (r) =>
+            r.status === "allowed" &&
+            r.decision?.optionId === "allow_egress_task" &&
+            r.decision.scope === scope,
+        );
+      },
+      grantEgressTask: (taskId, scope) => {
         // grant is recorded by permission.respond → resolveApproval
         // decision.scope; this hook exists for symmetry/audit.
         void taskId;
@@ -1103,12 +1148,12 @@ async function handleGatewayRequest(
                   taskId?: string;
                   turnId?: string;
                   options?: Array<{ id?: string; kind?: string }>;
-                  details?: { allowTaskScope?: string };
+                  details?: { allowTaskScope?: string; egressTaskScope?: string };
                   request?: {
                     taskId?: string;
                     turnId?: string;
                     options?: Array<{ id?: string; kind?: string }>;
-                    details?: { allowTaskScope?: string };
+                    details?: { allowTaskScope?: string; egressTaskScope?: string };
                   };
                 }
               | null
@@ -1137,17 +1182,25 @@ async function handleGatewayRequest(
       const matchedKind = matched?.kind;
       const denied = matchedKind === "deny" || optionId.toLowerCase() === "deny";
       const kind =
-        matchedKind === "allow_once" || matchedKind === "allow_task" || matchedKind === "deny"
+        matchedKind === "allow_once" ||
+        matchedKind === "allow_task" ||
+        matchedKind === "allow_egress_task" ||
+        matchedKind === "deny"
           ? matchedKind
           : denied
             ? "deny"
-            : optionId === "allow_task"
-              ? "allow_task"
+            : optionId === "allow_task" || optionId === "allow_egress_task"
+              ? optionId
               : "allow_once";
+      // allow_task / allow_egress_task scopes come from the stored
+      // request details — never client-supplied. The two grants persist
+      // under different details keys.
       const scope =
         optionId === "allow_task"
           ? (reqRow?.details?.allowTaskScope ?? reqRow?.request?.details?.allowTaskScope)
-          : undefined;
+          : optionId === "allow_egress_task"
+            ? (reqRow?.details?.egressTaskScope ?? reqRow?.request?.details?.egressTaskScope)
+            : undefined;
       const result = await ctx.sessionManager.respondToPermission(p.requestId, {
         ...(p.optionId !== undefined ? { optionId: p.optionId } : {}),
         ...(p.answers !== undefined ? { answers: p.answers } : {}),

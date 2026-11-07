@@ -6277,11 +6277,14 @@ function renderApprovalPanel(strings: ReturnType<typeof getUiStrings>): string {
           .map((option) => {
             const isPending = pendingOptionId === option.id;
             const isDanger = option.kind === "deny";
+            // task-scoped grants (allow_task, allow_egress_task) get a
+            // distinct accent so the "for this task" scope is visible
+            const isTaskGrant = option.kind === "allow_task" || option.kind === "allow_egress_task";
             const disabled = Boolean(pendingOptionId);
             return `
               <button
                 type="button"
-                class="approval-option ${isDanger ? "danger" : ""}"
+                class="approval-option ${isDanger ? "danger" : ""} ${isTaskGrant ? "task-scope" : ""}"
                 data-approval-option="${escapeAttribute(option.id)}"
                 data-approval-option-label="${escapeAttribute(option.label)}"
                 ${disabled ? "disabled" : ""}

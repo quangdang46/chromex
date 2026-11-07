@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  agentEgressTaskScope,
   allowTaskScope,
   canonicalJson,
   classifyActionRisk,
@@ -166,6 +167,10 @@ export interface ToolApprovalRequest {
   reason: string;
   /** canonical allow_task scope — present only when allowTaskEligible */
   allowTaskScope?: string;
+  /** canonical allow_egress_task scope — present only when the verdict
+   *  offers the per-task page-content egress grant (non-sensitive
+   *  page-text only; see RiskVerdict.egressTaskEligible) */
+  egressTaskScope?: string;
   /** hash(tool,args,targetRef,snapshotId,url,origin) — approval binds to this */
   actionDigest: string;
   details: {
@@ -174,6 +179,7 @@ export interface ToolApprovalRequest {
     origin: string;
     targetLabel?: string;
     allowTaskScope?: string;
+    egressTaskScope?: string;
   };
 }
 
@@ -396,6 +402,17 @@ export interface ToolServerDeps {
   /** Record an allow_task grant after user approval. `actionDigest`
    *  binds the grant to the approved action (see allowTaskGranted). */
   grantAllowTask?(taskId: string, scope: string, actionDigest: string): void;
+  /** allow_egress_task scope check — the user granted "page content may
+   *  egress to this destination for the rest of the task" once. Unlike
+   *  allow_task this is NOT digest-bound: the grant covers the egress
+   *  class (agentEgressTaskScope), and the classifier only marks
+   *  non-sensitive page-text egress eligible, so screenshots and
+   *  sensitiveContent still require allow_once per call. */
+  egressTaskGranted?(taskId: string, scope: string): Promise<boolean>;
+  /** Record an allow_egress_task grant after user approval (audit
+   *  symmetry with grantAllowTask — the durable record is the
+   *  approval row's decision.scope). */
+  grantEgressTask?(taskId: string, scope: string): void;
   /** §4.8 agentEgress: where page data leaves for this task's provider.
    *  Default "local-provider" keeps non-sensitive reads as `read`;
    *  "cloud-provider"/"external-mcp" makes every page-data egress an
@@ -544,11 +561,18 @@ export class BrowserToolServer {
     }
     if (verdict.needsApproval) {
       const scope = verdict.allowTaskEligible ? allowTaskScope(actx) : undefined;
+      const egressScope =
+        verdict.egressTaskEligible && actx.agentEgress
+          ? agentEgressTaskScope(actx.agentEgress)
+          : undefined;
       // §4.8: the digest binds approval (and any allow_task reuse) to
       // this exact action — args/snapshot/url/egress changes invalidate.
       const actionDigest = browserActionDigest(req, actx);
       const alreadyGranted =
-        scope !== undefined && (await this.deps.allowTaskGranted?.(req.taskId, scope, actionDigest)) === true;
+        (scope !== undefined &&
+          (await this.deps.allowTaskGranted?.(req.taskId, scope, actionDigest)) === true) ||
+        (egressScope !== undefined &&
+          (await this.deps.egressTaskGranted?.(req.taskId, egressScope)) === true);
       if (!alreadyGranted) {
         const approval = await this.deps.requestApproval?.({
           taskId: req.taskId,
@@ -560,6 +584,7 @@ export class BrowserToolServer {
           kind: verdict.kind ?? "browser_action",
           reason: verdict.reason,
           ...(scope !== undefined ? { allowTaskScope: scope } : {}),
+          ...(egressScope !== undefined ? { egressTaskScope: egressScope } : {}),
           actionDigest,
           details: {
             tool: req.tool,
@@ -571,6 +596,7 @@ export class BrowserToolServer {
             origin: actx.origin,
             ...(actx.target?.label ? { targetLabel: actx.target.label } : {}),
             ...(scope !== undefined ? { allowTaskScope: scope } : {}),
+            ...(egressScope !== undefined ? { egressTaskScope: egressScope } : {}),
           },
         });
         const approved = approval?.verdict === "approved";
@@ -587,6 +613,9 @@ export class BrowserToolServer {
         }
         if (scope !== undefined && approval?.optionId === "allow_task") {
           this.deps.grantAllowTask?.(req.taskId, scope, actionDigest);
+        }
+        if (egressScope !== undefined && approval?.optionId === "allow_egress_task") {
+          this.deps.grantEgressTask?.(req.taskId, egressScope);
         }
       }
     }

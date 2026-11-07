@@ -126,6 +126,8 @@ describe("BrowserToolServer — agentEgress approval + allow_task digest (chrome
     allowedTools?: string[];
     sensitiveOrigins?: string[];
     agentEgressDestination?: "local-provider" | "cloud-provider" | "external-mcp" | "logs-telemetry";
+    /** optionId the approval hook resolves with (default: plain approve) */
+    approvalOptionId?: string;
   } = {}) {
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = tokens.issue({
@@ -144,12 +146,18 @@ describe("BrowserToolServer — agentEgress approval + allow_task digest (chrome
     const granted = new Map<string, string>();
     const grantCalls: Array<{ scope: string; digest: string }> = [];
     const grantChecks: Array<{ scope: string; digest: string }> = [];
+    // allow_egress_task grants are scope-bound only — no digest (chromex-b1h)
+    const egressGrantedScopes = new Set<string>();
+    const egressGrantCalls: string[] = [];
     const server = new BrowserToolServer({
       tokens,
       resolveHost: () => host,
       requestApproval: async (ctx) => {
         approvals.push(ctx);
-        return { verdict: "approved" as const };
+        return {
+          verdict: "approved" as const,
+          ...(deps.approvalOptionId ? { optionId: deps.approvalOptionId } : {}),
+        };
       },
       // mirrors the intended store contract: a scope grant only covers
       // the exact actionDigest it was approved for (chromex-pr8)
@@ -161,11 +169,16 @@ describe("BrowserToolServer — agentEgress approval + allow_task digest (chrome
         grantCalls.push({ scope, digest });
         granted.set(scope, digest);
       },
+      egressTaskGranted: async (_t, scope) => egressGrantedScopes.has(scope),
+      grantEgressTask: (_t, scope) => {
+        egressGrantCalls.push(scope);
+        egressGrantedScopes.add(scope);
+      },
       ...(deps.sensitiveOrigins ? { sensitiveOrigins: deps.sensitiveOrigins } : {}),
       ...(deps.agentEgressDestination ? { agentEgressDestination: deps.agentEgressDestination } : {}),
       now: () => NOW,
     });
-    return { server, token, approvals, granted, grantCalls, grantChecks };
+    return { server, token, approvals, granted, grantCalls, grantChecks, egressGrantedScopes, egressGrantCalls };
   }
 
   it("snapshot on a sensitive origin asks agent_egress approval; clean origin does not", async () => {
@@ -212,5 +225,70 @@ describe("BrowserToolServer — agentEgress approval + allow_task digest (chrome
     expect(browserActionDigest(mutated, buildActionContext(mutated, true, { destination: "cloud-provider" }))).not.toBe(
       approvals[0]!.actionDigest,
     );
+  });
+
+  it("allow_egress_task grant covers later page-text egress for the task — but not sensitive or screenshot", async () => {
+    const { server, token, approvals, egressGrantCalls } = makeServer({
+      agentEgressDestination: "cloud-provider",
+      approvalOptionId: "allow_egress_task",
+    });
+    // first snapshot asks and carries the egress grant scope
+    const first = await server.execute({
+      ...req("browser.page.snapshot", { url: "https://a.example.com/1", snapshotId: "snap:1" }),
+      token,
+      toolCallId: "tc-e1",
+    });
+    expect(first.status).toBe("completed");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ kind: "agent_egress" });
+    expect(approvals[0]!.egressTaskScope).toBe("agent-egress|page-text|cloud-provider");
+    expect(approvals[0]!.details.egressTaskScope).toBe("agent-egress|page-text|cloud-provider");
+    expect(egressGrantCalls).toEqual(["agent-egress|page-text|cloud-provider"]);
+
+    // a DIFFERENT page/digest is covered by the grant — no re-approval
+    const second = await server.execute({
+      ...req("browser.page.snapshot", { url: "https://b.example.com/2", snapshotId: "snap:2" }),
+      token,
+      toolCallId: "tc-e2",
+    });
+    expect(second.status).toBe("completed");
+    expect(approvals).toHaveLength(1);
+
+    // screenshot egress is never covered by the page-text grant
+    const shot = await server.execute({
+      ...req("browser.page.screenshot", { url: "https://a.example.com/1" }),
+      token,
+      toolCallId: "tc-e3",
+    });
+    expect(shot.status).toBe("completed");
+    expect(approvals).toHaveLength(2);
+    expect(approvals[1]).toMatchObject({ kind: "agent_egress" });
+    expect(approvals[1]!.egressTaskScope).toBeUndefined();
+
+    // sensitive-content egress still asks every call
+    const sensitive = await server.execute({
+      ...req("browser.page.snapshot", { url: "https://bank.example.com/?token=sekrit" }),
+      token,
+      toolCallId: "tc-e4",
+    });
+    expect(sensitive.status).toBe("completed");
+    expect(approvals).toHaveLength(3);
+    expect(approvals[2]!.egressTaskScope).toBeUndefined();
+  });
+
+  it("without the grant option, every cloud egress call still asks (allow_once path unchanged)", async () => {
+    const { server, token, approvals, egressGrantCalls } = makeServer({
+      agentEgressDestination: "cloud-provider",
+    });
+    for (const [i, url] of ["https://a.example.com/1", "https://b.example.com/2"].entries()) {
+      const out = await server.execute({
+        ...req("browser.page.snapshot", { url }),
+        token,
+        toolCallId: `tc-n${i}`,
+      });
+      expect(out.status).toBe("completed");
+    }
+    expect(approvals).toHaveLength(2);
+    expect(egressGrantCalls).toHaveLength(0);
   });
 });

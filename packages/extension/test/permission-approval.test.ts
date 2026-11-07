@@ -38,7 +38,12 @@ describe("permission approval card wiring", () => {
     expect(sidepanelSource).toContain("approvalPendingOptionId");
     // real option ids from the request, deny styled as danger
     expect(sidepanelSource).toContain('option.kind === "deny"');
+    // task-scoped grants (allow_task / allow_egress_task) render with the
+    // task-scope accent — the option label itself comes from the gateway
+    expect(sidepanelSource).toContain('option.kind === "allow_egress_task"');
+    expect(sidepanelSource).toContain("task-scope");
     expect(stylesSource).toContain(".approval-option.danger");
+    expect(stylesSource).toContain(".approval-option.task-scope");
     expect(backgroundSource).toContain('case "permission.respond"');
     expect(backgroundSource).toContain('bridge.request("permission.respond"');
   });

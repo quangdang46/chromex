@@ -77,6 +77,11 @@ export interface RiskVerdict {
   kind?: "browser_action" | "provider_permission" | "data_entry_sensitive" | "agent_egress";
   /** allow_task may be offered for this verdict (plan §4.8 forbidden combos) */
   allowTaskEligible: boolean;
+  /** agent_egress verdicts may offer the task-scoped egress grant
+   *  ("allow_egress_task"): ONLY non-sensitive page-text egress.
+   *  Screenshots, sensitiveContent and other dataClasses stay
+   *  allow_once-only — the grant never widens §4.8's forbidden combos. */
+  egressTaskEligible?: boolean;
   reason: string;
 }
 
@@ -140,6 +145,9 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         needsApproval: true,
         kind: "agent_egress",
         allowTaskEligible: false,
+        // per-task egress grant covers clean page-text reads only —
+        // screenshots and sensitive content keep per-call approval.
+        egressTaskEligible: !sensitive && egress.dataClass === "page-text",
         reason: sensitive
           ? "sensitive page content egress requires approval"
           : "data egress to non-local destination requires approval",
@@ -319,4 +327,16 @@ export function allowTaskScope(ctx: ActionContext): string {
     ctx.agentEgress?.dataClass ?? "none",
     ctx.agentEgress?.destination ?? "none",
   ].join("|");
+}
+
+/** Canonical allow_egress_task scope: the egress CLASS, not one action.
+ *  Unlike allowTaskScope this is deliberately not digest-bound — the
+ *  grant means "page content may leave for this destination for the
+ *  rest of the task" and is only ever issued for non-sensitive
+ *  page-text egress (see RiskVerdict.egressTaskEligible). */
+export function agentEgressTaskScope(egress: {
+  dataClass: AgentEgressDataClass;
+  destination: AgentEgressDestination;
+}): string {
+  return ["agent-egress", egress.dataClass, egress.destination].join("|");
 }

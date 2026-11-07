@@ -15,7 +15,7 @@ export type PermissionKind =
   | "data_entry_sensitive"
   | "agent_egress";
 
-export type PermissionOptionKind = "allow_once" | "allow_task" | "deny";
+export type PermissionOptionKind = "allow_once" | "allow_task" | "allow_egress_task" | "deny";
 
 export interface PermissionRequest {
   requestId: string;

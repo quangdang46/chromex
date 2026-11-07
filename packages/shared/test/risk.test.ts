@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  agentEgressTaskScope,
   allowTaskScope,
   classifyActionRisk,
   detectSensitiveContent,
@@ -81,6 +82,40 @@ describe("classifyActionRisk — §4.8 matrix", () => {
       agentEgress: { dataClass: "page-text", destination: "local-provider" },
     }));
     expect(local.needsApproval).toBe(false);
+  });
+
+  test("agentEgress egressTaskEligible: clean page-text only — screenshot/sensitive stay per-call", () => {
+    // non-sensitive page-text to a non-local destination → task grant offered
+    const clean = classifyActionRisk(ctx({
+      action: "browser.page.snapshot",
+      agentEgress: { dataClass: "page-text", destination: "cloud-provider" },
+    }));
+    expect(clean).toMatchObject({
+      needsApproval: true,
+      kind: "agent_egress",
+      allowTaskEligible: false,
+      egressTaskEligible: true,
+    });
+    // sensitive content → never grantable
+    const sensitive = classifyActionRisk(ctx({
+      action: "browser.page.snapshot",
+      agentEgress: { dataClass: "page-text", destination: "cloud-provider", sensitiveContent: true },
+    }));
+    expect(sensitive.egressTaskEligible).toBe(false);
+    // screenshots → never grantable (spec: screenshot egress is allow_once only)
+    const shot = classifyActionRisk(ctx({
+      action: "browser.page.screenshot",
+      agentEgress: { dataClass: "screenshot", destination: "cloud-provider" },
+    }));
+    expect(shot).toMatchObject({ needsApproval: true, kind: "agent_egress" });
+    expect(shot.egressTaskEligible).toBe(false);
+    // local non-sensitive → no approval at all
+    const local = classifyActionRisk(ctx({
+      action: "browser.page.snapshot",
+      agentEgress: { dataClass: "page-text", destination: "local-provider" },
+    }));
+    expect(local.needsApproval).toBe(false);
+    expect(local.egressTaskEligible).toBeFalsy();
   });
 
   test("browser.page.console is read; tab.create/hover/press classified (chromex-he2/nr8/cly)", () => {
@@ -188,6 +223,12 @@ describe("allowTaskScope + detectSensitiveContent", () => {
     expect(scope({ ref: "e1", label: "Pay now" })).toBe("purchase");
     expect(scope(undefined)).toBe("none");
   });
+  test("agentEgressTaskScope binds the egress class, not the action", () => {
+    const s = agentEgressTaskScope({ dataClass: "page-text", destination: "cloud-provider" });
+    expect(s).toBe("agent-egress|page-text|cloud-provider");
+    expect(agentEgressTaskScope({ dataClass: "screenshot", destination: "cloud-provider" })).not.toBe(s);
+  });
+
   test("PII detection", () => {
     expect(detectSensitiveContent("contact me at a@b.com")).toBe(true);
     expect(detectSensitiveContent("hello world")).toBe(false);

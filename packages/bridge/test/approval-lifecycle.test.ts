@@ -454,6 +454,49 @@ describe("permission.respond validation (chromex-yyb)", () => {
     s.destroy();
   });
 
+  test("allow_egress_task records the stored egressTaskScope as decision.scope (chromex-b1h)", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "appr" })) as {
+      taskId: string;
+    };
+    gw!.store.insertApproval({
+      approvalId: "appr-egress",
+      taskId: created.taskId,
+      request: {
+        requestId: "appr-egress",
+        taskId: created.taskId,
+        kind: "agent_egress",
+        options: [
+          { id: "allow_once", label: "Allow once", kind: "allow_once" },
+          {
+            id: "allow_egress_task",
+            label: "Allow page content for this task",
+            kind: "allow_egress_task",
+          },
+          { id: "deny", label: "Deny", kind: "deny" },
+        ],
+        details: { egressTaskScope: "agent-egress|page-text|cloud-provider" },
+      },
+      actionDigest: "digest",
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    await rpc(s, "r1", "permission.respond", {
+      requestId: "appr-egress",
+      optionId: "allow_egress_task",
+    });
+    expect(gw!.store.approvalStatus("appr-egress")).toBe("allowed");
+    // the grant the tool server later checks via egressTaskGranted
+    expect(gw!.store.approvalDecision("appr-egress")).toMatchObject({
+      optionId: "allow_egress_task",
+      kind: "allow_egress_task",
+      scope: "agent-egress|page-text|cloud-provider",
+    });
+    s.destroy();
+  });
+
   test("deny-kind optionId resolves as denied", async () => {
     await start();
     const s = await authedConn();
