@@ -175,7 +175,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // frame boundaries, so silently ignoring it would act on the TOP
     // document while the caller believes it targeted the iframe. Refuse
     // honestly until frameLocator support lands.
-    if (typeof args.frameId === "number" && args.frameId > 0) {
+    if (typeof args.frameId === "number" && args.frameId !== 0) {
       throw protocolError(
         "proto.unsupported",
         "args.frameId is not supported on playwright-isolated (frame locators unimplemented)",
