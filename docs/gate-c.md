@@ -17,19 +17,24 @@ no capability counts as done until an end-to-end user scenario passes
 on a real browser. The 8 gate scenarios are S1–S8; APIs, classes, and
 unit tests are necessary, not sufficient.
 
-| # | Scenario | Blocking work | Real-browser result (2026-11-07) |
+| # | Scenario | Blocking work | Real-browser result (2026-11-08) |
 |---|----------|----------------|----------------------------------|
 | S1 | Build a web feature end-to-end (understand → edit → run → drive UI → iterate → report) | chromex-cl0, chromex-d9o | **PASS** — codex live turn, 7/7 browser actions classified |
 | S2 | Debug a live website on a logged-in tab | chromex-cl0, chromex-d9o | **PASS** — agent edited code, re-drove real browser, verified token end-to-end |
-| S3 | Multi-tab/multi-app work without scope bleed | chromex-7k3 | **PASS** — isolated tab scopes, cross-task access refused |
+| S3 | Multi-tab/multi-app work without scope bleed | chromex-7k3 | **PASS** headless real-ext — isolated tab scopes, cross-task access refused |
 | S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff | chromex-d7v | BLOCKED-by-design — needs real credentials/site; dialogs await chromex-qddi |
-| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicates | two fixes landed: `8409af2` ext auto-reconnect + `040b328`/`e5c8702` host routing by connectionId (zombie-host race; IPC-level regression test proves newest-conn routing); IPC proofs: kill -9 restart → host re-register → live routing + mid-call kill → toolCallId dedup (tests C/D); awaiting real-browser re-run | **FAIL**→fixes landed — was `browser.no_host`/zombie host; unit-tested (15 tests), awaiting harness re-run |
-| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, never fake success | — | **PASS** — stale snapshotId rejected, re-observe + retry succeeded |
-| S7 | Protection: sensitive actions → contextual approval; denial honored | — | **PASS** — deny→`approval_denied`, allow→navigated |
-| S8 | Verifiable deliverable rendered in sidepanel | chromex-5rf | **PASS** — durable tool evidence + sidepanel render in real Chrome |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicates | `8409af2` ext auto-reconnect + `040b328`/`e5c8702` host routing by connectionId + `a953e3c` native-host self-heal/per-socket hello + `371fe7a` durable toolCallId dedup | **PASS** headless real-ext — gateway SIGKILL → respawn → host re-register → calls complete, replayed toolCallId deduped; `sw-restart` scenario additionally proves chrome.runtime.reload → new SW + NM host re-register → calls recover, click delivered exactly once |
+| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, never fake success | — | **PASS** headless real-ext — stale snapshotId rejected, re-observe + retry succeeded |
+| S7 | Protection: sensitive actions → contextual approval; denial honored | — | **PASS** headless real-ext — deny→`approval_denied`, allow→navigated |
+| S8 | Verifiable deliverable rendered in sidepanel | chromex-5rf | **PASS** headless real-ext — durable tool evidence + sidepanel render |
 
 Evidence: `artifacts/acceptance/<scenario>/<runId>/` (committed). Harness:
-`scripts/acceptance/` — real-browser runs require `CHROMEX_ACCEPTANCE_ENABLE=1`.
+`scripts/acceptance/` — S3/S5–S8 + the tokenless infrastructure
+scenarios run headless Chrome for Testing by default (real built
+extension, real native host, no windows); `CHROMEX_ACCEPTANCE_HEADFUL=1`
++ `/tmp/chromex-acceptance-token` restores headful runs, and S1/S2
+(live provider) stay token-gated. Headless ≠ the user's daily profile —
+window/focus-level behaviors still want one headful spot-check.
 
 Old §14 criteria → new mapping:
 
