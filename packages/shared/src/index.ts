@@ -1,6 +1,7 @@
 export * from "./agentic-image-edit.js";
 export * from "./agentic-route.js";
 export * from "./action-cards.js";
+export * from "./browser-action-risk.js";
 export * from "./context.js";
 export * from "./context-budget.js";
 export * from "./harness.js";

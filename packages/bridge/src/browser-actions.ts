@@ -176,6 +176,7 @@ export function createBrowserDomActionPlanPrompt(params: {
     "- For navigate, only use a URL explicitly requested by the user or copied from a visible href/page URL. Do not invent destination URLs.",
     "- Do not plan purchases, payments, checkout, paid subscriptions, order placement, or money transfers. For those, return shouldAct=false and explain that Codex cannot complete payment actions.",
     "- You may plan non-payment site mutations such as sending messages, emails, posting, form submission, navigation, editing, or deleting only when the user's wording clearly requests that action and the target is visible.",
+    "- Plans that send, post, delete, submit a form, or enter credentials will be held for explicit user confirmation at runtime; still plan them when the user clearly asked.",
     "- Prefer the smallest set of steps that completes the user's explicit intent. If the user's intent is ambiguous, return shouldAct=false.",
     "- Never output arbitrary JavaScript, XPath, or hidden-element selectors.",
     ...(generatedText

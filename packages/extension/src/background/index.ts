@@ -1,5 +1,7 @@
 import {
   DEFAULT_HARNESS_PERMISSIONS,
+  assessBrowserDomActionPlan,
+  browserActionNeedsConfirmation,
   type CodexActiveTurn,
   type CodexAppOption,
   type CodexMcpServerOption,
@@ -1565,6 +1567,9 @@ async function handlePromptSend(payload: PromptRequestPayload) {
     promptTurn.assistantText,
     (phase, workflow) => emitPromptStatus(payload, phase, workflow),
   );
+  if (deferredBrowserActionWorkflow.kind === "blocked") {
+    return deferredBrowserActionWorkflow.response;
+  }
   if (deferredBrowserActionWorkflow.kind === "handled") {
     return {
       ...result,
@@ -2339,6 +2344,36 @@ async function maybeEnsureDeferredBrowserDomActionAllowed(
   return { kind: "allowed" };
 }
 
+/**
+ * Second policy layer after the operation-level gate: plans that can send,
+ * post, delete, submit forms, or enter credentials require explicit user
+ * confirmation even when `browserActionPermissionMode` is "auto-review".
+ * "full" mode and an already-confirmed operation stay allowed — the user made
+ * an explicit choice for both.
+ */
+async function maybeRequireSensitiveBrowserActionConfirmation(
+  plan: BrowserDomActionPlan,
+  snapshot: BrowserDomSnapshot,
+  payload: PromptRequestPayload,
+): Promise<HarnessPermissionBlockedResponse | null> {
+  const assessment = assessBrowserDomActionPlan(plan, snapshot);
+  const settings = await getStoredSettings();
+  const needsConfirmation = browserActionNeedsConfirmation(assessment, {
+    operationConfirmed: payload.confirmedOperations?.includes("page.dom.perform") ?? false,
+    permissionMode: settings.browserActionPermissionMode ?? "ask",
+  });
+  if (!needsConfirmation) {
+    return null;
+  }
+
+  return {
+    error:
+      "This browser action can send, post, delete, submit a form, or enter credentials and requires confirmation.",
+    requiresConfirmation: true,
+    confirmationOperation: "page.dom.perform",
+  };
+}
+
 async function maybeHandleBrowserDomActionWorkflow(
   payload: PromptRequestPayload,
   agenticRoutePlan: AgenticRoutePlan,
@@ -2416,6 +2451,11 @@ async function maybeHandleBrowserDomActionWorkflow(
           assistantText: plan.summary || strings.status.browserActionSkipped,
         },
       };
+    }
+
+    const sensitiveGate = await maybeRequireSensitiveBrowserActionConfirmation(plan, snapshot, payload);
+    if (sensitiveGate) {
+      return { kind: "blocked", response: sensitiveGate };
     }
 
     const actionResult = (await sendMessageToTab(controlTab, {
@@ -2522,6 +2562,11 @@ async function maybeHandleDeferredBrowserDomActionWorkflow(
           assistantText: plan.summary || strings.status.browserActionSkipped,
         },
       };
+    }
+
+    const deferredSensitiveGate = await maybeRequireSensitiveBrowserActionConfirmation(plan, snapshot, payload);
+    if (deferredSensitiveGate) {
+      return { kind: "blocked", response: deferredSensitiveGate };
     }
 
     const actionResult = (await sendMessageToTab(controlTab, {
