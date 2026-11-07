@@ -221,6 +221,9 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.tab.create",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.windows.list",
+  "browser.windows.create",
+  "browser.windows.update",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
