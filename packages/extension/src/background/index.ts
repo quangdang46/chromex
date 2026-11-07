@@ -97,6 +97,11 @@ import {
 } from "./storage.js";
 import { resolveVisibleCurrentConversation } from "./conversation-history.js";
 import { NativeBridgeClient } from "./native-bridge-client.js";
+import {
+  classifyMessageSender,
+  contentScriptMaySend,
+  validateRuntimeMessage,
+} from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
@@ -638,6 +643,20 @@ function resolvePendingContextMenuAction(menuItemId: unknown): PendingContextMen
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target === "offscreen") {
+    return false;
+  }
+
+  // Phase 5 security pass: classify sender + boundary-validate before any
+  // handler runs. Content scripts get a narrow allowlist; anything that
+  // isn't an extension page or a known content-script type is rejected.
+  const guard = validateRuntimeMessage(message);
+  const senderClass = classifyMessageSender(sender, chrome.runtime.id);
+  if (
+    !guard.ok ||
+    senderClass === "untrusted" ||
+    (senderClass === "content-script" && !contentScriptMaySend(guard.type))
+  ) {
+    sendResponse({ error: "message rejected" });
     return false;
   }
 
