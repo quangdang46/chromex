@@ -805,6 +805,38 @@ describe("tool host expect verification (chromex-0fza)", () => {
     ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
   });
 
+  test("frame snapshot navigated-check compares the FRAME url, not the tab url", async () => {
+    let frameUrl = "https://cdn.example.com/widget";
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://app.example.com/top?token=1" },
+        { frameId: 3, url: frameUrl },
+      ]),
+      sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.snapshot") {
+          return {
+            snapshotId: "snap:f3-nav",
+            structuralFingerprint: "sfp1:aaa",
+            stateFingerprint: "tfp1:bbb",
+            saltEpoch: 1,
+            metadata: { url: frameUrl },
+            elements: [{ ref: "e1" }],
+          };
+        }
+        return { ok: true, results: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.snapshot", { frameId: 3 }));
+    // frame url unchanged → action proceeds even though it differs from tab url
+    await h(req("browser.page.click", { ref: "e1", snapshotId: "snap:f3-nav", frameId: 3 }));
+    // frame navigated → honest browser.navigated
+    frameUrl = "https://cdn.example.com/widget/v2";
+    await expect(
+      h(req("browser.page.click", { ref: "e1", snapshotId: "snap:f3-nav", frameId: 3 })),
+    ).rejects.toMatchObject({ code: "browser.navigated" });
+  });
+
   test("page.get lists frames with query/hash stripped", async () => {
     const d = deps({
       listFrames: vi.fn(async () => [

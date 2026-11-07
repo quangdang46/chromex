@@ -692,8 +692,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             );
           }
           if (meta.urlOriginPath) {
-            const tab = await deps.getTab(tabId);
-            const current = typeof tab?.url === "string" && tab.url ? urlOriginPath(tab.url) : null;
+            // The stored origin+path is the FRAME's url at capture
+            // (content scripts report their own location.href). For
+            // frameId 0 that's the tab url; for subframes resolve the
+            // frame's current url via webNavigation — comparing a frame
+            // url against the tab url would false-positive "navigated".
+            let current: string | null = null;
+            if (frameId === 0) {
+              const tab = await deps.getTab(tabId);
+              current = typeof tab?.url === "string" && tab.url ? urlOriginPath(tab.url) : null;
+            } else if (deps.listFrames) {
+              const frame = (await deps.listFrames(tabId)).find((f) => f.frameId === frameId);
+              current = frame?.url ? urlOriginPath(frame.url) : null;
+            }
             if (current && current !== meta.urlOriginPath) {
               throw toolError("browser.navigated", "page navigated since the snapshot; call browser.page.snapshot again");
             }
