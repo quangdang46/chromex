@@ -197,6 +197,13 @@ describe("gateway RPC surface (P1-07)", () => {
     await expect(rpc(s, "ps", "prompt.send", { message: "hi" })).rejects.toMatchObject({
       code: "proto.invalid",
     });
+    // providerId passthrough (P3-04): session.open → task.create carries it
+    const openedClaude = (await rpc(s, "so2", "session.open", {
+      cwd: "/tmp",
+      providerId: "claude",
+    })) as { threadId: string };
+    expect(gw!.store.getTask(openedClaude.threadId)?.providerId).toBe("claude");
+
     // sidecar domain → proto.unsupported
     await expect(rpc(s, "im", "image.asset.folder", {})).rejects.toMatchObject({
       code: "proto.unsupported",

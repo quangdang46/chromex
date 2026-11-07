@@ -76,6 +76,11 @@ export interface ContentProbeResult {
   adapterActions: string[];
 }
 
+export interface AgentProviderOption {
+  id: string;
+  label: string;
+}
+
 export interface UiInitPayload {
   accountStatus: {
     authMode: "chatgpt" | "apikey" | null;
@@ -91,6 +96,8 @@ export interface UiInitPayload {
   };
   currentTab: OpenTabContext | null;
   models: CodexModelOption[];
+  agentProviders: AgentProviderOption[];
+  selectedProviderId: string;
   profiles: ProfileTemplate[];
   selectedProfileId: string;
   selectedModel: string;
@@ -213,6 +220,9 @@ export interface ExtensionSettings {
   playwrightBrowserControlEnabled: boolean;
   browserPolicyV2: boolean;
   gatewayMode: boolean;
+  /** agent provider for new tasks; only non-codex values take effect
+   *  when gatewayMode is on and the provider is enabled server-side */
+  agentProviderId: string;
   preferredVoice: string;
   voiceInputAudioSource: VoiceInputAudioSource;
   workspaceRoot: string;

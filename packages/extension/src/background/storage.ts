@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   playwrightBrowserControlEnabled: false,
   browserPolicyV2: false,
   gatewayMode: false,
+  agentProviderId: "codex",
   preferredVoice: "",
   voiceInputAudioSource: "microphone",
   workspaceRoot: "",
@@ -108,6 +109,7 @@ export async function updateStoredSettings(patch: Partial<ExtensionSettings>): P
     playwrightBrowserControlEnabled: (patch.playwrightBrowserControlEnabled ?? current.playwrightBrowserControlEnabled) === true,
     browserPolicyV2: (patch.browserPolicyV2 ?? current.browserPolicyV2) === true,
     gatewayMode: (patch.gatewayMode ?? current.gatewayMode) === true,
+    agentProviderId: (patch.agentProviderId ?? current.agentProviderId) || "codex",
     enabledCodexSkillIds: normalizeEnabledCodexSkillIds(
       patch.enabledCodexSkillIds ?? current.enabledCodexSkillIds,
     ),

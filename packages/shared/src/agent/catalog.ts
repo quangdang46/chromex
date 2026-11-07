@@ -13,6 +13,8 @@ export interface AgentModel {
 
 export interface ProviderCatalog {
   providerId: ProviderId;
+  /** human label for pickers; falls back to providerId */
+  displayName?: string;
   models: AgentModel[];
   modes: AgentMode[];
   defaultModel?: string | null;

@@ -51,6 +51,7 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
           cwd: p.cwd,
           ...(p.model ? { model: p.model } : {}),
           ...(p.profileId ? { profileId: p.profileId } : {}),
+          ...(p.providerId ? { providerId: p.providerId } : {}),
         },
       };
     },
@@ -209,7 +210,10 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
     fromResult: (r) => r,
   },
   "model.list": {
-    toRequest: () => ({ method: "provider.catalog", payload: { providerId: "codex" } }),
+    toRequest: (payload) => ({
+      method: "provider.catalog",
+      payload: { providerId: asRecord(payload).providerId ?? "codex" },
+    }),
     fromResult: (r) => {
       const catalogs = (r as { catalogs?: Array<{ models?: Array<Record<string, unknown>> }> }).catalogs ?? [];
       const models = catalogs[0]?.models ?? [];

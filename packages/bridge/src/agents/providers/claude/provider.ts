@@ -64,6 +64,7 @@ export class ClaudeAgentProvider implements AgentProvider {
     // per session — no session is created for catalog discovery.
     return {
       providerId: "claude",
+      displayName: "Claude",
       models: [],
       modes: [],
       fetchedAt: Date.now(),

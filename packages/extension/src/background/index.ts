@@ -330,6 +330,8 @@ const state = {
   currentDraftConversation: null as SavedConversation | null,
   browserWindowId: undefined as number | undefined,
   models: [] as CodexModelOption[],
+  agentProviders: [] as UiInitPayload["agentProviders"],
+  selectedProviderId: "codex",
   customProfiles: [] as ProfileTemplate[],
   deletedProfileIds: [] as string[],
   modelCatalogState: "loading" as UiInitPayload["modelCatalogState"],
@@ -1379,6 +1381,8 @@ async function buildUiInitPayload(
     currentPageSupport,
     currentTab: activeTab ? tabToOpenTabContext(activeTab) : null,
     models: state.models,
+    agentProviders: state.agentProviders,
+    selectedProviderId: state.selectedProviderId,
     profiles: listAvailableProfiles(),
     selectedProfileId: state.selectedProfileId,
     selectedModel: state.selectedModel,
@@ -1613,6 +1617,7 @@ async function handlePromptSend(payload: PromptRequestPayload) {
     const opened = await bridge.request<{ threadId: string }>("session.open", {
       ...(cwd ? { cwd } : {}),
       ...(prepared.selectedModel ? { model: prepared.selectedModel } : {}),
+      providerId: settings.agentProviderId || "codex",
     });
     threadId = opened.threadId;
     conversationRuntime.setThreadId(conversationId, threadId);
@@ -4394,8 +4399,30 @@ async function refreshAppServerCatalog(
   let modelRequestFailed = false;
   let modelRequestErrorMessage = "";
   const previousModels = state.models;
+  const catalogSettings = await getStoredSettings().catch(() => null);
+  state.selectedProviderId = catalogSettings?.agentProviderId || "codex";
+  if (catalogSettings?.gatewayMode) {
+    const catalogs = await bridge
+      .request<{ catalogs?: Array<{ providerId: string; displayName?: string }> }>(
+        "provider.catalog",
+        {},
+      )
+      .then((r) => r.catalogs ?? [])
+      .catch(() => [] as Array<{ providerId: string; displayName?: string }>);
+    const providers = catalogs.map((c) => ({
+      id: c.providerId,
+      label: c.displayName ?? c.providerId,
+    }));
+    state.agentProviders = providers.length
+      ? providers
+      : [{ id: "codex", label: "Codex" }];
+  } else {
+    state.agentProviders = [{ id: "codex", label: "Codex" }];
+  }
   const [models, serverThreads, appServerSkills, connectedApps, appServerPlugins, mcpServers, rateLimits] = await Promise.all([
-    bridge.request<CodexModelOption[]>("model.list").catch((error) => {
+    bridge.request<CodexModelOption[]>("model.list", {
+      providerId: state.selectedProviderId,
+    }).catch((error) => {
       modelRequestFailed = true;
       modelRequestErrorMessage = toErrorMessage(error);
       console.warn("model.list failed", error);
@@ -4799,6 +4826,12 @@ async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<
     void getGatewayRuntime().then((rt) => {
       bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
     });
+  }
+  if (patch.agentProviderId !== undefined && patch.agentProviderId !== previousSettings.agentProviderId) {
+    void triggerCatalogRefresh(normalizeConfiguredPath(settings.workspaceRoot) || undefined, {
+      force: true,
+    });
+    return settings;
   }
   if (
     !shouldRefreshCatalogAfterSettingsUpdate({

@@ -845,6 +845,8 @@ const state = {
   currentTabReference: null as OpenTabContext | null,
   selectedPageTextContext: null as SelectedPageTextContext | null,
   models: [] as CodexModelOption[],
+  agentProviders: [] as UiInitPayload["agentProviders"],
+  selectedProviderId: "codex",
   profiles: [] as ProfileTemplate[],
   selectedProfileId: "default",
   selectedModel: "",
@@ -924,6 +926,7 @@ const state = {
     playwrightBrowserControlEnabled: false,
     browserPolicyV2: false,
     gatewayMode: false,
+    agentProviderId: "codex",
     preferredVoice: "",
     voiceInputAudioSource: "microphone",
     workspaceRoot: "",
@@ -2415,6 +2418,8 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     state.currentTabReference = payload.currentTab;
     const collections = normalizeSidepanelCollections(payload);
     state.models = collections.models;
+    state.agentProviders = payload.agentProviders ?? [];
+    state.selectedProviderId = payload.selectedProviderId || payload.settings.agentProviderId || "codex";
     state.selectedProfileId = payload.selectedProfileId;
     state.selectedModel = payload.selectedModel;
     state.selectedReasoningEffort = payload.selectedReasoningEffort;
@@ -2491,6 +2496,7 @@ async function applyInitialSettingsSnapshot(): Promise<void> {
   state.selectedModel = snapshot.selectedModel;
   state.selectedReasoningEffort = snapshot.selectedReasoningEffort;
   state.selectedServiceTier = snapshot.selectedServiceTier;
+  state.selectedProviderId = snapshot.settings.agentProviderId || state.selectedProviderId || "codex";
   syncSelectedReasoningEffort();
   syncDocumentLanguage();
   renderSync();
@@ -3396,6 +3402,7 @@ function renderNow(): void {
                     ${renderComposerBrowserActionPermissionControl(strings)}
                   </div>
                   <div class="composer-submit">
+                    ${renderComposerProviderSelect(strings)}
                     ${renderComposerModelDropdownControl(strings, selectedModelOption)}
                     ${renderComposerVoiceInputToggle(strings)}
                     ${renderComposerPrimaryActionButton(strings)}
@@ -4835,6 +4842,19 @@ function renderNativeConfirmationDialog(): string {
       </section>
     </div>
   `;
+}
+
+function renderComposerProviderSelect(strings: ReturnType<typeof getUiStrings>): string {
+  if (!state.settings.gatewayMode || state.agentProviders.length < 2) {
+    return "";
+  }
+  const options = state.agentProviders
+    .map(
+      (p) =>
+        `<option value="${escapeAttribute(p.id)}"${p.id === state.selectedProviderId ? " selected" : ""}>${escapeHtml(p.label)}</option>`,
+    )
+    .join("");
+  return `<select id="agent-provider-select" class="composer-provider-select" aria-label="${escapeAttribute(strings.labels.agentProvider)}">${options}</select>`;
 }
 
 function renderComposerModelDropdownControl(
@@ -13296,6 +13316,22 @@ function bindEvents(): void {
   root.querySelector<HTMLButtonElement>("[data-profile-question-dismiss]")?.addEventListener("click", () => {
     state.pendingProfileQuestion = null;
     render();
+  });
+
+  root.querySelector<HTMLSelectElement>("#agent-provider-select")?.addEventListener("change", async (event) => {
+    const providerId = (event.currentTarget as HTMLSelectElement | null)?.value;
+    if (!providerId || providerId === state.selectedProviderId) {
+      return;
+    }
+    state.selectedProviderId = providerId;
+    state.settings = await chrome.runtime.sendMessage({
+      type: "settings.update",
+      settings: { agentProviderId: providerId },
+    });
+    state.selectedModel = "";
+    state.selectedReasoningEffort = "";
+    state.selectedServiceTier = "";
+    scheduleInitialize({ forceCatalog: true });
   });
 
   root.querySelector<HTMLButtonElement>("#composer-model-menu-trigger")?.addEventListener("click", () => {

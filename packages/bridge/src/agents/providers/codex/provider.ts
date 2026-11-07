@@ -68,6 +68,7 @@ export class CodexAgentProvider implements AgentProvider {
     // provider.feature.codex.* RPCs expose the live model list.
     return {
       providerId: "codex",
+      displayName: "Codex",
       models: [],
       modes: [],
       fetchedAt: Date.now(),
