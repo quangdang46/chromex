@@ -489,11 +489,67 @@ export class SessionManager {
     this.#setTaskStatus(task, "paused", reason);
   }
 
-  /** task.resume: back to active; queued turns stay queued for user. */
-  resumeTask(taskId: string): void {
+  /**
+   * task.resume: back to active, then auto-resume what recovery left
+   * behind. The provider session died with the gateway, so a paused task
+   * cannot continue in place — the honest resume is re-dispatching work
+   * as NEW turns (new turnIds), never fake continuation.
+   * Returns a promise for tests; the RPC handler ignores it.
+   */
+  resumeTask(taskId: string): Promise<void> {
     const task = this.#requireTask(taskId);
-    if (task.status !== "paused") return;
+    if (task.status !== "paused") return Promise.resolve();
     this.#setTaskStatus(task, "active");
+    return this.#autoResume(taskId).catch(() => {});
+  }
+
+  /**
+   * Post-resume drain, in order:
+   *  1. a queued turn that survived recovery dispatches first — it was
+   *     persisted but never sent (§5.6);
+   *  2. a last turn left `unknown`/`failed` re-sends its user message as
+   *     a NEW turn via sendMessage (new turnId, new clientMessageId).
+   * Idempotent: a user retry creates a newer turn, so the last-turn check
+   * no-ops instead of double-sending. Missing user.message.created
+   * (pruned events) → nothing to honestly re-send; task stays active.
+   */
+  async #autoResume(taskId: string): Promise<void> {
+    const task = this.opts.store.getTask(taskId);
+    if (!task || task.status !== "active") return;
+    const store = this.opts.store;
+
+    const turns = [...store.listTurns(taskId)].sort((a, b) => a.createdAt - b.createdAt);
+    const queued = turns.find((t) => t.status === "queued");
+    if (queued) {
+      await this.#resumeQueued(task, queued);
+      return;
+    }
+    if (store.activeTurn(taskId)) return; // a turn is already in flight
+    const last = turns.at(-1);
+    if (!last || (last.status !== "unknown" && last.status !== "failed")) return;
+    const msg = this.#userMessageForTurn(taskId, last.turnId);
+    if (!msg) return;
+    try {
+      await this.sendMessage(taskId, {
+        clientMessageId: `resume-${last.turnId}`,
+        content: msg.content,
+        ...(msg.ctx ? { ctx: msg.ctx } : {}),
+      });
+    } catch {
+      // provider unavailable — #dispatchTurn already persisted turn.failed;
+      // the task stays active for the next explicit user action.
+    }
+  }
+
+  /** Rebuild a TurnInput's content/ctx from its durable
+   *  user.message.created event (§5.6 durability). */
+  #userMessageForTurn(taskId: string, turnId: string) {
+    const { events } = this.opts.store.taskEventsAfter(taskId, 0, 100_000);
+    const created = events.find(
+      (e) => e.type === "user.message.created" && e.payload.turnId === turnId,
+    );
+    if (!created || created.type !== "user.message.created") return null;
+    return created.payload.message;
   }
 
   /**
@@ -717,12 +773,8 @@ export class SessionManager {
   async #resumeQueued(task: TaskRecord, turn: TurnRecord): Promise<void> {
     // Rebuild TurnInput from the durable user.message.created event —
     // the prompt payload is persisted before dispatch (§5.6 durability).
-    const { events } = this.opts.store.taskEventsAfter(task.taskId, 0, 100_000);
-    const created = events.find(
-      (e) => e.type === "user.message.created" && e.payload.turnId === turn.turnId,
-    );
-    if (!created || created.type !== "user.message.created") return;
-    const msg = created.payload.message;
+    const msg = this.#userMessageForTurn(task.taskId, turn.turnId);
+    if (!msg) return;
     try {
       await this.#dispatchTurn(task, turn, {
         clientMessageId: msg.clientMessageId,

@@ -331,6 +331,117 @@ describe("SessionManager", () => {
     expect(store.getTask(t2.taskId)!.status).toBe("completed");
   });
 
+  test("resumeTask after gateway_restart: unknown last turn re-dispatches as NEW turn", async () => {
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const { turnId: t1 } = await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 5));
+
+    // simulate §5.6 recovery: running turn → unknown, task → paused
+    const t1rec = store.getTurn(t1)!;
+    store.upsertTurn(transitionTurn(t1rec, "unknown", { endedAt: Date.now(), stopReason: "gateway_restart" }));
+    sm.pauseTask(task.taskId, "gateway_restart");
+    expect(store.getTask(task.taskId)!.status).toBe("paused");
+
+    await sm.resumeTask(task.taskId);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const turns = store.listTurns(task.taskId);
+    expect(turns).toHaveLength(2);
+    const t2 = turns.find((t) => t.turnId !== t1)!;
+    expect(t2.turnId).not.toBe(t1); // honest: new turnId, not fake continuation
+    expect(t2.clientMessageId).toBe(`resume-${t1}`);
+    expect(t2.status).toBe("running"); // autoTerminal=false → stays open
+    // provider saw a second startTurn with the SAME user content
+    const mock = sessions[0]!;
+    expect(mock.turns).toHaveLength(2);
+    expect(mock.turns[1]!.gatewayTurnId).toBe(t2.turnId);
+    // a second user.message.created was persisted for the new turn
+    const created = store
+      .taskEventsAfter(task.taskId, 0, 200)
+      .events.filter((e) => e.type === "user.message.created");
+    expect(created).toHaveLength(2);
+    expect(store.getTask(task.taskId)!.status).toBe("active");
+  });
+
+  test("resumeTask is idempotent: user retry before resume → no double-send", async () => {
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const { turnId: t1 } = await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 5));
+
+    // recovery state: t1 unknown + task paused
+    const t1rec = store.getTurn(t1)!;
+    store.upsertTurn(transitionTurn(t1rec, "unknown", { endedAt: Date.now(), stopReason: "gateway_restart" }));
+    sm.pauseTask(task.taskId, "gateway_restart");
+
+    // user manually retries BEFORE resuming — t2 runs and completes
+    const { turnId: t2 } = await sm.sendMessage(task.taskId, {
+      clientMessageId: "cm-retry",
+      content: [{ type: "text", text: "retry" }],
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    sessions[0]!.emit({ type: "turn.completed", turnId: t2 });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(store.getTask(task.taskId)!.status).toBe("paused"); // paused ≠ auto-complete
+
+    await sm.resumeTask(task.taskId);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // last turn completed → auto-resume must NOT send a third turn
+    expect(store.listTurns(task.taskId)).toHaveLength(2);
+    expect(store.getTurn(t2)!.status).toBe("completed");
+    expect(sessions[0]!.turns).toHaveLength(2);
+    expect(store.getTask(task.taskId)!.status).toBe("active");
+  });
+
+  test("resumeTask drains a queued turn that survived recovery", async () => {
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => { s.autoTerminal = false; },
+    });
+    const task = sm.createTask(taskParams());
+    const { turnId: t1 } = await sm.sendMessage(task.taskId, {
+      clientMessageId: "cm-1",
+      content: [{ type: "text", text: "one" }],
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const r2 = await sm.sendMessage(task.taskId, {
+      clientMessageId: "cm-2",
+      content: [{ type: "text", text: "two" }],
+    });
+    expect(r2.queued).toBe(true);
+
+    // recovery: running → unknown + paused; queued turn stays queued
+    const t1rec = store.getTurn(t1)!;
+    store.upsertTurn(transitionTurn(t1rec, "unknown", { endedAt: Date.now(), stopReason: "gateway_restart" }));
+    sm.pauseTask(task.taskId, "gateway_restart");
+
+    await sm.resumeTask(task.taskId);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const t2 = store.getTurn(r2.turnId)!;
+    expect(t2.status).toBe("running"); // dispatched via #resumeQueued
+    expect(t2.startedAt).not.toBeNull();
+    expect(sessions[0]!.turns.map((t) => t.gatewayTurnId)).toContain(r2.turnId);
+    // exactly one extra provider turn — the queued one, no duplicate of t1
+    expect(sessions[0]!.turns).toHaveLength(2);
+  });
+
+  test("resumeTask on non-paused task is a no-op", async () => {
+    const { sm, store, sessions } = await makeManager();
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    await sm.resumeTask(task.taskId);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.listTurns(task.taskId)).toHaveLength(1);
+    expect(sessions[0]!.turns).toHaveLength(1);
+  });
+
   test("invalid task transition throws StateTransitionError", () => {
     const task = { status: "completed" } as TaskRecord;
     expect(() => transitionTask(task, "paused")).toThrow(StateTransitionError);
