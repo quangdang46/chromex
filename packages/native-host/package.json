@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@codex-sidepanel/shared": "0.1.8"
+    "@codex-sidepanel/shared": "0.1.8",
+    "fs-ext": "^2.1.1"
   }
 }

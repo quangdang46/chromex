@@ -75,6 +75,12 @@ All under `CHROMEX_GATEWAY_HOME` (default `~/.chromex/gateway`):
   (UDS/named pipe path + pid).
 - `gateway.lock`, `gateway.startup.lock` — ownership locks. A second
   gateway instance cannot start; the loser exits during boot.
+- `run/gateway.start.lock` — client-side spawn mutex: a native host
+  holds it while deciding to spawn so two hosts don't race. OS-released
+  on host death; never reclaimed by hand.
+- `run/gateway.spawns.json` — spawn attempt ledger backing the host's
+  spawn budget (in-flight suppression + rate cap). Delete `run/` to
+  reset both.
 
 ## Behavior guarantees
 

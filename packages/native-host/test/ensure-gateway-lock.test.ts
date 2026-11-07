@@ -5,10 +5,11 @@
  * Scope note: the two-lock ownership protocol (gateway.startup.lock +
  * gateway.lock, OS flock + fencing) lives in the GATEWAY process
  * (packages/bridge/src/gateway/lock.ts) and is covered by
- * packages/bridge/test/gateway.test.ts. The native host deliberately
- * holds NO client-side startup lock (see gateway-client.ts comment):
- * concurrent spawners are safe because the gateway's lifetime flock
- * admits exactly one process and losers exit during boot.
+ * packages/bridge/test/gateway.test.ts. Since chromex-1pj the host ALSO
+ * holds a client-side start lock (`run/gateway.start.lock`) plus a spawn
+ * budget ledger (`run/gateway.spawns.json`) — see gateway-spawn-guard.test.ts
+ * for dedicated coverage. The gateway's lifetime flock remains the hard
+ * backstop: even if two spawns slip through, losers exit during boot.
  *
  * These tests therefore exercise the HOST-side contract around spawn:
  *  - concurrent cold start → both hosts attach, one gateway survives
@@ -205,10 +206,9 @@ describe("ensureGateway startup-lock contention", () => {
   });
 
   test("concurrent cold start: two hosts race, both attach, exactly one gateway survives", async () => {
-    // §7.3 #11 / §3.3.2 #6 analog: no client-side startup lock exists —
-    // safety comes from the gateway lifetime lock. Both hosts may spawn;
-    // losers must exit during boot and both hosts must end up on the
-    // same published endpoint.
+    // §7.3 #11 / §3.3.2 #6 analog: the client start lock serializes the
+    // spawn decision, so typically exactly one host spawns; even if both
+    // do, the gateway lifetime lock admits exactly one survivor.
     const [c1, c2] = await Promise.all([
       ensureGateway(dir, { hello: HELLO, gatewayBin: binPath, startupTimeoutMs: 15_000 }),
       ensureGateway(dir, { hello: HELLO, gatewayBin: binPath, startupTimeoutMs: 15_000 }),
@@ -241,13 +241,11 @@ describe("ensureGateway startup-lock contention", () => {
     // the gateway publishes; a second host arrives while the gateway is
     // still booting.
     //
-    // KNOWN GAP vs plan: the host has no client-side startup lock and no
-    // in-flight-boot marker, so it cannot distinguish "no gateway" from
-    // "gateway mid-boot" — it spawns a duplicate on the first
-    // endpoint_missing. Safety comes from the gateway lifetime lock:
-    // the duplicate exits during boot and exactly one gateway survives.
-    // (Client-side startup-lock serialization is the documented later
-    // refinement in gateway-client.ts.)
+    // The first host's start lock is released when it gives up, so the
+    // second host may spawn — but the spawn budget's spawn_in_flight
+    // suppression (last spawn < SPAWN_IN_FLIGHT_MS ago) usually prevents
+    // even that while the first gateway is still booting. Safety net
+    // regardless: the lifetime lock admits exactly one survivor.
     await expect(
       ensureGateway(dir, {
         hello: HELLO,
@@ -265,8 +263,8 @@ describe("ensureGateway startup-lock contention", () => {
     expect(conn.hello.gatewayVersion).toBe("fake-lock");
     await expect(conn.request("task.list", {})).resolves.toEqual({ ok: true });
 
-    // Both hosts may have spawned (no startup lock), but the lifetime
-    // lock admits exactly one survivor and both attach to its endpoint.
+    // At most one spawn per host (start lock + spawned flag); the
+    // lifetime lock guarantees a single survivor either way.
     const spawns = await spawnAttempts(dir);
     expect(spawns.length).toBeGreaterThanOrEqual(1);
     expect(spawns.length).toBeLessThanOrEqual(2);

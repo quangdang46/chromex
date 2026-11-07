@@ -13,12 +13,23 @@
  * (legacy BridgeRequest compat) is P1-07's router layer.
  */
 
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import type { Envelope, HelloResponse, HelloRequest, ProtocolError } from "@codex-sidepanel/shared";
+
+import {
+  gatewaySpawnBudget,
+  recordGatewaySpawn,
+  tryAcquireGatewayStartLock,
+  type GatewayStartLock,
+} from "./start-lock.js";
+
+const execFileP = promisify(execFile);
 
 const HEADER_BYTES = 4;
 const DEFAULT_MAX_ENVELOPE = 768 * 1024;
@@ -85,14 +96,70 @@ export async function readGatewayToken(dataDir: string): Promise<string> {
   }
 }
 
-/** True when the endpoint's pid is alive (guards stale PID reuse). */
+/**
+ * Process start time in epoch ms, or null when it cannot be determined
+ * (ps/powershell missing, unparsable). Same mechanism as
+ * browser-instance.ts's parentStartTime, but returns an epoch so it can
+ * be compared against the endpoint's startedAt.
+ */
+async function processStartTimeMs(pid: number): Promise<number | null> {
+  if (process.platform === "win32") {
+    try {
+      const { stdout } = await execFileP("powershell", [
+        "-NoProfile",
+        "-Command",
+        `(Get-Process -Id ${pid}).StartTime.ToString('o')`,
+      ]);
+      const t = Date.parse(stdout.trim());
+      return Number.isNaN(t) ? null : t;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const { stdout } = await execFileP("ps", ["-o", "etime=", "-p", String(pid)]);
+    const elapsedMs = parseEtimeMs(stdout.trim());
+    return elapsedMs === null ? null : Date.now() - elapsedMs;
+  } catch {
+    return null;
+  }
+}
+
+/** `ps -o etime=` format: [[dd-]hh:]mm:ss → milliseconds. */
+function parseEtimeMs(etime: string): number | null {
+  const dash = etime.split("-");
+  if (dash.length > 2) return null;
+  const days = dash.length === 2 ? Number(dash[0]) : 0;
+  const segs = (dash.length === 2 ? dash[1]! : etime).split(":").map(Number);
+  if (!Number.isFinite(days) || segs.length < 2 || segs.length > 3 || segs.some((n) => !Number.isFinite(n))) {
+    return null;
+  }
+  const [a, b, c] = segs.length === 3 ? segs : [0, segs[0]!, segs[1]!];
+  return (((days * 24 + (a ?? 0)) * 3600 + (b ?? 0)) * 60 + (c ?? 0)) * 1000;
+}
+
+/** Clock/ps-rounding slack when comparing proc start vs endpoint publish. */
+const PID_STARTED_AT_SKEW_MS = 2_000;
+
+/**
+ * True when the endpoint's pid is alive AND plausibly still the gateway
+ * (PID-reuse guard, chromex-1pj). kill(pid,0) alone cannot tell a recycled
+ * PID from the real owner: any process now holding that pid must have
+ * started before the endpoint's startedAt (the gateway held the pid at
+ * publish time, so a later start means a different process). When the
+ * start time cannot be determined we fall back to liveness alone —
+ * same documented limitation as browser-instance.ts.
+ */
 export async function endpointPidAlive(ep: GatewayEndpointFile): Promise<boolean> {
   try {
     process.kill(ep.gatewayPid, 0);
-    return true;
   } catch {
     return false;
   }
+  if (typeof ep.startedAt !== "number" || !Number.isFinite(ep.startedAt)) return true;
+  const procStart = await processStartTimeMs(ep.gatewayPid);
+  if (procStart === null) return true;
+  return procStart <= ep.startedAt + PID_STARTED_AT_SKEW_MS;
 }
 
 export interface GatewayConnectOptions {
@@ -315,10 +382,14 @@ function resolveGatewayBin(override?: string | null): string | null {
  * answers within the deadline. §3.3.1: single startupTimeoutMs covers
  * discovery + spawn + endpoint-publish; backoff 250ms→5s jittered.
  *
- * Concurrent spawners are safe WITHOUT a client-side startup lock: the
- * gateway's own LIFETIME flock admits exactly one process — losers exit
- * during boot. (Client-side startup-lock serialization is a later
- * refinement if spawn storms prove costly.)
+ * Spawn safety (chromex-1pj, plan §3.3.1): concurrent spawners serialize
+ * on the client start lock (`run/gateway.start.lock`, OS flock — see
+ * start-lock.ts). A host that finds the lock held knows another host is
+ * mid-spawn and only waits for the endpoint. The spawn budget ledger
+ * (`run/gateway.spawns.json`) suppresses respawns while a previous spawn
+ * may still be booting and caps spawn rate when the gateway keeps dying.
+ * The gateway's lifetime flock remains the hard backstop: even if two
+ * spawns slip through, exactly one gateway survives.
  *
  * §3.3.2 5b: a live owner that cannot be reached must NEVER trigger a
  * spawn. `connect_failed` is only reachable after `endpointPidAlive`
@@ -335,55 +406,89 @@ export async function ensureGateway(
   const bin = resolveGatewayBin(opts.gatewayBin);
   let spawned = false;
   let backoff = 250;
+  let startLock: GatewayStartLock | null = null;
+  let lockBypassed = false;
 
-  for (;;) {
-    try {
-      return await GatewayConnection.connect(dataDir, {
-        ...(opts.hello ? { hello: opts.hello } : {}),
-        timeoutMs: Math.min(5_000, Math.max(500, deadline - Date.now())),
-        ...(opts.maxEnvelopeBytes !== undefined ? { maxEnvelopeBytes: opts.maxEnvelopeBytes } : {}),
-      });
-    } catch (err) {
-      const code = err instanceof GatewayClientError ? err.code : "connect_failed";
-      const retryable = err instanceof GatewayClientError ? err.retryable : true;
-      const ownerAliveUnreachable =
-        err instanceof GatewayClientError && err.code === "connect_failed";
-      if (!retryable || Date.now() >= deadline) {
-        if (ownerAliveUnreachable && err instanceof GatewayClientError) {
-          throw new GatewayClientError(
-            `gateway owner alive but IPC unreachable: ${err.message}`,
-            "unresponsive",
-          );
-        }
-        throw err;
-      }
-
-      if (!spawned && bin && (code === "endpoint_missing" || code === "endpoint_stale")) {
-        spawned = true;
-        opts.log?.(`spawning gateway: ${bin}`);
-        const { spawn } = await import("node:child_process");
-        const { appendFileSync, openSync } = await import("node:fs");
-        // stderr → gateway.log: the gateway is detached, so without this
-        // a crash is undiagnosable (stdio:"ignore" leaves no trace).
-        const logPath = path.join(dataDir, "gateway.log");
-        const logFd = openSync(logPath, "a");
-        const child = spawn(process.execPath, [bin], {
-          detached: true,
-          stdio: ["ignore", logFd, logFd],
-          windowsHide: true,
-          env: {
-            ...process.env,
-            CHROMEX_GATEWAY_HOME: dataDir,
-            ...(opts.env ?? {}),
-          },
+  try {
+    for (;;) {
+      try {
+        return await GatewayConnection.connect(dataDir, {
+          ...(opts.hello ? { hello: opts.hello } : {}),
+          timeoutMs: Math.min(5_000, Math.max(500, deadline - Date.now())),
+          ...(opts.maxEnvelopeBytes !== undefined ? { maxEnvelopeBytes: opts.maxEnvelopeBytes } : {}),
         });
-        child.unref();
-        appendFileSync(logPath, `\n--- spawn ${new Date().toISOString()} pid=${child.pid ?? "?"} ---\n`);
-      }
+      } catch (err) {
+        const code = err instanceof GatewayClientError ? err.code : "connect_failed";
+        const retryable = err instanceof GatewayClientError ? err.retryable : true;
+        const ownerAliveUnreachable =
+          err instanceof GatewayClientError && err.code === "connect_failed";
+        if (!retryable || Date.now() >= deadline) {
+          if (ownerAliveUnreachable && err instanceof GatewayClientError) {
+            throw new GatewayClientError(
+              `gateway owner alive but IPC unreachable: ${err.message}`,
+              "unresponsive",
+            );
+          }
+          throw err;
+        }
 
-      const wait = Math.min(backoff + Math.floor(Math.random() * 100), 5_000);
-      backoff = Math.min(backoff * 2, 5_000);
-      await new Promise((r) => setTimeout(r, Math.min(wait, Math.max(50, deadline - Date.now()))));
+        if (!spawned && bin && (code === "endpoint_missing" || code === "endpoint_stale")) {
+          // Serialize spawners: lock contention means another host is
+          // mid-spawn — keep polling for its endpoint, never spawn.
+          // Lock errors fail OPEN (lifetime flock is still the backstop).
+          if (!startLock && !lockBypassed) {
+            try {
+              startLock = await tryAcquireGatewayStartLock(dataDir);
+            } catch (lockErr) {
+              lockBypassed = true;
+              opts.log?.(
+                `gateway start lock unavailable: ${lockErr instanceof Error ? lockErr.message : String(lockErr)} — spawning without it`,
+              );
+            }
+          }
+          if (startLock || lockBypassed) {
+            const budget = await gatewaySpawnBudget(dataDir);
+            if (budget.allowed) {
+              spawned = true;
+              await recordGatewaySpawn(dataDir);
+              opts.log?.(`spawning gateway: ${bin}`);
+              const { spawn } = await import("node:child_process");
+              const { appendFileSync, openSync } = await import("node:fs");
+              // stderr → gateway.log: the gateway is detached, so without this
+              // a crash is undiagnosable (stdio:"ignore" leaves no trace).
+              const logPath = path.join(dataDir, "gateway.log");
+              const logFd = openSync(logPath, "a");
+              const child = spawn(process.execPath, [bin], {
+                detached: true,
+                stdio: ["ignore", logFd, logFd],
+                windowsHide: true,
+                env: {
+                  ...process.env,
+                  CHROMEX_GATEWAY_HOME: dataDir,
+                  ...(opts.env ?? {}),
+                },
+              });
+              child.unref();
+              appendFileSync(
+                logPath,
+                `\n--- spawn ${new Date().toISOString()} pid=${child.pid ?? "?"} ---\n`,
+              );
+            } else {
+              // Suppressed (in-flight boot or rate cap): stop trying to
+              // spawn this call and wait out the deadline for the
+              // in-flight spawn's endpoint.
+              spawned = true;
+              opts.log?.(`gateway spawn suppressed: ${budget.reason}`);
+            }
+          }
+        }
+
+        const wait = Math.min(backoff + Math.floor(Math.random() * 100), 5_000);
+        backoff = Math.min(backoff * 2, 5_000);
+        await new Promise((r) => setTimeout(r, Math.min(wait, Math.max(50, deadline - Date.now()))));
+      }
     }
+  } finally {
+    await startLock?.release().catch(() => {});
   }
 }
