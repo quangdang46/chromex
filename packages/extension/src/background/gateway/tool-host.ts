@@ -549,6 +549,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
         return {
           id: tab.id,
+          tabId: tab.id,
           url: safeTabUrl,
           title: tab.title ?? "",
           active: tab.active === true,

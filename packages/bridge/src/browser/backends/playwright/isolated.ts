@@ -337,7 +337,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         documentHeight: document.documentElement.scrollHeight,
       }))
       .catch(() => undefined);
+    const context = await this.#contextFor(taskId);
     const base = {
+      tabId: context.pages().indexOf(page),
       url: stripQuery(page.url()),
       ...(scroll ? { scroll } : {}),
     };
