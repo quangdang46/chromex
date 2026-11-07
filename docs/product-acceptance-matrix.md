@@ -29,7 +29,7 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 
 | Capability | Owner | Status | Gap / bead |
 |---|---|---|---|
-| Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | S5 PASS headless real-ext: SIGKILL → respawn → host re-register → dedup verified; sidepanel close path unverified |
+| Durable tasks/turns/events/recovery | bridge gateway | ✅ built + tested | S5 PASS headless real-ext: SIGKILL → respawn → host re-register → dedup verified; `sw-restart` PASS: chrome.runtime.reload → new SW + NM host re-registered → calls recovered, click delivered exactly once |
 | Provider abstraction codex/claude/acp | bridge agents | ✅ built | live ACP creds blocked (436) |
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
 | Tab lifecycle: list/create/activate/close/duplicate/update(pinned/muted/zoom)/discard | ext tool-host | ✅ 7 tools (07cf2e4, c42040d, cd8b05e, f04d70a) | lifecycle completeness edge cases |
@@ -96,6 +96,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   top-frame snapshotId aimed at a child frame refused with
   browser.stale_snapshot; frameId=99999 fails honestly (capability
   promoted to iframe:"all" for http(s) frames)
+  `sw-restart` PASS — chrome.runtime.reload() kills the MV3 service
+  worker and orphans every content script: new SW appears, NM host
+  re-registers as browser host (authed conns back to 2), page.get →
+  snapshot → click all complete with zero user action, and the
+  post-reload click lands exactly once on a counter fixture (no
+  duplicate listeners)
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)

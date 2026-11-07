@@ -108,6 +108,14 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 </script>
 </body></html>`,
 
+  // click counter — exact-count proof that an action is delivered once
+  // (duplicate content-script listeners would double-increment)
+  "/counter": `<!doctype html><html><body>
+<h1>Counter Page</h1>
+<button id="inc" onclick="document.getElementById('count').textContent=String((parseInt(document.getElementById('count').textContent,10)||0)+1)">inc</button>
+<p id="count">0</p>
+</body></html>`,
+
   // iframe proof: child frame with an observable button + text field.
   // ?mark=<src> is echoed into the fetch so same- and cross-origin hits
   // are distinguishable in the requests log.
