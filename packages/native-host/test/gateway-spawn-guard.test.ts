@@ -151,11 +151,13 @@ describe("gateway spawn guard", () => {
     // ensureGateway treats it as no-live-owner → spawns once; the
     // record-only bin exits instantly, so chromex-1kz surfaces
     // `spawn_exited` rather than endpoint_stale at the deadline.
+    // Generous deadline: the child's 'exit' event is async and can lag
+    // a few hundred ms under parallel test load.
     await expect(
       ensureGateway(dir, {
         hello: HELLO,
         gatewayBin: binPath,
-        startupTimeoutMs: 900,
+        startupTimeoutMs: 5_000,
       }),
     ).rejects.toMatchObject({ code: "spawn_exited", retryable: false });
     expect(await spawnAttempts(dir)).toBe(1);
