@@ -520,7 +520,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.downloads.list": {
     description:
-      "List recent downloads for this profile (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
+      "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",
     inputSchema: objectSchema({
       state: { type: "string", enum: ["in_progress", "interrupted", "complete"], description: "Optional state filter." },
       limit: { type: "integer", description: "Max items (1–200, default 50)." },
@@ -529,7 +529,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.downloads.save": {
     description:
-      "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). waitForCompletion polls until the download reaches complete|interrupted and returns the final filename (absolute path) + fileExists. Not tab-scoped. Always requires approval. chrome-extension backend only — playwright-isolated returns proto.unsupported.",
+      "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). waitForCompletion polls until the download reaches complete|interrupted and returns the final filename (absolute path) + fileExists. Not tab-scoped. Always requires approval. On playwright-isolated the file is saved synchronously via saveAs — the returned state is already terminal.",
     inputSchema: objectSchema(
       {
         url: { type: "string", description: "http(s) URL to download (required)." },

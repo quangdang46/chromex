@@ -11,8 +11,11 @@
  * and the gateway dependency stay where they are.
  */
 
+import { existsSync, statSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -58,8 +61,8 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.upload",
   "browser.page.find",
   "browser.page.history",
-  // browser.downloads.list intentionally absent — download events are
-  // not wired on this backend; the tool stays proto.unsupported.
+  "browser.downloads.list",
+  "browser.downloads.save",
 ]);
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -76,6 +79,21 @@ type PwModule = typeof import("playwright-core");
 type PwBrowser = import("playwright-core").Browser;
 type PwBrowserContext = import("playwright-core").BrowserContext;
 type PwPage = import("playwright-core").Page;
+type PwDownload = import("playwright-core").Download;
+
+/** One observed download on the isolated backend — mirrors the fields
+ *  browser.downloads.list returns on chrome-extension. `path` is the
+ *  absolute on-disk location after saveAs (null until saved). */
+interface DownloadLogEntry {
+  id: number;
+  url: string;
+  suggestedFilename: string;
+  state: "in_progress" | "complete" | "interrupted";
+  startTime: number;
+  path: string | null;
+  error: string | null;
+  download: PwDownload;
+}
 
 export interface IsolatedBackendOptions {
   /** injectable for tests — defaults to lazy createRequire import */
@@ -103,6 +121,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   readonly #activePages = new Map<string, PwPage>();
   /** page → bounded console buffer (page.on('console'/'pageerror')) */
   readonly #consoleBuffers = new Map<PwPage, Array<{ level: string; text: string; ts: number }>>();
+  /** taskId → observed downloads (context 'download' events + saveAs) */
+  readonly #downloadLogs = new Map<string, DownloadLogEntry[]>();
+  #downloadSeq = 0;
   #closed = false;
 
   constructor(opts: IsolatedBackendOptions = {}) {
@@ -225,6 +246,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#find(taskId, args);
       case "browser.page.history":
         return this.#history(taskId, args);
+      case "browser.downloads.list":
+        return this.#downloadsList(taskId, args);
+      case "browser.downloads.save":
+        return this.#downloadsSave(taskId, args);
       default:
         throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
@@ -902,6 +927,170 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
     }
     return { navigated: action, ...(moved !== null ? { moved } : {}), url: stripQuery(page.url()) };
+  }
+
+  // ---- downloads ----
+
+  /** Lazily attach the context 'download' listener once per task and
+   *  return the task's log. Passive page-initiated downloads land here
+   *  too — they stay in_progress until saveAs persists them (playwright
+   *  deletes unsaved download artifacts when the context closes). */
+  async #ensureDownloadLog(taskId: string): Promise<DownloadLogEntry[]> {
+    const context = await this.#contextFor(taskId);
+    const existing = this.#downloadLogs.get(taskId);
+    if (existing) return existing;
+    const log: DownloadLogEntry[] = [];
+    this.#downloadLogs.set(taskId, log);
+    context.on("download", (d) => {
+      log.push({
+        id: ++this.#downloadSeq,
+        url: stripQuery(d.url()),
+        suggestedFilename: d.suggestedFilename(),
+        state: "in_progress",
+        startTime: Date.now(),
+        path: null,
+        error: null,
+        download: d,
+      });
+    });
+    return log;
+  }
+
+  #downloadDir(): string {
+    return join(tmpdir(), "chromex-playwright-downloads");
+  }
+
+  async #downloadsList(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const log = await this.#ensureDownloadLog(taskId);
+    const state = typeof args.state === "string" ? args.state : null;
+    if (state !== null && !["in_progress", "interrupted", "complete"].includes(state)) {
+      throw protocolError("proto.invalid", "browser.downloads.list args.state must be in_progress|interrupted|complete");
+    }
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+        : 50;
+    let since: number | undefined;
+    if (typeof args.since === "number" && Number.isFinite(args.since)) {
+      since = args.since;
+    } else if (typeof args.since === "string") {
+      const parsed = Date.parse(args.since);
+      if (Number.isNaN(parsed)) {
+        throw protocolError("proto.invalid", "browser.downloads.list args.since must be epoch ms or an ISO date");
+      }
+      since = parsed;
+    }
+    const items = log
+      .filter((e) => (state === null || e.state === state) && (since === undefined || e.startTime >= since))
+      .slice(-limit)
+      .reverse();
+    const sizeOf = (p: string): number => {
+      try {
+        return statSync(p).size;
+      } catch {
+        return 0;
+      }
+    };
+    return {
+      downloads: items.map((e) => {
+        const bytes = e.path !== null ? sizeOf(e.path) : 0;
+        return {
+          id: e.id,
+          state: e.state,
+          filename: e.path ?? "",
+          bytesReceived: bytes,
+          totalBytes: e.path !== null ? bytes : -1,
+          ...(e.error !== null ? { error: e.error } : {}),
+          startTime: new Date(e.startTime).toISOString(),
+          fileExists: e.path !== null && existsSync(e.path),
+        };
+      }),
+    };
+  }
+
+  /** browser.downloads.save — navigate a scratch page to the URL; a
+   *  Content-Disposition response triggers a real download event which
+   *  saveAs persists under the isolated download dir. saveAs waits for
+   *  the download to finish, so the returned state is always terminal —
+   *  waitForCompletion/timeoutMs are accepted for contract parity but
+   *  there is nothing left to wait for. */
+  async #downloadsSave(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const url = typeof args.url === "string" ? args.url : "";
+    if (!url) {
+      throw protocolError("proto.invalid", "browser.downloads.save args.url is required");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw protocolError("proto.invalid", "browser.downloads.save args.url must be a valid URL");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw protocolError("proto.invalid", "browser.downloads.save args.url must be http(s)");
+    }
+    const filename = typeof args.filename === "string" ? args.filename : undefined;
+    if (filename !== undefined) {
+      if (
+        filename.length > 200 ||
+        filename.startsWith("/") ||
+        filename.includes("..") ||
+        filename.includes("\\") ||
+        /[\x00-\x1f]/.test(filename)
+      ) {
+        throw protocolError(
+          "proto.invalid",
+          "browser.downloads.save args.filename must be a relative path inside the download directory",
+        );
+      }
+    }
+    const context = await this.#contextFor(taskId);
+    const log = await this.#ensureDownloadLog(taskId);
+    const dir = this.#downloadDir();
+    await mkdir(dir, { recursive: true });
+    const page = await context.newPage();
+    const started = Date.now();
+    try {
+      const dlPromise = page.waitForEvent("download", { timeout: DEFAULT_NAV_TIMEOUT_MS });
+      // goto rejects when the response is a download — that IS the
+      // success path, so the error is swallowed and the event awaited.
+      await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => {});
+      const dl = await dlPromise.catch(() => null);
+      if (!dl) {
+        throw protocolError("browser.timeout", "no download was triggered by the URL within the timeout");
+      }
+      const name = filename ?? (dl.suggestedFilename() || `download-${Date.now()}`);
+      const target = join(dir, name);
+      await dl.saveAs(target);
+      const failure = await dl.failure().catch(() => null);
+      const state = failure === null ? "complete" : "interrupted";
+      let entry = log.find((e) => e.download === dl);
+      if (!entry) {
+        entry = {
+          id: ++this.#downloadSeq,
+          url: stripQuery(dl.url()),
+          suggestedFilename: dl.suggestedFilename(),
+          state: "in_progress",
+          startTime: Date.now(),
+          path: null,
+          error: null,
+          download: dl,
+        };
+        log.push(entry);
+      }
+      entry.path = target;
+      entry.state = state;
+      entry.error = failure;
+      return {
+        downloadId: entry.id,
+        state,
+        filename: target,
+        fileExists: existsSync(target),
+        ...(failure !== null ? { error: failure } : {}),
+        waitedMs: Date.now() - started,
+      };
+    } finally {
+      await page.close().catch(() => {});
+    }
   }
 
   /** browser.page.find — bounded DOM text search. No content-side ref

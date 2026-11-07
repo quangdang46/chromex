@@ -7,7 +7,7 @@
 // Scenario: multi-step form workflow (the S1/S8 shape) + a negative check
 // that a broken page reports failure honestly instead of fake success.
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -204,11 +204,25 @@ try {
   const fname = await call("browser.page.extract", { tabId: kTab, selector: "#fname" });
   assert(String(fname?.text ?? "").includes("agent-note.txt"), "file input shows uploaded name");
 
+  // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
+  const dl = await call("browser.downloads.save", {
+    url: fixture.url("/dl"),
+    filename: "e2e-download.txt",
+  });
+  assert(dl?.state === "complete" && dl?.fileExists === true, `download saved (state=${dl?.state})`);
+  assert(String(dl?.filename ?? "").endsWith("e2e-download.txt"), "filename arg honored");
+  const onDisk = await readFile(String(dl?.filename), "utf8").catch(() => "");
+  assert(onDisk === "download-bytes-from-fixture", "downloaded bytes match fixture payload");
+  const dlList = await call("browser.downloads.list", {});
+  const listed = (dlList?.downloads ?? []).find((d) => String(d?.filename ?? "").endsWith("e2e-download.txt"));
+  assert(!!listed && listed.state === "complete", "downloads.list reports the completed download");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   await expectReject("browser.page.evaluate", {}, "unsupported", "evaluate refused (no arbitrary JS)");
   await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
   await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");
-  await expectReject("browser.downloads.list", {}, "unsupported", "downloads not advertised on isolated backend");
+  await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");
+  await expectReject("browser.downloads.save", { url: fixture.url("/dl"), filename: "../escape.txt" }, "relative path", "traversal filename refused");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

@@ -65,12 +65,13 @@ export interface BrowserBackendCapabilities {
   pageFind?: boolean;
   /** browser.page.history — back/forward/reload on the task's tab */
   pageHistory?: boolean;
-  /** browser.downloads.list — chrome.downloads listing (extension only;
-   *  requires the "downloads" permission). Playwright-isolated does NOT
-   *  claim it: download events are not wired. */
+  /** browser.downloads.list — download listing. Extension: chrome.downloads
+   *  (requires the "downloads" permission). Playwright-isolated: observed
+   *  download events only, filename populated after saveAs. */
   downloadsList?: boolean;
   /** browser.downloads.save — agent-initiated http(s) download into the
-   *  profile's download dir (extension only; same permission). */
+   *  profile's download dir. Extension: chrome.downloads. Playwright:
+   *  context download event + saveAs into the isolated download dir. */
   downloadsSave?: boolean;
   /** browser.windows.* — list/create/update browser windows
    *  (chrome-extension only; playwright has a single implicit window). */
@@ -146,7 +147,8 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     pagePress: true,
     pageFind: true,
     pageHistory: true,
-    // downloadsList intentionally absent — not implemented on this backend.
+    downloadsList: true,
+    downloadsSave: true,
   },
   "playwright-cdp": {
     existingUserTabs: false,

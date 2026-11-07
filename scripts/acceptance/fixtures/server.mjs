@@ -124,6 +124,16 @@ export async function startFixtureServer() {
       });
       return;
     }
+    // attachment download — Content-Disposition triggers a real
+    // browser download event (downloads.save proof)
+    if (url.pathname === "/dl") {
+      res.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-disposition": 'attachment; filename="agent-file.txt"',
+      });
+      res.end("download-bytes-from-fixture");
+      return;
+    }
     const html = PAGES[url.pathname];
     if (html) {
       res.writeHead(200, { "content-type": "text/html" });
