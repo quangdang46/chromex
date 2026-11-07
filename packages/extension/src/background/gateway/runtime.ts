@@ -77,7 +77,14 @@ async function build(): Promise<GatewayRuntime | null> {
         .catch(() => undefined);
     },
     onEvent: (env) => {
-      if (env.kind === "event" && env.reliability === "durable" && env.stream === "task") {
+      // durable task + gateway streams both feed TaskController — the
+      // gateway branch only advances lastSeqByGateway so live events are
+      // not replayed by the next gateway.sync (chromex-fjr).
+      if (
+        env.kind === "event" &&
+        env.reliability === "durable" &&
+        (env.stream === "task" || env.stream === "gateway")
+      ) {
         tasks.handleEvent(env as Parameters<TaskController["handleEvent"]>[0]);
       }
       for (const l of listeners) l(env);

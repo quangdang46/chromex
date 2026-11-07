@@ -38,6 +38,13 @@ export interface CodexProviderSecrets {
   hasOpenAiApiKey(): boolean;
 }
 
+/** Normalized app-server `account/login/completed` payload (chromex-fjr). */
+export interface CodexAccountLoginCompleted {
+  loginId: string;
+  success: boolean;
+  error: string | null;
+}
+
 export interface CodexProviderOptions {
   client?: CodexAppServerClient;
   /** provider-level overrides (command path etc.) applied to client */
@@ -48,6 +55,10 @@ export interface CodexProviderOptions {
   /** external skill scan roots merged into skills.list (sidecar
    *  listExternalSkillRoots parity — chromex-fya). */
   externalSkillRoots?: () => Promise<string[]>;
+  /** app-server `account/login/completed` is provider-global (no task,
+   *  no turn) — the host (gateway) persists/broadcasts it as a durable
+   *  gateway-stream event so clients refresh account.status. */
+  onAccountLoginCompleted?: (event: CodexAccountLoginCompleted) => void;
 }
 
 export class CodexAgentProvider implements AgentProvider {
@@ -59,6 +70,8 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly ownsClient: boolean;
   private readonly secrets: CodexProviderSecrets | null;
   private readonly externalSkillRoots: (() => Promise<string[]>) | null;
+  private readonly onAccountLoginCompleted: CodexProviderOptions["onAccountLoginCompleted"];
+  private unsubscribeAppServer: (() => void) | null = null;
   private sessionCounter = 0;
   private routePlane?: CodexAgenticRouterPlane;
   private browserActionPlane?: CodexBrowserActionPlane;
@@ -72,8 +85,23 @@ export class CodexAgentProvider implements AgentProvider {
     this.ownsClient = !options.client;
     this.secrets = options.secrets ?? null;
     this.externalSkillRoots = options.externalSkillRoots ?? null;
+    this.onAccountLoginCompleted = options.onAccountLoginCompleted;
     if (options.command !== undefined) {
       void this.client.configure({ command: options.command });
+    }
+    // Provider-global notifications never pass through a session's
+    // CodexEventMapper (no turnId → dropped), so the provider subscribes
+    // directly on the shared client (chromex-fjr).
+    if (this.onAccountLoginCompleted) {
+      this.unsubscribeAppServer = this.client.onNotification((n) => {
+        if (n.method !== "account/login/completed") return;
+        const p = (n.params ?? {}) as Record<string, unknown>;
+        this.onAccountLoginCompleted?.({
+          loginId: typeof p.loginId === "string" ? p.loginId : "",
+          success: p.success === true,
+          error: p.error === undefined || p.error === null ? null : String(p.error),
+        });
+      });
     }
   }
 
@@ -269,6 +297,8 @@ export class CodexAgentProvider implements AgentProvider {
   }
 
   async shutdown(): Promise<void> {
+    this.unsubscribeAppServer?.();
+    this.unsubscribeAppServer = null;
     if (this.ownsClient) {
       await this.client.shutdown();
     }

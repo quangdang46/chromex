@@ -118,6 +118,32 @@ describe("gatewayEventToLegacy", () => {
     }));
     expect(out).toMatchObject({ type: "turn.activity", turnId: "g9", status: "failed" });
   });
+  it("gateway-stream account.login.completed → legacy account.login.completed (chromex-fjr)", () => {
+    const env = {
+      v: 1, kind: "event", reliability: "durable", stream: "gateway",
+      seq: 9, ts: 1, type: "account.login.completed",
+      payload: {
+        type: "account.login.completed", providerId: "codex",
+        loginId: "l1", success: true, error: null,
+      },
+    } as unknown as Envelope;
+    expect(gatewayEventToLegacy(env)).toEqual({
+      type: "account.login.completed", loginId: "l1", success: true, error: null,
+    });
+    const failed = {
+      ...env,
+      payload: { type: "account.login.completed", providerId: "codex", loginId: "l2", success: false, error: "denied" },
+    } as unknown as Envelope;
+    expect(gatewayEventToLegacy(failed)).toMatchObject({ success: false, error: "denied" });
+  });
+  it("other gateway-stream events still return null", () => {
+    const env = {
+      v: 1, kind: "event", reliability: "durable", stream: "gateway",
+      seq: 1, ts: 1, type: "gateway.provider.changed",
+      payload: { type: "gateway.provider.changed", providerId: "codex", available: true },
+    } as unknown as Envelope;
+    expect(gatewayEventToLegacy(env)).toBeNull();
+  });
   it("unmapped types return null (never faked)", () => {
     expect(gatewayEventToLegacy(durable("t1", "task.paused", { taskId: "t1" }))).toBeNull();
     expect(gatewayEventToLegacy({ v: 1, kind: "response" } as unknown as Envelope)).toBeNull();

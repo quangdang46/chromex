@@ -112,6 +112,7 @@ describe("gateway event replay set", () => {
   it("includes exactly the durable replayable types, excludes notice", () => {
     expect(GATEWAY_EVENT_REPLAYABLE.has("gateway.task_purged")).toBe(true);
     expect(GATEWAY_EVENT_REPLAYABLE.has("gateway.started")).toBe(true);
+    expect(GATEWAY_EVENT_REPLAYABLE.has("account.login.completed")).toBe(true);
     expect(GATEWAY_EVENT_REPLAYABLE.has("gateway.notice")).toBe(false);
   });
 });

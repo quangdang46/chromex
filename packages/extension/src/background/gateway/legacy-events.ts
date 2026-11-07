@@ -48,6 +48,19 @@ function envOf(env: Envelope): { taskId: string; payload: EnvPayload } | null {
 
 /** Translate one gateway envelope to a legacy bridge.event, or null. */
 export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | null {
+  // Gateway-stream events carry no taskId — envOf() drops them. Account
+  // login completion is provider-global (chromex-fjr): pass it through
+  // under the legacy event name the sidepanel already handles.
+  const gw = env as { stream?: unknown; type?: unknown; payload?: unknown };
+  if (gw.stream === "gateway" && gw.type === "account.login.completed") {
+    const p = (gw.payload ?? {}) as Record<string, unknown>;
+    return {
+      type: "account.login.completed",
+      loginId: typeof p.loginId === "string" ? p.loginId : "",
+      success: p.success === true,
+      error: typeof p.error === "string" ? p.error : null,
+    };
+  }
   const parsed = envOf(env);
   if (!parsed) return null;
   const { taskId, payload } = parsed;

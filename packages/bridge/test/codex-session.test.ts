@@ -385,6 +385,34 @@ describe("CodexAgentProvider.callFeature — account carve-outs (chromex-pnk)", 
     await provider.shutdown();
   });
 
+  test("account/login/completed notification → onAccountLoginCompleted (chromex-fjr)", async () => {
+    const client = new FakeCodexClient();
+    const seen: Array<{ loginId: string; success: boolean; error: string | null }> = [];
+    const provider = new CodexAgentProvider({
+      client: client as never,
+      onAccountLoginCompleted: (e) => seen.push(e),
+    });
+
+    client.emit({
+      method: "account/login/completed",
+      params: { loginId: "login-1", success: true },
+    });
+    client.emit({ method: "turn/started", params: {} }); // unrelated — ignored
+    client.emit({
+      method: "account/login/completed",
+      params: { loginId: "login-2", success: false, error: "denied" },
+    });
+
+    expect(seen).toEqual([
+      { loginId: "login-1", success: true, error: null },
+      { loginId: "login-2", success: false, error: "denied" },
+    ]);
+    await provider.shutdown();
+    // shutdown unsubscribes — no further callbacks
+    client.emit({ method: "account/login/completed", params: { loginId: "login-3", success: true } });
+    expect(seen).toHaveLength(2);
+  });
+
   test("account.status is enriched with openAiApiKeyConfigured", async () => {
     const client = new FakeCodexClient();
     const secrets = makeSecrets();

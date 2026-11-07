@@ -38,6 +38,16 @@ export type GatewayEvent =
   | { type: "gateway.notice"; level: "info" | "warn"; message: string; backpressure?: "deltas_dropped" }
   | { type: "gateway.provider.changed"; providerId: ProviderId; available: boolean; version?: string }
   | { type: "gateway.catalog.updated"; providerId: ProviderId; contentHash: string }
+  // provider-global account lifecycle (chromex-fjr) — NOT task-scoped, so
+  // it lives on the gateway stream. Name mirrors the legacy bridge event
+  // (`account.login.completed`) so the extension translation is identity.
+  | {
+      type: "account.login.completed";
+      providerId: ProviderId;
+      loginId: string;
+      success: boolean;
+      error: string | null;
+    }
   // replayable tombstone — the ONLY purge signal clients can rely on
   | { type: "gateway.task_purged"; taskId: string; purgedAt: number; reason: "user" | "retention" };
 
@@ -56,5 +66,6 @@ export const GATEWAY_EVENT_REPLAYABLE: ReadonlySet<GatewayEventType> = new Set([
   "gateway.restarted",
   "gateway.provider.changed",
   "gateway.catalog.updated",
+  "account.login.completed",
   "gateway.task_purged",
 ]);

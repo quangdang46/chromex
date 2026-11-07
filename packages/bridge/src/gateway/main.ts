@@ -191,6 +191,19 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
             // same secrets.json the sidecar uses — apiKey login +
             // openAiApiKeyConfigured stay consistent across modes
             secrets: new InMemoryBridgeSecrets(),
+            // chromex-fjr: app-server account/login/completed is
+            // provider-global — persist on the gateway stream + broadcast
+            // so clients refresh account.status without polling.
+            onAccountLoginCompleted: (login) => {
+              const env = store.appendGatewayEvent({
+                type: "account.login.completed",
+                providerId: "codex",
+                loginId: login.loginId,
+                success: login.success,
+                error: login.error,
+              });
+              ipc?.broadcast(env);
+            },
           }),
       );
     }
