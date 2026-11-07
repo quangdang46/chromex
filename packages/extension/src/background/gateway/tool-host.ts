@@ -682,7 +682,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.textGone) !== undefined ||
           str(args.selector) !== undefined ||
           str(args.urlContains) !== undefined ||
-          str(args.readyState) !== undefined;
+          str(args.readyState) !== undefined ||
+          str(args.visibleSelector) !== undefined;
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
@@ -728,6 +729,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
           ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
           ...(str(args.readyState) ? { readyState: str(args.readyState) } : {}),
+          ...(str(args.visibleSelector) ? { visibleSelector: str(args.visibleSelector) } : {}),
           timeoutMs: waitTimeoutMs,
         }, { frameId })) as { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
         if (res?.ok !== true) {

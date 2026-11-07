@@ -715,10 +715,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const text = typeof args.text === "string" ? args.text : null;
     const textGone = typeof args.textGone === "string" ? args.textGone : null;
     const readyState = typeof args.readyState === "string" ? args.readyState : null;
+    const visibleSelector = typeof args.visibleSelector === "string" ? args.visibleSelector : null;
     const networkIdle = args.networkIdle === true;
     const hasCondition =
       selector !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
-      networkIdle;
+      visibleSelector !== null || networkIdle;
     if (!hasCondition) {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
@@ -747,11 +748,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         .catch(() => {
           throw protocolError("browser.timeout", "network idle not reached before timeout");
         });
-      if (selector === null && urlContains === null && text === null && textGone === null && readyState === null) {
+      if (selector === null && urlContains === null && text === null && textGone === null && readyState === null && visibleSelector === null) {
         return { ok: true, matched: "networkIdle", elapsedMs: Date.now() - started };
       }
     }
     for (;;) {
+      if (visibleSelector) {
+        const visible = await page.locator(visibleSelector).first().isVisible().catch(() => false);
+        if (!visible) {
+          if (Date.now() >= deadline) {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          }
+          await page.waitForTimeout(100);
+          continue;
+        }
+      }
       if (selector) {
         const count = await page.locator(selector).count().catch(() => 0);
         if (count === 0) {

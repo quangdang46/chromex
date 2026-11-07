@@ -394,7 +394,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.wait": {
     description:
-      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains, readyState, networkIdle — waits until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout. networkIdle waits for in-flight requests to drain (SPA data loads).",
+      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, urlContains, visibleSelector, readyState, networkIdle — waits until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout. networkIdle waits for in-flight requests to drain (SPA data loads).",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       frameId: FRAME_ID,
@@ -404,6 +404,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       textGone: { type: "string", description: "Condition: wait until this substring disappears from the page's visible text." },
       selector: TARGET_SELECTOR,
       urlContains: { type: "string", description: "Condition: wait until the page URL contains this substring." },
+      visibleSelector: { type: "string", description: "Condition: wait until a VISIBLE element matches this selector (display:none/visibility:hidden don't count — mirrors playwright waitForSelector state:visible)." },
       readyState: {
         type: "string",
         enum: ["loading", "interactive", "complete"],

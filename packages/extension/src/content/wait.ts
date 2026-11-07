@@ -7,6 +7,8 @@
  * the deadline passes. Never navigates or mutates the page.
  */
 
+import { isPointerReachableElement } from "./actions.js";
+
 export interface PageWaitConditions {
   /** substring that must appear in the page's visible text */
   text?: string;
@@ -20,6 +22,10 @@ export interface PageWaitConditions {
   urlContains?: string;
   /** minimum document.readyState — "interactive" | "complete" */
   readyState?: string;
+  /** CSS selector that must match at least one VISIBLE element —
+   *  display:none/visibility:hidden don't count (mirrors playwright
+   *  waitForSelector state:"visible"). */
+  visibleSelector?: string;
 }
 
 export interface PageWaitResult {
@@ -60,6 +66,16 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
     if (present) return false;
   }
   if (conds.urlContains && !window.location.href.includes(conds.urlContains)) return false;
+  if (conds.visibleSelector) {
+    let satisfied = false;
+    try {
+      const el = document.querySelector(conds.visibleSelector);
+      satisfied = el instanceof HTMLElement && isPointerReachableElement(el);
+    } catch {
+      satisfied = false; // invalid selector can never be satisfied
+    }
+    if (!satisfied) return false;
+  }
   if (conds.readyState) {
     const order = ["loading", "interactive", "complete"];
     const want = order.indexOf(conds.readyState);
@@ -90,6 +106,7 @@ export async function waitForPageConditions(
     selectorGone: typeof conds.selectorGone === "string" ? conds.selectorGone : "",
     urlContains: typeof conds.urlContains === "string" ? conds.urlContains : "",
     readyState: typeof conds.readyState === "string" ? conds.readyState : "",
+    visibleSelector: typeof conds.visibleSelector === "string" ? conds.visibleSelector : "",
   };
   for (;;) {
     if (conditionsMet(normalized)) {

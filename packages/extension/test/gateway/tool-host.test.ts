@@ -116,6 +116,14 @@ describe("tool host (P1-09)", () => {
     await expect(h(sreq("browser.tab.discard", { tabId: 99 }))).rejects.toMatchObject({ code: "browser.not_in_scope" });
   });
 
+  test("page.wait forwards visibleSelector as a wait condition", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.wait", { visibleSelector: ".toast.show", timeoutMs: 3000 }));
+    const msg = d.sent[d.sent.length - 1]!.message as Record<string, unknown>;
+    expect(msg).toMatchObject({ type: "page.dom.wait", visibleSelector: ".toast.show", timeoutMs: 3000 });
+  });
+
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
