@@ -170,16 +170,139 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         requestId: (payload as { requestId?: string }).requestId ?? "",
       };
     case "tool.started":
-      return { type: "tool.started", ...base, toolCallId: payload.toolCallId, tool: payload.tool };
-    case "tool.completed":
-      return {
-        type: "tool.completed",
-        ...base,
-        toolCallId: payload.toolCallId,
-        tool: payload.tool,
-        outcome: payload.outcome,
+    case "tool.completed": {
+      // sidepanel renders agent activity via legacy `turn.activity`
+      // trace items — translate provider tool events into that shape so
+      // users see what the coding agent is doing, Paseo-style.
+      const toolCallId = typeof payload.toolCallId === "string" ? payload.toolCallId : "";
+      const started = payload.type === "tool.started";
+      const status = started ? "running" : "completed";
+      if (started && toolCallId) {
+        rememberToolContext(toolCallId, {
+          tool: typeof payload.tool === "string" ? payload.tool : "",
+          input: payload.input,
+        });
+      }
+      const ctx = (toolCallId && toolContext.get(toolCallId)) || {
+        tool: typeof payload.tool === "string" ? payload.tool : "",
+        input: payload.input,
       };
+      const activity = describeGatewayTool(ctx.tool, ctx.input, status);
+      if (toolCallId) toolContext.delete(toolCallId);
+      return {
+        type: "turn.activity",
+        ...base,
+        itemId: toolCallId || `tool-${Date.now()}`,
+        kind: activity.kind,
+        title: activity.title,
+        detail: activity.detail,
+        status,
+        timestampMs: Date.now(),
+      };
+    }
     default:
       return null;
+  }
+}
+
+// tool.completed arrives without tool/input on some providers (claude
+// mapper emits tool:"" ) — remember the started payload per call id.
+const toolContext = new Map<string, { tool: string; input?: unknown }>();
+const MAX_TOOL_CONTEXT = 500;
+
+function rememberToolContext(id: string, ctx: { tool: string; input?: unknown }): void {
+  if (toolContext.size >= MAX_TOOL_CONTEXT) {
+    const oldest = toolContext.keys().next().value;
+    if (oldest !== undefined) toolContext.delete(oldest);
+  }
+  toolContext.set(id, ctx);
+}
+
+type TraceKind = "command" | "file" | "web" | "image" | "browser" | "tool";
+
+function describeGatewayTool(
+  tool: string,
+  input: unknown,
+  status: "running" | "completed",
+): { kind: TraceKind; title: string; detail: string } {
+  const name = tool.toLowerCase();
+  const rec = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const detail =
+    str(rec.command) ||
+    str(rec.query) ||
+    str(rec.url) ||
+    str(rec.path) ||
+    str(rec.file_path) ||
+    str(rec.filePath) ||
+    str(rec.pattern) ||
+    summarizeInput(input);
+  const running = status === "running";
+  const pick = (run: string, done: string) => (running ? run : done);
+
+  if (name.includes("commandexecution") || name.includes("bash") || name.includes("shell") || name.includes("exec")) {
+    return { kind: "command", title: pick("Running command", "Command complete"), detail };
+  }
+  if (name.includes("websearch") || name.includes("web_search") || name.includes("webfetch") || name.includes("web_fetch")) {
+    return { kind: "web", title: pick("Searching the web", "Web search complete"), detail };
+  }
+  if (name.includes("imagegeneration") || name.includes("image_generation") || name === "image") {
+    return { kind: "image", title: pick("Generating image", "Image generated"), detail };
+  }
+  if (
+    name.includes("filechange") ||
+    name.includes("edit") ||
+    name.includes("write") ||
+    name.includes("patch") ||
+    name.includes("multiedit") ||
+    name.includes("notebook")
+  ) {
+    return { kind: "file", title: pick("Editing files", "File changes complete"), detail };
+  }
+  if (
+    name.includes("read") ||
+    name.includes("grep") ||
+    name.includes("glob") ||
+    name.includes("list") ||
+    name.includes("file") ||
+    name.includes("ls")
+  ) {
+    return { kind: "file", title: pick("Exploring files", "File exploration complete"), detail };
+  }
+  if (name.includes("mcp") || name.startsWith("mcp__")) {
+    const server = str(rec.server) || name.split("__")[1] || "";
+    const toolName = str(rec.tool) || name.split("__").slice(2).join("__");
+    return {
+      kind: "tool",
+      title: pick("Using MCP tool", "MCP tool complete"),
+      detail: [server, toolName].filter(Boolean).join(" · ") || detail,
+    };
+  }
+  if (name.includes("browser") || name.startsWith("browser.")) {
+    return { kind: "browser", title: pick("Browser action", "Browser action complete"), detail };
+  }
+  if (name.includes("task") || name.includes("subagent") || name.includes("agent")) {
+    return { kind: "tool", title: pick("Subagent working", "Subagent finished"), detail };
+  }
+  return {
+    kind: "tool",
+    title: pick(`${humanizeToolName(tool)} running`, `${humanizeToolName(tool)} complete`),
+    detail,
+  };
+}
+
+function humanizeToolName(tool: string): string {
+  const cleaned = tool.replace(/^subagent:/, "").replace(/[_-]+/g, " ").trim();
+  if (!cleaned) return "Tool";
+  return cleaned.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function summarizeInput(input: unknown): string {
+  if (input === undefined || input === null) return "";
+  try {
+    const s = JSON.stringify(input);
+    return s.length > 160 ? `${s.slice(0, 157)}…` : s;
+  } catch {
+    return "";
   }
 }
