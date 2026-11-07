@@ -12429,3 +12429,23 @@ button.primary,
     width: auto;
   }
 }
+
+.recent-chat-attention {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #f5b942;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.recent-chat-attention[data-attention="error"] {
+  background: #e5534b;
+}
+
+.recent-chat-attention[data-attention="approval_pending"],
+.recent-chat-attention[data-attention="needs_tab_confirmation"] {
+  background: #4c8dff;
+}

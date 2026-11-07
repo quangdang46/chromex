@@ -100,6 +100,7 @@ import { NativeBridgeClient } from "./native-bridge-client.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { createToolHostHandler } from "./gateway/tool-host.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
+import { snapshotToMessages } from "./gateway/snapshot-messages.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
@@ -233,6 +234,25 @@ void getGatewayRuntime().then((rt) => {
   bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
   // P1-10 interim: translate gateway envelopes into legacy bridge.event
   // broadcasts so the existing sidepanel keeps rendering in gatewayMode.
+  rt?.onSnapshotRebuilt?.((taskId, snapshot) => {
+    // P1-10: durable events were pruned — rebuild the stored
+    // conversation view from the self-sufficient snapshot, then tell
+    // the panel to rehydrate if it is showing this thread.
+    void (async () => {
+      try {
+        const conversations = await listConversations();
+        const conv = conversations.find((c) => c.threadId === taskId);
+        if (!conv) return;
+        const next = { ...conv, messages: snapshotToMessages(snapshot) };
+        await saveConversation(next);
+        void chrome.runtime
+          .sendMessage({ type: "ui.conversation.rebuilt", conversationId: conv.id })
+          .catch(() => undefined);
+      } catch {
+        /* snapshot rebuild is best-effort; task.sync already has the data */
+      }
+    })();
+  });
   rt?.onEvent((env) => {
     const legacy = gatewayEventToLegacy(env);
     if (legacy) broadcastBridgeEvent(legacy);

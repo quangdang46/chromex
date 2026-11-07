@@ -353,6 +353,8 @@ export interface ConversationSummary {
   title: string;
   profileId: string;
   conversationMode?: "chat" | "conference";
+  /** gateway taskId when the conversation is gateway-backed (P1-10) */
+  threadId?: string;
   updatedAt: number;
 }
 

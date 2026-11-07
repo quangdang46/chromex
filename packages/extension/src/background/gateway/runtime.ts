@@ -10,7 +10,7 @@
  * call sites. Durable gateway events are forwarded to subscribers.
  */
 
-import type { Envelope } from "@codex-sidepanel/shared";
+import type { Envelope, InlineTaskSnapshot } from "@codex-sidepanel/shared";
 
 import { getStoredSettings } from "../storage.js";
 import { GatewayClient, type GatewayConnectionState } from "./gateway-client.js";
@@ -24,6 +24,8 @@ export interface GatewayRuntime {
   request(method: string, payload?: unknown): Promise<unknown>;
   /** subscribe to gateway envelopes (events incl. task stream) */
   onEvent(listener: (env: Envelope) => void): () => void;
+  /** subscribe to snapshot rebuilds (P1-10 UI resync) */
+  onSnapshotRebuilt(listener: (taskId: string, snapshot: InlineTaskSnapshot) => void): () => void;
 }
 
 let runtime: GatewayRuntime | null = null;
@@ -46,6 +48,7 @@ async function build(): Promise<GatewayRuntime | null> {
 
   const identity = await loadOrCreateIdentity(chrome.storage.local);
   const listeners = new Set<(env: Envelope) => void>();
+  const snapshotListeners = new Set<(taskId: string, snapshot: InlineTaskSnapshot) => void>();
 
   // tasks is assigned before any hello can fire (connect is lazy —
   // first request triggers it, by which time `tasks` exists).
@@ -84,6 +87,9 @@ async function build(): Promise<GatewayRuntime | null> {
     onGatewayEvent: (env) => {
       for (const l of listeners) l(env as Envelope);
     },
+    onSnapshotRebuilt: (taskId, snapshot) => {
+      for (const l of snapshotListeners) l(taskId, snapshot);
+    },
     onTasksChanged: () => {
       void chrome.runtime
         .sendMessage({ type: "gateway.tasks.changed" })
@@ -111,6 +117,10 @@ async function build(): Promise<GatewayRuntime | null> {
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    onSnapshotRebuilt: (listener) => {
+      snapshotListeners.add(listener);
+      return () => snapshotListeners.delete(listener);
     },
   };
 }

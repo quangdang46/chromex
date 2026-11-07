@@ -942,6 +942,7 @@ const state = {
   skillSettingsSearchQuery: "",
   pluginMcpSettingsSearchQuery: "",
   recentChats: [] as ConversationSummary[],
+  gatewayTasks: {} as Record<string, { status: string; attention: string | null }>,
   serverThreads: [] as CodexThreadSummary[],
   currentConversationId: "",
   threadId: "",
@@ -1219,6 +1220,21 @@ window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
 });
 
+async function refreshGatewayTasks(): Promise<void> {
+  const result = await sendRuntimeMessage<{
+    enabled?: boolean;
+    tasks?: { taskId: string; status: string; attention: string | null }[];
+  }>({ type: "gateway.tasks" }).catch(() => null);
+  if (!result?.enabled || !Array.isArray(result.tasks)) {
+    return;
+  }
+  const next: typeof state.gatewayTasks = {};
+  for (const t of result.tasks) {
+    next[t.taskId] = { status: t.status, attention: t.attention ?? null };
+  }
+  state.gatewayTasks = next;
+}
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === "ui.active-tab.updated") {
     applyActiveTabUpdate(message);
@@ -1253,6 +1269,29 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 
   if (message.type === "ui.dictation.shortcut") {
     void handleDictationShortcutMessage(message);
+    return;
+  }
+
+  if (message.type === "gateway.tasks.changed") {
+    void refreshGatewayTasks().then(() => render());
+    return;
+  }
+
+  if (message.type === "ui.conversation.rebuilt") {
+    // P1-10: gateway snapshot rebuild replaced stored messages —
+    // rehydrate if the panel is showing that conversation.
+    const conversationId = typeof message.conversationId === "string" ? message.conversationId : "";
+    if (conversationId && conversationId === state.currentConversationId) {
+      void (async () => {
+        const result = await chrome.runtime
+          .sendMessage({ type: "conversation.resume", conversationId })
+          .catch(() => null);
+        if (result?.conversation) {
+          hydrateConversation(result.conversation);
+          render();
+        }
+      })();
+    }
     return;
   }
 
@@ -2397,6 +2436,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     state.appServerPlugins = collections.appServerPlugins;
     state.mcpServers = collections.mcpServers;
     state.recentChats = collections.recentChats;
+    void refreshGatewayTasks();
     state.serverThreads = collections.serverThreads;
     state.rateLimits = payload.rateLimits;
     state.activeTurn = payload.activeTurn;
@@ -3876,7 +3916,7 @@ function renderAppMenu(isPopup: boolean, disabled = false): string {
                       >
                         <span class="app-menu-icon list" aria-hidden="true">${renderAppMenuListIcon()}</span>
                         <span class="recent-chat-copy">
-                          <span class="app-menu-label">${escapeHtml(chat.title || labels.chat)}</span>
+                          <span class="app-menu-label">${escapeHtml(chat.title || labels.chat)}${renderGatewayAttentionBadge(chat.threadId)}</span>
                         </span>
                         <span class="recent-chat-meta" aria-hidden="true">
                           ${renderRecentChatProgressIndicator(chat.busy)}
@@ -4081,6 +4121,24 @@ function getRecentChatDisplayItems(limit?: number) {
     locale: state.uiLocale || getBrowserUiLanguage(),
     ...(typeof limit === "number" ? { limit } : {}),
   });
+}
+
+function renderGatewayAttentionBadge(threadId: string | undefined): string {
+  const attention = threadId ? state.gatewayTasks[threadId]?.attention : null;
+  if (!attention) {
+    return "";
+  }
+  const label =
+    attention === "approval_pending"
+      ? "Needs approval"
+      : attention === "turn_finished"
+        ? "Finished"
+        : attention === "error"
+          ? "Error"
+          : attention === "browser_offline"
+            ? "Browser offline"
+            : "Needs confirmation";
+  return `<span class="recent-chat-attention" data-attention="${escapeAttribute(attention)}" title="${escapeAttribute(label)}" aria-label="${escapeAttribute(label)}"></span>`;
 }
 
 function renderRecentChatProgressIndicator(busy: boolean): string {
@@ -9758,6 +9816,7 @@ function renderWorkspaceDiagnostics(strings: ReturnType<typeof getUiStrings>): s
                   <button class="recent-chat ${chat.selected ? "selected" : ""}" data-chat-id="${chat.id}">
                     <span class="recent-chat-heading">
                       <strong>${escapeHtml(chat.title)}</strong>
+                      ${renderGatewayAttentionBadge(chat.threadId)}
                       ${renderRecentChatProgressIndicator(chat.busy)}
                     </span>
                     <span>${escapeHtml(chat.profileId)}</span>

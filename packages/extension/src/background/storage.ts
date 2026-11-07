@@ -360,6 +360,7 @@ export function toConversationSummary(conversation: SavedConversation): Conversa
     title: conversation.title,
     profileId: conversation.profileId,
     conversationMode: conversation.conversationMode === "conference" ? "conference" : "chat",
+    ...(conversation.threadId ? { threadId: conversation.threadId } : {}),
     updatedAt: conversation.updatedAt,
   };
 }
