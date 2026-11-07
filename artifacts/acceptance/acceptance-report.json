@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-07T20:15:59.675Z",
+  "generatedAt": "2026-11-07T20:36:32.231Z",
   "results": [
     {
       "scenario": "agent-loop-isolated",
@@ -51,7 +51,7 @@
         "ok — downloads.cancel refused on isolated backend → proto.unsupported playwright-isolated does not support browser.downloads.cancel",
         "ok — tabs.list sees 8 task tabs"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-isolated/2026-11-07T20-05-53-651Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-isolated/2026-11-07T20-36-23-134Z"
     },
     {
       "scenario": "agent-loop-mcp-isolated",
@@ -63,21 +63,38 @@
           "risk": "financial"
         }
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-mcp-isolated/2026-11-07T20-05-57-305Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-mcp-isolated/2026-11-07T20-36-26-795Z"
     },
     {
       "scenario": "content-script-isolated",
       "status": "PASS",
       "asserts": 19,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/content-script-isolated/2026-11-07T20-15-57-998Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/content-script-isolated/2026-11-07T20-36-31-192Z"
+    },
+    {
+      "scenario": "gateway-host-routing",
+      "status": "PASS",
+      "asserts": 21,
+      "taskId": "01M6VVM6Q4MM7DBNZ3CW9G6STX",
+      "hostRequests": 3,
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-host-routing/2026-11-07T20-36-29-514Z"
     },
     {
       "scenario": "gateway-mcp-isolated",
       "status": "PASS",
       "asserts": 15,
-      "taskId": "01M6VSWA19Z9RHBDW8SG07E66Y",
+      "taskId": "01M6VVM4NT3PE27DWMDGWQ9KAS",
       "toolEvents": 16,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-mcp-isolated/2026-11-07T20-05-57-903Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-mcp-isolated/2026-11-07T20-36-27-422Z"
+    },
+    {
+      "scenario": "native-host-relay",
+      "status": "PASS",
+      "asserts": 10,
+      "taskId": "01M6VVM79AMC8SNF96RQQT2Z43",
+      "browserInstanceId": "9fd7759a9cd7594880c098ad935535ba",
+      "hostRequests": 2,
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/native-host-relay/2026-11-07T20-36-30-052Z"
     },
     {
       "scenario": "s1-build-feature",
