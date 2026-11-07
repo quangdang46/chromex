@@ -444,12 +444,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     expectable: true,
   },
   "browser.page.drag": {
-    description: `Drag the source element onto a drop target — pointer-move sequence plus HTML5 drag events when the source is draggable. Covers sliders, kanban boards, sortable lists. Synthetic untrusted events: trusted-gesture-gated drop handlers may still refuse. ${SNAPSHOT_FIRST}`,
+    description: `Drag the source element onto a drop target — pointer-move sequence plus HTML5 drag events when the source is draggable. Or drag between viewport coordinates (x,y → dropX,dropY) for canvas/surface drags with no DOM targets. Covers sliders, kanban boards, sortable lists, drawing canvases. Synthetic untrusted events: trusted-gesture-gated drop handlers may still refuse. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       toRef: { ...TARGET_REF, description: "Drop target snapshot ref (alternative to toSelector/toLabel)." },
       toSelector: { ...TARGET_SELECTOR, description: "Drop target CSS selector (alternative to toRef/toLabel)." },
       toLabel: { ...TARGET_LABEL, description: "Drop target visible label/text (alternative to toRef/toSelector)." },
+      x: { type: "number", description: "Source viewport x (CSS px) — coordinate drag for canvas/surface drags; requires y, dropX, dropY and no element targets." },
+      y: { type: "number", description: "Source viewport y (CSS px)." },
+      dropX: { type: "number", description: "Destination viewport x (CSS px)." },
+      dropY: { type: "number", description: "Destination viewport y (CSS px)." },
     }),
     expectable: true,
   },

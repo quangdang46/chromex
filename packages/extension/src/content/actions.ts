@@ -263,6 +263,21 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       };
     }
 
+    // Coordinate drag — x,y → dropX,dropY, for canvas/surface drags
+    // with no DOM source or drop element.
+    if (
+      step.action === "drag" &&
+      typeof step.x === "number" && typeof step.y === "number" &&
+      typeof step.dropX === "number" && typeof step.dropY === "number"
+    ) {
+      dispatchDragAtPoints(step.x, step.y, step.dropX, step.dropY);
+      return {
+        step,
+        ok: true,
+        message: `Dragged from (${Math.round(step.x)}, ${Math.round(step.y)}) to (${Math.round(step.dropX)}, ${Math.round(step.dropY)}).`,
+      };
+    }
+
     const target = resolveDomActionTargetDetailed(step);
     // chromex-ykj: ≥2 matches → typed ambiguous_target, never first-match.
     if (target.status === "ambiguous") {
@@ -820,6 +835,41 @@ export function dispatchClickAtPoint(
     fire();
     el.dispatchEvent(new MouseEvent("dblclick", { ...common, detail: 2 }));
   }
+}
+
+/**
+ * drag between raw viewport coordinates — canvas drawing surfaces,
+ * map panning, slider widgets with no DOM handles. Pointer-only path:
+ * no HTML5 DragEvent sequence (there is no draggable source element
+ * to anchor dragstart to). UNTRUSTED like every synthetic event.
+ */
+export function dispatchDragAtPoints(
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+): void {
+  const common = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+  const at = (x: number, y: number): HTMLElement =>
+    (document.elementFromPoint(x, y) as HTMLElement | null) ?? document.body ?? document.documentElement;
+
+  const startEl = at(sx, sy);
+  startEl.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse", clientX: sx, clientY: sy }));
+  startEl.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse", clientX: sx, clientY: sy }));
+  startEl.dispatchEvent(new MouseEvent("mousedown", { ...common, clientX: sx, clientY: sy }));
+
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    const x = sx + ((tx - sx) * i) / steps;
+    const y = sy + ((ty - sy) * i) / steps;
+    const under = at(x, y);
+    under.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse", clientX: x, clientY: y }));
+    under.dispatchEvent(new MouseEvent("mousemove", { ...common, clientX: x, clientY: y }));
+  }
+
+  const endEl = at(tx, ty);
+  endEl.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse", buttons: 0, clientX: tx, clientY: ty }));
+  endEl.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0, clientX: tx, clientY: ty }));
 }
 
 /** Normalize step.modifiers → KeyboardEventInit modifier flags. */

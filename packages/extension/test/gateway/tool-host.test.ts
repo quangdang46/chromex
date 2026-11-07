@@ -86,6 +86,17 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.click", { x: 1, y: 2, selector: ".a" }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.drag coordinate form maps x/y/dropX/dropY; partial or mixed rejected", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.drag", { x: 10, y: 20, dropX: 110, dropY: 220 }));
+    const msg = d.sent[0].message as { steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0]).toMatchObject({ action: "drag", x: 10, y: 20, dropX: 110, dropY: 220 });
+    await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: 3 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: 3, dropY: 4, toRef: "e2" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.drag", { x: 1, y: 2, dropX: -3, dropY: 4 }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.drag maps source + drop target onto a dom.perform step", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

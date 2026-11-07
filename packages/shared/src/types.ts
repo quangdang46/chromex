@@ -635,10 +635,13 @@ export interface BrowserDomActionStep {
   x?: number;
   y?: number;
   /** drag: destination element — same target triple as the source
-   *  (targetRef/selector/label on this step). At least one must be set. */
+   *  (targetRef/selector/label on this step). At least one must be set.
+   *  Coordinate form instead uses x,y → dropX,dropY (viewport px). */
   dropTargetRef?: string;
   dropSelector?: string;
   dropLabel?: string;
+  dropX?: number;
+  dropY?: number;
   reason: string;
 }
 

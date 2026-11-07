@@ -1134,6 +1134,29 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
         ...(typeof args.amountPx === "number" ? { amountPx: args.amountPx } : {}),
       };
     case "browser.page.drag": {
+      // Coordinate form: x,y → dropX,dropY — canvas/surface drags with
+      // no DOM source or drop element. Mutually exclusive with every
+      // element target field.
+      const coordFields = [args.x, args.y, args.dropX, args.dropY];
+      const coordCount = coordFields.filter((v) => v !== undefined && v !== null).length;
+      if (coordCount > 0) {
+        if (coordCount !== 4) {
+          throw toolError("proto.invalid", "browser.page.drag coordinate drag requires x, y, dropX and dropY together");
+        }
+        const coords = coordFields as number[];
+        if (coords.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0)) {
+          throw toolError("proto.invalid", "browser.page.drag coordinates must be non-negative finite viewport pixels");
+        }
+        if (str(args.ref) || str(args.selector) || str(args.label) ||
+            str(args.toRef) || str(args.toSelector) || str(args.toLabel)) {
+          throw toolError("proto.invalid", "browser.page.drag accepts coordinates or element targets, not both");
+        }
+        return {
+          ...base,
+          action: "drag",
+          x: coords[0], y: coords[1], dropX: coords[2], dropY: coords[3],
+        };
+      }
       // Source uses the standard target triple; destination uses the
       // toRef/toSelector/toLabel triple. At least one drop field is
       // required — a drag with no destination is a caller bug.
