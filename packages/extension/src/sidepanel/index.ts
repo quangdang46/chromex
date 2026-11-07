@@ -1086,6 +1086,8 @@ let voiceTranscriptMessageCounter = 0;
 let realtimeBargeInHighRmsFrames = 0;
 let voiceDurationTicker: number | null = null;
 let voiceDurationNow = Date.now();
+let traceElapsedTicker: number | null = null;
+let traceElapsedNow = Date.now();
 let liveVoiceRecognitionUtteranceStartedAt: number | null = null;
 const voiceTranscriptMirror = createVoiceTranscriptMirrorState();
 let nativeConfirmationResolver: ((approved: boolean) => void) | null = null;
@@ -3314,6 +3316,7 @@ function renderNow(): void {
     chatScrollUserOverrideUntil = 0;
   }
 
+  syncTraceElapsedTicker();
   syncDocumentLanguage();
   root.innerHTML = `
     <div class="shell ${isEmptyChat ? "shell-empty-chat" : ""} ${showOnboarding ? "shell-onboarding" : ""}">
@@ -7376,7 +7379,8 @@ function renderMessageTrace(messageId: string, trace: ConversationMessage["trace
   }
   const shouldOpen = messageTraceOpenByMessageId.get(messageId) ?? shouldOpenByDefault;
   const summaryKind = resolveTraceSummaryKind(items);
-  const elapsedMs = traceElapsedMs(items);
+  const hasRunningItems = items.some((item) => item.status === "running");
+  const elapsedMs = traceElapsedMs(items, hasRunningItems ? traceElapsedNow : undefined);
   const summaryText = `${formatTraceSummary(items, stringsForState().trace, formatTraceCount)}${
     elapsedMs !== null ? ` · ${formatTraceDuration(elapsedMs)}` : ""
   }`;
@@ -7400,7 +7404,11 @@ function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[
   const expandable = Boolean(item.input || item.output || item.error || item.thinking);
   const meta = [
     item.tool ? `<span class="message-trace-line-tool">${escapeHtml(item.tool)}</span>` : "",
-    item.durationMs !== undefined ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(item.durationMs))}</span>` : "",
+    item.status === "running"
+      ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(Math.max(0, traceElapsedNow - item.timestampMs)))}</span>`
+      : item.durationMs !== undefined
+        ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(item.durationMs))}</span>`
+        : "",
   ].join("");
   const statusIcon =
     item.status === "running"
@@ -7438,11 +7446,47 @@ function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[
   `;
 }
 
-function traceElapsedMs(items: NonNullable<ConversationMessage["trace"]>): number | null {
+function traceElapsedMs(
+  items: NonNullable<ConversationMessage["trace"]>,
+  nowMs?: number,
+): number | null {
   if (!items.length) return null;
   const start = Math.min(...items.map((i) => i.timestampMs));
-  const end = Math.max(...items.map((i) => i.timestampMs + (i.durationMs ?? 0)));
+  const end = Math.max(
+    ...items.map((i) => (i.status === "running" && nowMs !== undefined ? nowMs : i.timestampMs + (i.durationMs ?? 0))),
+  );
   return end > start ? end - start : null;
+}
+
+function hasRunningTraceItems(messages: ConversationMessage[]): boolean {
+  return messages.some((message) => message.trace?.some((item) => item.status === "running"));
+}
+
+function syncTraceElapsedTicker(): void {
+  const active = state.activeView === "chat" && hasRunningTraceItems(state.messages);
+  if (active && traceElapsedTicker === null) {
+    traceElapsedNow = Date.now();
+    traceElapsedTicker = window.setInterval(() => {
+      traceElapsedNow = Date.now();
+      if (hasRunningTraceItems(state.messages)) {
+        render();
+      } else {
+        stopTraceElapsedTicker();
+      }
+    }, 1000);
+    return;
+  }
+  if (!active) {
+    stopTraceElapsedTicker();
+  }
+}
+
+function stopTraceElapsedTicker(): void {
+  if (traceElapsedTicker === null) {
+    return;
+  }
+  window.clearInterval(traceElapsedTicker);
+  traceElapsedTicker = null;
 }
 
 function formatTraceDuration(durationMs: number): string {
