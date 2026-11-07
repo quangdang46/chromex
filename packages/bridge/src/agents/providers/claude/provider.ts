@@ -63,15 +63,16 @@ export class ClaudeAgentProvider implements AgentProvider {
     // Claude Code resolves tier aliases (sonnet/opus/haiku) to whatever the
     // user's settings/env configure — including router-mapped defaults.
     // No session is created for discovery.
-    const alias = (id: string, label: string) => ({
+    const alias = (id: string, label: string, isDefault = false) => ({
       id,
       label,
       description: `Claude Code "${id}" alias`,
+      metadata: { isDefault },
     });
     return {
       providerId: "claude",
       displayName: "Claude",
-      models: [alias("sonnet", "Sonnet"), alias("opus", "Opus"), alias("haiku", "Haiku")],
+      models: [alias("sonnet", "Sonnet", true), alias("opus", "Opus"), alias("haiku", "Haiku")],
       modes: [],
       fetchedAt: Date.now(),
       capabilities: { ...CLAUDE_CAPABILITIES },

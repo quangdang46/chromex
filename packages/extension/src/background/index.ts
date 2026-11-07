@@ -3364,10 +3364,28 @@ async function broadcastActiveTabSnapshot(): Promise<void> {
     .catch(() => undefined);
 }
 
+const RESTRICTED_CONTENT_SCRIPT_PROTOCOLS = new Set([
+  "chrome:",
+  "chrome-search:",
+  "chrome-extension:",
+  "devtools:",
+  "edge:",
+  "about:",
+  "view-source:",
+]);
+
+function isRestrictedContentScriptUrl(url: string): boolean {
+  try {
+    return RESTRICTED_CONTENT_SCRIPT_PROTOCOLS.has(new URL(url).protocol);
+  } catch {
+    return true;
+  }
+}
+
 async function installImagePromptHoverForTab(
   tab: chrome.tabs.Tab | undefined | null,
 ): Promise<{ ok: true; installed: boolean }> {
-  if (!tab?.id || !tab.url || !getCurrentPageSupport(tab.url).available) {
+  if (!tab?.id || !tab.url || !getCurrentPageSupport(tab.url).available || isRestrictedContentScriptUrl(tab.url)) {
     return { ok: true, installed: false };
   }
   const settings = await getStoredSettings();

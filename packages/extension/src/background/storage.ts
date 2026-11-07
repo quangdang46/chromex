@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   planModeEnabled: false,
   playwrightBrowserControlEnabled: false,
   browserPolicyV2: false,
-  gatewayMode: false,
+  gatewayMode: true,
   agentProviderId: "codex",
   preferredVoice: "",
   voiceInputAudioSource: "microphone",
