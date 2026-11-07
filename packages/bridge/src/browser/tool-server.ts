@@ -17,8 +17,10 @@ import {
   allowTaskScope,
   canonicalJson,
   classifyActionRisk,
+  detectSensitiveContent,
   urlOriginPath,
   type ActionContext,
+  type AgentEgressDestination,
   type BrowserBackendId,
   type BrowserToolName,
   type RiskLevel,
@@ -117,6 +119,10 @@ export interface ToolCallRequest {
   /** Task-bound profile — token profileId must match (plan §9.1). */
   profileId: string;
   backendId?: BrowserBackendId;
+  /** Chrome run the task's tabs live in — namespaces runtime tabIds
+   *  (chromex-jtl, §3.2). Absent ⇒ degraded; scope still works per
+   *  profileId+backendId but cannot distinguish Chrome restarts. */
+  browserInstanceId?: string | null;
 }
 
 export interface ToolCallOutcome {
@@ -129,11 +135,23 @@ export interface ToolCallOutcome {
 }
 
 /** Minimal host channel: send a tool request to a registered host and
- *  await its result (or timeout / disconnect). */
+ *  await its result (or timeout / disconnect). `profileId`, when the
+ *  resolver knows it, lets the tool server reject cross-profile dispatch
+ *  with browser.wrong_profile instead of silently adopting foreign tabs
+ *  (chromex-jtl, plan §3.2/§7.3#5). */
 export interface ToolHostChannel {
   readonly hostInstanceId: string;
+  /** profile this host serves — checked against req.profileId */
+  readonly profileId?: string;
   send(method: "browser.tool.request" | "browser.tool.cancel", payload: unknown): Promise<unknown>;
   onDisconnect(listener: (reason: "disconnect" | "timeout") => void): void;
+}
+
+/** A resolver may refuse routing with a typed error instead of a host —
+ *  e.g. BrowserHostRegistry's wrong_profile/not_in_scope/stranded kinds
+ *  surface to the tool caller unchanged (chromex-jtl). */
+export interface ToolHostRejection {
+  error: { code: string; message: string };
 }
 
 /** Approval request handed to the host-side approval hook (§4.8). */
@@ -163,12 +181,80 @@ export type ToolApprovalVerdict =
   | { verdict: "approved"; optionId?: string }
   | { verdict: "denied" | "timeout"; optionId?: string };
 
+/** §4.8 agentEgress inputs the caller can supply per deployment.
+ *  `destination` is where tool results leave the browser for this
+ *  task's provider; `sensitiveOrigins` marks origins whose page content
+ *  is treated as sensitive regardless of detected PII. */
+export interface ActionContextEgress {
+  destination?: AgentEgressDestination;
+  sensitiveOrigins?: readonly string[];
+}
+
+/** Tools whose results carry page content out of the browser (§4.8
+ *  agentEgress dataClass). Mutating tools are covered by dataEgress /
+ *  target semantics instead. */
+const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screenshot">> = {
+  "browser.page.snapshot": "page-text",
+  "browser.page.get": "page-text",
+  "browser.page.extract": "page-text",
+  "browser.page.screenshot": "screenshot",
+};
+
+/** Credential-looking query params — plan §4.8 marks "URL chứa token"
+ *  pages sensitive for egress purposes. */
+const TOKEN_URL_PATTERN =
+  /[?&](?:access[_-]?token|auth|code|key|secret|sig|signature|session|jwt|token)=[^&\s]/i;
+
+/** sensitiveOrigins entries may be full origins ("https://a.com") or
+ *  bare hosts ("a.com", matches subdomains). */
+function originIsSensitive(origin: string, sensitiveOrigins: readonly string[] | undefined): boolean {
+  if (!origin || !sensitiveOrigins?.length) return false;
+  let host = "";
+  try {
+    host = new URL(origin).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return sensitiveOrigins.some((entry) => {
+    const e = entry.trim().toLowerCase();
+    if (!e) return false;
+    if (e.includes("://")) {
+      try {
+        return new URL(e).origin === origin;
+      } catch {
+        return false;
+      }
+    }
+    return host === e || host.endsWith(`.${e}`);
+  });
+}
+
+/** §4.8 rule 2: page content leaving the browser is sensitive when the
+ *  origin is configured sensitive, the URL carries a token, or the
+ *  visible args/page metadata match PII patterns. */
+function pageContentSensitive(
+  url: string,
+  label: string | undefined,
+  origin: string,
+  egress: ActionContextEgress,
+): boolean {
+  if (originIsSensitive(origin, egress.sensitiveOrigins)) return true;
+  if (TOKEN_URL_PATTERN.test(url)) return true;
+  return detectSensitiveContent([url, label ?? ""].join(" "));
+}
+
 /** Build the §4.8 ActionContext for a tool call. `contextResolved`
  *  is honest: mutating tools need an explicit target/url arg —
  *  anything less fails closed inside the classifier. `withinTabScope`
  *  is the real TaskTabScope check result for an explicit args.tabId;
- *  implicit (active/bound-tab) resolution is enforced host-side. */
-export function buildActionContext(req: ToolCallRequest, withinTabScope = true): ActionContext {
+ *  implicit (active/bound-tab) resolution is enforced host-side.
+ *  `egress` supplies the agentEgress destination + sensitiveOrigins
+ *  the classifier cannot derive from the request alone. */
+export function buildActionContext(
+  req: ToolCallRequest,
+  withinTabScope = true,
+  egress: ActionContextEgress = {},
+): ActionContext {
   const args = req.args ?? {};
   const url = typeof args.url === "string" ? args.url : "";
   let origin = "";
@@ -181,6 +267,15 @@ export function buildActionContext(req: ToolCallRequest, withinTabScope = true):
     typeof args.ref === "string" || typeof args.selector === "string" || typeof args.label === "string";
   const mutating = /\.(click|fill|submit|navigate|type|select|press|scroll|hover|drag|upload)$/.test(req.tool);
   const targetLabel = typeof args.label === "string" ? args.label : undefined;
+  const inputType = typeof args.inputType === "string" ? args.inputType : undefined;
+  const egressDataClass = EGRESS_DATA_CLASS[req.tool as BrowserToolName];
+  const agentEgress = egressDataClass
+    ? {
+        dataClass: egressDataClass,
+        destination: egress.destination ?? ("local-provider" as const),
+        sensitiveContent: pageContentSensitive(url, targetLabel, origin, egress),
+      }
+    : undefined;
   return {
     backendId: req.backendId ?? "chrome-extension",
     profileId: req.profileId,
@@ -188,17 +283,20 @@ export function buildActionContext(req: ToolCallRequest, withinTabScope = true):
     url,
     origin,
     action: req.tool as BrowserToolName,
-    ...(hasTarget || targetLabel
+    ...(hasTarget || targetLabel || inputType !== undefined
       ? {
           target: {
             ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
             ...(targetLabel ? { label: targetLabel } : {}),
+            ...(inputType !== undefined ? { inputType } : {}),
+            ...(inputType === "password" || args.isPassword === true ? { isPassword: true } : {}),
           },
         }
       : {}),
     ...(typeof args.text === "string" || typeof args.value === "string"
       ? { dataEgress: "network-form" as const }
       : {}),
+    ...(agentEgress ? { agentEgress } : {}),
     withinTabScope,
     contextResolved: !mutating || hasTarget || (req.tool.endsWith("navigate") && url !== "") || req.tool.endsWith("scroll") || req.tool.endsWith("wait"),
   };
@@ -229,7 +327,9 @@ function harvestTabRefs(value: unknown, depth = 0, out = new Set<number>()): Set
   return out;
 }
 
-/** §4.8 actionDigest: hash(canonical(tool,args,target ref,snapshotId,url,origin)). */
+/** §4.8 actionDigest: hash(canonical(tool,args,target ref,snapshotId,url,
+ *  origin,dataEgress,agentEgress)). Any change to those inputs —
+ *  including the egress classification — invalidates a prior approval. */
 export function browserActionDigest(req: ToolCallRequest, actx: ActionContext): string {
   return createHash("sha256")
     .update(
@@ -240,6 +340,14 @@ export function browserActionDigest(req: ToolCallRequest, actx: ActionContext): 
         snapshotId: typeof req.args?.snapshotId === "string" ? req.args.snapshotId : null,
         url: actx.url || null,
         origin: actx.origin || null,
+        dataEgress: actx.dataEgress ?? "none",
+        agentEgress: actx.agentEgress
+          ? {
+              dataClass: actx.agentEgress.dataClass,
+              destination: actx.agentEgress.destination,
+              sensitiveContent: actx.agentEgress.sensitiveContent === true,
+            }
+          : null,
       }),
     )
     .digest("hex");
@@ -247,18 +355,33 @@ export function browserActionDigest(req: ToolCallRequest, actx: ActionContext): 
 
 export interface ToolServerDeps {
   tokens: ToolTokenManager;
-  /** Resolve which host instance serves a task (minimal registry). */
-  resolveHost(taskId: string): ToolHostChannel | null;
+  /** Resolve which host instance serves a task (minimal registry).
+   *  May return a ToolHostRejection to surface a typed routing error
+   *  (browser.wrong_profile etc.) or null for browser.no_host. */
+  resolveHost(taskId: string): ToolHostChannel | ToolHostRejection | null;
   /** §6.6 gate: returns a failure outcome error when the task's pinned
    *  backend cannot serve this call (mismatch/unavailable). Checked
    *  after token+dedup+hard-block, before host resolution. */
   backendGate?(req: ToolCallRequest): { code: string; message: string } | null;
   /** Approval hook — full §4.8 engine (P2-04). */
   requestApproval?(ctx: ToolApprovalRequest): Promise<ToolApprovalVerdict>;
-  /** allow_task scope check — granted scopes persist for task lifetime. */
-  allowTaskGranted?(taskId: string, scope: string): Promise<boolean>;
-  /** Record an allow_task grant after user approval. */
-  grantAllowTask?(taskId: string, scope: string): void;
+  /** allow_task scope check — granted scopes persist for task lifetime.
+   *  `actionDigest` is the digest of the CURRENT action: the grant only
+   *  covers the exact action it was approved for, so the implementation
+   *  must compare it against the digest stored on the granting approval
+   *  (changed args/snapshot/url/egress → not granted → re-approval). */
+  allowTaskGranted?(taskId: string, scope: string, actionDigest: string): Promise<boolean>;
+  /** Record an allow_task grant after user approval. `actionDigest`
+   *  binds the grant to the approved action (see allowTaskGranted). */
+  grantAllowTask?(taskId: string, scope: string, actionDigest: string): void;
+  /** §4.8 agentEgress: where page data leaves for this task's provider.
+   *  Default "local-provider" keeps non-sensitive reads as `read`;
+   *  "cloud-provider"/"external-mcp" makes every page-data egress an
+   *  agent_egress approval. */
+  agentEgressDestination?: AgentEgressDestination;
+  /** Origins whose page content is treated as sensitive for egress —
+   *  full origins or bare hosts (subdomains match). */
+  sensitiveOrigins?: readonly string[];
   /** Redacted ActionContext audit hook (§4.8: logged for audit). */
   onClassified?(taskId: string, ctx: ActionContext, verdict: { risk: RiskLevel; needsApproval: boolean; reason: string }): void;
   onOutcome?(outcome: ToolCallOutcome): void;
@@ -318,10 +441,30 @@ export class BrowserToolServer {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: gate });
     }
 
-    // 4. Host resolution.
-    const host = this.deps.resolveHost(req.taskId);
+    // 4. Host resolution — a resolver may return a typed rejection
+    // (chromex-jtl: wrong_profile reaches the caller, never a silent
+    // cross-profile adopt).
+    const resolved = this.deps.resolveHost(req.taskId);
+    if (resolved && "error" in resolved) {
+      return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: resolved.error });
+    }
+    const host = resolved;
     if (!host) {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.no_host", message: "no host registered for task" } });
+    }
+    // chromex-jtl: a host that declares a different profile than the
+    // task/token must never receive the call — its tabIds belong to
+    // another profile's namespace (§3.2).
+    if (host.profileId !== undefined && host.profileId !== req.profileId) {
+      return this.finish({
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: {
+          code: "browser.wrong_profile",
+          message: `host serves profile ${host.profileId}; task is bound to ${req.profileId}`,
+        },
+      });
     }
 
     // 5. §4.8 classify + approval. withinTabScope is the real scope
@@ -329,11 +472,21 @@ export class BrowserToolServer {
     // enforced by the host against the tabScope payload (step 6).
     const backendId = req.backendId ?? "chrome-extension";
     const explicitTabId = typeof req.args?.tabId === "number" ? req.args.tabId : null;
+    // chromex-jtl: tabIds are namespaced by (profileId, backendId,
+    // browserInstanceId) — the same numeric id under another profile or
+    // Chrome run is a different tab (§3.2).
+    const scopeNs =
+      backendId === "chrome-extension"
+        ? `${req.profileId} ${backendId} ${req.browserInstanceId ?? ""}`
+        : "";
     const withinTabScope =
       backendId !== "chrome-extension" || explicitTabId === null
         ? true
-        : this.tabScope.permits(req.taskId, explicitTabId);
-    const actx = buildActionContext(req, withinTabScope);
+        : this.tabScope.permits(req.taskId, explicitTabId, scopeNs);
+    const actx = buildActionContext(req, withinTabScope, {
+      ...(this.deps.agentEgressDestination ? { destination: this.deps.agentEgressDestination } : {}),
+      ...(this.deps.sensitiveOrigins ? { sensitiveOrigins: this.deps.sensitiveOrigins } : {}),
+    });
     const verdict = classifyActionRisk(actx);
     this.deps.onClassified?.(req.taskId, actx, verdict);
     // scope denials are terminal — never approval-bypassable (§4.8).
@@ -345,13 +498,34 @@ export class BrowserToolServer {
         error: { code: "browser.not_in_scope", message: `tab ${explicitTabId} is outside this task's tab scope` },
       });
     }
+    // chromex-ykj: an implicit target is ambiguous when the task holds
+    // multiple in-scope tabs but no bound default — surface the coded
+    // error instead of letting the host silently pick one.
+    if (
+      backendId === "chrome-extension" &&
+      explicitTabId === null &&
+      this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs)
+    ) {
+      return this.finish({
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: {
+          code: "browser.ambiguous_target",
+          message: "task scope contains multiple tabs and no bound default; pass args.tabId to disambiguate",
+        },
+      });
+    }
     if (verdict.risk === "deny" || verdict.risk === "hard_block") {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.policy_denied", message: verdict.reason } });
     }
     if (verdict.needsApproval) {
       const scope = verdict.allowTaskEligible ? allowTaskScope(actx) : undefined;
+      // §4.8: the digest binds approval (and any allow_task reuse) to
+      // this exact action — args/snapshot/url/egress changes invalidate.
+      const actionDigest = browserActionDigest(req, actx);
       const alreadyGranted =
-        scope !== undefined && (await this.deps.allowTaskGranted?.(req.taskId, scope)) === true;
+        scope !== undefined && (await this.deps.allowTaskGranted?.(req.taskId, scope, actionDigest)) === true;
       if (!alreadyGranted) {
         const approval = await this.deps.requestApproval?.({
           taskId: req.taskId,
@@ -363,7 +537,7 @@ export class BrowserToolServer {
           kind: verdict.kind ?? "browser_action",
           reason: verdict.reason,
           ...(scope !== undefined ? { allowTaskScope: scope } : {}),
-          actionDigest: browserActionDigest(req, actx),
+          actionDigest,
           details: {
             tool: req.tool,
             // redacted + bounded: this preview is persisted to the
@@ -389,7 +563,7 @@ export class BrowserToolServer {
           });
         }
         if (scope !== undefined && approval?.optionId === "allow_task") {
-          this.deps.grantAllowTask?.(req.taskId, scope);
+          this.deps.grantAllowTask?.(req.taskId, scope, actionDigest);
         }
       }
     }
@@ -426,7 +600,10 @@ export class BrowserToolServer {
       // see) against this task's permitted set — chromex-9e3.
       const tabScope =
         (req.backendId ?? "chrome-extension") === "chrome-extension"
-          ? this.tabScope.payloadFor(req.taskId)
+          ? this.tabScope.payloadFor(
+              req.taskId,
+              `${req.profileId} ${req.backendId ?? "chrome-extension"} ${req.browserInstanceId ?? ""}`,
+            )
           : undefined;
       host.send("browser.tool.request", {
         toolCallId: req.toolCallId,
@@ -472,6 +649,7 @@ export class BrowserToolServer {
   #noteTabScope(req: ToolCallRequest, result: unknown): void {
     if ((req.backendId ?? "chrome-extension") !== "chrome-extension") return;
     if (!result || typeof result !== "object") return;
+    const ns = `${req.profileId} ${req.backendId ?? "chrome-extension"} ${req.browserInstanceId ?? ""}`;
     const r = result as Record<string, unknown>;
     const resolved =
       typeof r.resolvedTabId === "number"
@@ -480,8 +658,8 @@ export class BrowserToolServer {
           ? req.args.tabId
           : null;
     if (resolved === null) return;
-    this.tabScope.bind(req.taskId, resolved);
-    this.tabScope.acquire(req.taskId, harvestTabRefs(r));
+    this.tabScope.bind(req.taskId, resolved, ns);
+    this.tabScope.acquire(req.taskId, harvestTabRefs(r), ns);
     if (req.tool === "browser.tab.close" && (r.closed === resolved || r.closed === true)) {
       this.tabScope.release(req.taskId, resolved);
     }

@@ -15,6 +15,13 @@ export type RiskLevel =
   | "deny"
   | "hard_block";
 
+export type AgentEgressDataClass = "none" | "page-text" | "screenshot" | "attachment";
+export type AgentEgressDestination =
+  | "local-provider"
+  | "cloud-provider"
+  | "external-mcp"
+  | "logs-telemetry";
+
 export interface ActionContext {
   backendId: BrowserBackendId;
   profileId: string;
@@ -42,8 +49,8 @@ export interface ActionContext {
    * (trust boundary). Plan §4.8 P1.7/P1.8.
    */
   agentEgress?: {
-    dataClass: "none" | "page-text" | "screenshot" | "attachment";
-    destination: "local-provider" | "cloud-provider" | "external-mcp" | "logs-telemetry";
+    dataClass: AgentEgressDataClass;
+    destination: AgentEgressDestination;
     /** page shows signs of sensitive non-password data (PII, email, card, address…) */
     sensitiveContent?: boolean;
   };

@@ -14,6 +14,15 @@
  *  - Scope is in-memory only: runtime binding is never persisted (§4.9),
  *    so a gateway/SW restart re-binds on next use.
  *
+ * Namespaces (chromex-jtl): `tabId` is only meaningful inside
+ * (profileId, browserInstanceId) — §3.2. Every scope operation takes an
+ * `ns` string; ownership and foreign-tab reporting are keyed by it, so
+ * the same numeric tabId under a different profile or Chrome instance is
+ * a DIFFERENT tab and can never be silently adopted or falsely reported
+ * foreign. A task whose namespace changes (proven Chrome restart → new
+ * browserInstanceId) loses its runtime bindings and re-binds on next
+ * use; a same-instance reconnect keeps the namespace and the bindings.
+ *
  * Enforcement is two-layer: the tool server checks explicit `args.tabId`
  * pre-dispatch (and feeds `withinTabScope` honestly), then ships the
  * scope snapshot to the host in `browser.tool.request.tabScope`, which
@@ -27,8 +36,14 @@ export interface TabScopePayload {
   boundTabId: number | null;
   /** bound + acquired tabIds this task may use */
   allowedTabIds: number[];
-  /** tabIds owned by OTHER tasks — never bindable/usable */
+  /** tabIds owned by OTHER tasks in the SAME namespace — never bindable/usable */
   foreignTabIds: number[];
+}
+
+interface OwnerEntry {
+  taskId: string;
+  ns: string;
+  tabId: number;
 }
 
 export class TaskTabScope {
@@ -36,79 +51,120 @@ export class TaskTabScope {
   private readonly tabs = new Map<string, Set<number>>();
   /** taskId → first bound tabId (default resolution target) */
   private readonly bound = new Map<string, number>();
-  /** tabId → owning taskId (exclusive while bound) */
-  private readonly owner = new Map<number, string>();
+  /** taskId → browser-instance namespace its tabIds belong to */
+  private readonly namespaces = new Map<string, string>();
+  /** `${ns} ${tabId}` → owning task — exclusive while bound, per namespace */
+  private readonly owner = new Map<string, OwnerEntry>();
+
+  #ownerKey(ns: string, tabId: number): string {
+    return `${ns} ${tabId}`;
+  }
+
+  /** Adopt `ns` for the task; a namespace CHANGE invalidates every
+   *  runtime binding the task held (new Chrome run ⇒ §4.9 re-bind). */
+  #ensureNamespace(taskId: string, ns: string): void {
+    const prior = this.namespaces.get(taskId);
+    if (prior === ns) return;
+    if (prior !== undefined) this.releaseTask(taskId);
+    this.namespaces.set(taskId, ns);
+  }
 
   /** May `taskId` target `tabId` right now? In-scope → yes; unbound task
-   *  → yes iff the tab is unowned or already its own (first bind). */
-  permits(taskId: string, tabId: number): boolean {
+   *  → yes iff the tab is unowned in this namespace or already its own
+   *  (first bind). */
+  permits(taskId: string, tabId: number, ns: string): boolean {
+    this.#ensureNamespace(taskId, ns);
     const scope = this.tabs.get(taskId);
     if (scope?.has(tabId)) return true;
     if (scope && scope.size > 0) return false;
-    const o = this.owner.get(tabId);
-    return o === undefined || o === taskId;
+    const o = this.owner.get(this.#ownerKey(ns, tabId));
+    return o === undefined || o.taskId === taskId;
   }
 
   /** Record a bind/acquisition. Returns false when the tab belongs to
-   *  another task — callers treat that as not_in_scope. */
-  bind(taskId: string, tabId: number): boolean {
-    if (!this.permits(taskId, tabId)) return false;
+   *  another task in the same namespace — callers treat that as
+   *  not_in_scope. */
+  bind(taskId: string, tabId: number, ns: string): boolean {
+    if (!this.permits(taskId, tabId, ns)) return false;
     let scope = this.tabs.get(taskId);
     if (!scope) {
       scope = new Set();
       this.tabs.set(taskId, scope);
     }
     scope.add(tabId);
-    if (!this.owner.has(tabId)) this.owner.set(tabId, taskId);
+    const key = this.#ownerKey(ns, tabId);
+    if (!this.owner.has(key)) this.owner.set(key, { taskId, ns, tabId });
     if (!this.bound.has(taskId)) this.bound.set(taskId, tabId);
     return true;
   }
 
   /** Add tabs the task acquired through its own tool results. Tabs owned
-   *  by another task are skipped — a result cannot grant foreign scope. */
-  acquire(taskId: string, tabIds: Iterable<number>): void {
+   *  by another task in the same namespace are skipped — a result cannot
+   *  grant foreign scope. */
+  acquire(taskId: string, tabIds: Iterable<number>, ns: string): void {
+    this.#ensureNamespace(taskId, ns);
     for (const tabId of tabIds) {
-      const o = this.owner.get(tabId);
-      if (o !== undefined && o !== taskId) continue;
+      const key = this.#ownerKey(ns, tabId);
+      const o = this.owner.get(key);
+      if (o !== undefined && o.taskId !== taskId) continue;
       let scope = this.tabs.get(taskId);
       if (!scope) {
         scope = new Set();
         this.tabs.set(taskId, scope);
       }
       scope.add(tabId);
-      if (o === undefined) this.owner.set(tabId, taskId);
+      if (o === undefined) this.owner.set(key, { taskId, ns, tabId });
     }
   }
 
   /** Drop one tab from the task's scope (e.g. browser.tab.close). */
   release(taskId: string, tabId: number): void {
     this.tabs.get(taskId)?.delete(tabId);
-    if (this.owner.get(tabId) === taskId) this.owner.delete(tabId);
+    const ns = this.namespaces.get(taskId);
+    if (ns !== undefined) {
+      const key = this.#ownerKey(ns, tabId);
+      if (this.owner.get(key)?.taskId === taskId) this.owner.delete(key);
+    }
     if (this.bound.get(taskId) === tabId) this.bound.delete(taskId);
   }
 
   /** Task ended/purged — release every tab it owned. */
   releaseTask(taskId: string): void {
     const scope = this.tabs.get(taskId);
-    if (scope) {
+    const ns = this.namespaces.get(taskId);
+    if (scope && ns !== undefined) {
       for (const tabId of scope) {
-        if (this.owner.get(tabId) === taskId) this.owner.delete(tabId);
+        const key = this.#ownerKey(ns, tabId);
+        if (this.owner.get(key)?.taskId === taskId) this.owner.delete(key);
       }
     }
     this.tabs.delete(taskId);
     this.bound.delete(taskId);
+    this.namespaces.delete(taskId);
+  }
+
+  /** chromex-ykj: an IMPLICIT target (no args.tabId) is ambiguous when
+   *  the task holds multiple in-scope tabs but no bound default — the
+   *  caller must pass args.tabId; never silently pick one. */
+  implicitTargetAmbiguous(taskId: string, ns: string): boolean {
+    this.#ensureNamespace(taskId, ns);
+    const scope = this.tabs.get(taskId);
+    return this.bound.get(taskId) === undefined && (scope?.size ?? 0) > 1;
   }
 
   /** Scope snapshot shipped inside browser.tool.request for host-side
-   *  enforcement of the RESOLVED tabId. */
-  payloadFor(taskId: string): TabScopePayload {
+   *  enforcement of the RESOLVED tabId. `foreignTabIds` only lists tabs
+   *  owned in THIS namespace — other profiles/instances are invisible
+   *  to the host and their numeric ids are not comparable (§3.2). */
+  payloadFor(taskId: string, ns: string): TabScopePayload {
+    this.#ensureNamespace(taskId, ns);
     const scope = this.tabs.get(taskId);
     return {
       boundTabId: this.bound.get(taskId) ?? null,
       allowedTabIds: scope ? [...scope] : [],
-      foreignTabIds: [...this.owner.entries()]
-        .filter(([, t]) => t !== taskId)
-        .map(([tabId]) => tabId),
+      foreignTabIds: [...this.owner.values()]
+        .filter((e) => e.ns === ns && e.taskId !== taskId)
+        .map((e) => e.tabId),
     };
   }
 }
