@@ -75,6 +75,7 @@ import type { GatewayDb } from "../store/db.js";
 import { CODEX_CAPABILITIES } from "../agents/providers/codex/session.js";
 import { CLAUDE_CAPABILITIES as CLAUDE_SESSION_CAPABILITIES } from "../agents/providers/claude/session.js";
 import { CodexAgentProvider } from "../agents/providers/codex/provider.js";
+import { InMemoryBridgeSecrets } from "../secrets.js";
 import { ProviderRegistry } from "../agents/registry.js";
 import { SessionManager } from "./session-manager.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
@@ -175,7 +176,23 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     };
     const registry = new ProviderRegistry(providerConfigs);
     if (config.providers.codex.enabled) {
-      await registry.register("codex", async () => new CodexAgentProvider());
+      // external skill roots live under the sidepanel config dir
+      // (same root the legacy sidecar's ExternalSkillArchiveStore uses)
+      const { resolveCodexSidepanelConfigDir } = await import("../platform.js");
+      const { ExternalSkillArchiveStore } = await import("../skill-archives.js");
+      const externalSkills = new ExternalSkillArchiveStore(
+        path.join(resolveCodexSidepanelConfigDir(), "external-skills"),
+      );
+      await registry.register(
+        "codex",
+        async () =>
+          new CodexAgentProvider({
+            externalSkillRoots: () => externalSkills.listScanRoots(),
+            // same secrets.json the sidecar uses — apiKey login +
+            // openAiApiKeyConfigured stay consistent across modes
+            secrets: new InMemoryBridgeSecrets(),
+          }),
+      );
     }
     if (config.providers.claude.enabled) {
       const { ClaudeAgentProvider } = await import("../agents/providers/claude/provider.js");
@@ -481,11 +498,18 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           status: "pending",
           createdAt: Date.now(),
         });
-        storeAny.appendTaskEvent?.(tctx.taskId, {
+        const requestedEnv = (
+          store as { appendTaskEvent?: (id: string, e: unknown) => { kind?: string } | null }
+        ).appendTaskEvent?.(tctx.taskId, {
           type: "permission.requested",
           ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
           request,
         });
+        // live clients must see the card immediately — durable persist
+        // alone only reaches them via task.sync replay (chromex-7kf)
+        if (requestedEnv && requestedEnv.kind === "event") {
+          ipc?.broadcast(requestedEnv as import("@codex-sidepanel/shared").Envelope);
+        }
         // poll for resolution up to 60s (UI answers via permission.respond)
         for (let i = 0; i < 240; i++) {
           const st = storeAny.approvalStatus?.(approvalId);
