@@ -189,6 +189,7 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       };
       const activity = describeGatewayTool(ctx.tool, ctx.input, status);
       if (toolCallId) toolContext.delete(toolCallId);
+      const failed = !started && payload.outcome === "failed";
       return {
         type: "turn.activity",
         ...base,
@@ -198,6 +199,10 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         detail: activity.detail,
         status,
         timestampMs: Date.now(),
+        tool: ctx.tool || undefined,
+        ...(started && ctx.input !== undefined ? { inputText: boundText(ctx.input) } : {}),
+        ...(!started && payload.output !== undefined ? { outputText: boundText(payload.output) } : {}),
+        ...(failed ? { errorText: boundText(payload.output ?? "tool call failed") } : {}),
       };
     }
     default:
@@ -295,6 +300,21 @@ function humanizeToolName(tool: string): string {
   const cleaned = tool.replace(/^subagent:/, "").replace(/[_-]+/g, " ").trim();
   if (!cleaned) return "Tool";
   return cleaned.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function boundText(value: unknown, max = 1200): string {
+  let s: string;
+  if (typeof value === "string") {
+    s = value;
+  } else {
+    try {
+      s = JSON.stringify(value, null, 2);
+    } catch {
+      s = String(value);
+    }
+  }
+  s = s.trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 function summarizeInput(input: unknown): string {

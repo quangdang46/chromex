@@ -514,6 +514,10 @@ type SidepanelBridgeEvent = {
   detail?: string;
   status?: "running" | "completed";
   timestampMs?: number;
+  tool?: string;
+  inputText?: string;
+  outputText?: string;
+  errorText?: string;
   conversationId?: string;
   requestId?: string;
   questions?: PlanUserInputQuestion[];
@@ -1771,6 +1775,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         detail: event.detail ?? "",
         status: activityStatus,
         timestampMs: Number.isFinite(event.timestampMs) ? Number(event.timestampMs) : Date.now(),
+        ...(typeof event.tool === "string" && event.tool ? { tool: event.tool } : {}),
+        ...(typeof event.inputText === "string" && event.inputText ? { input: event.inputText } : {}),
+        ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
+        ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
       });
       renderConversationListIfVisible();
       return;
@@ -1825,6 +1833,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       detail: event.detail ?? "",
       status: completedTurnIds.has(event.turnId) || activityStatus === "completed" ? "completed" : "running",
       timestampMs: Number.isFinite(event.timestampMs) ? Number(event.timestampMs) : Date.now(),
+      ...(typeof event.tool === "string" && event.tool ? { tool: event.tool } : {}),
+      ...(typeof event.inputText === "string" && event.inputText ? { input: event.inputText } : {}),
+      ...(typeof event.outputText === "string" && event.outputText ? { output: event.outputText } : {}),
+      ...(typeof event.errorText === "string" && event.errorText ? { error: event.errorText } : {}),
     });
     shouldRender = state.activeView === "chat";
   }
@@ -7375,14 +7387,45 @@ function renderMessageTrace(messageId: string, trace: ConversationMessage["trace
 function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[number]): string {
   const title = formatTraceTitle(item, stringsForState().trace);
   const detail = formatTraceDetail(item, title);
-  return `
-    <div class="message-trace-line ${escapeAttribute(item.kind)} ${escapeAttribute(item.status)}" role="listitem">
+  const expandable = Boolean(item.input || item.output || item.error);
+  const meta = [
+    item.tool ? `<span class="message-trace-line-tool">${escapeHtml(item.tool)}</span>` : "",
+    item.durationMs !== undefined ? `<span class="message-trace-line-duration">${escapeHtml(formatTraceDuration(item.durationMs))}</span>` : "",
+  ].join("");
+  const body = `
       <span class="message-trace-line-text">
         <span class="message-trace-line-main">${escapeHtml(title)}</span>
         ${detail ? `<span class="message-trace-line-detail">${escapeHtml(detail)}</span>` : ""}
-      </span>
+        ${meta ? `<span class="message-trace-line-meta">${meta}</span>` : ""}
+      </span>`;
+  if (!expandable) {
+    return `
+    <div class="message-trace-line ${escapeAttribute(item.kind)} ${escapeAttribute(item.status)}" role="listitem">
+      ${body}
     </div>
   `;
+  }
+  return `
+    <details class="message-trace-line ${escapeAttribute(item.kind)} ${escapeAttribute(item.status)} message-trace-line-expandable" role="listitem">
+      <summary class="message-trace-line-summary">
+        ${body}
+        <span class="message-trace-line-caret" aria-hidden="true">${renderUiIcon("chevron-down")}</span>
+      </summary>
+      <div class="message-trace-line-payload">
+        ${item.input ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label">Input</p><pre class="message-trace-payload">${escapeHtml(item.input)}</pre></div>` : ""}
+        ${item.output ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label">Output</p><pre class="message-trace-payload">${escapeHtml(item.output)}</pre></div>` : ""}
+        ${item.error ? `<div class="message-trace-payload-block"><p class="message-trace-payload-label message-trace-payload-label-error">Error</p><pre class="message-trace-payload message-trace-payload-error">${escapeHtml(item.error)}</pre></div>` : ""}
+      </div>
+    </details>
+  `;
+}
+
+function formatTraceDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`;
+  const m = Math.floor(durationMs / 60_000);
+  const s = Math.round((durationMs % 60_000) / 1000);
+  return `${m}m ${s}s`;
 }
 
 function renderTurnPlanDecisionCard(plan: ConversationMessage["plan"] | undefined): string {
@@ -15998,6 +16041,10 @@ type TurnTraceActivityInput = {
   detail: string;
   status: "running" | "completed";
   timestampMs: number;
+  tool?: string;
+  input?: string;
+  output?: string;
+  error?: string;
 };
 
 function upsertTurnActivityTrace(activity: TurnTraceActivityInput): void {
@@ -16040,6 +16087,7 @@ function upsertTurnActivityTraceInMessages(
   }
   const trace = [...(message.trace ?? [])];
   const existingIndex = trace.findIndex((item) => item.id === activity.itemId);
+  const existing = existingIndex >= 0 ? trace[existingIndex] : undefined;
   const nextItem = {
     id: activity.itemId,
     kind: activity.kind,
@@ -16047,6 +16095,14 @@ function upsertTurnActivityTraceInMessages(
     detail: activity.detail.trim(),
     status: activity.status,
     timestampMs: activity.timestampMs,
+    ...(activity.tool ? { tool: activity.tool } : {}),
+    ...(activity.input ? { input: activity.input } : {}),
+    ...(activity.output ? { output: activity.output } : {}),
+    ...(activity.error ? { error: activity.error } : {}),
+    // measure wall-clock run time on the running→completed transition
+    ...(activity.status === "completed" && existing?.status === "running"
+      ? { durationMs: Math.max(0, activity.timestampMs - existing.timestampMs) }
+      : {}),
   };
   if (existingIndex >= 0) {
     trace[existingIndex] = {

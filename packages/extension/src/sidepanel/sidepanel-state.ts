@@ -529,6 +529,11 @@ function serializeConversationTraceForStorage(
         detail: stringOrDefault(item.detail, "").slice(0, 240),
         status,
         timestampMs: Number.isFinite(item.timestampMs) ? Number(item.timestampMs) : Date.now(),
+        ...(typeof item.tool === "string" && item.tool ? { tool: item.tool.slice(0, 80) } : {}),
+        ...(typeof item.input === "string" && item.input ? { input: item.input.slice(0, 4000) } : {}),
+        ...(typeof item.output === "string" && item.output ? { output: item.output.slice(0, 4000) } : {}),
+        ...(typeof item.error === "string" && item.error ? { error: item.error.slice(0, 1000) } : {}),
+        ...(Number.isFinite(item.durationMs) ? { durationMs: Math.max(0, Number(item.durationMs)) } : {}),
       };
     })
     .filter((item) => item.title || item.detail);

@@ -285,6 +285,16 @@ export interface ConversationMessageTraceItem {
   detail: string;
   status: "running" | "completed";
   timestampMs: number;
+  /** provider tool name (e.g. "Bash", "commandExecution") when known */
+  tool?: string;
+  /** bounded input preview shown when the item is expanded */
+  input?: string;
+  /** bounded output preview captured on completion */
+  output?: string;
+  /** failure summary when the tool call errored */
+  error?: string;
+  /** wall-clock duration measured start→complete */
+  durationMs?: number;
 }
 
 export interface ConversationMessageContext {

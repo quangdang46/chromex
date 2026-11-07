@@ -97,6 +97,11 @@ export function formatTraceTitle(item: ConversationMessageTraceItem, trace: Trac
       return completed ? trace.responseComplete : trace.responseRunning;
     case "tool":
     default:
+      // provider tool events carry a specific title ("Using MCP tool",
+      // "Subagent working") — prefer it over the generic label
+      if (explicitTitle && !isNoisyTraceText(explicitTitle)) {
+        return explicitTitle;
+      }
       return completed ? trace.toolComplete : trace.toolRunning;
   }
 }
