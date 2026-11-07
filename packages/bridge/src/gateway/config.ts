@@ -1,9 +1,9 @@
 /**
- * Gateway config — plan §5.8.
+ * Gateway config — plan §5.8 (schema aligned to plan JSONC).
  *
  * `gateway.json` in CHROMEX_GATEWAY_HOME (default ~/.chromex/gateway).
- * All fields optional with safe defaults; unknown fields rejected so
- * typos don't silently disable safety knobs.
+ * All fields optional with safe defaults; unknown top-level keys rejected
+ * so typos don't silently disable safety knobs.
  */
 
 import fs from "node:fs/promises";
@@ -12,11 +12,21 @@ import path from "node:path";
 
 import { MAX_ENVELOPE_BYTES_HARD } from "@codex-sidepanel/shared";
 
+export interface GatewayProviderConfig {
+  enabled: boolean;
+  command: string | null;
+  env: Record<string, string>;
+  models: string[] | null;
+  additionalModels: string[] | null;
+  defaultModel: string | null;
+}
+
 export interface GatewayConfig {
   version: 1;
   gateway: {
-    ipc: "auto" | "socket" | "pipe";
+    ipc: { transport: "auto" | "pipe" | "tcp" | "unix" };
     autoStart: boolean;
+    /** 0 = never self-exit */
     idleExitMs: number;
     startupTimeoutMs: number;
     reconnectGraceMs: number;
@@ -24,16 +34,21 @@ export interface GatewayConfig {
     maxEnvelopeBytes: number;
   };
   providers: {
-    codex: { enabled: boolean; binPath?: string };
-    claude: { enabled: boolean };
+    codex: GatewayProviderConfig;
+    claude: GatewayProviderConfig;
   };
   browser: {
-    defaultBackend: string;
-    allowedBackends: string[];
-    playwright: { enabled: boolean; isolatedProfile: boolean };
+    /** "auto" resolves via §6.6 intent-source ordering */
+    defaultBackend: "auto" | "chrome-extension" | "playwright-isolated" | "playwright-cdp";
+    allowedBackends: Array<"chrome-extension" | "playwright-isolated" | "playwright-cdp">;
+    playwright: { enabledByUser: boolean };
     defaultTabScope: "active" | "selected" | "all";
-    snapshot: { maxElements: number; includeHidden: boolean };
-    policy: "ask" | "auto-review" | "full";
+    snapshot: { maxElements: number; maxTextChars: number };
+    policy: {
+      allowEvaluate: boolean;
+      allowUpload: boolean;
+      requireApprovalForDataEntryOnAutosave: boolean;
+    };
   };
   tasks: {
     queueWhileRunning: boolean;
@@ -41,37 +56,58 @@ export interface GatewayConfig {
     maxEventsPerTask: number;
   };
   storeReasoning: boolean;
+  /** P1-02: "memory" | "sqlite" — default memory until PR-D flips */
+  store: "memory" | "sqlite";
 }
 
 export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
   version: 1,
   gateway: {
-    ipc: "auto",
+    ipc: { transport: "auto" },
     autoStart: true,
-    idleExitMs: 10 * 60 * 1000,
-    startupTimeoutMs: 15 * 1000,
-    reconnectGraceMs: 30 * 1000,
-    deltaFlushMs: 50,
+    idleExitMs: 0,
+    startupTimeoutMs: 15_000,
+    reconnectGraceMs: 15_000,
+    deltaFlushMs: 750,
     maxEnvelopeBytes: MAX_ENVELOPE_BYTES_HARD,
   },
   providers: {
-    codex: { enabled: true },
-    claude: { enabled: false },
+    codex: {
+      enabled: true,
+      command: null,
+      env: {},
+      models: null,
+      additionalModels: null,
+      defaultModel: null,
+    },
+    claude: {
+      enabled: false,
+      command: null,
+      env: {},
+      models: null,
+      additionalModels: null,
+      defaultModel: null,
+    },
   },
   browser: {
-    defaultBackend: "chrome-extension",
+    defaultBackend: "auto",
     allowedBackends: ["chrome-extension", "playwright-isolated"],
-    playwright: { enabled: false, isolatedProfile: true },
+    playwright: { enabledByUser: false },
     defaultTabScope: "active",
-    snapshot: { maxElements: 500, includeHidden: false },
-    policy: "ask",
+    snapshot: { maxElements: 80, maxTextChars: 12_000 },
+    policy: {
+      allowEvaluate: false,
+      allowUpload: false,
+      requireApprovalForDataEntryOnAutosave: true,
+    },
   },
   tasks: {
     queueWhileRunning: true,
-    retentionDays: 30,
-    maxEventsPerTask: 100_000,
+    retentionDays: 14,
+    maxEventsPerTask: 20_000,
   },
   storeReasoning: false,
+  store: "memory",
 };
 
 const KNOWN_KEYS = new Set([
@@ -81,7 +117,10 @@ const KNOWN_KEYS = new Set([
   "browser",
   "tasks",
   "storeReasoning",
+  "store",
 ]);
+
+const BACKEND_IDS = ["chrome-extension", "playwright-isolated", "playwright-cdp"] as const;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -95,18 +134,39 @@ function bool(v: unknown, dflt: boolean): boolean {
   return typeof v === "boolean" ? v : dflt;
 }
 
-function str<T extends string>(v: unknown, dflt: T, allowed?: readonly T[]): T {
-  if (typeof v !== "string") return dflt;
-  if (allowed && !(allowed as readonly string[]).includes(v)) return dflt;
-  return v as T;
+function strOrNull(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-function strArr(v: unknown, dflt: string[]): string[] {
-  if (!Array.isArray(v)) return dflt;
-  return v.filter((x): x is string => typeof x === "string");
+function strListOrNull(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v.filter((x): x is string => typeof x === "string" && x.length > 0);
+  return out.length ? out : null;
 }
 
-/** Deep-merge user config over defaults, validating ranges. */
+function envRecord(v: unknown): Record<string, string> {
+  if (!isRecord(v)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val === "string") out[k] = val;
+  }
+  return out;
+}
+
+function providerConfig(raw: unknown, dflt: GatewayProviderConfig): GatewayProviderConfig {
+  if (!isRecord(raw)) return { ...dflt };
+  return {
+    enabled: bool(raw.enabled, dflt.enabled),
+    command: raw.command === undefined ? dflt.command : strOrNull(raw.command),
+    env: isRecord(raw.env) ? envRecord(raw.env) : dflt.env,
+    models: raw.models === undefined ? dflt.models : strListOrNull(raw.models),
+    additionalModels:
+      raw.additionalModels === undefined ? dflt.additionalModels : strListOrNull(raw.additionalModels),
+    defaultModel: raw.defaultModel === undefined ? dflt.defaultModel : strOrNull(raw.defaultModel),
+  };
+}
+
+/** Deep-merge user config over §5.8 defaults, validating ranges. */
 export function resolveGatewayConfig(raw: unknown): GatewayConfig {
   const base = structuredClone(DEFAULT_GATEWAY_CONFIG);
   if (!isRecord(raw)) return base;
@@ -119,64 +179,78 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
     throw new Error(`gateway config: unsupported version ${String(raw.version)}`);
   }
   const g = isRecord(raw.gateway) ? raw.gateway : {};
+  const ipc = isRecord(g.ipc) ? g.ipc : {};
   const p = isRecord(raw.providers) ? raw.providers : {};
-  const codex = isRecord(p.codex) ? p.codex : {};
-  const claude = isRecord(p.claude) ? p.claude : {};
   const b = isRecord(raw.browser) ? raw.browser : {};
   const pw = isRecord(b.playwright) ? b.playwright : {};
   const snap = isRecord(b.snapshot) ? b.snapshot : {};
+  const pol = isRecord(b.policy) ? b.policy : {};
   const t = isRecord(raw.tasks) ? raw.tasks : {};
 
   const maxEnvelope = num(g.maxEnvelopeBytes, 1024, MAX_ENVELOPE_BYTES_HARD, MAX_ENVELOPE_BYTES_HARD);
-  if (maxEnvelope > MAX_ENVELOPE_BYTES_HARD) {
-    // num() already clamps to hard cap; explicit guard for clarity
-    throw new Error("gateway.maxEnvelopeBytes cannot exceed hard cap");
-  }
+
+  const allowedBackends = Array.isArray(b.allowedBackends)
+    ? b.allowedBackends.filter((x): x is (typeof BACKEND_IDS)[number] =>
+        (BACKEND_IDS as readonly string[]).includes(x as string),
+      )
+    : base.browser.allowedBackends;
+
+  const defaultBackend =
+    typeof b.defaultBackend === "string" &&
+    (["auto", ...BACKEND_IDS] as const).includes(b.defaultBackend as never)
+      ? (b.defaultBackend as GatewayConfig["browser"]["defaultBackend"])
+      : base.browser.defaultBackend;
 
   return {
     version: 1,
     gateway: {
-      ipc: str(g.ipc, "auto", ["auto", "socket", "pipe"]),
+      ipc: {
+        transport:
+          typeof ipc.transport === "string" &&
+          (["auto", "pipe", "tcp", "unix"] as const).includes(ipc.transport as never)
+            ? (ipc.transport as GatewayConfig["gateway"]["ipc"]["transport"])
+            : "auto",
+      },
       autoStart: bool(g.autoStart, true),
-      idleExitMs: num(g.idleExitMs, 0, 24 * 60 * 60 * 1000, 10 * 60 * 1000),
+      idleExitMs: num(g.idleExitMs, 0, 24 * 60 * 60 * 1000, 0),
       startupTimeoutMs: num(g.startupTimeoutMs, 100, 120_000, 15_000),
-      reconnectGraceMs: num(g.reconnectGraceMs, 0, 600_000, 30_000),
-      deltaFlushMs: num(g.deltaFlushMs, 0, 10_000, 50),
+      reconnectGraceMs: num(g.reconnectGraceMs, 0, 600_000, 15_000),
+      deltaFlushMs: num(g.deltaFlushMs, 0, 10_000, 750),
       maxEnvelopeBytes: maxEnvelope,
     },
     providers: {
-      codex: {
-        enabled: bool(codex.enabled, true),
-        ...(typeof codex.binPath === "string" ? { binPath: codex.binPath } : {}),
-      },
-      claude: { enabled: bool(claude.enabled, false) },
+      codex: providerConfig(p.codex, base.providers.codex),
+      claude: providerConfig(p.claude, base.providers.claude),
     },
     browser: {
-      defaultBackend: str(b.defaultBackend, "chrome-extension", [
-        "chrome-extension",
-        "playwright-isolated",
-        "playwright-cdp",
-      ]),
-      allowedBackends: strArr(b.allowedBackends, ["chrome-extension", "playwright-isolated"]).filter(
-        (x) => ["chrome-extension", "playwright-isolated", "playwright-cdp"].includes(x),
-      ),
-      playwright: {
-        enabled: bool(pw.enabled, false),
-        isolatedProfile: bool(pw.isolatedProfile, true),
-      },
-      defaultTabScope: str(b.defaultTabScope, "active", ["active", "selected", "all"]),
+      defaultBackend,
+      allowedBackends: allowedBackends.length ? allowedBackends : base.browser.allowedBackends,
+      playwright: { enabledByUser: bool(pw.enabledByUser, false) },
+      defaultTabScope:
+        typeof b.defaultTabScope === "string" &&
+        (["active", "selected", "all"] as const).includes(b.defaultTabScope as never)
+          ? (b.defaultTabScope as GatewayConfig["browser"]["defaultTabScope"])
+          : "active",
       snapshot: {
-        maxElements: num(snap.maxElements, 1, 10_000, 500),
-        includeHidden: bool(snap.includeHidden, false),
+        maxElements: num(snap.maxElements, 1, 10_000, 80),
+        maxTextChars: num(snap.maxTextChars, 100, 1_000_000, 12_000),
       },
-      policy: str(b.policy, "ask", ["ask", "auto-review", "full"]),
+      policy: {
+        allowEvaluate: bool(pol.allowEvaluate, false),
+        allowUpload: bool(pol.allowUpload, false),
+        requireApprovalForDataEntryOnAutosave: bool(
+          pol.requireApprovalForDataEntryOnAutosave,
+          true,
+        ),
+      },
     },
     tasks: {
       queueWhileRunning: bool(t.queueWhileRunning, true),
-      retentionDays: num(t.retentionDays, 1, 3650, 30),
-      maxEventsPerTask: num(t.maxEventsPerTask, 100, 10_000_000, 100_000),
+      retentionDays: num(t.retentionDays, 1, 3650, 14),
+      maxEventsPerTask: num(t.maxEventsPerTask, 100, 10_000_000, 20_000),
     },
     storeReasoning: bool(raw.storeReasoning, false),
+    store: raw.store === "sqlite" ? "sqlite" : "memory",
   };
 }
 

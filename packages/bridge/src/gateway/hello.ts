@@ -18,13 +18,21 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import type { GatewayConfig } from "./config.js";
-import type { InMemoryStore } from "./store-memory.js";
+import type { TaskRecord, TurnRecord } from "@codex-sidepanel/shared";
+
+/** Minimal read surface both stores implement. */
+export interface StoreRead {
+  listTasks(): TaskRecord[];
+  listTurns(taskId?: string): TurnRecord[];
+  lastTaskSeq(taskId: string): number;
+  lastGatewaySeq(): number;
+}
 
 export const GATEWAY_PROTOCOL_VERSION = 1;
 export const GATEWAY_VERSION = "0.1.0";
 
 export interface HelloDeps {
-  store: InMemoryStore;
+  store: StoreRead;
   config: GatewayConfig;
   /** provider availability resolved by registry (P1-04 fills real data) */
   providers: HelloResponse["providers"];
@@ -110,7 +118,7 @@ export function buildHelloResponse(
       id,
       available:
         id === "chrome-extension" ||
-        (id !== "playwright-cdp" && deps.config.browser.playwright.enabled),
+        (id !== "playwright-cdp" && deps.config.browser.playwright.enabledByUser),
       capabilities: DEFAULT_BACKEND_CAPABILITIES[id],
     }));
 

@@ -137,7 +137,7 @@ describe("gateway config (§5.8)", () => {
   test("defaults are sane and maxEnvelopeBytes at hard cap", () => {
     expect(DEFAULT_GATEWAY_CONFIG.gateway.maxEnvelopeBytes).toBe(768 * 1024);
     expect(DEFAULT_GATEWAY_CONFIG.gateway.autoStart).toBe(true);
-    expect(DEFAULT_GATEWAY_CONFIG.browser.policy).toBe("ask");
+    expect(DEFAULT_GATEWAY_CONFIG.browser.policy.allowEvaluate).toBe(false);
     expect(DEFAULT_GATEWAY_CONFIG.providers.claude.enabled).toBe(false);
   });
 
@@ -271,5 +271,32 @@ describe("ulid", () => {
     expect(b.length).toBe(26);
     expect(a < b).toBe(true);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("gateway boot with store=sqlite", () => {
+  test("boots, serves hello, persists gateway.started across reopen", async () => {
+    const { startGateway } = await import("../src/gateway/main.js");
+    await fs.writeFile(
+      path.join(dir, "gateway.json"),
+      JSON.stringify({ store: "sqlite" }),
+    );
+    const gw = await startGateway({ dataDir: dir, log: () => {} });
+    try {
+      expect(gw.db).not.toBeNull();
+      expect(gw.config.store).toBe("sqlite");
+      // gateway.started durable event persisted
+      const seq = gw.store.lastGatewaySeq();
+      expect(seq).toBe(1);
+    } finally {
+      await gw.shutdown("test");
+    }
+    // reopen: seq continues (durable), not reset
+    const gw2 = await startGateway({ dataDir: dir, log: () => {} });
+    try {
+      expect(gw2.store.lastGatewaySeq()).toBe(2);
+    } finally {
+      await gw2.shutdown("test");
+    }
   });
 });

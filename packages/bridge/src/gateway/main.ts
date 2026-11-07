@@ -29,6 +29,10 @@ import {
   parseHelloRequest,
 } from "./hello.js";
 import { InMemoryStore } from "./store-memory.js";
+import { openGatewayDb, runIntegrityChecks } from "../store/db.js";
+import { SQLiteStore } from "../store/sqlite-store.js";
+import { runRecoveryScan } from "../store/recovery.js";
+import type { GatewayDb } from "../store/db.js";
 
 export interface GatewayOptions {
   /** override CHROMEX_GATEWAY_HOME */
@@ -39,7 +43,8 @@ export interface GatewayOptions {
 export interface RunningGateway {
   dataDir: string;
   config: GatewayConfig;
-  store: InMemoryStore;
+  store: InMemoryStore | SQLiteStore;
+  db: GatewayDb | null;
   ipc: GatewayIpcServer;
   lifetimeLock: OwnershipLock;
   shutdown(reason?: string): Promise<void>;
@@ -67,7 +72,29 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     // 2. lifetime lock — the real ownership claim
     lifetimeLock = await acquireOwnershipLock(dataDir, "lifetime");
 
-    const store = new InMemoryStore();
+    // store: memory|sqlite flag (§P1-02). SQLite path runs integrity
+    // checks + §5.6 recovery BEFORE ready.
+    let store: InMemoryStore | SQLiteStore;
+    let db: GatewayDb | null = null;
+    let recoveredTurns = 0;
+    let recoveredTasks = 0;
+    if (config.store === "sqlite") {
+      db = await openGatewayDb(dataDir);
+      const sqlite = new SQLiteStore(db);
+      const violations = runIntegrityChecks(db);
+      if (violations.length) {
+        log(`integrity violations: ${violations.join("; ")}`);
+      }
+      const recovery = runRecoveryScan(sqlite, db);
+      recoveredTurns = recovery.recoveredTurns;
+      recoveredTasks = recovery.recoveredTasks;
+      if (recoveredTurns || recoveredTasks) {
+        log(`recovery: ${recoveredTurns} turns unknown, ${recoveredTasks} tasks paused`);
+      }
+      store = sqlite;
+    } else {
+      store = new InMemoryStore();
+    }
 
     const providers: HelloResponseProviders = [
       {
@@ -93,8 +120,8 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     store.appendGatewayEvent({
       type: "gateway.started",
       version: GATEWAY_VERSION,
-      recoveredTurns: 0,
-      recoveredTasks: 0,
+      recoveredTurns,
+      recoveredTasks,
     });
 
     ipc.markReady();
@@ -107,6 +134,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       ipc?.markStarting();
       // no self-exit while active work — in-memory store has no active
       // turns yet; real check lands with P1-05 SessionManager.
+      db?.close();
       await ipc?.close().catch(() => {});
       await lifetimeLock?.release().catch(() => {});
       await startupLock.release().catch(() => {});
@@ -121,6 +149,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       dataDir,
       config,
       store,
+      db,
       ipc,
       lifetimeLock: lifetimeLock!,
       shutdown,
@@ -174,7 +203,7 @@ const CLAUDE_CAPABILITIES = {
 async function handleGatewayRequest(
   req: Extract<Envelope, { kind: "request" }>,
   ctx: {
-    store: InMemoryStore;
+    store: InMemoryStore | SQLiteStore;
     config: GatewayConfig;
     providers: HelloResponseProviders;
     conn: IpcConnection;
