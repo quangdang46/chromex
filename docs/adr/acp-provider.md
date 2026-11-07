@@ -64,9 +64,11 @@ categories — resolved per-session, advertised conservatively.
 
 ## Open questions
 
-1. **MCP bridging**: `session/new` accepts `mcpServers` — wire the
-   browser-tool MCP spawn (P1-09) through config.options.mcpServers the
-   same way Claude/Codex do. http+sse supported by opencode.
+1. **MCP bridging**: RESOLVED — `session/new|load` accepts `mcpServers`;
+   `AcpAgentSession` maps `config.options.mcpServers` to the ACP stdio
+   shape `{name, command, args, env}` where `env` is `EnvVariable[]`
+   (`{name,value}` pairs — the gateway descriptor's env record is
+   translated, not passed through).
 2. **Permission option mapping**: ACP kinds allow_once/allow_always/
    reject_once/reject_always → our allow_once/allow_task/deny. Map
    allow_always→allow_task ONLY when the action digest scope exists;

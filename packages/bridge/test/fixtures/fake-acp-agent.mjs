@@ -3,6 +3,7 @@
  * Fake ACP agent for tests — ndjson JSON-RPC over stdio.
  * FAKE_ACP_SCENARIO: "ok" (default) | "permission" | "fail" | "slow"
  */
+import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const scenario = process.env.FAKE_ACP_SCENARIO ?? "ok";
@@ -90,6 +91,14 @@ rl.on("line", (line) => {
       return;
     case "session/new":
     case "session/load": {
+      // FAKE_ACP_CAPTURE: write received session params to this path so
+      // tests can assert the wire shape (e.g. mcpServers env encoding).
+      if (process.env.FAKE_ACP_CAPTURE) {
+        writeFileSync(
+          process.env.FAKE_ACP_CAPTURE,
+          JSON.stringify({ method, mcpServers: params?.mcpServers ?? null }),
+        );
+      }
       sessionId = method === "session/load"
         ? String(params?.sessionId ?? "resumed")
         : "fake-session-1";

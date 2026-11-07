@@ -8,9 +8,11 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type {
+  AgentCapabilityFlags,
   AgentEvent,
   AgentProvider,
   AgentSession,
+  AgentSessionConfig,
   TaskRecord,
 } from "@codex-sidepanel/shared";
 import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
@@ -91,21 +93,24 @@ class MockSession implements AgentSession {
 }
 
 const sessions: MockSession[] = [];
+const sessionConfigs: Array<Partial<AgentSessionConfig>> = [];
 let sessionPreset: ((s: MockSession) => void) | null = null;
-function makeProvider(): AgentProvider {
+function makeProvider(capabilities: Partial<AgentCapabilityFlags> = {}): AgentProvider {
   return {
     id: "codex",
     displayName: "Mock Codex",
-    capabilities: NO_CAPABILITIES,
+    capabilities: { ...NO_CAPABILITIES, ...capabilities },
     isAvailable: async () => ({ available: true }),
     fetchCatalog: async () => ({ providerId: "codex", models: [], modes: [], fetchedAt: 0 }),
-    createSession: async () => {
+    createSession: async (config) => {
+      sessionConfigs.push(config);
       const s = new MockSession();
       sessionPreset?.(s);
       sessions.push(s);
       return s;
     },
-    resumeSession: async () => {
+    resumeSession: async (_h, config) => {
+      sessionConfigs.push(config);
       const s = new MockSession();
       sessionPreset?.(s);
       sessions.push(s);
@@ -114,12 +119,13 @@ function makeProvider(): AgentProvider {
   };
 }
 
-async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void } = {}) {
+async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void; providerCapabilities?: Partial<AgentCapabilityFlags>; browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null> } = {}) {
   sessions.length = 0;
+  sessionConfigs.length = 0;
   sessionPreset = opts.presetSession ?? null;
   const store = new InMemoryStore() as unknown as SessionStore;
   const registry = new ProviderRegistry(DEFAULT_GATEWAY_CONFIG.providers);
-  await registry.register("codex", async () => makeProvider());
+  await registry.register("codex", async () => makeProvider(opts.providerCapabilities));
   const published: Array<{ taskId: string; event: unknown; ephemeral: boolean }> = [];
   const config = structuredClone(DEFAULT_GATEWAY_CONFIG);
   if (opts.queueWhileRunning !== undefined) config.tasks.queueWhileRunning = opts.queueWhileRunning;
@@ -131,6 +137,7 @@ async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeout
     publish: (taskId, event, ephemeral) => published.push({ taskId, event, ephemeral }),
     ...(opts.interruptTimeoutMs ? { interruptTimeoutMs: opts.interruptTimeoutMs } : {}),
     ...(opts.onTaskStop ? { onTaskStop: opts.onTaskStop } : {}),
+    ...(opts.browserMcpSpawn ? { browserMcpSpawn: opts.browserMcpSpawn } : {}),
   });
   return { sm, store, registry, published, sessions };
 }
@@ -169,6 +176,31 @@ describe("SessionManager", () => {
     expect(turn.status).toBe("completed");
     expect(turn.startedAt).not.toBeNull();
     expect(turn.endedAt).not.toBeNull();
+  });
+
+  test("browserMcpSpawn gated on provider mcpTools capability (§9.3)", async () => {
+    const servers = { chromex_browser: { command: "node", args: ["/x/mcp-stdio.js"] } };
+    const spawn = vi.fn(async () => servers);
+
+    // provider without mcpTools → spawn never consulted, no mcpServers in config
+    const noMcp = await makeManager({ browserMcpSpawn: spawn });
+    const t1 = noMcp.sm.createTask(taskParams());
+    await noMcp.sm.sendMessage(t1.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(spawn).not.toHaveBeenCalled();
+    expect(sessionConfigs.at(-1)?.options?.mcpServers).toBeUndefined();
+
+    // provider with mcpTools → spawn consulted, result lands in session config
+    spawn.mockClear();
+    const withMcp = await makeManager({
+      browserMcpSpawn: spawn,
+      providerCapabilities: { mcpTools: true },
+    });
+    const t2 = withMcp.sm.createTask(taskParams());
+    await withMcp.sm.sendMessage(t2.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(sessionConfigs.at(-1)?.options?.mcpServers).toEqual(servers);
   });
 
   test("ephemeral deltas never persist and consume no durable seq (§7.3 #9)", async () => {

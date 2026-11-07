@@ -199,6 +199,9 @@ export class AcpAgentSession implements AgentSession {
     this.persistence = { provider: this.provider, ref: sessionId, kind: "session" };
   }
 
+  /** config.options.mcpServers → ACP session/new|load `mcpServers`.
+   *  ACP stdio McpServer shape: {name, command, args, env} where env is
+   *  EnvVariable[] ({name,value} pairs) — NOT a record. */
   #mcpServers(): unknown[] {
     const servers = this.config.options?.mcpServers as
       | Record<string, { command?: string; args?: string[]; env?: Record<string, string> }>
@@ -211,7 +214,7 @@ export class AcpAgentSession implements AgentSession {
         name,
         command: srv.command,
         args: srv.args ?? [],
-        env: srv.env ?? [],
+        env: Object.entries(srv.env ?? {}).map(([k, v]) => ({ name: k, value: v })),
       });
     }
     return out;

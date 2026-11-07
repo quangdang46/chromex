@@ -281,9 +281,13 @@ export class SessionManager {
     });
     if (!target) throw new Error(`no provider for profile ${task.profileId}`);
 
-    const mcpServers = this.opts.browserMcpSpawn
-      ? await this.opts.browserMcpSpawn(task).catch(() => null)
-      : null;
+    // Only providers that declare mcpTools get the browser MCP spawn —
+    // others would silently drop options.mcpServers anyway, and skipping
+    // avoids minting a scope token/file nobody consumes.
+    const mcpServers =
+      target.provider.capabilities.mcpTools && this.opts.browserMcpSpawn
+        ? await this.opts.browserMcpSpawn(task).catch(() => null)
+        : null;
     const session = await target.provider.createSession(
       {
         ...target.config,

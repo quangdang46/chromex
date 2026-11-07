@@ -35,15 +35,22 @@ token refresh when the adapter cannot hot-update, kill on session end).
   are enforced in `BrowserToolServer` before dispatch regardless of
   what the MCP schema advertises.
 
-## Codex per-session registration (P1-09)
+## Per-provider registration (P1-09)
 
-`thread/start` and `thread/resume` accept a `config` override object
-(app-server protocol schema, codex-cli 0.165). `CodexAgentSession`
-maps `config.options.mcpServers` → `config.mcp_servers.<name>` so each
-gateway task gets its own `chromex_browser` stdio server with a
-per-task `CHROMEX_MCP_SCOPE_FILE` (0600). `SessionManager` calls
-`browserMcpSpawn` at session open; the spawn writes the scope file and
-returns the descriptor — no shared config.toml entry needed.
+`SessionManager` calls `browserMcpSpawn` at session open — only when the
+resolved provider declares `capabilities.mcpTools` — and merges the
+result into `config.options.mcpServers`. Each provider maps that shared
+descriptor to its own wire format:
+
+- **Codex**: `thread/start|resume` accept a `config` override;
+  `CodexAgentSession` maps `mcpServers` → `config.mcp_servers.<name>`.
+- **Claude**: `ClaudeAgentSession` maps `mcpServers` → Agent SDK
+  `options.mcpServers` stdio entries.
+- **ACP**: `session/new|load` take `mcpServers` directly; env records
+  are translated to ACP `EnvVariable[]` (`{name,value}` pairs).
+
+The spawn writes a per-task scope file and returns the `chromex_browser`
+descriptor — no shared config entry needed.
 
 Caveat: the nested `mcp_servers` override shape follows codex `-c`
 dotted-key semantics; verify against a real app-server that nested

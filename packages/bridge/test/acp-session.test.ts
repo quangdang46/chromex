@@ -1,3 +1,5 @@
+import { readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -222,6 +224,79 @@ describe("AcpAgentProvider/AcpAgentSession", () => {
     const info = await session.getRuntimeInfo();
     expect(info.sessionId).toBe("fake-session-1"); // fixture echoes load id
     await session.close();
+  }, 20_000);
+
+  it("config.options.mcpServers → session/new mcpServers with ACP env shape", async () => {
+    // ACP EnvVariable[] is {name,value} pairs, not a record — the gateway
+    // spawn descriptor uses a record, so the provider must translate.
+    const capture = path.join(os.tmpdir(), `acp-mcp-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    try {
+      const p = new AcpAgentProvider({
+        id: "fakeacp",
+        displayName: "Fake ACP",
+        command: process.execPath,
+        args: [FAKE],
+        env: { FAKE_ACP_SCENARIO: "ok", FAKE_ACP_CAPTURE: capture },
+      });
+      const session = (await p.createSession(
+        {
+          provider: "fakeacp",
+          options: {
+            mcpServers: {
+              chromex_browser: {
+                command: process.execPath,
+                args: ["/x/mcp-stdio.js"],
+                env: { CHROMEX_MCP_SCOPE_FILE: "/data/mcp/t1.json" },
+              },
+              skipped: { args: ["no-command"] }, // no command → dropped
+            },
+          },
+        },
+        { cwd: "/tmp" },
+      )) as AcpAgentSession;
+      const { events } = collect(session);
+      await session.startTurn(turnInput("hi"));
+      await waitFor(() => events.some((e) => e.type === "turn.completed"));
+
+      const captured = JSON.parse(readFileSync(capture, "utf8")) as {
+        method: string;
+        mcpServers: unknown;
+      };
+      expect(captured.method).toBe("session/new");
+      expect(captured.mcpServers).toEqual([
+        {
+          name: "chromex_browser",
+          command: process.execPath,
+          args: ["/x/mcp-stdio.js"],
+          env: [{ name: "CHROMEX_MCP_SCOPE_FILE", value: "/data/mcp/t1.json" }],
+        },
+      ]);
+      await session.close();
+    } finally {
+      rmSync(capture, { force: true });
+    }
+  }, 20_000);
+
+  it("no mcpServers in config → session/new gets an empty array", async () => {
+    const capture = path.join(os.tmpdir(), `acp-mcp-empty-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    try {
+      const p = new AcpAgentProvider({
+        id: "fakeacp",
+        displayName: "Fake ACP",
+        command: process.execPath,
+        args: [FAKE],
+        env: { FAKE_ACP_SCENARIO: "ok", FAKE_ACP_CAPTURE: capture },
+      });
+      const session = (await p.createSession({ provider: "fakeacp" }, { cwd: "/tmp" })) as AcpAgentSession;
+      const { events } = collect(session);
+      await session.startTurn(turnInput("hi"));
+      await waitFor(() => events.some((e) => e.type === "turn.completed"));
+      const captured = JSON.parse(readFileSync(capture, "utf8")) as { mcpServers: unknown };
+      expect(captured.mcpServers).toEqual([]);
+      await session.close();
+    } finally {
+      rmSync(capture, { force: true });
+    }
   }, 20_000);
 
   it("sequential turns share one ACP session", async () => {
