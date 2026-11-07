@@ -22,6 +22,8 @@ MEMORY.md
 docs/
 !docs/
 docs/*
+!docs/adr/
+!docs/adr/**
 !docs/pages/
 docs/pages/*
 !docs/pages/.nojekyll
