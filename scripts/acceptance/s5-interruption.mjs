@@ -33,7 +33,10 @@ await runScenario(
       await page.goto(fixture.url("/"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
 
-      const call1 = await runner.browserToolCall(taskId, "browser.page.get", {}, token, 60_000);
+      const CALL1_ID = "s5-interrupted-call";
+      const call1 = await runner.browserToolCall(taskId, "browser.page.get", {}, token, 60_000, {
+        toolCallId: CALL1_ID,
+      });
       evidence.note(`pre-kill page.get → ${JSON.stringify(call1)?.slice(0, 200)}`);
       if (call1?.status !== "completed") {
         return { status: "FAIL", summary: "pre-kill browser.tool.call did not complete", details: { call1 } };
@@ -145,6 +148,21 @@ await runScenario(
       }
       evidence.note(`post-respawn page.get → ${JSON.stringify(call2)?.slice(0, 300)}`);
 
+      // durable dedup (371fe7a): replaying the pre-kill toolCallId after
+      // the restart must NOT re-dispatch — duplicate_tool_call proves the
+      // seeded outcome survived the respawn.
+      let dedup = null;
+      try {
+        dedup = await runner.browserToolCall(taskId, "browser.page.get", {}, token2, 30_000, {
+          toolCallId: CALL1_ID,
+        });
+      } catch (e) {
+        dedup = { status: "threw", error: { code: e?.code ?? e?.message } };
+      }
+      evidence.note(`post-respawn replay of ${CALL1_ID} → ${JSON.stringify(dedup)?.slice(0, 200)}`);
+      const dedupBlocked =
+        dedup?.status === "failed" && dedup?.error?.code === "browser.duplicate_tool_call";
+
       const sync = await runner.taskSync(taskId);
       const events = sync.events ?? [];
       const completed = events.filter((e) => {
@@ -159,16 +177,18 @@ await runScenario(
       });
       evidence.note(`durable: tool.started=${started.length} tool.completed=${completed.length}`);
 
-      const pass = call2?.status === "completed" && completed.length >= 2 && started.length >= 2;
+      const pass =
+        call2?.status === "completed" && completed.length >= 2 && started.length >= 2 && dedupBlocked;
       // also verify no DUPLICATE completed for the same toolCallId
       const ids = completed.map((e) => (e.payload ?? e).toolCallId).filter(Boolean);
       const dup = ids.length !== new Set(ids).size;
       return {
         status: pass && !dup ? "PASS" : "FAIL",
-        summary: pass && !dup
-          ? "gateway SIGKILL → respawn → task + tab scope survived, both calls completed once"
-          : `call2=${call2?.status} completed=${completed.length} started=${started.length} dup=${dup}`,
-        details: { call1Status: call1?.status, call2, completed: completed.length, started: started.length, duplicateCompletions: dup },
+        summary:
+          pass && !dup
+            ? "gateway SIGKILL → respawn → task + tab scope survived, calls completed once, replayed toolCallId deduped"
+            : `call2=${call2?.status} completed=${completed.length} started=${started.length} dup=${dup} dedupBlocked=${dedupBlocked}`,
+        details: { call1Status: call1?.status, call2, dedup, completed: completed.length, started: started.length, duplicateCompletions: dup },
       };
     } finally {
       // stop the respawned gateway so no detached process leaks
