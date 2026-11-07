@@ -292,6 +292,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #navigate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const url = typeof args.url === "string" ? args.url : "";
     if (!url) throw protocolError("proto.invalid", "browser.page.navigate requires args.url");
+    // Same contract as the extension host's performNavigateAction —
+    // http(s) only; file:/javascript: would bypass the egress model.
+    let protocol = "";
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      protocol = "";
+    }
+    if (protocol !== "http:" && protocol !== "https:") {
+      throw protocolError("proto.invalid", "browser.page.navigate only supports http(s) urls");
+    }
     const page = await this.#pageFor(taskId, args);
     await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
     return { url: stripQuery(page.url()), title: await page.title() };
@@ -449,7 +460,48 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { hovered: true };
       case "browser.page.scroll": {
         const dir = typeof args.direction === "string" ? args.direction : "down";
-        await page.mouse.wheel(0, dir === "up" ? -600 : 600);
+        if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
+          throw protocolError("proto.invalid", "browser.page.scroll args.direction must be up|down|left|right|top|bottom");
+        }
+        const amount =
+          typeof args.amountPx === "number" && Number.isFinite(args.amountPx)
+            ? Math.min(Math.max(args.amountPx, 0), 10_000)
+            : 600;
+        // Element-targeted scroll when a selector/ref resolves — same
+        // contract as the extension host's scroll step. evaluate args
+        // are serialized, so dir/amount travel as parameters.
+        const sel = args.selector ?? args.ref;
+        const scrollOpts = { d: dir, a: amount };
+        const scrollEl = (el: Element | Window, o: { d: string; a: number }) => {
+          const target = el instanceof Window ? el.document.documentElement : (el as HTMLElement);
+          if (o.d === "top") target.scrollTo({ top: 0 });
+          else if (o.d === "bottom") target.scrollTo({ top: target.scrollHeight });
+          else {
+            const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
+            const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
+            target.scrollBy({ left: dx, top: dy });
+          }
+        };
+        if (typeof sel === "string" && sel.length > 0) {
+          await page
+            .locator(sel)
+            .first()
+            .evaluate(scrollEl, scrollOpts)
+            .catch(() => null);
+        } else {
+          await page
+            .evaluate((o) => {
+              const de = document.documentElement;
+              if (o.d === "top") de.scrollTo({ top: 0 });
+              else if (o.d === "bottom") de.scrollTo({ top: de.scrollHeight });
+              else {
+                const dx = o.d === "left" ? -o.a : o.d === "right" ? o.a : 0;
+                const dy = o.d === "up" ? -o.a : o.d === "down" ? o.a : 0;
+                de.scrollBy({ left: dx, top: dy });
+              }
+            }, scrollOpts)
+            .catch(() => null);
+        }
         return { scrolled: dir };
       }
       default:
@@ -822,7 +874,7 @@ function parseExpectCondition(raw: unknown): BrowserExpectCondition | null {
     ...(text ? { text } : {}),
     ...(urlContains ? { urlContains } : {}),
     ...(goneSelector ? { goneSelector } : {}),
-    ...(readyState ? { readyState: readyState as BrowserExpectCondition["readyState"] } : {}),
+    ...(readyState ? { readyState: readyState as "loading" | "interactive" | "complete" } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
   return cond.selector || cond.text || cond.urlContains || cond.goneSelector || cond.readyState ? cond : null;
