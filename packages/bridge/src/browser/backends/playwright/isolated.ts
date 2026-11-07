@@ -713,6 +713,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : typeof args.ms === "number" ? args.ms : 10_000;
     const deadline = started + Math.min(timeout, 30_000);
     const selector = typeof args.selector === "string" ? args.selector : null;
+    const selectorGone = typeof args.selectorGone === "string" ? args.selectorGone : null;
     const urlContains = typeof args.urlContains === "string" ? args.urlContains : null;
     const text = typeof args.text === "string" ? args.text : null;
     const textGone = typeof args.textGone === "string" ? args.textGone : null;
@@ -720,8 +721,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const visibleSelector = typeof args.visibleSelector === "string" ? args.visibleSelector : null;
     const networkIdle = args.networkIdle === true;
     const hasCondition =
-      selector !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
+      selector !== null || selectorGone !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
       visibleSelector !== null || networkIdle;
+    if (selector !== null && selector === selectorGone) {
+      throw protocolError("proto.invalid", "browser.page.wait args.selector and args.selectorGone must differ");
+    }
     if (!hasCondition) {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
@@ -768,6 +772,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       if (selector) {
         const count = await page.locator(selector).count().catch(() => 0);
         if (count === 0) {
+          if (Date.now() >= deadline) {
+            throw protocolError("browser.timeout", "wait condition not met before timeout");
+          }
+          await page.waitForTimeout(100);
+          continue;
+        }
+      }
+      if (selectorGone) {
+        const count = await page.locator(selectorGone).count().catch(() => 0);
+        if (count !== 0) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }

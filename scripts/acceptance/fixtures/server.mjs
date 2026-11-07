@@ -77,6 +77,12 @@ const PAGES = {
 <h1>Tall Page</h1><div style="height:5000px">spacer</div><p id="bottom">bottom</p>
 </body></html>`,
 
+  // element removed from DOM after a delay — selectorGone wait proof
+  "/vanish": `<!doctype html><html><body>
+<h1>Vanish Page</h1><div id="x">temporary</div><p id="after">stays</p>
+<script>setTimeout(() => document.getElementById('x').remove(), 500);</script>
+</body></html>`,
+
   // keyboard + file-input proof: echoes the last key pressed, shows
   // uploaded file names — deterministic observable state for focus/press/upload.
   "/keys": `<!doctype html><html><body>

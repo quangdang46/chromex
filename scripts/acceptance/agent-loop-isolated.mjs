@@ -40,6 +40,18 @@ const backend = new PlaywrightIsolatedBackend({
 });
 const TASK = "agent-loop-e2e";
 const call = (tool, args = {}) => backend.execute(TASK, tool, args);
+const expectReject = async (tool, args, fragment, label) => {
+  try {
+    await call(tool, args);
+  } catch (e) {
+    assert(
+      `${e?.code ?? ""} ${e?.message ?? ""}`.includes(fragment),
+      `${label} → ${e?.code ?? ""} ${e?.message ?? e}`,
+    );
+    return;
+  }
+  throw new Error(`ASSERT FAIL: ${label} did not reject`);
+};
 
 let status = "FAIL";
 let summary = "";
@@ -106,6 +118,19 @@ try {
   const late = await call("browser.page.extract", { tabId: sTab, selector: "#status" });
   assert(String(late?.text ?? "").includes("ready"), "wait text=ready resolved after delay");
 
+  // ── Loop 3b: selectorGone — wait until element leaves the DOM ──────
+  const vanish = await call("browser.tab.create", { url: fixture.url("/vanish"), active: false });
+  const vTab = vanish?.tabId ?? vanish?.id;
+  await call("browser.page.wait", { tabId: vTab, selectorGone: "#x", timeoutMs: 8000 });
+  const afterGone = await call("browser.page.extract", { tabId: vTab, selector: "#after" });
+  assert(String(afterGone?.text ?? "").includes("stays"), "selectorGone resolved; page still intact");
+  await expectReject(
+    "browser.page.wait",
+    { tabId: vTab, selector: "#x", selectorGone: "#x" },
+    "must differ",
+    "selector === selectorGone rejected",
+  );
+
   // ── Loop 4: history back returns to previous page ──────────────────
   await call("browser.page.navigate", { tabId: sTab, url: fixture.url("/") });
   const hist = await call("browser.page.history", { tabId: sTab, action: "back" });
@@ -170,18 +195,6 @@ try {
   assert(String(fname?.text ?? "").includes("agent-note.txt"), "file input shows uploaded name");
 
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
-  const expectReject = async (tool, args, fragment, label) => {
-    try {
-      await call(tool, args);
-    } catch (e) {
-      assert(
-        `${e?.code ?? ""} ${e?.message ?? ""}`.includes(fragment),
-        `${label} → ${e?.code ?? ""} ${e?.message ?? e}`,
-      );
-      return;
-    }
-    throw new Error(`ASSERT FAIL: ${label} did not reject`);
-  };
   await expectReject("browser.page.evaluate", {}, "unsupported", "evaluate refused (no arbitrary JS)");
   await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
   await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");

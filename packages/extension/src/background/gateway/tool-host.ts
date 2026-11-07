@@ -720,12 +720,16 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.text) !== undefined ||
           str(args.textGone) !== undefined ||
           str(args.selector) !== undefined ||
+          str(args.selectorGone) !== undefined ||
           str(args.urlContains) !== undefined ||
           str(args.readyState) !== undefined ||
           str(args.visibleSelector) !== undefined;
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
+        }
+        if (str(args.selector) !== undefined && str(args.selector) === str(args.selectorGone)) {
+          throw toolError("proto.invalid", "browser.page.wait args.selector and args.selectorGone must differ");
         }
         if (networkIdle && typeof deps.networkInflightCount !== "function") {
           throw toolError("proto.unsupported", "network-idle wait is unavailable on this host");
@@ -766,6 +770,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(str(args.text) ? { text: str(args.text) } : {}),
           ...(str(args.textGone) ? { textGone: str(args.textGone) } : {}),
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+          ...(str(args.selectorGone) ? { selectorGone: str(args.selectorGone) } : {}),
           ...(str(args.urlContains) ? { urlContains: str(args.urlContains) } : {}),
           ...(str(args.readyState) ? { readyState: str(args.readyState) } : {}),
           ...(str(args.visibleSelector) ? { visibleSelector: str(args.visibleSelector) } : {}),
