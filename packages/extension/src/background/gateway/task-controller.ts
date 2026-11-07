@@ -48,6 +48,8 @@ export interface TaskControllerOptions {
   onTaskEvent?: (taskId: string, env: DurableTaskEventEnvelope) => void;
   /** snapshot rebuilt after prune — UI must re-render from scratch */
   onSnapshotRebuilt?: (taskId: string, snapshot: InlineTaskSnapshot) => void;
+  /** replayed/live gateway-stream envelopes (notices, purged tombstones…) */
+  onGatewayEvent?: (env: { seq?: number; [k: string]: unknown }) => void;
   onTasksChanged?: () => void;
 }
 
@@ -92,12 +94,41 @@ export class TaskController {
 
   /**
    * §11 reconnect flow: hello cursors → task.sync per task → apply;
-   * `mode:"snapshot"` → fetch + rebuild via task.snapshot (+chunks).
+   * `mode:"snapshot"` → fetch + rebuild via task.snapshot (+chunks);
+   * gateway.sync catches up the gateway stream (notices/tombstones).
    */
   async syncAll(): Promise<void> {
+    await this.syncGateway();
     for (const task of this.#tasks.values()) {
       await this.syncTask(task.taskId);
     }
+  }
+
+  /** Replay durable gateway-stream events missed while disconnected. */
+  async syncGateway(): Promise<void> {
+    let fromSeq = this.#cursors.lastSeqByGateway;
+    for (;;) {
+      const res = (await this.#opts.client.request("gateway.sync", {
+        fromSeq,
+        maxEvents: MAX_SYNC_EVENTS,
+      })) as
+        | { mode: "replay"; events: Array<{ seq?: number } & Record<string, unknown>>; nextSeq: number; hasMore: boolean }
+        | { mode: "head"; lastSeq: number };
+      if (res.mode === "head") {
+        this.#cursors.lastSeqByGateway = Math.max(this.#cursors.lastSeqByGateway, res.lastSeq);
+        await this.#saveCursors();
+        return;
+      }
+      for (const env of res.events) {
+        if (typeof env.seq === "number") {
+          this.#cursors.lastSeqByGateway = Math.max(this.#cursors.lastSeqByGateway, env.seq);
+        }
+        this.#opts.onGatewayEvent?.(env);
+      }
+      fromSeq = res.nextSeq;
+      if (!res.hasMore) break;
+    }
+    await this.#saveCursors();
   }
 
   async syncTask(taskId: string): Promise<void> {
@@ -174,10 +205,13 @@ export class TaskController {
     return JSON.parse(new TextDecoder().decode(merged)) as InlineTaskSnapshot;
   }
 
-  /** Apply one durable task event envelope; updates cursors + view. */
+  /** Apply one durable task event envelope; updates cursors + view.
+   *  Duplicate/out-of-order replay (seq ≤ lastSeq) is dropped — replay
+   *  and live push can overlap after reconnect. */
   #applyEvent(env: DurableTaskEventEnvelope): void {
     const view = this.#tasks.get(env.taskId);
     if (view) {
+      if (env.seq <= view.lastSeq && view.lastSeq > 0) return;
       view.lastSeq = Math.max(view.lastSeq, env.seq);
       view.updatedAt = Date.now();
       const t = env.payload as { type?: string; to?: TaskStatus; attention?: string | null };
@@ -194,8 +228,14 @@ export class TaskController {
   }
 
   /** Live event entry point (gateway push). */
-  handleEvent(env: DurableTaskEventEnvelope | { stream?: string }): void {
-    if ("stream" in env && env.stream === "task" && "taskId" in env) {
+  handleEvent(env: DurableTaskEventEnvelope | { stream?: string; seq?: number }): void {
+    if (!("stream" in env) || typeof env.stream !== "string") return;
+    if (env.stream === "gateway" && typeof env.seq === "number") {
+      this.#cursors.lastSeqByGateway = Math.max(this.#cursors.lastSeqByGateway, env.seq);
+      void this.#saveCursors();
+      return;
+    }
+    if (env.stream === "task" && "taskId" in env) {
       this.#applyEvent(env as DurableTaskEventEnvelope);
     }
   }

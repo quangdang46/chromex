@@ -28,7 +28,10 @@ function fakeClient(handler: (method: string, payload: unknown) => unknown) {
   const acks: Array<{ stream: string; seq: number; taskId?: string }> = [];
   return {
     client: {
-      request: vi.fn(async (method: string, payload?: unknown) => handler(method, payload)),
+      request: vi.fn(async (method: string, payload?: unknown) => {
+        if (method === "gateway.sync") return { mode: "head", lastSeq: 0 };
+        return handler(method, payload);
+      }),
       ack: vi.fn((stream: "task" | "gateway", seq: number, taskId?: string) => {
         acks.push({ stream, seq, taskId });
       }),
@@ -157,5 +160,51 @@ describe("TaskController (P1-08)", () => {
     // cursor loaded → view.lastSeq seeded from cursor not hello
     expect(c2.getTask("t1")?.lastSeq).toBe(7);
     expect(c2.helloCursors().lastSeqByTask.t1).toBe(7);
+  });
+
+  test("duplicate/out-of-order replay events are dropped", async () => {
+    const storage = memStorage();
+    const { client } = fakeClient(() => ({
+      mode: "replay",
+      events: [
+        taskEvent("t1", 5, "turn.completed", {}),
+        taskEvent("t1", 3, "turn.started", {}), // stale — already covered
+        taskEvent("t1", 5, "turn.completed", {}), // exact dup
+        taskEvent("t1", 6, "task.attention_changed", { attention: "needs_input" }),
+      ],
+      nextSeq: 6,
+      hasMore: false,
+    }));
+    const seen: string[] = [];
+    const ctl = new TaskController({ client, storage: storage as never, onTaskEvent: (_id, e) => seen.push(`${e.seq}:${e.type}`) });
+    await ctl.onHello(hello([{ taskId: "t1", lastSeq: 4 }])); // cursor at 4
+    await ctl.syncTask("t1");
+    // seq 5 applies once; seq 3 and dup-5 dropped; seq 6 applies
+    expect(seen).toEqual(["5:turn.completed", "6:task.attention_changed"]);
+    expect(ctl.getTask("t1")?.lastSeq).toBe(6);
+    expect(ctl.getTask("t1")?.attention).toBe("needs_input");
+  });
+
+  test("live push overlapping replay does not double-apply", async () => {
+    const storage = memStorage();
+    const { client } = fakeClient(() => ({ mode: "replay", events: [], nextSeq: 0, hasMore: false }));
+    const seen: string[] = [];
+    const ctl = new TaskController({ client, storage: storage as never, onTaskEvent: (_id, e) => seen.push(e.type) });
+    await ctl.onHello(hello([{ taskId: "t1", lastSeq: 0 }]));
+    ctl.handleEvent(taskEvent("t1", 10, "turn.started", {}));
+    ctl.handleEvent(taskEvent("t1", 10, "turn.started", {})); // dup push
+    ctl.handleEvent(taskEvent("t1", 9, "user.message.created", {})); // out of order
+    expect(seen).toEqual(["turn.started"]);
+    expect(ctl.getTask("t1")?.lastSeq).toBe(10);
+  });
+
+  test("gateway-stream events advance lastSeqByGateway cursor", async () => {
+    const storage = memStorage();
+    const { client } = fakeClient(() => ({}));
+    const ctl = new TaskController({ client, storage: storage as never });
+    await ctl.onHello(hello([{ taskId: "t1", lastSeq: 0 }]));
+    ctl.handleEvent({ stream: "gateway", seq: 42 } as never);
+    ctl.handleEvent({ stream: "gateway", seq: 17 } as never);
+    expect(ctl.helloCursors().lastSeqByGateway).toBe(42);
   });
 });

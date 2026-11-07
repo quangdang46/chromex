@@ -1,0 +1,77 @@
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+import { getGatewayRuntime, resetGatewayRuntime } from "../../src/background/gateway/runtime.js";
+import { DEFAULT_SETTINGS } from "../../src/background/storage.js";
+
+function fakePort() {
+  const listeners = new Set<(m: { kind: string; id?: string; method?: string }) => void>();
+  return {
+    postMessage: vi.fn((env: { kind: string; id?: string; method?: string }) => {
+      if (env.kind === "request" && env.method === "hello") {
+        queueMicrotask(() =>
+          [...listeners].forEach((l) =>
+            l({ kind: "response", id: env.id, result: { gatewayVersion: "t", protocolVersion: 1, providers: [], backends: [], tasks: [], features: {}, gatewayLastSeq: 0 } }),
+          ),
+        );
+      }
+    }),
+    onMessage: { addListener: (l: (m: never) => void) => listeners.add(l as never) },
+    onDisconnect: { addListener: () => {} },
+  };
+}
+
+function stubChrome(settings: Record<string, unknown>, port?: ReturnType<typeof fakePort>) {
+  const m = new Map<string, unknown>(Object.entries(settings));
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: {
+        get: async (k: string | string[]) => {
+          const keys = Array.isArray(k) ? k : [k];
+          const out: Record<string, unknown> = {};
+          for (const key of keys) if (m.has(key)) out[key] = m.get(key);
+          return out;
+        },
+        set: async (obj: Record<string, unknown>) => {
+          for (const [k, v] of Object.entries(obj)) m.set(k, v);
+        },
+      },
+    },
+    runtime: { connectNative: vi.fn(() => port ?? fakePort()), lastError: null },
+  });
+  return m;
+}
+
+describe("GatewayRuntime flag gating (P1-08 dual-path)", () => {
+  afterEach(() => {
+    resetGatewayRuntime();
+    vi.unstubAllGlobals();
+  });
+
+  test("gatewayMode off (default) → runtime is null; legacy path untouched", async () => {
+    stubChrome({ "codex.sidepanel.settings": { ...DEFAULT_SETTINGS, gatewayMode: false } });
+    expect(await getGatewayRuntime()).toBeNull();
+  });
+
+  test("gatewayMode missing entirely → treated as off", async () => {
+    const { gatewayMode: _omit, ...rest } = DEFAULT_SETTINGS;
+    stubChrome({ "codex.sidepanel.settings": rest });
+    expect(await getGatewayRuntime()).toBeNull();
+  });
+
+  test("gatewayMode on → runtime builds with identity + lazy client", async () => {
+    stubChrome({ "codex.sidepanel.settings": { ...DEFAULT_SETTINGS, gatewayMode: true } });
+    const rt = await getGatewayRuntime();
+    expect(rt).not.toBeNull();
+    // eager §11 startup sync: hello + gateway.sync/task.sync fire;
+    // fake port answers hello, syncs return empty → ready
+    await vi.waitFor(() => expect(rt!.state()).toBe("ready"), { timeout: 2000 });
+    // identity persisted in storage.local
+    const m = (chrome.storage.local as unknown as { get: (k: string) => Promise<Record<string, unknown>> });
+    const got = await m.get("chromex.identity.v1");
+    expect((got["chromex.identity.v1"] as { profileId: string }).profileId).toMatch(/^prof_/);
+    resetGatewayRuntime();
+    // rebuild returns same runtime shape (new singleton)
+    const rt2 = await getGatewayRuntime();
+    expect(rt2).not.toBeNull();
+  });
+});

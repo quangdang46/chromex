@@ -97,7 +97,9 @@ export class GatewayClient {
 
     const helloPayload = await this.#opts.hello();
     try {
-      const result = (await this.request("hello", {
+      // send hello directly on the port — this.request() would deadlock
+      // on the in-flight #connectPromise.
+      const result = (await this.#send("hello", {
         ...helloPayload,
         clientVersion: helloPayload.clientVersion ?? "extension",
       })) as HelloResponse;
@@ -117,6 +119,11 @@ export class GatewayClient {
     await this.connect();
     const port = this.#port;
     if (!port) throw new Error("gateway port unavailable");
+    return this.#send(method, payload, port);
+  }
+
+  #send(method: string, payload: unknown, port: chrome.runtime.Port | null = this.#port): Promise<unknown> {
+    if (!port) return Promise.reject(new Error("gateway port unavailable"));
     const id = crypto.randomUUID();
     const envelope: Envelope = {
       v: 1,
@@ -126,7 +133,7 @@ export class GatewayClient {
       ...(payload !== undefined ? { payload } : {}),
     };
     const timeoutMs = this.#opts.requestTimeoutMs ?? 30_000;
-    return new Promise((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const pending: PendingRequest = { resolve, reject };
       pending.timer = setTimeout(() => {
         if (this.#pending.delete(id)) {

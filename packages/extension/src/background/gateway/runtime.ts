@@ -62,7 +62,22 @@ async function build(): Promise<GatewayRuntime | null> {
     onTaskEvent: (_taskId, env) => {
       for (const l of listeners) l(env);
     },
+    onGatewayEvent: (env) => {
+      for (const l of listeners) l(env as Envelope);
+    },
   });
+
+  // §11 reconnect flow: connect → hello seeds tasks → syncAll replays
+  // durable events + rebuilds pruned snapshots. Lazy: runs once at
+  // startup when the flag is on; failures leave client in
+  // starting/unresponsive and the next request() retries.
+  void client
+    .connect()
+    .then((hello) => tasks.onHello(hello))
+    .then(() => tasks.syncAll())
+    .catch(() => {
+      /* connect failure is surfaced via client.state + next request retry */
+    });
 
   return {
     client,
