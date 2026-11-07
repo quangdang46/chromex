@@ -73,7 +73,7 @@ async function authedConn(): Promise<net.Socket> {
 
 /** Raw framed conn that also ANSWERS server→client requests with a
  *  canned result — acts as the browser host for tool dispatch tests. */
-async function hostConn(): Promise<net.Socket> {
+async function hostConn(tag = ""): Promise<net.Socket> {
   const ep = gw!.ipc.endpointPath();
   const s = await connect(ep.path);
   const token = gw!.ipc.tokenBytes.toString("hex");
@@ -93,7 +93,7 @@ async function hostConn(): Promise<net.Socket> {
       buf = buf.subarray(4 + len);
       const env = JSON.parse(body.toString("utf8")) as { kind?: string; id?: string; method?: string };
       if (env.kind === "request" && typeof env.id === "string") {
-        const resp = Buffer.from(JSON.stringify({ v: 1, kind: "response", id: env.id, result: { hostResult: true, method: env.method } }));
+        const resp = Buffer.from(JSON.stringify({ v: 1, kind: "response", id: env.id, result: { hostResult: true, method: env.method, tag } }));
         const header = Buffer.alloc(4);
         header.writeUInt32LE(resp.length, 0);
         s.write(Buffer.concat([header, resp]));
@@ -435,6 +435,88 @@ describe("gateway RPC surface (P1-07)", () => {
     const resolved = after.events.find((e) => e.payload?.type === "permission.resolved");
     expect(resolved).toBeTruthy();
     host.destroy();
+    s.destroy();
+  }, 30_000);
+
+  test("browser.tool.call routes to newest conn for same hostInstanceId (S5 zombie host)", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "zombie" })) as {
+      taskId: string;
+    };
+    const tid = created.taskId;
+
+    const { ToolTokenManager } = await import("../src/browser/tool-token.js");
+    const secretHex = (await fs.readFile(path.join(dir, "auth", "tool-secret"), "utf8")).trim();
+    const tokens = ToolTokenManager.forTest(secretHex);
+    const task = gw!.store.getTask(tid)!;
+    const token = tokens.issue({
+      taskId: tid,
+      profileId: task.profileId,
+      backendId: task.backend.backendId,
+      allowedTools: ["browser.tabs.list"],
+    }).token;
+
+    // old conn still open (zombie after SW restart) + new conn, same hostInstanceId
+    const oldHost = await hostConn("old");
+    const newHost = await hostConn("new");
+
+    let settled = false;
+    const callP = rpc(s, "call-z", "browser.tool.call", {
+      taskId: tid,
+      tool: "browser.tabs.list",
+      args: {},
+      token,
+    }) as Promise<{ status: string; result?: { tag?: string } }>;
+    void callP.finally(() => { settled = true; });
+
+    // read tool may still raise agentEgress approval — allow it; stop
+    // polling as soon as the call settles (no approval needed)
+    const storeAny = gw!.store as unknown as {
+      taskEventsAfter: (id: string, seq: number) => { events: Array<{ payload?: { type?: string; request?: { requestId?: string } } }> };
+    };
+    let requestId: string | undefined;
+    for (let i = 0; i < 100 && !requestId && !settled; i++) {
+      const ev = storeAny.taskEventsAfter(tid, 0).events.find((e) => e.payload?.type === "permission.requested");
+      requestId = ev?.payload?.request?.requestId;
+      if (!requestId) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (requestId) {
+      await rpc(s, "pr-z", "permission.respond", { requestId, optionId: "allow_once" });
+    }
+
+    const outcome = await callP;
+    expect(outcome.status).toBe("completed");
+    expect(outcome.result?.tag).toBe("new");
+
+    // newest conn drops → routing falls back to surviving conn, not no_host
+    newHost.destroy();
+    await new Promise((r) => setTimeout(r, 100));
+    const reqCountBefore = storeAny.taskEventsAfter(tid, 0).events.filter(
+      (e) => e.payload?.type === "permission.requested",
+    ).length;
+    let settled2 = false;
+    const callP2 = rpc(s, "call-z2", "browser.tool.call", {
+      taskId: tid,
+      tool: "browser.tabs.list",
+      args: {},
+      token,
+    }) as Promise<{ status: string; result?: { tag?: string } }>;
+    void callP2.finally(() => { settled2 = true; });
+    for (let i = 0; i < 100 && !settled2; i++) {
+      const reqs = storeAny.taskEventsAfter(tid, 0).events.filter((e) => e.payload?.type === "permission.requested");
+      const fresh = reqs.slice(reqCountBefore).pop()?.payload?.request?.requestId;
+      if (fresh) {
+        await rpc(s, `pr-z2-${i}`, "permission.respond", { requestId: fresh, optionId: "allow_once" });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const outcome2 = await callP2;
+    expect(outcome2.status).toBe("completed");
+    expect(outcome2.result?.tag).toBe("old");
+
+    oldHost.destroy();
     s.destroy();
   }, 30_000);
 

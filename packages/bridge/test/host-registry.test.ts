@@ -23,7 +23,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
   test("register + resolve live host", () => {
     const r = new BrowserHostRegistry();
     r.register(reg("h1"));
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1", connectionId: "conn-h1" });
   });
 
   test("affinity survives hostInstanceId change on same browserInstanceId (SW restart)", () => {
@@ -34,7 +34,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     r.unregisterByConnection("conn-h1");
     r.register(reg("h2"));
     const res = r.resolveHost(key());
-    expect(res).toEqual({ kind: "host", hostInstanceId: "h2" });
+    expect(res).toEqual({ kind: "host", hostInstanceId: "h2", connectionId: "conn-h2" });
   });
 
   test("disconnect without reconnect → stranded, not no_host", () => {
@@ -58,6 +58,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     expect(r.resolveHost(key({ browserInstanceId: "bi-2" }))).toEqual({
       kind: "host",
       hostInstanceId: "h2",
+      connectionId: "conn-h2",
     });
   });
 
@@ -86,7 +87,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     r.unregisterByConnection("conn-h1");
     // degraded stranded entries are unreachable → no_host (not stranded)
     r.register(reg("h2", { browserInstanceId: null }));
-    expect(r.resolveHost(dkey)).toEqual({ kind: "host", hostInstanceId: "h2" });
+    expect(r.resolveHost(dkey)).toEqual({ kind: "host", hostInstanceId: "h2", connectionId: "conn-h2" });
   });
 
   test("SW restart: newest live registration wins over a lingering zombie host (S7)", () => {
@@ -99,12 +100,14 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     expect(r.resolveHost(key({ tabId: undefined }))).toEqual({
       kind: "host",
       hostInstanceId: "h2",
+      connectionId: "conn-h2",
     });
     // once the zombie conn finally drops, h2 is unaffected
     r.unregisterByConnection("conn-h1");
     expect(r.resolveHost(key({ tabId: undefined }))).toEqual({
       kind: "host",
       hostInstanceId: "h2",
+      connectionId: "conn-h2",
     });
   });
 
@@ -113,7 +116,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     r.register(reg("h1"));
     r.noteTabAffinity(key(), "h1");
     r.register(reg("h2"));
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1", connectionId: "conn-h1" });
   });
 
   test("unregisterByConnection keeps the host while another conn shares its hostInstanceId", () => {
@@ -122,7 +125,7 @@ describe("BrowserHostRegistry — §6.1 affinity", () => {
     // same native-host process reconnected on a second socket
     r.register({ ...reg("h1"), connectionId: "conn-h1b" });
     r.unregisterByConnection("conn-h1");
-    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1" });
+    expect(r.resolveHost(key())).toEqual({ kind: "host", hostInstanceId: "h1", connectionId: "conn-h1b" });
     r.unregisterByConnection("conn-h1b");
     expect(r.resolveHost(key())).toEqual({ kind: "no_host" });
   });

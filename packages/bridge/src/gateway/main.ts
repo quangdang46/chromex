@@ -478,9 +478,15 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
             },
           };
         }
+        const conns = ipc?.authedConnections() ?? [];
+        // Prefer the exact conn the registry resolved — after an SW
+        // restart the same hostInstanceId can have a zombie conn still
+        // open, and authedConnections() is oldest-first so a bare
+        // hostInstanceId find would dispatch into the dead generation.
         const hostConn =
-          ipc?.authedConnections().find((c) => c.hostInstanceId === res.hostInstanceId) ??
-          ipc?.authedConnections().find((c) => c.hostInstanceId !== "");
+          (res.connectionId ? conns.find((c) => c.connectionId === res.connectionId) : undefined) ??
+          [...conns].reverse().find((c) => c.hostInstanceId === res.hostInstanceId) ??
+          conns.find((c) => c.hostInstanceId !== "");
         if (!hostConn) return null;
         hostRegistry.noteTabAffinity(
           {

@@ -41,7 +41,7 @@ export interface HostAffinityKey {
 }
 
 export type HostResolveResult =
-  | { kind: "host"; hostInstanceId: string }
+  | { kind: "host"; hostInstanceId: string; connectionId?: string }
   | { kind: "no_host" }
   | { kind: "stranded"; lastHostInstanceId: string }
   | { kind: "wrong_profile"; expected: string; got: string }
@@ -113,7 +113,15 @@ export class BrowserHostRegistry {
    */
   resolveHost(key: HostAffinityKey): HostResolveResult {
     const live = this.#liveHostFor(key);
-    if (live) return { kind: "host", hostInstanceId: live };
+    if (live) {
+      // hosts map holds the LATEST registration per hostInstanceId —
+      // surface its connectionId so dispatch can prefer the live conn
+      // over a lingering zombie conn from a previous SW generation.
+      const connectionId = this.hosts.get(live)?.connectionId;
+      return connectionId
+        ? { kind: "host", hostInstanceId: live, connectionId }
+        : { kind: "host", hostInstanceId: live };
+    }
 
     // stranded? affinity exists but its host is gone.
     const stranded = this.#strandedEntry(key);
