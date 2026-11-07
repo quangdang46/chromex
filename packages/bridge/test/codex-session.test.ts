@@ -130,6 +130,28 @@ describe("CodexAgentSession", () => {
     await session.close();
   });
 
+  test("planMode ctx sends collaborationMode on turn/start", async () => {
+    const { session, client } = makeSession();
+    await session.startTurn({
+      ...INPUT,
+      ctx: { metadata: { planMode: true } },
+    });
+    const start = client.calls.find((c) => c.method === "turn/start");
+    const cm = start?.params.collaborationMode as
+      | { mode?: string; settings?: { model?: string } }
+      | undefined;
+    expect(cm?.mode).toBe("plan");
+    await session.close();
+  });
+
+  test("no planMode ctx → no collaborationMode", async () => {
+    const { session, client } = makeSession();
+    await session.startTurn(INPUT);
+    const start = client.calls.find((c) => c.method === "turn/start");
+    expect(start?.params).not.toHaveProperty("collaborationMode");
+    await session.close();
+  });
+
   test("second startTurn allowed after terminal event", async () => {
     const { session } = makeSession();
     await session.startTurn(INPUT);

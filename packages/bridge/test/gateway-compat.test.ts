@@ -49,3 +49,24 @@ describe("LEGACY_COMPAT plan.user_input.respond", () => {
     expect(() => entry.toRequest({ answers: { q: { answers: ["x"] } } })).toThrow();
   });
 });
+
+describe("LEGACY_COMPAT prompt.send planMode", () => {
+  const promptEntry = LEGACY_COMPAT["prompt.send"]!;
+
+  test("planMode:true → task.send ctx.metadata.planMode", () => {
+    const r = promptEntry.toRequest({
+      threadId: "t1",
+      message: "hi",
+      planMode: true,
+    });
+    expect(r.method).toBe("task.send");
+    expect((r.payload as { ctx?: { metadata?: { planMode?: boolean } } }).ctx?.metadata?.planMode).toBe(true);
+  });
+
+  test("planMode absent/false → no ctx", () => {
+    const r = promptEntry.toRequest({ threadId: "t1", message: "hi" });
+    expect((r.payload as Record<string, unknown>).ctx).toBeUndefined();
+    const r2 = promptEntry.toRequest({ threadId: "t1", message: "hi", planMode: false });
+    expect((r2.payload as Record<string, unknown>).ctx).toBeUndefined();
+  });
+});

@@ -86,6 +86,9 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
           taskId: threadId,
           clientMessageId: legacyClientMessageId(p),
           content: [{ type: "text", text: message }],
+          ...(p.planMode === true
+            ? { ctx: { metadata: { planMode: true } } }
+            : {}),
         },
       };
     },

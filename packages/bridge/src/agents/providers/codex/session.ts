@@ -206,6 +206,21 @@ export class CodexAgentSession implements AgentSession {
         ...(this.config.thinkingOptionId ? { effort: this.config.thinkingOptionId } : {}),
         approvalPolicy: "never",
         personality: "pragmatic",
+        // plan mode → collaborationMode unlocks requestUserInput (the
+        // feature-flagged ask-user path is off by default in codex-cli).
+        ...(input.ctx?.metadata?.planMode === true
+          ? {
+              collaborationMode: {
+                mode: "plan",
+                settings: {
+                  model: this.config.model ?? "",
+                  reasoning_effort: this.config.thinkingOptionId ?? "medium",
+                  developer_instructions:
+                    "In plan mode, always produce a visible plan or a visible clarification. If the user's objective is underspecified, ask exactly one concise clarification question using request_user_input or assistant text. Do not finish with only an internal/tool-only plan item. When enough context is available, return 3-7 concrete steps and wait for the user to accept or revise before execution.",
+                },
+              },
+            }
+          : {}),
       },
     );
 
