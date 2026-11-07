@@ -217,6 +217,46 @@ async function authedConn(pid?: number): Promise<net.Socket> {
   }
 }
 
+/** Browser-host conn: hello declares hostInstanceId and the conn
+ *  answers server→client requests with a tagged canned result, so tests
+ *  can tell WHICH conn generation served a browser.tool.call. */
+async function hostConn(tag: string, pid?: number): Promise<net.Socket> {
+  const ep = await waitForEndpoint(pid);
+  const token = (await fs.readFile(path.join(dir, "auth", "token"), "utf8")).trim();
+  const s = await connect(ep.path);
+  sockets.push(s);
+  await rpc(s, `host-hello-${tag}-${sockets.length}`, "hello", {
+    token,
+    clientVersion: "kill9-test",
+    protocolVersion: 1,
+    clientId: `host-${tag}`,
+    profileId: "prof-test",
+    browserInstanceId: null,
+    hostInstanceId: "h-kill9",
+  });
+  let buf = Buffer.alloc(0);
+  s.on("data", (chunk: Buffer) => {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 4) return;
+      const len = buf.readUInt32LE(0);
+      if (buf.length < 4 + len) return;
+      const body = buf.subarray(4, 4 + len);
+      buf = buf.subarray(4 + len);
+      const env = JSON.parse(body.toString("utf8")) as { kind?: string; id?: string; method?: string };
+      if (env.kind === "request" && typeof env.id === "string") {
+        const resp = Buffer.from(
+          JSON.stringify({ v: 1, kind: "response", id: env.id, result: { ok: true, tag, method: env.method } }),
+        );
+        const header = Buffer.alloc(4);
+        header.writeUInt32LE(resp.length, 0);
+        s.write(Buffer.concat([header, resp]));
+      }
+    }
+  });
+  return s;
+}
+
 // ---------- sqlite assertions (read the same durable store the gateway writes) ----------
 
 function openDb(): DatabaseSync {
@@ -417,6 +457,69 @@ describe("gateway kill -9 recovery (§7.3 #2/#3 tails)", () => {
       // exactly one provider prompt ever — respond did not re-drive the turn
       expect(await promptLog(logFile)).toEqual(["delete the file"]);
       s2.destroy();
+      void gw2;
+    },
+    120_000,
+  );
+
+  test(
+    "C: SIGKILL gateway → host re-registers on new gateway, browser.tool.call routes to live conn (S5)",
+    async () => {
+      const logFile = path.join(dir, "prompts.jsonl");
+      await writeConfig("hang-match", logFile);
+
+      // ---- boot 1: task + browser host conn ----
+      const gw1 = await bootGateway();
+      const s1 = await authedConn(gw1.pid);
+      const host1 = await hostConn("gen1", gw1.pid);
+      const created = (await rpc(s1, "c1", "task.create", {
+        cwd: "/tmp",
+        title: "kill9-C",
+        profileId: "fakeacp",
+        providerId: "fakeacp",
+      })) as { taskId: string };
+      const taskId = created.taskId;
+
+      const row = openDb()
+        .prepare("SELECT profile_id, backend_json FROM tasks WHERE task_id = ?")
+        .get(taskId) as { profile_id: string; backend_json: string };
+      const backend = JSON.parse(row.backend_json) as { backendId?: string };
+
+      const { ToolTokenManager } = await import("../src/browser/tool-token.js");
+      const secretHex = (await fs.readFile(path.join(dir, "auth", "tool-secret"), "utf8")).trim();
+      const token = ToolTokenManager.forTest(secretHex).issue({
+        taskId,
+        profileId: row.profile_id,
+        backendId: backend.backendId ?? "chrome-extension",
+        allowedTools: ["browser.tabs.list"],
+      }).token;
+
+      const call1 = (await rpc(s1, "bc1", "browser.tool.call", {
+        taskId, tool: "browser.tabs.list", args: {}, token,
+      })) as { status: string; result?: { tag?: string } };
+      expect(call1.status).toBe("completed");
+      expect(call1.result?.tag).toBe("gen1");
+
+      // ---- SIGKILL: both client and host conns die with the gateway ----
+      await kill9(gw1);
+      s1.destroy();
+      host1.destroy();
+
+      // ---- boot 2: host reconnects (same hostInstanceId, new conn) ----
+      const gw2 = await bootGateway();
+      const s2 = await authedConn(gw2.pid);
+      const host2 = await hostConn("gen2", gw2.pid);
+
+      // same durable token still valid — secret persisted across restart
+      const call2 = (await rpc(s2, "bc2", "browser.tool.call", {
+        taskId, tool: "browser.tabs.list", args: {}, token,
+      })) as { status: string; result?: { tag?: string }; error?: { code?: string } };
+      expect(call2.status).toBe("completed");
+      // dispatch must land on the NEW conn, not a zombie from gen1
+      expect(call2.result?.tag).toBe("gen2");
+
+      s2.destroy();
+      host2.destroy();
       void gw2;
     },
     120_000,
