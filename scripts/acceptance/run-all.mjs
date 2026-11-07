@@ -12,6 +12,7 @@ import { collectResults, writeReport, formatMarkdown } from "./lib/report.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const ALL = [
   "agent-loop-isolated",
+  "agent-loop-mcp-isolated",
   "s1-build-feature",
   "s2-debug-live",
   "s3-multitab",

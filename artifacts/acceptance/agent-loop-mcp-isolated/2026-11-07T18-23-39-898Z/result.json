@@ -1,0 +1,18 @@
+{
+  "scenario": "agent-loop-mcp-isolated",
+  "status": "FAIL",
+  "error": "Error: ASSERT FAIL: approval hook saw 0 gated action(s)\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-loop-mcp-isolated.mjs:37:20)\n    at file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-loop-mcp-isolated.mjs:148:3",
+  "asserts": [
+    "ok — MCP initialize handshake",
+    "ok — tools/list advertises page tools",
+    "ok — tools/list omits backend-unsupported tools",
+    "ok — tools/list count matches allowedTools (27)",
+    "ok — browser_tab_create → tabId=0",
+    "ok — snapshot result is fenced as untrusted data",
+    "ok — nonce markers present",
+    "ok — snapshot returned page content",
+    "ok — args.expect verified step2 revealed (through MCP)",
+    "ok — extract verifies submit-ok page",
+    "ok — fixture server received POST /submit with name=Agent"
+  ]
+}

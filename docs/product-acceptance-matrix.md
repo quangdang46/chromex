@@ -52,7 +52,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   response-body inspection (needs debugger/CDP tier)
 - Agent loop proof: `agent-loop-isolated` scenario PASS — scripted
   provider-style iteration on headless chromium (form submit verified
-  server-side + honest-failure check); runs in `run-all` without a token
+  server-side + honest-failure check); runs in `run-all` without a token.
+  `agent-loop-mcp-isolated` PASS — same loop through the real MCP path:
+  JSON-RPC tools/call → scope allowlist + untrusted fencing → tool
+  server (token verify, §4.8 classify + approval) → backend → Chromium
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)
