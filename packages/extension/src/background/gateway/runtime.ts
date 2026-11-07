@@ -72,9 +72,15 @@ async function build(): Promise<GatewayRuntime | null> {
     },
     onStateChange: (state) => {
       // Push backend health to the sidepanel (gateway-state badge).
-      void chrome.runtime
-        .sendMessage({ type: "gateway.state.changed", state })
-        .catch(() => undefined);
+      // sendMessage may be absent (tests) or have no receiver — never
+      // let a notification failure kill the connect path.
+      try {
+        void chrome.runtime
+          .sendMessage({ type: "gateway.state.changed", state })
+          .catch(() => undefined);
+      } catch {
+        /* no sidepanel / stubbed runtime */
+      }
     },
     onEvent: (env) => {
       // durable task + gateway streams both feed TaskController — the
@@ -104,9 +110,13 @@ async function build(): Promise<GatewayRuntime | null> {
       for (const l of snapshotListeners) l(taskId, snapshot);
     },
     onTasksChanged: () => {
-      void chrome.runtime
-        .sendMessage({ type: "gateway.tasks.changed" })
-        .catch(() => undefined);
+      try {
+        void chrome.runtime
+          .sendMessage({ type: "gateway.tasks.changed" })
+          .catch(() => undefined);
+      } catch {
+        /* no sidepanel / stubbed runtime */
+      }
     },
   });
 
