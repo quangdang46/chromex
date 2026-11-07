@@ -172,12 +172,12 @@ try {
 
   const prompt = [
     `This directory contains index.html, which is being served at ${BASE} by a static file server (it serves whatever index.html currently contains).`,
-    `You have two tool families: your normal file/shell tools, and MCP browser tools from the "chromex_browser" server (browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_extract, browser_page_click, browser_page_fill, etc.).`,
+    `You have two tool families: your normal file/shell tools, and MCP browser tools from the "chromex_browser" server. The exact tool names are mcp__chromex_browser__browser_page_navigate, mcp__chromex_browser__browser_page_snapshot, mcp__chromex_browser__browser_page_get, mcp__chromex_browser__browser_page_extract, mcp__chromex_browser__browser_page_click, mcp__chromex_browser__browser_page_fill. If your tool list only shows a namespace, use your tool-search/discovery mechanism to load them; do not call the namespace itself.`,
     `Do the browser↔code loop, in order:`,
-    `1. browser_page_navigate to ${BASE} and observe the page (browser_page_snapshot or browser_page_get). Confirm the h1 says "before".`,
+    `1. mcp__chromex_browser__browser_page_navigate to ${BASE} and observe the page (snapshot or get). Confirm the h1 says "before".`,
     `2. Edit index.html in this directory: change the <h1> text to exactly ${TOKEN} (keep it a single h1).`,
-    `3. Reload the page in the browser (browser_page_navigate to ${BASE} again) and observe it again.`,
-    `4. Verify via browser_page_get/browser_page_snapshot that the page now shows ${TOKEN}.`,
+    `3. Reload the page in the browser (navigate to ${BASE} again) and observe it again.`,
+    `4. Verify via get/snapshot that the page now shows ${TOKEN}.`,
     `5. Reply with one line: DONE plus the h1 text you observed after reload.`,
   ].join("\n");
 
@@ -212,6 +212,11 @@ try {
   const classified = norm.filter((e) => e.type === "browser.tool.classified");
   const actions = classified.map((e) => e.payload?.action).filter(Boolean);
   const toolDone = norm.filter((e) => e.type === "tool.completed" && e.payload?.tool === "mcpToolCall");
+  // Gateway-emitted browser tool executions (any reach path).
+  const browserDone = norm.filter(
+    (e) => e.type === "tool.completed" && String(e.payload?.tool ?? "").startsWith("browser."),
+  );
+  const browserSucceeded = browserDone.filter((e) => e.payload?.outcome === "succeeded").length;
   const OBSERVE = new Set(["browser.page.snapshot", "browser.page.get", "browser.page.extract", "browser.page.screenshot"]);
   const navCount = actions.filter((a) => a === "browser.page.navigate").length;
   const observeCount = actions.filter((a) => OBSERVE.has(a)).length;
@@ -220,7 +225,7 @@ try {
   const reobserveAfterAct = lastObserve > firstNav && firstNav >= 0;
 
   console.log(`\nevidence: classified=${classified.length} actions=${JSON.stringify(actions)}`);
-  console.log(`mcpToolCall completed=${toolDone.length} succeeded=${toolDone.filter((e) => e.payload?.outcome === "succeeded").length}`);
+  console.log(`browserExec completed=${browserDone.length} succeeded=${browserSucceeded}; provider mcpToolCall completed=${toolDone.length}`);
   console.log(`diskHasToken=${diskHasToken} servedHasToken=${servedHasToken} navCount=${navCount} observeCount=${observeCount}`);
 
   console.log("\n=== RESULT ===");
@@ -230,6 +235,7 @@ try {
     servedHasToken &&
     navCount >= 2 &&
     observeCount >= 2 &&
+    browserSucceeded >= 3 &&
     reobserveAfterAct;
   if (pass) {
     console.log(`PASS — browser↔code loop proven (task ${taskId}, turn ${turnId}, token ${TOKEN})`);
@@ -237,7 +243,7 @@ try {
   } else {
     console.log(
       `FAIL — terminal=${terminal?.type ?? "timeout"} disk=${diskHasToken} served=${servedHasToken} ` +
-        `nav=${navCount} observe=${observeCount} reobserve=${reobserveAfterAct}`,
+        `nav=${navCount} observe=${observeCount} browserExec=${browserSucceeded} reobserve=${reobserveAfterAct}`,
     );
     const assistant = norm.filter((e) => e.type === "assistant.message").map((e) => String(e.payload?.text ?? "").slice(0, 300));
     console.log("assistant tail:", JSON.stringify(assistant.slice(-3)));

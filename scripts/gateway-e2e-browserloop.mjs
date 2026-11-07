@@ -12,9 +12,13 @@
 //  4. task.send a prompt that forces tool iteration:
 //     navigate → snapshot → click → snapshot.
 //  5. PASS = turn.completed AND ≥3 browser.tool.classified executions
-//     (navigate + observation + action) AND ≥1 provider mcpToolCall
-//     tool.completed, with a snapshot/get observed AFTER the first
-//     navigate (observe→act→observe ordering).
+//     AND ≥3 succeeded browser.* tool.completed executions AND a
+//     snapshot/get observed AFTER the first navigate
+//     (observe→act→observe ordering). Provider-native MCP tool calls
+//     (mcpToolCall) are reported separately — codex 0.165 currently
+//     exposes MCP servers as empty namespaces, so agents may reach the
+//     same mcp-stdio server via shell instead; the browser executions
+//     are identical either way.
 //
 // Evidence: live event stream + durable task.sync replay. Auto-answers
 // permission.requested with the first non-deny option so the run is
@@ -165,12 +169,14 @@ try {
   console.log("task:", taskId, "backend:", JSON.stringify(backend ?? "default"));
 
   const prompt = [
-    `You have MCP tools from the "chromex_browser" server (tool names like browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_click, browser_page_extract).`,
+    `You have MCP tools from the "chromex_browser" server. The exact tool names are:`,
+    `mcp__chromex_browser__browser_page_navigate, mcp__chromex_browser__browser_page_snapshot, mcp__chromex_browser__browser_page_get, mcp__chromex_browser__browser_page_click, mcp__chromex_browser__browser_page_extract, mcp__chromex_browser__browser_page_screenshot.`,
+    `If your tool list only shows a namespace, use your tool-search/discovery mechanism to load them; do not call the namespace itself.`,
     `Use them to drive a real browser. Do exactly these steps, in order:`,
-    `1. browser_page_navigate to ${BASE}`,
-    `2. browser_page_snapshot to observe the page`,
-    `3. browser_page_click the "Go" button`,
-    `4. browser_page_get (or browser_page_snapshot) to observe the result`,
+    `1. mcp__chromex_browser__browser_page_navigate to ${BASE}`,
+    `2. mcp__chromex_browser__browser_page_snapshot to observe the page`,
+    `3. mcp__chromex_browser__browser_page_click the "Go" button`,
+    `4. mcp__chromex_browser__browser_page_get (or snapshot) to observe the result`,
     `Then reply with one line: the h1 text and the #status text you observed.`,
   ].join("\n");
 
@@ -194,11 +200,19 @@ try {
   const classified = norm.filter((e) => e.type === "browser.tool.classified");
   const toolDone = norm.filter((e) => e.type === "tool.completed" && e.payload?.tool === "mcpToolCall");
   const toolStart = norm.filter((e) => e.type === "tool.started" && e.payload?.tool === "mcpToolCall");
+  // Gateway-emitted completions for actual browser tool executions
+  // (toolCallId `mcp-N-*` from mcp-stdio → browser.tool.call). These
+  // fire regardless of HOW the agent reached the MCP server — provider
+  // MCP integration OR shell-driven stdio.
+  const browserDone = norm.filter(
+    (e) => e.type === "tool.completed" && String(e.payload?.tool ?? "").startsWith("browser."),
+  );
   const actions = classified.map((e) => e.payload?.action).filter(Boolean);
-  console.log(`\nevidence: classified=${classified.length} mcpToolCall started=${toolStart.length} completed=${toolDone.length}`);
+  console.log(`\nevidence: classified=${classified.length} mcpToolCall started=${toolStart.length} completed=${toolDone.length} browserExecDone=${browserDone.length}`);
   console.log("classified actions:", JSON.stringify(actions));
   const succeeded = toolDone.filter((e) => e.payload?.outcome === "succeeded").length;
-  console.log(`mcpToolCall succeeded=${succeeded} failed=${toolDone.length - succeeded}`);
+  const browserSucceeded = browserDone.filter((e) => e.payload?.outcome === "succeeded").length;
+  console.log(`mcpToolCall succeeded=${succeeded} failed=${toolDone.length - succeeded}; browserExec succeeded=${browserSucceeded} failed=${browserDone.length - browserSucceeded}`);
 
   const OBSERVE = new Set(["browser.page.snapshot", "browser.page.get", "browser.page.extract", "browser.page.screenshot"]);
   const firstNav = actions.findIndex((a) => a === "browser.page.navigate");
@@ -206,12 +220,14 @@ try {
   const hasObserveActObserve = firstNav >= 0 && lastObserve > firstNav;
 
   console.log("\n=== RESULT ===");
-  if (terminal?.type === "turn.completed" && classified.length >= 3 && toolDone.length >= 3 && hasObserveActObserve) {
-    console.log(`PASS — provider iterated browser MCP tools (task ${taskId}, turn ${turnId})`);
+  const providerNative = succeeded >= 1;
+  if (terminal?.type === "turn.completed" && classified.length >= 3 && browserSucceeded >= 3 && hasObserveActObserve) {
+    console.log(`PASS — agent iterated browser tools observe→act→observe (task ${taskId}, turn ${turnId})`);
+    console.log(`provider-native MCP path: ${providerNative ? "used" : "NOT used — agent reached the MCP server another way (e.g. shell stdio); see notes"}`);
     console.log("sequence:", JSON.stringify(actions));
     exitCode = 0;
   } else {
-    console.log(`FAIL — terminal=${terminal?.type ?? "timeout"} classified=${classified.length} mcpDone=${toolDone.length} observeActObserve=${hasObserveActObserve}`);
+    console.log(`FAIL — terminal=${terminal?.type ?? "timeout"} classified=${classified.length} browserExec=${browserSucceeded}/${browserDone.length} mcpDone=${toolDone.length} observeActObserve=${hasObserveActObserve}`);
     const tail = norm.slice(-30).map((e) => `${e.seq}:${e.type}`);
     console.log("event tail:", tail.join(" "));
     const assistant = norm.filter((e) => e.type === "assistant.message").map((e) => String(e.payload?.text ?? "").slice(0, 200));
