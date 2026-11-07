@@ -68,6 +68,7 @@ import { SessionManager } from "./session-manager.js";
 import { ToolTokenManager } from "../browser/tool-token.js";
 import { DeltaCoalescer } from "./delta-coalescer.js";
 import { BrowserToolServer } from "../browser/tool-server.js";
+import { BrowserHostRegistry } from "../browser/host-registry.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
 import { writeMcpScopeFile, updateMcpScopeToken, mcpScopePath } from "../browser/mcp-scope.js";
 import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
@@ -288,17 +289,43 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       };
     };
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const hostRegistry = new BrowserHostRegistry();
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
-      resolveHost: () => {
-        // host = authed conn whose hello declared a hostInstanceId
-        // (native host injects it; UI-only clients leave it empty)
-        const conn = ipc?.authedConnections().find((c) => c.hostInstanceId !== "");
-        if (!conn) return null;
+      resolveHost: (taskId) => {
+        // §6.1 host registry: affinity + scope matching; stranded tabs
+        // report no_host until a same-browserInstanceId host returns.
+        const task = store.getTask(taskId);
+        const res = hostRegistry.resolveHost({
+          profileId: task?.profileId ?? "codex",
+          browserInstanceId: task?.originBrowserInstanceId ?? task?.binding.browserInstanceId ?? null,
+          backendId: task?.backend.backendId ?? "chrome-extension",
+        });
+        if (res.kind !== "host") return null;
+        const conn = ipc?.authedConnections().find(
+          (c) => c.hostInstanceId !== "" && c.remoteAddress === res.hostInstanceId,
+        );
+        // hostInstanceId is the conn remoteAddress in the channel impl;
+        // match by hostInstanceId field instead when available.
+        const hostConn =
+          conn ??
+          ipc?.authedConnections().find((c) => {
+            // registry keyed by remoteAddress today; fall back to any host conn
+            return c.hostInstanceId !== "";
+          });
+        if (!hostConn) return null;
+        hostRegistry.noteTabAffinity(
+          {
+            profileId: task?.profileId ?? "codex",
+            browserInstanceId: task?.originBrowserInstanceId ?? task?.binding.browserInstanceId ?? null,
+            backendId: task?.backend.backendId ?? "chrome-extension",
+          },
+          res.hostInstanceId,
+        );
         return {
-          hostInstanceId: conn.remoteAddress,
-          send: (method, payload) => conn.request(method, payload, 15_000),
-          onDisconnect: (listener) => conn.onClose(() => listener("disconnect")),
+          hostInstanceId: res.hostInstanceId,
+          send: (method, payload) => hostConn.request(method, payload, 15_000),
+          onDisconnect: (listener) => hostConn.onClose(() => listener("disconnect")),
         };
       },
       requestApproval: async (tctx) => {
@@ -376,6 +403,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           playwrightRuntime,
           toolServer,
           toolRefresher,
+          hostRegistry,
           spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
       } catch (err) {
@@ -516,6 +544,7 @@ async function handleGatewayRequest(
     snapshotChunks: SnapshotChunkStore;
     playwrightRuntime: PlaywrightRuntimeManager;
     toolServer: BrowserToolServer;
+    hostRegistry: BrowserHostRegistry;
     toolRefresher: ToolTokenRefresher;
     spawnBrowserMcp?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
   },
@@ -529,6 +558,14 @@ async function handleGatewayRequest(
           client: parsed.protocolVersion,
           gateway: 1,
         });
+      }
+      if (ctx.conn.hostInstanceId) {
+        ctx.hostRegistry.register({
+          hostInstanceId: ctx.conn.remoteAddress,
+          connectionId: ctx.conn.remoteAddress,
+          browserInstanceId: ctx.conn.browserInstanceId,
+        });
+        ctx.conn.onClose(() => ctx.hostRegistry.unregisterByConnection(ctx.conn.remoteAddress));
       }
       return buildHelloResponse(parsed, {
         store: ctx.store,
@@ -624,6 +661,11 @@ async function handleGatewayRequest(
       return { taskId: task.taskId, status: task.status };
     }
     case "task.setBackend": {
+      // §6.6: user-only — host/provider connections must not re-pin
+      // the backend mid-task.
+      if (ctx.conn.hostInstanceId) {
+        throw protocolError("proto.forbidden", "task.setBackend is user-only");
+      }
       const p = req.payload as { taskId?: string; backend?: unknown } | undefined;
       if (!p?.taskId || !p.backend || typeof p.backend !== "object") {
         throw invalidRequest("taskId + backend required");

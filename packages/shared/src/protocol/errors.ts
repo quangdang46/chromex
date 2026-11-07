@@ -15,6 +15,7 @@ export type ProtocolErrorCode =
   | "proto.version_mismatch"
   | "proto.unknown_method"
   | "proto.payload_too_large"
+  | "proto.forbidden"
   // gateway lifecycle
   | "gateway.starting"
   | "gateway.unresponsive"
@@ -108,6 +109,7 @@ const CLASSIFICATION: Partial<Record<ProtocolErrorCode, ProtocolErrorClassificat
   "gateway.not_ready": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "gateway.unresponsive": { retryable: true, requiresUserAction: true, sideEffectState: "none" },
   "proto.auth_expired": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
+  "proto.forbidden": { retryable: false, requiresUserAction: false, sideEffectState: "none" },
   "browser.confirmation_required": { retryable: false, requiresUserAction: true, sideEffectState: "none" },
   "browser.ambiguous_target": { retryable: false, requiresUserAction: true, sideEffectState: "none" },
   "browser.stale_binding": { retryable: true, requiresUserAction: false, sideEffectState: "none" },

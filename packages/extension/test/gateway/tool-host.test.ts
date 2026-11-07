@@ -36,6 +36,24 @@ describe("tool host (P1-09)", () => {
     expect(res.tabs[0].id).toBe(7);
   });
 
+  test("tabs.list excludes internal pages and strips query/hash (§6.1.1)", async () => {
+    const d = deps({
+      queryTabs: vi.fn(async () => [
+        { id: 1, url: "https://app.example.com/inbox?token=secret#frag", title: "Inbox", active: true, windowId: 1 },
+        { id: 2, url: "chrome://settings", title: "Settings", active: false, windowId: 1 },
+        { id: 3, url: "about:blank", title: "", active: false, windowId: 1 },
+        { id: 4, url: "chrome-extension://abc/page.html", title: "Ext", active: false, windowId: 1 },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tabs.list"))) as {
+      tabs: Array<{ id: number; url: string; origin: string }>;
+    };
+    expect(res.tabs).toHaveLength(1);
+    expect(res.tabs[0].url).toBe("https://app.example.com/inbox");
+    expect(res.tabs[0].origin).toBe("https://app.example.com");
+  });
+
   test("page.snapshot forwards to content script", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

@@ -88,15 +88,34 @@ export function createToolHostHandler(deps: ToolHostDeps) {
 
     switch (tool) {
       case "browser.tabs.list": {
-        const tabs = await deps.queryTabs();
+        // §6.1.1 privacy-first: on-demand only, internal pages excluded,
+        // query/hash stripped (may carry sensitive params). Full URLs
+        // are available via browser.page.get / snapshot within scope.
+        const INTERNAL = /^(chrome|chrome-extension|edge|about|devtools|view-source):/i;
+        const tabs = (await deps.queryTabs()).filter((t) => {
+          const u = t.url ?? "";
+          return u !== "" && !INTERNAL.test(u);
+        });
         return {
-          tabs: tabs.map((t) => ({
-            id: t.id,
-            title: t.title ?? "",
-            url: t.url ?? "",
-            active: t.active === true,
-            windowId: t.windowId,
-          })),
+          tabs: tabs.map((t) => {
+            let safeUrl = t.url ?? "";
+            let origin = "";
+            try {
+              const u = new URL(safeUrl);
+              origin = u.origin;
+              safeUrl = `${u.origin}${u.pathname}`;
+            } catch {
+              safeUrl = "";
+            }
+            return {
+              id: t.id,
+              title: t.title ?? "",
+              url: safeUrl,
+              origin,
+              active: t.active === true,
+              windowId: t.windowId,
+            };
+          }),
         };
       }
       case "browser.tab.activate": {

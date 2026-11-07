@@ -47,6 +47,8 @@ export interface IpcConnection {
   /** non-empty when the client's hello declared a host instance —
    *  marks the browser host connection (P1-09 host selection). */
   readonly hostInstanceId: string;
+  /** Chrome-run identity from hello (null = degraded) — P2-03. */
+  readonly browserInstanceId: string | null;
   send(envelope: Envelope): void;
   close(): void;
   /** Server-initiated request to this client (browser.tool.* etc).
@@ -69,6 +71,7 @@ interface ConnState {
   buffer: Buffer;
   helloSeen: boolean;
   hostInstanceId: string;
+  browserInstanceId: string | null;
   pending: Map<string, PendingServerRequest>;
   /** P2-06: client fell behind on ephemeral deltas — drop them until
    *  the socket drains (durable events are never dropped). */
@@ -194,6 +197,7 @@ export class GatewayIpcServer {
       buffer: Buffer.alloc(0),
       helloSeen: false,
       hostInstanceId: "",
+      browserInstanceId: null,
       pending: new Map(),
       deltaThrottled: false,
     };
@@ -320,8 +324,9 @@ export class GatewayIpcServer {
       }
       state.authed = true;
       state.helloSeen = true;
-      const hp = req.payload as { hostInstanceId?: unknown } | undefined;
+      const hp = req.payload as { hostInstanceId?: unknown; browserInstanceId?: unknown } | undefined;
       if (typeof hp?.hostInstanceId === "string") state.hostInstanceId = hp.hostInstanceId;
+      state.browserInstanceId = typeof hp?.browserInstanceId === "string" ? hp.browserInstanceId : null;
     } else if (req.method === "hello") {
       this.sendResponse(state, req.id, null, protocolError("proto.invalid", "hello already completed"));
       return;
@@ -355,6 +360,7 @@ export class GatewayIpcServer {
       authed: state.authed,
       remoteAddress: state.socket.remoteAddress ?? "unknown",
       hostInstanceId: state.hostInstanceId,
+      browserInstanceId: state.browserInstanceId,
       send: (envelope) => this.sendRaw(state, envelope),
       close: () => state.socket.destroy(),
       request: (method, payload, timeoutMs) => this.requestOn(state, method, payload, timeoutMs),
