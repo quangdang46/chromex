@@ -260,6 +260,19 @@ describe("settings panel structure", () => {
     expect(readFinalDeclaration(':root[data-theme="light"] .message-content h2', "font-weight")).toBe("600");
   });
 
+  test("surfaces degraded runtime and harness fallbacks in settings", () => {
+    expect(sidepanelSource).toContain("state.runtimeConfig.degraded || state.workspaceHarness?.degraded");
+    expect(sidepanelSource).toContain('renderSettingsRow(\n                    "degraded"');
+    expect(sidepanelSource).toContain("strings.labels.degradedMode");
+    expect(sidepanelSource).toContain("strings.help.degradedFallback");
+    expect(sidepanelSource).toContain('renderSettingsStatusPill(strings.status.degraded, "warn")');
+    expect(sidepanelSource).toContain("state.workspaceHarness.degraded");
+    expect(sidepanelSource).toContain("strings.help.workspaceHarnessDegraded");
+    expect(sidepanelSource).toContain('renderUiIcon("shield-alert")');
+    expect(readFinalDeclaration(".harness-degraded-note", "color")).toBe("#ffd36b");
+    expect(readFinalDeclaration(':root[data-theme="light"] .harness-degraded-note', "color")).toBe("#a95400");
+  });
+
   test("keeps light profile and site suggestion text readable", () => {
     expect(readFinalDeclaration(':root[data-theme="light"] .profile-editor-title-row h2', "color")).toBe(
       "var(--text)",

@@ -8643,6 +8643,17 @@ function renderWorkspaceView(strings: ReturnType<typeof getUiStrings>): string {
                 codexBinaryHealth.tone,
               ),
             ),
+            ...(state.runtimeConfig.degraded || state.workspaceHarness?.degraded
+              ? [
+                  renderSettingsRow(
+                    "degraded",
+                    strings.labels.degradedMode,
+                    strings.help.degradedFallback,
+                    renderSettingsStatusPill(strings.status.degraded, "warn"),
+                    {},
+                  ),
+                ]
+              : []),
             renderSettingsRow(
               strings.actions.reconnect,
               strings.settingsPanel.reconnectDescription,
@@ -12711,7 +12722,14 @@ function renderWorkspaceHarness(strings: ReturnType<typeof getUiStrings>): strin
     return `<p class="empty-state">${escapeHtml(strings.help.harnessLoading)}</p>`;
   }
 
+  const degradedNotice = state.workspaceHarness.degraded
+    ? `<p class="harness-degraded-note">${renderUiIcon("shield-alert")}<span>${escapeHtml(
+        strings.help.workspaceHarnessDegraded,
+      )}</span></p>`
+    : "";
+
   return `
+    ${degradedNotice}
     <div class="meta-list">
       <p><strong>${escapeHtml(strings.labels.root)}</strong><span>${escapeHtml(state.workspaceHarness.workspaceRoot)}</span></p>
       <p><strong>${escapeHtml(strings.labels.mode)}</strong><span>${escapeHtml(state.workspaceHarness.permissions.defaultMode)}</span></p>

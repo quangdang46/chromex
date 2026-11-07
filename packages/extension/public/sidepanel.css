@@ -1699,6 +1699,21 @@ button.plugin-connect-row-action:hover {
   word-break: break-word;
 }
 
+.harness-degraded-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: #ffd36b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.harness-degraded-note .ui-lucide-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 .inline-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -10496,6 +10511,10 @@ button.primary,
 
 :root[data-theme="light"] .settings-card .diagnostics-panel summary {
   color: var(--text);
+}
+
+:root[data-theme="light"] .harness-degraded-note {
+  color: #a95400;
 }
 
 :root[data-theme="light"] .message-card.user {

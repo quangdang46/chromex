@@ -369,6 +369,7 @@ export const UI_STRINGS = {
       rules: "Rules",
       hooks: "Hooks",
       workspaceShortcuts: "Workspace shortcuts",
+      degradedMode: "Degraded mode",
     },
     actions: {
       refresh: "Refresh",
@@ -490,6 +491,7 @@ export const UI_STRINGS = {
       setupNeeded: "Setup needed",
       reconnectRequired: "Reconnect",
       pending: "Pending",
+      degraded: "Degraded",
       workspaceActive: "Active",
       workspaceInactive: "Optional",
       noGeneratedImages: "No images yet",
@@ -572,6 +574,10 @@ export const UI_STRINGS = {
       workspaceRulesActive: "Project rules are active in the connected local workspace.",
       workspaceRulesInactive: "Project-specific rules stay off until a workspace is connected internally.",
       workspaceHarness: "Project rules, file-based shortcuts, and permission policy are loaded from local workspace files.",
+      workspaceHarnessDegraded:
+        "Workspace rules could not be read from the local bridge. Sensitive actions will ask for confirmation instead of using project rules.",
+      degradedFallback:
+        "Some local runtime data could not be loaded. Chromex is using fallback settings and may ask for confirmation more often.",
       emptyConversation: "Current page, image, and selection context are inferred from your request. Use @ only for extra tabs.",
       contextInvocation: "Use @open-tabs only when you want to select other open tabs. Page and image context are inferred automatically.",
       contextRefine: "Use this view to refine only the context you already attached from chat.",
@@ -1236,6 +1242,7 @@ export const UI_STRINGS = {
       rules: "규칙",
       hooks: "훅",
       workspaceShortcuts: "워크스페이스 단축키",
+      degradedMode: "저하된 모드",
     },
     actions: {
       refresh: "새로고침",
@@ -1357,6 +1364,7 @@ export const UI_STRINGS = {
       setupNeeded: "설정 필요",
       reconnectRequired: "다시 연결",
       pending: "대기 중",
+      degraded: "저하됨",
       workspaceActive: "활성",
       workspaceInactive: "선택 사항",
       noGeneratedImages: "아직 없음",
@@ -1455,6 +1463,10 @@ export const UI_STRINGS = {
         "앱과 플러그인은 선택한 경우에만 app-server mention 입력으로 전달됩니다. MCP 서버는 로컬 Codex app-server가 노출하고 에이전트가 설정된 도구를 통해 사용합니다.",
       playwrightRuntimeSkill: "이 브라우저 자동화 스킬은 로컬 Playwright Chromium 런타임이 설치된 뒤에만 사용할 수 있습니다.",
       harnessLoading: "워크스페이스 하네스 메타데이터를 불러오는 중입니다.",
+      workspaceHarnessDegraded:
+        "로컬 브리지에서 워크스페이스 규칙을 읽지 못했습니다. 민감한 작업은 프로젝트 규칙 대신 확인을 요청합니다.",
+      degradedFallback:
+        "일부 로컬 런타임 데이터를 불러오지 못했습니다. 대체 설정을 사용 중이며 확인 요청이 더 자주 표시될 수 있습니다.",
       emptyActions: "적절한 워크플로우가 감지되면 추천 질문이 여기에 나타납니다.",
     },
     settings: {
@@ -53735,6 +53747,10 @@ const OPTIONAL_ENGLISH_FALLBACK_STATIC_UI_STRING_KEYS = new Set<string>([
   "status.gatewayStarting",
   "status.gatewayUnresponsive",
   "status.gatewayDisconnected",
+  "status.degraded",
+  "labels.degradedMode",
+  "help.degradedFallback",
+  "help.workspaceHarnessDegraded",
   "status.turnSteerExpired",
   "prompts.onlineImageContextLabel",
   "prompts.onlineImageAltLabel",
