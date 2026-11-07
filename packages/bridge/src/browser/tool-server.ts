@@ -24,6 +24,7 @@ import {
   type RiskLevel,
 } from "@codex-sidepanel/shared";
 
+import { TaskTabScope } from "./task-tab-scope.js";
 import { ToolTokenError, ToolTokenManager } from "./tool-token.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
@@ -164,8 +165,10 @@ export type ToolApprovalVerdict =
 
 /** Build the §4.8 ActionContext for a tool call. `contextResolved`
  *  is honest: mutating tools need an explicit target/url arg —
- *  anything less fails closed inside the classifier. */
-export function buildActionContext(req: ToolCallRequest): ActionContext {
+ *  anything less fails closed inside the classifier. `withinTabScope`
+ *  is the real TaskTabScope check result for an explicit args.tabId;
+ *  implicit (active/bound-tab) resolution is enforced host-side. */
+export function buildActionContext(req: ToolCallRequest, withinTabScope = true): ActionContext {
   const args = req.args ?? {};
   const url = typeof args.url === "string" ? args.url : "";
   let origin = "";
@@ -196,9 +199,34 @@ export function buildActionContext(req: ToolCallRequest): ActionContext {
     ...(typeof args.text === "string" || typeof args.value === "string"
       ? { dataEgress: "network-form" as const }
       : {}),
-    withinTabScope: true, // scope enforcement is the host registry's job (P2-03)
+    withinTabScope,
     contextResolved: !mutating || hasTarget || (req.tool.endsWith("navigate") && url !== "") || req.tool.endsWith("scroll") || req.tool.endsWith("wait"),
   };
+}
+
+/** Result keys that may reference a tab the call opened/acquired
+ *  (chromex-9e3). `resolvedTabId` is handled separately — it is the
+ *  acted-on tab, not an acquisition. */
+const TAB_REF_KEYS = new Set(["tabId", "openedTabId", "newTabId", "targetTabId"]);
+const TAB_REF_MAX_DEPTH = 3;
+
+/** Collect integer tabIds referenced inside a tool result so the task
+ *  scope can record legitimately acquired tabs (e.g. navigate opened a
+ *  new tab). Depth-bounded; non-tab objects are ignored. */
+function harvestTabRefs(value: unknown, depth = 0, out = new Set<number>()): Set<number> {
+  if (depth > TAB_REF_MAX_DEPTH || value === null || typeof value !== "object") return out;
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 32)) harvestTabRefs(item, depth + 1, out);
+    return out;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (TAB_REF_KEYS.has(key) && typeof nested === "number" && Number.isInteger(nested)) {
+      out.add(nested);
+    } else {
+      harvestTabRefs(nested, depth + 1, out);
+    }
+  }
+  return out;
 }
 
 /** §4.8 actionDigest: hash(canonical(tool,args,target ref,snapshotId,url,origin)). */
@@ -241,7 +269,10 @@ export interface ToolServerDeps {
 export class BrowserToolServer {
   /** toolCallId → outcome — duplicate-execution protection (§9.1). */
   private readonly outcomes = new Map<string, ToolCallOutcome>();
-  private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout; taskId: string; host: ToolHostChannel }>();
+  private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout; taskId: string; host: ToolHostChannel; req: ToolCallRequest }>();
+  /** SEC chromex-9e3: runtime taskId→tabIds scope (chrome-extension
+   *  backend only — playwright backends isolate tabs per task already). */
+  private readonly tabScope = new TaskTabScope();
   private readonly deps: ToolServerDeps;
 
   constructor(deps: ToolServerDeps) {
@@ -293,10 +324,27 @@ export class BrowserToolServer {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.no_host", message: "no host registered for task" } });
     }
 
-    // 5. §4.8 classify + approval.
-    const actx = buildActionContext(req);
+    // 5. §4.8 classify + approval. withinTabScope is the real scope
+    // check for an explicit args.tabId; implicit tab resolution is
+    // enforced by the host against the tabScope payload (step 6).
+    const backendId = req.backendId ?? "chrome-extension";
+    const explicitTabId = typeof req.args?.tabId === "number" ? req.args.tabId : null;
+    const withinTabScope =
+      backendId !== "chrome-extension" || explicitTabId === null
+        ? true
+        : this.tabScope.permits(req.taskId, explicitTabId);
+    const actx = buildActionContext(req, withinTabScope);
     const verdict = classifyActionRisk(actx);
     this.deps.onClassified?.(req.taskId, actx, verdict);
+    // scope denials are terminal — never approval-bypassable (§4.8).
+    if (!actx.withinTabScope) {
+      return this.finish({
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: { code: "browser.not_in_scope", message: `tab ${explicitTabId} is outside this task's tab scope` },
+      });
+    }
     if (verdict.risk === "deny" || verdict.risk === "hard_block") {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.policy_denied", message: verdict.reason } });
     }
@@ -371,9 +419,25 @@ export class BrowserToolServer {
         timer,
         taskId: req.taskId,
         host,
+        req,
       });
-      host.send("browser.tool.request", { toolCallId: req.toolCallId, taskId: req.taskId, turnId: req.turnId, tool: req.tool, args: req.args })
+      // tabScope lets the host re-check the RESOLVED tabId (incl. the
+      // active-tab default and bound-tab fallback the gateway cannot
+      // see) against this task's permitted set — chromex-9e3.
+      const tabScope =
+        (req.backendId ?? "chrome-extension") === "chrome-extension"
+          ? this.tabScope.payloadFor(req.taskId)
+          : undefined;
+      host.send("browser.tool.request", {
+        toolCallId: req.toolCallId,
+        taskId: req.taskId,
+        turnId: req.turnId,
+        tool: req.tool,
+        args: req.args,
+        ...(tabScope ? { tabScope } : {}),
+      })
         .then((result) => {
+          this.#noteTabScope(req, result);
           // host.send resolves when browser.tool.result arrives (channel impl)
           this.pending.get(req.toolCallId)?.resolve({
             toolCallId: req.toolCallId,
@@ -402,10 +466,38 @@ export class BrowserToolServer {
     });
   }
 
+  /** Learn binds/acquisitions from a successful host result. Only
+   *  chrome-extension results carry `resolvedTabId`; binds record on
+   *  success so a failed first call leaves the task unbound. */
+  #noteTabScope(req: ToolCallRequest, result: unknown): void {
+    if ((req.backendId ?? "chrome-extension") !== "chrome-extension") return;
+    if (!result || typeof result !== "object") return;
+    const r = result as Record<string, unknown>;
+    const resolved =
+      typeof r.resolvedTabId === "number"
+        ? r.resolvedTabId
+        : typeof req.args?.tabId === "number"
+          ? req.args.tabId
+          : null;
+    if (resolved === null) return;
+    this.tabScope.bind(req.taskId, resolved);
+    this.tabScope.acquire(req.taskId, harvestTabRefs(r));
+    if (req.tool === "browser.tab.close" && (r.closed === resolved || r.closed === true)) {
+      this.tabScope.release(req.taskId, resolved);
+    }
+  }
+
+  /** Task purge/end — drop its tab scope and ownership claims so the
+   *  tabs can bind to a future task. */
+  releaseTask(taskId: string): void {
+    this.tabScope.releaseTask(taskId);
+  }
+
   /** Host reported browser.tool.result / disconnect. */
   deliverResult(toolCallId: string, result: unknown): void {
     const p = this.pending.get(toolCallId);
     if (!p) return;
+    this.#noteTabScope(p.req, result);
     p.resolve({ toolCallId, tool: "", status: "completed", result, verified: true });
   }
 

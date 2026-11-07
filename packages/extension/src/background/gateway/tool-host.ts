@@ -64,11 +64,69 @@ const SUPPORTED = new Set([
   "browser.page.upload",
 ]);
 
+/** chromex-9e3: per-request tab scope snapshot computed by the Gateway
+ *  tool server (authoritative TaskTabScope). The host re-checks the
+ *  RESOLVED tabId — including bound-tab default and active-tab
+ *  fallback — because only the host sees chrome.tabs reality. */
+interface TabScopePayload {
+  boundTabId: number | null;
+  allowedTabIds: number[];
+  foreignTabIds: number[];
+}
+
+function parseTabScope(payload: unknown): TabScopePayload | null {
+  const raw = (payload as { tabScope?: unknown } | null)?.tabScope;
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const nums = (v: unknown): number[] =>
+    Array.isArray(v) ? v.filter((n): n is number => typeof n === "number" && Number.isInteger(n)) : [];
+  return {
+    boundTabId: typeof o.boundTabId === "number" ? o.boundTabId : null,
+    allowedTabIds: nums(o.allowedTabIds),
+    foreignTabIds: nums(o.foreignTabIds),
+  };
+}
+
 async function resolveTabId(deps: ToolHostDeps, args: Record<string, unknown>): Promise<number> {
   if (typeof args.tabId === "number") return args.tabId;
   const active = await deps.activeTabId();
   if (active === null) throw toolError("browser.no_tab", "no active tab to run the tool against");
   return active;
+}
+
+/** Resolve the effective tabId for a tab-targeting tool and enforce the
+ *  task's tab scope (chromex-9e3). Default order: explicit args.tabId →
+ *  the task's bound tab → active tab (first bind). Out-of-scope →
+ *  browser.not_in_scope, never a silent fallback to another tab. */
+async function resolveScopedTabId(
+  deps: ToolHostDeps,
+  args: Record<string, unknown>,
+  scope: TabScopePayload | null,
+): Promise<number> {
+  const explicit = typeof args.tabId === "number" ? args.tabId : null;
+  let candidate: number;
+  if (explicit !== null) {
+    candidate = explicit;
+  } else if (scope?.boundTabId != null) {
+    candidate = scope.boundTabId;
+  } else {
+    candidate = await resolveTabId(deps, args);
+  }
+  if (scope) {
+    const allowed = new Set(scope.allowedTabIds);
+    if (scope.boundTabId != null) allowed.add(scope.boundTabId);
+    if (allowed.size > 0) {
+      if (!allowed.has(candidate)) {
+        throw toolError("browser.not_in_scope", `tab ${candidate} is outside this task's tab scope`);
+      }
+    } else {
+      const foreign = new Set(scope.foreignTabIds);
+      if (foreign.has(candidate)) {
+        throw toolError("browser.not_in_scope", `tab ${candidate} is bound to another task`);
+      }
+    }
+  }
+  return candidate;
 }
 
 function str(v: unknown): string | undefined {
@@ -94,6 +152,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
     };
     const tool = req.tool ?? "";
     const args = req.args ?? {};
+    const tabScope = parseTabScope(payload);
     if (!SUPPORTED.has(tool)) {
       throw toolError("proto.unsupported", `browser tool ${tool} is not implemented in the extension host`);
     }
@@ -104,9 +163,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // query/hash stripped (may carry sensitive params). Full URLs
         // are available via browser.page.get / snapshot within scope.
         const INTERNAL = /^(chrome|chrome-extension|edge|about|devtools|view-source):/i;
+        // chromex-9e3: never surface tabs owned by other tasks.
+        const foreign = new Set(tabScope?.foreignTabIds ?? []);
         const tabs = (await deps.queryTabs()).filter((t) => {
           const u = t.url ?? "";
-          return u !== "" && !INTERNAL.test(u);
+          return u !== "" && !INTERNAL.test(u) && !(typeof t.id === "number" && foreign.has(t.id));
         });
         return {
           tabs: tabs.map((t) => {
@@ -131,23 +192,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         };
       }
       case "browser.tab.activate": {
-        const tabId = typeof args.tabId === "number" ? args.tabId : await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         await deps.activateTab(tabId);
-        return { activated: tabId };
+        return { activated: tabId, resolvedTabId: tabId };
       }
       case "browser.tab.close": {
-        const tabId = typeof args.tabId === "number" ? args.tabId : await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         await deps.closeTab(tabId);
-        return { closed: tabId };
+        return { closed: tabId, resolvedTabId: tabId };
       }
       case "browser.page.get": {
-        const tabId = await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         const tab = await deps.getTab(tabId);
         if (!tab) throw toolError("browser.no_tab", `tab ${tabId} not found`);
-        return { id: tab.id, url: tab.url ?? "", title: tab.title ?? "", active: tab.active === true };
+        return { id: tab.id, url: tab.url ?? "", title: tab.title ?? "", active: tab.active === true, resolvedTabId: tabId };
       }
       case "browser.page.snapshot": {
-        const tabId = await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         const snap = (await deps.sendToTab(tabId, { type: "page.dom.snapshot" })) as BrowserDomSnapshot;
         if (
           snap.snapshotId &&
@@ -174,7 +235,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             capturedAt: Date.now(),
           });
         }
-        return snap;
+        return { ...snap, resolvedTabId: tabId };
       }
       case "browser.page.wait": {
         const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
@@ -185,7 +246,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (!deps.captureVisibleTab) {
           throw toolError("proto.unsupported", "screenshot capture is not available on this host");
         }
-        const tabId = await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         const tab = await deps.getTab(tabId);
         if (typeof tab?.windowId !== "number") {
           throw toolError("browser.no_tab", `tab ${tabId} has no window`);
@@ -206,10 +267,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           mimeType,
           dataBase64,
         });
-        return { artifactRef: art.artifactRef, sha256: art.sha256, bytes: art.bytes, mimeType };
+        return { artifactRef: art.artifactRef, sha256: art.sha256, bytes: art.bytes, mimeType, resolvedTabId: tabId };
       }
       case "browser.page.extract": {
-        const tabId = await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         const maxChars = typeof args.maxChars === "number" ? Math.min(args.maxChars, 50_000) : 12_000;
         const res = (await deps.sendToTab(tabId, {
           type: "page.extract",
@@ -220,6 +281,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           truncated: res.truncated === true,
           url: res.url ?? "",
           title: res.title ?? "",
+          resolvedTabId: tabId,
         };
       }
       case "browser.page.upload": {
@@ -232,10 +294,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
       default: {
         // DOM action tools → single page.dom.perform step
-        const tabId = await resolveTabId(deps, args);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
         const snapId = str(args.snapshotId);
         if (snapId) {
           const meta = snapshotRegistry.get(snapId);
+          // chromex-9e3: snapshots are bound to (taskId, tabId) — a
+          // snapshot created under another task must not resolve even
+          // on the same tab.
+          if (meta && meta.taskId !== req.taskId) {
+            throw toolError(
+              "browser.not_in_scope",
+              "snapshot belongs to another task; call browser.page.snapshot again",
+            );
+          }
           if (!meta || meta.tabId !== tabId) {
             throw toolError(
               "browser.stale_snapshot",
@@ -265,6 +336,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           summary: result.summary,
           step: first,
           ...(first?.verified !== undefined ? { verified: first.verified } : {}),
+          resolvedTabId: tabId,
         };
       }
     }

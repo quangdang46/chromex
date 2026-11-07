@@ -73,7 +73,7 @@ export interface GatewayConfig {
   store: "memory" | "sqlite";
   /** §10 migration flags */
   features: {
-    /** serve retired route.plan/browser.action.plan via legacy sidecar planning */
+    /** inert — route.plan/browser.action.plan are served natively by the codex provider */
     legacySidecarPlanning: boolean;
     /** gateway-owned browser tool loop (P1-09) */
     toolLoop: boolean;

@@ -16,7 +16,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { protocolError } from "@codex-sidepanel/shared";
-import type { Envelope, ProtocolError, TaskRecord } from "@codex-sidepanel/shared";
+import type {
+  AgenticRouteInput,
+  BrowserDomSnapshot,
+  Envelope,
+  ProtocolError,
+  TaskRecord,
+} from "@codex-sidepanel/shared";
 import { z } from "zod";
 
 import { LEGACY_COMPAT, LEGACY_SIDECAR_METHODS } from "./compat.js";
@@ -29,6 +35,8 @@ import {
   configUpdateSchema,
   gatewaySyncSchema,
   permissionRespondSchema,
+  routePlanSchema,
+  browserActionPlanSchema,
   providerCatalogSchema,
   artifactUploadSchema,
   taskCreateSchema,
@@ -673,6 +681,19 @@ function invalidRequest(issues: string): ProtocolError {
   return perr("proto.invalid", `invalid request payload: ${issues}`);
 }
 
+/**
+ * route.plan / browser.action.plan are codex-shaped planning calls —
+ * only the codex provider exposes the app-server planning planes.
+ */
+function codexPlanningProvider(registry: ProviderRegistry): CodexAgentProvider {
+  const entry = registry.get("codex");
+  const provider = entry?.provider;
+  if (!entry?.config.enabled || !(provider instanceof CodexAgentProvider)) {
+    throw perr("provider.unavailable", "route planning requires an enabled codex provider");
+  }
+  return provider;
+}
+
 /** zod → proto.invalid helper; returns parsed payload or throws. */
 function parsePayload<S extends { safeParse: (v: unknown) => { success: boolean; data?: unknown; error?: { issues: Array<{ path: PropertyKey[]; message: string }> } } }>(
   schema: S,
@@ -1060,6 +1081,9 @@ async function handleGatewayRequest(
       }
       ctx.store.purgeTask(p.taskId);
       ctx.toolRefresher.untrack(p.taskId);
+      // chromex-9e3: release the task's runtime tab scope so its tabs
+      // can bind to a future task.
+      ctx.toolServer.releaseTask(p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({
@@ -1173,18 +1197,22 @@ async function handleGatewayRequest(
         );
         return compat.fromResult(inner, req.payload);
       }
-      // §10: route.plan / browser.action.plan retired — flag-controlled.
-      // toolLoop on → gateway tool loop (P1-09, not yet implemented);
-      // legacySidecarPlanning on → legacy bridge sidecar; both off → retired.
-      if (req.method === "route.plan" || req.method === "browser.action.plan") {
-        const cfg = ctx.getConfig();
-        if (cfg.features.toolLoop) {
-          throw perr("proto.unsupported", `${req.method}: gateway toolLoop not implemented (P1-09)`);
-        }
-        if (!cfg.features.legacySidecarPlanning) {
-          throw perr("proto.unsupported", `${req.method} retired (flags: toolLoop=off, legacySidecarPlanning=off)`);
-        }
-        throw perr("proto.unsupported", `${req.method} served by legacy sidecar planning`);
+      // §10/P1: route.plan / browser.action.plan run natively on the
+      // codex provider — planning needs app-server access, which only
+      // the gateway owns (chromex-pwu). legacySidecarPlanning/toolLoop
+      // flags no longer gate these methods.
+      if (req.method === "route.plan") {
+        const p = parsePayload(routePlanSchema, req.payload) as unknown as AgenticRouteInput;
+        return codexPlanningProvider(ctx.registry).planRoute(p);
+      }
+      if (req.method === "browser.action.plan") {
+        const p = parsePayload(browserActionPlanSchema, req.payload) as unknown as {
+          message: string;
+          snapshot: BrowserDomSnapshot;
+          locale?: string;
+          generatedText?: string;
+        };
+        return codexPlanningProvider(ctx.registry).planBrowserAction(p);
       }
       if (LEGACY_SIDECAR_METHODS.has(req.method)) {
         // non-agent domains stay on the legacy bridge sidecar during

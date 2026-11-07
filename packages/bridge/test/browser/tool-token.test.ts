@@ -214,3 +214,127 @@ describe("BrowserToolServer", () => {
     expect(granted.size).toBe(0);
   });
 });
+
+describe("BrowserToolServer tab scope (chromex-9e3)", () => {
+  function makeScoped(opts: { result?: unknown; allowedTools?: string[] } = {}) {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token: token1 } = issue(tokens, {
+      allowedTools: opts.allowedTools ?? ["browser.page.snapshot", "browser.page.click", "browser.page.navigate", "browser.tab.close"],
+    });
+    const { token: token2 } = issue(tokens, {
+      taskId: "task-2",
+      allowedTools: opts.allowedTools ?? ["browser.page.snapshot", "browser.page.click", "browser.page.navigate", "browser.tab.close"],
+    });
+    const sent: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async (method, payload) => {
+        sent.push({ method, payload: payload as Record<string, unknown> });
+        return opts.result ?? { ok: true, resolvedTabId: 7 };
+      },
+      onDisconnect: () => {},
+    };
+    const approvals: string[] = [];
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async (tctx) => {
+        approvals.push(tctx.tool);
+        return { verdict: "approved" as const };
+      },
+      now: () => NOW,
+    });
+    return { server, token1, token2, sent, approvals };
+  }
+
+  const call = (
+    server: BrowserToolServer,
+    token: string,
+    over: Partial<Parameters<BrowserToolServer["execute"]>[0]> = {},
+  ) =>
+    server.execute({
+      toolCallId: `tc-${Math.random().toString(36).slice(2)}`,
+      taskId: "task-1",
+      profileId: "profile-1",
+      tool: "browser.page.snapshot",
+      args: {},
+      token,
+      ...over,
+    });
+
+  it("first successful call binds the host-resolved tab; scope rides the request payload", async () => {
+    const { server, token1, sent } = makeScoped();
+    const first = await call(server, token1);
+    expect(first.status).toBe("completed");
+    expect(sent[0]!.payload.tabScope).toEqual({ boundTabId: null, allowedTabIds: [], foreignTabIds: [] });
+    // second call on the bound tab → payload now carries the scope
+    const second = await call(server, token1, { args: { tabId: 7 } });
+    expect(second.status).toBe("completed");
+    expect(sent[1]!.payload.tabScope).toMatchObject({ boundTabId: 7, allowedTabIds: [7] });
+  });
+
+  it("cross-task tab access → browser.not_in_scope before dispatch or approval", async () => {
+    const { server, token1, token2, sent, approvals } = makeScoped();
+    await call(server, token1); // task-1 binds tab 7
+    const denied = await call(server, token2, {
+      taskId: "task-2",
+      token: token2,
+      tool: "browser.page.click",
+      args: { ref: "e1", tabId: 7 },
+    });
+    expect(denied.status).toBe("failed");
+    expect(denied.error?.code).toBe("browser.not_in_scope");
+    expect(sent).toHaveLength(1); // never dispatched
+    expect(approvals).toHaveLength(0); // scope denial is terminal, pre-approval
+  });
+
+  it("same-task in-scope tab is allowed", async () => {
+    const { server, token1 } = makeScoped();
+    await call(server, token1);
+    const ok = await call(server, token1, { args: { tabId: 7 } });
+    expect(ok.status).toBe("completed");
+  });
+
+  it("tab outside a bound task's scope → browser.not_in_scope", async () => {
+    const { server, token1, sent } = makeScoped();
+    await call(server, token1); // binds 7
+    const denied = await call(server, token1, { args: { tabId: 42 } });
+    expect(denied.error?.code).toBe("browser.not_in_scope");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("navigate-reported new tab is acquired into the task's scope", async () => {
+    const { server, token1, sent } = makeScoped({
+      result: { ok: true, resolvedTabId: 7, openedTabId: 9 },
+    });
+    await call(server, token1, { tool: "browser.page.navigate", args: { url: "https://example.com" } });
+    const acquired = await call(server, token1, { args: { tabId: 9 } });
+    expect(acquired.status).toBe("completed");
+    expect(sent[1]!.payload.tabScope).toMatchObject({ allowedTabIds: expect.arrayContaining([7, 9]) });
+  });
+
+  it("acquired tab stays foreign to other tasks", async () => {
+    const { server, token1, token2, sent } = makeScoped({
+      result: { ok: true, resolvedTabId: 7, openedTabId: 9 },
+    });
+    await call(server, token1, { tool: "browser.page.navigate", args: { url: "https://example.com" } });
+    const denied = await call(server, token2, {
+      taskId: "task-2",
+      token: token2,
+      args: { tabId: 9 },
+    });
+    expect(denied.error?.code).toBe("browser.not_in_scope");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("browser.tab.close releases the tab so another task may bind it", async () => {
+    const { server, token1, token2 } = makeScoped({
+      result: { closed: 7, resolvedTabId: 7 },
+    });
+    await call(server, token1); // binds 7 — but result is a close shape; still binds via resolvedTabId
+    const closed = await call(server, token1, { tool: "browser.tab.close", args: { tabId: 7 } });
+    expect(closed.status).toBe("completed");
+    const rebound = await call(server, token2, { taskId: "task-2", token: token2, args: { tabId: 7 } });
+    expect(rebound.status).toBe("completed");
+  });
+});

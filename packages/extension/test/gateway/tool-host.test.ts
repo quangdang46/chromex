@@ -204,3 +204,129 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.screenshot"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 });
+
+describe("tool host tab scope (chromex-9e3)", () => {
+  const scopedReq = (
+    tool: string,
+    args: Record<string, unknown> = {},
+    tabScope: Record<string, unknown>,
+    taskId = "t1",
+  ) => ({ toolCallId: "tc1", taskId, tool, args, tabScope });
+
+  test("in-scope tab allowed; tab outside allowed set → browser.not_in_scope", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [8] };
+    const res = (await h(scopedReq("browser.page.get", { tabId: 7 }, scope))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(7);
+    await expect(h(scopedReq("browser.page.get", { tabId: 8 }, scope))).rejects.toMatchObject({
+      code: "browser.not_in_scope",
+    });
+    await expect(h(scopedReq("browser.page.get", { tabId: 9 }, scope))).rejects.toMatchObject({
+      code: "browser.not_in_scope",
+    });
+  });
+
+  test("unbound task cannot bind a foreign-owned tab, but may bind a free one", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: null, allowedTabIds: [], foreignTabIds: [7] };
+    await expect(h(scopedReq("browser.page.get", { tabId: 7 }, scope))).rejects.toMatchObject({
+      code: "browser.not_in_scope",
+    });
+    const res = (await h(scopedReq("browser.page.get", { tabId: 9 }, scope))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(9);
+    expect(d.sent).toHaveLength(0); // page.get uses getTab, not sendToTab
+  });
+
+  test("bound task defaults to its bound tab, not the active tab", async () => {
+    const d = deps({ activeTabId: vi.fn(async () => 7) });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 9, allowedTabIds: [9], foreignTabIds: [] };
+    const res = (await h(scopedReq("browser.page.snapshot", {}, scope))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(9);
+    expect(d.sent[0].tabId).toBe(9);
+  });
+
+  test("unbound task falls back to active tab and reports resolvedTabId for binding", async () => {
+    const d = deps({ activeTabId: vi.fn(async () => 7) });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: null, allowedTabIds: [], foreignTabIds: [] };
+    const res = (await h(scopedReq("browser.page.snapshot", {}, scope))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(7);
+    expect(d.sent[0].tabId).toBe(7);
+  });
+
+  test("snapshot is bound to (taskId, tabId): cross-task snapshotId → browser.not_in_scope", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async (tabId: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.snapshot") {
+          return {
+            snapshotId: "snap:cross-task",
+            structuralFingerprint: "sfp1:ct",
+            stateFingerprint: "tfp1:ct",
+            saltEpoch: 1,
+            elements: [{ ref: "e1" }],
+          };
+        }
+        return { ok: true, results: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    await h(scopedReq("browser.page.snapshot", {}, scope, "task-a"));
+    // same tab, different task → snapshot must not resolve
+    await expect(
+      h(scopedReq("browser.page.click", { ref: "e1", snapshotId: "snap:cross-task" }, scope, "task-b")),
+    ).rejects.toMatchObject({ code: "browser.not_in_scope" });
+    // owning task still resolves it
+    await h(scopedReq("browser.page.click", { ref: "e1", snapshotId: "snap:cross-task" }, scope, "task-a"));
+  });
+
+  test("tabs.list hides tabs owned by other tasks", async () => {
+    const d = deps({
+      queryTabs: vi.fn(async () => [
+        { id: 7, url: "https://a.example", title: "A", active: true, windowId: 1 },
+        { id: 8, url: "https://b.example", title: "B", active: false, windowId: 1 },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [8] };
+    const res = (await h(scopedReq("browser.tabs.list", {}, scope))) as { tabs: Array<{ id: number }> };
+    expect(res.tabs.map((t) => t.id)).toEqual([7]);
+  });
+
+  test("requests without tabScope keep legacy behavior (no scope enforcement)", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.snapshot", { tabId: 42 }))) as { resolvedTabId: number };
+    expect(res.resolvedTabId).toBe(42);
+    expect(d.sent[0].tabId).toBe(42);
+  });
+});
+
+describe("tool host error surfacing (§7.3 residual)", () => {
+  test("content-reported browser.* failure codes reach the caller unchanged", async () => {
+    // browser.ambiguous_target has no producer yet (element/tab resolution
+    // is first-match today), but IF the content layer reports it the code
+    // must survive the tool-host → tool-caller boundary intact.
+    const d = deps({
+      sendToTab: vi.fn(async () => ({
+        ok: false,
+        summary: "failed",
+        results: [
+          {
+            step: { action: "click" },
+            ok: false,
+            code: "browser.ambiguous_target",
+            message: "2 elements match the selector",
+          },
+        ],
+      })),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.click", { selector: ".btn" }))).rejects.toMatchObject({
+      code: "browser.ambiguous_target",
+    });
+  });
+});

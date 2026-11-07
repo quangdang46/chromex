@@ -9,15 +9,22 @@
  */
 
 import type {
+  AgenticRouteInput,
+  AgenticRoutePlan,
   AgentProvider,
   AgentSession,
   AgentSessionConfig,
+  BrowserDomActionPlan,
+  BrowserDomSnapshot,
   FetchCatalogOptions,
   LaunchContext,
   ProviderCatalog,
 } from "@codex-sidepanel/shared";
 
+import { CodexAgenticRouterPlane } from "../../../agentic-router.js";
+import { CodexBrowserActionPlane } from "../../../browser-actions.js";
 import { CodexAppServerClient } from "../../../codex-app-server.js";
+import { BridgeHarnessRuntime } from "../../../harness.js";
 import { CODEX_CAPABILITIES, CodexAgentSession } from "./session.js";
 import { invokeCodexFeature } from "./features.js";
 
@@ -53,6 +60,9 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly secrets: CodexProviderSecrets | null;
   private readonly externalSkillRoots: (() => Promise<string[]>) | null;
   private sessionCounter = 0;
+  private routePlane?: CodexAgenticRouterPlane;
+  private browserActionPlane?: CodexBrowserActionPlane;
+  private planningHarness?: BridgeHarnessRuntime;
 
   constructor(options: CodexProviderOptions = {}) {
     // experimentalApi matches the legacy sidecar client (cli.ts,
@@ -169,6 +179,39 @@ export class CodexAgentProvider implements AgentProvider {
       { ...config, provider: "codex", resume: { persistence: handle } },
       ctx,
     );
+  }
+
+  /**
+   * route.plan — agentic pre-prompt routing. Runs on the provider's shared
+   * app-server client (ephemeral planner threads, same runtime as
+   * sessions). BridgeEvents are dropped: the gateway response carries the
+   * plan, and gatewayMode clients do not consume legacy route events.
+   */
+  async planRoute(input: AgenticRouteInput): Promise<AgenticRoutePlan> {
+    this.routePlane ??= new CodexAgenticRouterPlane({
+      client: this.client,
+      harness: this.planningRuntime(),
+    });
+    return this.routePlane.plan(input, () => undefined);
+  }
+
+  /** browser.action.plan — DOM action planner on the same shared runtime. */
+  async planBrowserAction(params: {
+    message: string;
+    snapshot: BrowserDomSnapshot;
+    locale?: string;
+    generatedText?: string;
+  }): Promise<BrowserDomActionPlan> {
+    this.browserActionPlane ??= new CodexBrowserActionPlane({
+      client: this.client,
+      harness: this.planningRuntime(),
+    });
+    return this.browserActionPlane.plan(params, () => undefined);
+  }
+
+  private planningRuntime(): BridgeHarnessRuntime {
+    this.planningHarness ??= new BridgeHarnessRuntime();
+    return this.planningHarness;
   }
 
   /**

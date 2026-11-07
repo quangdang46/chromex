@@ -126,3 +126,29 @@ export const artifactUploadSchema = z.object({
   /** base64 payload — decoded cap enforced in handler (artifact.too_large) */
   dataBase64: z.string().min(1),
 });
+
+/**
+ * route.plan / browser.action.plan — legacy pre-prompt planning payloads.
+ * The planner consumes the full AgenticRouteInput / DOM snapshot; schemas
+ * pin the fields the normalizers dereference and pass the rest through.
+ */
+export const routePlanSchema = z
+  .object({
+    message: z.string(),
+    selectedProfileId: z.string(),
+    selectedModel: z.string(),
+    models: z.array(z.record(z.string(), z.unknown())),
+    readStrategyOverride: z.string(),
+    explicitAttachments: z.array(z.string()),
+    fileAttachments: z.array(z.record(z.string(), z.unknown())),
+  })
+  .passthrough();
+
+export const browserActionPlanSchema = z
+  .object({
+    message: z.string(),
+    snapshot: z.record(z.string(), z.unknown()),
+    locale: z.string().optional(),
+    generatedText: z.string().optional(),
+  })
+  .passthrough();

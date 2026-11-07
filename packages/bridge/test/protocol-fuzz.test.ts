@@ -586,11 +586,14 @@ describe("gateway dispatch — typed errors", () => {
     }
   });
 
-  test("retired legacy methods → proto.unsupported (not unknown_method)", async () => {
+  test("planning methods validate payloads → proto.invalid (chromex-pwu)", async () => {
     const s = await authedConn();
     try {
       await expect(rpc(s, "r1", "route.plan", {})).rejects.toMatchObject({
-        code: "proto.unsupported",
+        code: "proto.invalid",
+      });
+      await expect(rpc(s, "r2", "browser.action.plan", {})).rejects.toMatchObject({
+        code: "proto.invalid",
       });
     } finally {
       s.destroy();
