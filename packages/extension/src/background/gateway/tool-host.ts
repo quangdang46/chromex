@@ -1055,11 +1055,15 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
       if (clickCount !== undefined && clickCount !== 1 && clickCount !== 2) {
         throw toolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
       }
+      const clickModifiers = Array.isArray(args.modifiers)
+        ? args.modifiers.filter((m): m is string => typeof m === "string")
+        : undefined;
       return {
         ...base,
         action: "click",
         ...(button && button !== "left" ? { button } : {}),
         ...(clickCount === 2 ? { clickCount: 2 } : {}),
+        ...(clickModifiers && clickModifiers.length > 0 ? { modifiers: clickModifiers } : {}),
       };
     }
     case "browser.page.focus":

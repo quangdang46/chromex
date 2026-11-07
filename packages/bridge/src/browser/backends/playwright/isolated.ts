@@ -462,11 +462,26 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         if (clickCount !== 1 && clickCount !== 2) {
           throw protocolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
         }
+        const clickMods = Array.isArray(args.modifiers)
+          ? args.modifiers
+              .filter((m): m is string => typeof m === "string")
+              .map((m) => {
+                const lower = m.toLowerCase();
+                return lower === "control" || lower === "alt" || lower === "shift" || lower === "meta"
+                  ? (m[0]!.toUpperCase() + m.slice(1).toLowerCase() as "Alt" | "Control" | "Meta" | "Shift")
+                  : null;
+              })
+              .filter((m): m is "Alt" | "Control" | "Meta" | "Shift" => m !== null)
+          : undefined;
         if (clickCount === 2) {
-          await locator.dblclick({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+          await locator.dblclick({ timeout: DEFAULT_NAV_TIMEOUT_MS, ...(clickMods?.length ? { modifiers: clickMods } : {}) });
           return { clicked: true, clickCount: 2 };
         }
-        await locator.click({ button: button as "left" | "right" | "middle", timeout: DEFAULT_NAV_TIMEOUT_MS });
+        await locator.click({
+          button: button as "left" | "right" | "middle",
+          timeout: DEFAULT_NAV_TIMEOUT_MS,
+          ...(clickMods?.length ? { modifiers: clickMods } : {}),
+        });
         return { clicked: true };
       }
       case "browser.page.focus":

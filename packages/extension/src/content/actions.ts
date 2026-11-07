@@ -312,14 +312,15 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         // buttons) never see the action. .click() itself still runs so
         // default activation (checkbox toggle, label forwarding,
         // overridden click() methods) keeps working exactly once.
+        const clickModifiers = Array.isArray(step.modifiers) ? step.modifiers : undefined;
         dispatchHoverSequence(element);
-        dispatchClickSequence(element);
+        dispatchClickSequence(element, clickModifiers);
         element.click();
         const clickCount = typeof step.clickCount === "number" ? step.clickCount : 1;
         if (clickCount === 2) {
           // Second full sequence then the dblclick event — same order
           // the browser produces (click, click, dblclick).
-          dispatchClickSequence(element);
+          dispatchClickSequence(element, clickModifiers);
           element.click();
           const rect = element.getBoundingClientRect();
           element.dispatchEvent(
@@ -644,11 +645,19 @@ export function dispatchHoverSequence(element: HTMLElement): void {
  * trusted-gesture checks (popup blockers, some payment buttons) still
  * refuse; JS listeners see the full sequence.
  */
-export function dispatchClickSequence(element: HTMLElement): void {
+export function dispatchClickSequence(element: HTMLElement, modifiers?: readonly string[]): void {
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
+  const common = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    view: window,
+    button: 0,
+    ...pressModifierInit(modifiers),
+  };
   element.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mousedown", common));
   element.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));

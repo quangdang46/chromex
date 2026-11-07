@@ -297,6 +297,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ...ELEMENT_TARGET_WITH_TAB,
       button: { type: "string", enum: ["left", "right", "middle"], description: "Mouse button (default left)." },
       clickCount: { type: "integer", enum: [1, 2], description: "1 (default) or 2 for a double-click." },
+      modifiers: {
+        type: "array",
+        items: { type: "string" },
+        description: "Modifier keys held during the click: 'control', 'alt', 'shift', 'meta' (e.g. ctrl/cmd+click opens links in a new tab).",
+      },
     }),
     expectable: true,
   },
