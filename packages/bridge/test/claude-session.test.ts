@@ -365,6 +365,51 @@ describe("ClaudeAgentSession", () => {
   });
 });
 
+describe("ClaudeAgentProvider lifecycle (P3-02)", () => {
+  test("isAvailable false for missing binary, true for resolvable one", async () => {
+    const missing = new ClaudeAgentProvider({ command: "/nonexistent/claude-bin" });
+    expect((await missing.isAvailable()).available).toBe(false);
+    const ok = new ClaudeAgentProvider({ command: "/usr/bin/true" });
+    // /usr/bin/true ignores args and exits 0 → available (version empty)
+    expect((await ok.isAvailable()).available).toBe(true);
+  });
+
+  test("resumeSession produces a claude session wired to the handle", async () => {
+    const provider = new ClaudeAgentProvider({ command: "/usr/bin/true" });
+    const session = await provider.resumeSession(
+      { provider: "claude", ref: "sess-old", kind: "session" },
+      { provider: "claude" },
+      { cwd: "/tmp" },
+    );
+    expect(session.provider).toBe("claude");
+    // query is lazy — no SDK process spawned until startTurn
+    await session.close();
+  });
+
+  test("stale resume / provider error → turn.failed (not hung)", async () => {
+    const { session } = makeSession((_uuid, q) => {
+      q.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        session_id: "sess-fake",
+        user_message_uuid: q.lastUuid,
+        errors: ["No conversation found with session ID"],
+      });
+    });
+    const { events } = collect(session);
+    await session.startTurn(INPUT as never);
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.type === "turn.failed")).toBe(true);
+    });
+    const failed = events.find((e) => e.type === "turn.failed") as {
+      error?: { message?: string };
+    };
+    expect(String(failed.error?.message)).toContain("No conversation found");
+    await session.close();
+  });
+});
+
 describe("ClaudeAgentSession conformance (GateB-B1)", () => {
   runAgentSessionConformance("claude", async () => {
     const { session } = makeSession(autoComplete);
