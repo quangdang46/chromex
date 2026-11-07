@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   mcpScopePath,
   readMcpScopeFile,
+  supportedToolsForBackend,
   updateMcpScopeToken,
   writeMcpScopeFile,
 } from "../../src/browser/mcp-scope.js";
+import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
 
 let dir: string;
 beforeEach(async () => { dir = await fs.mkdtemp(path.join(os.tmpdir(), "chromex-mcpscope-")); });
@@ -49,5 +51,30 @@ describe("mcp scope files", () => {
     const file = await writeMcpScopeFile(dir, { ...base, taskId: "a/b:c" });
     expect(path.basename(file)).toBe("a_b_c.json");
     expect((await readMcpScopeFile(file))?.taskId).toBe("a/b:c");
+  });
+
+  test("scope file carries the backend's supported tools (chromex-51ua)", async () => {
+    const allowedTools = supportedToolsForBackend("playwright-isolated");
+    const file = await writeMcpScopeFile(dir, { ...base, backendId: "playwright-isolated", allowedTools });
+    const read = await readMcpScopeFile(file);
+    expect(read?.allowedTools).toEqual(allowedTools);
+    expect(read?.allowedTools).not.toContain("browser.downloads.list");
+  });
+});
+
+describe("supportedToolsForBackend (chromex-51ua)", () => {
+  test("chrome-extension advertises the full contract", () => {
+    expect(supportedToolsForBackend("chrome-extension")).toEqual([...BROWSER_TOOL_NAMES]);
+  });
+
+  test("playwright-isolated omits tools it cannot execute", () => {
+    const tools = supportedToolsForBackend("playwright-isolated");
+    expect(tools).not.toContain("browser.downloads.list");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 1);
+    for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
+  });
+
+  test("playwright-cdp has no executor — advertises nothing", () => {
+    expect(supportedToolsForBackend("playwright-cdp")).toEqual([]);
   });
 });

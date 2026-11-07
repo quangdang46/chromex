@@ -29,8 +29,10 @@ const MODULE_REQUIRE = createRequire(
 );
 
 /** Tools this backend can execute honestly. Everything else returns
- *  proto.unsupported — never faked. */
-const SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
+ *  proto.unsupported — never faked. Exported so the Gateway can write
+ *  the same set into MCP scope files/tokens (chromex-51ua): tools/list
+ *  must advertise exactly what execute() will serve. */
+export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.tabs.list",
   "browser.tab.activate",
   "browser.tab.close",
@@ -82,7 +84,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   readonly id = "playwright-isolated" as const;
   readonly capabilities: BrowserBackendCapabilities =
     DEFAULT_BACKEND_CAPABILITIES["playwright-isolated"];
-  readonly supportedTools = [...SUPPORTED_TOOLS];
+  readonly supportedTools = [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS];
 
   readonly #opts: IsolatedBackendOptions;
   #pw: PwModule | null = null;
@@ -158,7 +160,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Execute a browser tool on the isolated backend. Throws
    *  ProtocolError-coded failures; returns the tool result payload. */
   async execute(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {
-    if (!SUPPORTED_TOOLS.has(tool)) {
+    if (!PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS.has(tool)) {
       throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
     switch (tool) {

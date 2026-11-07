@@ -2,7 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
 
-import { PlaywrightIsolatedBackend } from "../../src/browser/backends/playwright/isolated.js";
+import {
+  PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS,
+  PlaywrightIsolatedBackend,
+} from "../../src/browser/backends/playwright/isolated.js";
 
 describe("PlaywrightIsolatedBackend", () => {
   test("absent playwright-core → browser.backend_unavailable (lazy, honest)", async () => {
@@ -57,6 +60,13 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
     for (const tool of backend.supportedTools) {
       expect(BROWSER_TOOL_NAMES).toContain(tool);
     }
+  });
+
+  test("exported PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS matches the instance getter (chromex-51ua)", () => {
+    const backend = new PlaywrightIsolatedBackend();
+    expect([...backend.supportedTools].sort()).toEqual(
+      [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS].sort(),
+    );
   });
 
   test("every contract tool the backend does not claim → proto.unsupported, playwright never loaded", async () => {

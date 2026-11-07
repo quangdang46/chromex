@@ -464,6 +464,16 @@ export class BrowserMcpServer {
     if (!internal) {
       return this.#toolError(msg.id ?? null, `unknown tool: ${name}`);
     }
+    // chromex-51ua: the scope file's allowedTools is the backend-honest
+    // set written at spawn. A valid tool the backend cannot serve fails
+    // here — before the call reaches the tool server/host — with the
+    // same proto.unsupported the backend itself would return.
+    if (!this.#deps.allowedTools.has(internal) && !this.#deps.allowedTools.has(name)) {
+      return this.#toolError(
+        msg.id ?? null,
+        `proto.unsupported: ${this.#deps.scope.backendId} does not support ${internal}`,
+      );
+    }
     const toolCallId = `mcp-${this.#nextId++}-${Date.now()}`;
     const req: ToolCallRequest = {
       toolCallId,

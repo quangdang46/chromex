@@ -12,7 +12,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { BrowserBackendId } from "@codex-sidepanel/shared";
+import {
+  BROWSER_TOOL_NAMES,
+  type BrowserBackendId,
+  type BrowserToolName,
+} from "@codex-sidepanel/shared";
+
+import { PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS } from "./backends/playwright/isolated.js";
 
 export interface McpScopeFile {
   taskId: string;
@@ -26,6 +32,28 @@ export interface McpScopeFile {
   /** path to <dataDir>/auth/token (0600) for the IPC hello */
   gatewayTokenFile: string;
   writtenAt: number;
+}
+
+/**
+ * Honest per-backend tool advertisement (chromex-51ua). The scope
+ * file's `allowedTools` — mirrored into the signed token — must list
+ * exactly what the pinned backend can execute, so tools/list never
+ * advertises a tool that fails proto.unsupported at call time:
+ *  - chrome-extension: tool-host implements every BrowserToolName.
+ *  - playwright-isolated: PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS — the
+ *    same set execute() enforces.
+ *  - playwright-cdp: research backlog, no executor in the bridge —
+ *    advertises nothing rather than tools that cannot run.
+ */
+export function supportedToolsForBackend(backendId: BrowserBackendId): BrowserToolName[] {
+  switch (backendId) {
+    case "chrome-extension":
+      return [...BROWSER_TOOL_NAMES];
+    case "playwright-isolated":
+      return [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS];
+    case "playwright-cdp":
+      return [];
+  }
 }
 
 export function mcpScopeDir(dataDir: string): string {

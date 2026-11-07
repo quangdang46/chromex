@@ -116,9 +116,26 @@ describe("BrowserMcpServer (P1-09 §9.3)", () => {
     const denied = JSON.parse(
       (await server.handleLine(rpc(5, "tools/call", { name: "browser_page_fill", arguments: {} })))!,
     ) as { result: { isError: boolean; content: Array<{ text: string }> } };
-    // browser_page_fill IS a valid internal name; server.execute will
-    // reject via token scope (allowedTools) — surfaced as isError.
+    // browser_page_fill IS a valid internal name but outside the
+    // scope's allowedTools — rejected in-process as proto.unsupported.
     expect(denied.result.isError).toBe(true);
+  });
+
+  it("backend-filtered tool call → proto.unsupported BEFORE reaching execute (chromex-51ua)", async () => {
+    const { server, calls } = setup(["browser.page.snapshot"]);
+    const resp = JSON.parse(
+      (await server.handleLine(rpc(6, "tools/call", { name: "browser_downloads_list", arguments: {} })))!,
+    ) as { result: { isError: boolean; content: Array<{ text: string }> } };
+    expect(resp.result.isError).toBe(true);
+    expect(resp.result.content[0].text).toContain("proto.unsupported");
+    expect(resp.result.content[0].text).toContain("browser.downloads.list");
+    // the tool server was never invoked — filtering happens in-process
+    expect(calls).toHaveLength(0);
+    // tools/list agrees: the filtered tool is not advertised
+    const list = JSON.parse((await server.handleLine(rpc(7, "tools/list")))!) as {
+      result: { tools: Array<{ name: string }> };
+    };
+    expect(list.result.tools.map((t) => t.name)).toEqual(["browser_page_snapshot"]);
   });
 
   it("fences page-derived results as untrusted data (prompt-injection defense)", async () => {
