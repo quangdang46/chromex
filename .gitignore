@@ -24,6 +24,7 @@ docs/
 docs/*
 !docs/adr/
 !docs/adr/**
+!docs/gate-c.md
 !docs/pages/
 docs/pages/*
 !docs/pages/.nojekyll
