@@ -112,6 +112,7 @@ import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
 import {
   isRecoverableModelCatalogAuthError,
+  mergeCustomCatalogModels,
   recoverModelCatalogAfterAuthError,
   normalizeCatalogWorkspaceRoot,
   resolveCatalogModelState,
@@ -4559,7 +4560,10 @@ async function refreshAppServerCatalog(
     bridge.request<CodexRateLimits | null>("account.rate_limits.read").catch(() => null),
   ]);
 
-  state.models = models;
+  state.models =
+    state.selectedProviderId === "codex"
+      ? mergeCustomCatalogModels(models, catalogSettings?.customModels ?? [])
+      : models;
   state.serverThreads = serverThreads;
   state.appServerSkills = appServerSkills;
   state.connectedApps = connectedApps;
@@ -4948,6 +4952,8 @@ async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<
       nextWorkspaceRoot: settings.workspaceRoot,
       previousCodexBinPath: previousSettings.codexBinPath,
       nextCodexBinPath: settings.codexBinPath,
+      previousCustomModels: previousSettings.customModels,
+      nextCustomModels: settings.customModels,
     })
   ) {
     return settings;

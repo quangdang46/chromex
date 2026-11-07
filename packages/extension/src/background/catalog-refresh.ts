@@ -51,6 +51,8 @@ export interface CatalogAffectingSettingsInput {
   nextWorkspaceRoot: string | undefined;
   previousCodexBinPath: string | undefined;
   nextCodexBinPath: string | undefined;
+  previousCustomModels?: readonly string[];
+  nextCustomModels?: readonly string[];
 }
 
 export function normalizeCatalogWorkspaceRoot(workspaceRoot?: string): string {
@@ -84,7 +86,8 @@ export function shouldTriggerCatalogRefresh(input: CatalogRefreshDecisionInput):
 export function shouldRefreshCatalogAfterSettingsUpdate(input: CatalogAffectingSettingsInput): boolean {
   return (
     normalizeCatalogSettingsPath(input.previousWorkspaceRoot) !== normalizeCatalogSettingsPath(input.nextWorkspaceRoot) ||
-    normalizeCatalogSettingsPath(input.previousCodexBinPath) !== normalizeCatalogSettingsPath(input.nextCodexBinPath)
+    normalizeCatalogSettingsPath(input.previousCodexBinPath) !== normalizeCatalogSettingsPath(input.nextCodexBinPath) ||
+    (input.previousCustomModels ?? []).join("\n") !== (input.nextCustomModels ?? []).join("\n")
   );
 }
 
@@ -129,6 +132,33 @@ export function recoverModelCatalogAfterAuthError(input: {
     },
     ...FALLBACK_CODEX_MODELS.map((model) => ({ ...model, isDefault: false })),
   ];
+}
+
+export function mergeCustomCatalogModels(
+  models: CodexModelOption[],
+  customModelIds: readonly string[],
+): CodexModelOption[] {
+  const seen = new Set(models.map((model) => model.id));
+  const extras: CodexModelOption[] = [];
+  for (const rawId of customModelIds) {
+    const id = rawId.trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    extras.push({
+      id,
+      label: id,
+      description: "Custom model configured in extension settings.",
+      isDefault: false,
+      supportsImages: false,
+      reasoningEfforts: ["low", "medium", "high"],
+      defaultReasoningEffort: "medium",
+      supportsParallelToolCalls: true,
+      supportsSearchTool: false,
+    });
+  }
+  return extras.length ? [...models, ...extras] : models;
 }
 
 export function resolveSelectedCatalogModel(input: {

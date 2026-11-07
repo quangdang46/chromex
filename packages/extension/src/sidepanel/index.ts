@@ -934,6 +934,7 @@ const state = {
     enabledCodexSkillIds: [],
     autoCompactConversations: true,
     customSiteSuggestions: [],
+    customModels: [],
   } as ExtensionSettings,
   composerSelectionStart: 0,
   composerSelectionEnd: 0,

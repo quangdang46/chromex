@@ -230,6 +230,9 @@ export interface ExtensionSettings {
   enabledCodexSkillIds: string[];
   autoCompactConversations: boolean;
   customSiteSuggestions: CustomSiteSuggestion[];
+  /** extra Codex model ids merged into the catalog (e.g. models served by a
+   *  custom model_provider such as a local router) */
+  customModels: string[];
 }
 
 export interface CustomSiteSuggestion {

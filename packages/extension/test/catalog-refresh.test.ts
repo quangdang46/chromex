@@ -197,3 +197,23 @@ describe("catalog refresh decisions", () => {
     ).toBe("crest-alpha");
   });
 });
+
+describe("mergeCustomCatalogModels", () => {
+  test("appends custom model ids not already in the catalog", async () => {
+    const { mergeCustomCatalogModels } = await import("../src/background/catalog-refresh.js");
+    const merged = mergeCustomCatalogModels(
+      [{ id: "gpt-5.5", isDefault: true } as never],
+      ["xxx", "ocg/iceman-contributor-free", "xxx", "gpt-5.5", "  "],
+    );
+    expect(merged.map((m) => m.id)).toEqual(["gpt-5.5", "xxx", "ocg/iceman-contributor-free"]);
+    expect(merged[1]?.label).toBe("xxx");
+    expect(merged[1]?.isDefault).toBe(false);
+  });
+
+  test("returns the original array when there are no new custom ids", async () => {
+    const { mergeCustomCatalogModels } = await import("../src/background/catalog-refresh.js");
+    const models = [{ id: "gpt-5.5", isDefault: true } as never];
+    expect(mergeCustomCatalogModels(models, [])).toBe(models);
+    expect(mergeCustomCatalogModels(models, ["gpt-5.5"])).toBe(models);
+  });
+});

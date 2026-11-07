@@ -62,6 +62,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabledCodexSkillIds: [],
   autoCompactConversations: true,
   customSiteSuggestions: [],
+  customModels: [],
 };
 
 const CONVERSATION_KEYS = [STORAGE_KEYS.conversations, STORAGE_KEYS.currentConversationId] as const;
@@ -86,6 +87,7 @@ export async function getStoredSettings(): Promise<ExtensionSettings> {
     playwrightBrowserControlEnabled: settings.playwrightBrowserControlEnabled === true,
     enabledCodexSkillIds: normalizeEnabledCodexSkillIds(settings.enabledCodexSkillIds),
     customSiteSuggestions: normalizeCustomSiteSuggestions(settings.customSiteSuggestions),
+    customModels: normalizeCustomModels(settings.customModels),
   };
 }
 
@@ -116,12 +118,39 @@ export async function updateStoredSettings(patch: Partial<ExtensionSettings>): P
     customSiteSuggestions: normalizeCustomSiteSuggestions(
       patch.customSiteSuggestions ?? current.customSiteSuggestions,
     ),
+    customModels: normalizeCustomModels(patch.customModels ?? current.customModels),
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
   if (current.rememberChats !== next.rememberChats) {
     await migrateConversationRetention(next.rememberChats);
   }
   return next;
+}
+
+const MAX_CUSTOM_MODELS = 32;
+const CUSTOM_MODEL_ID_PATTERN = /^[\w.:/+-]{1,120}$/u;
+
+function normalizeCustomModels(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const id = item.trim();
+    if (!CUSTOM_MODEL_ID_PATTERN.test(id) || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    normalized.push(id);
+    if (normalized.length >= MAX_CUSTOM_MODELS) {
+      break;
+    }
+  }
+  return normalized;
 }
 
 function normalizeBrowserActionPermissionMode(value: unknown): BrowserActionPermissionMode {
