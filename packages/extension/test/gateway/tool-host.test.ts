@@ -105,13 +105,15 @@ describe("tool host (P1-09)", () => {
     d.discardTab = async (id) => { discarded.push(id); };
     const h = createToolHostHandler(d);
     const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
-    await h(scopedReq("browser.tab.update", { pinned: true, muted: true }, scope));
+    const sreq = (tool: string, args: Record<string, unknown> = {}) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool, args, tabScope: scope });
+    await h(sreq("browser.tab.update", { pinned: true, muted: true }));
     expect(updCalls).toEqual([[7, { pinned: true, muted: true }]]);
-    await h(scopedReq("browser.tab.discard", {}, scope));
+    await h(sreq("browser.tab.discard"));
     expect(discarded).toEqual([7]);
-    await expect(h(scopedReq("browser.tab.update", {}, scope))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(scopedReq("browser.tab.update", { pinned: "yes" }, scope))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(scopedReq("browser.tab.discard", { tabId: 99 }, scope))).rejects.toMatchObject({ code: "browser.not_in_scope" });
+    await expect(h(sreq("browser.tab.update"))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq("browser.tab.update", { pinned: "yes" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq("browser.tab.discard", { tabId: 99 }))).rejects.toMatchObject({ code: "browser.not_in_scope" });
   });
 
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {

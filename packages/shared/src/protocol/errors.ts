@@ -56,6 +56,7 @@ export type ProtocolErrorCode =
   | "browser.stale_snapshot"
   | "browser.stale_binding"
   | "browser.element_not_found"
+  | "browser.element_not_visible"
   | "browser.navigated"
   | "browser.timeout"
   | "browser.denied"
@@ -116,6 +117,9 @@ const CLASSIFICATION: Partial<Record<ProtocolErrorCode, ProtocolErrorClassificat
   "browser.stale_snapshot": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   // Detected before dispatch (re-resolve target / re-snapshot) — safe to retry.
   "browser.element_not_found": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
+  // Pointer-hit gate fires before dispatch — page may just be mid-render;
+  // wait/re-snapshot then retry is safe.
+  "browser.element_not_visible": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "browser.navigated": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "browser.timeout": { retryable: true, requiresUserAction: false, sideEffectState: "unknown" },
   // BEFORE dispatch: nothing was sent — safe to retry.

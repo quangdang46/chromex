@@ -327,6 +327,24 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       await waitForDomActionTick();
     }
 
+    // Pointer-hit fidelity: display:none / visibility:hidden / no-layout
+    // elements cannot be reached by a real mouse, but synthetic dispatch
+    // would still "succeed" — playwright refuses these via actionability.
+    // opacity:0 stays reachable (real pointers hit it). Form actions
+    // (fill/type/select/upload) are exempt — hidden inputs are legit.
+    if (
+      resolvedElement &&
+      (step.action === "click" || step.action === "hover" || step.action === "drag") &&
+      !isPointerReachableElement(resolvedElement)
+    ) {
+      return {
+        step,
+        ok: false,
+        code: "browser.element_not_visible",
+        message: "Target element is not visible — a real pointer could not reach it",
+      };
+    }
+
     // Every action reaching the switch below has a resolved element except
     // press, which uses actionTarget (explicit target or focused element).
     const element = resolvedElement as HTMLElement;
@@ -880,6 +898,24 @@ export function dispatchDragAtPoints(
   const endEl = at(tx, ty);
   endEl.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse", buttons: 0, clientX: tx, clientY: ty }));
   endEl.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0, clientX: tx, clientY: ty }));
+}
+
+/** Real-pointer reachability for hit-test actions (click/hover/drag).
+ *  display:none and visibility:hidden/collapse are unreachable; opacity:0
+ *  and off-viewport elements remain reachable — same rule a real mouse
+ *  follows. checkVisibility covers content-visibility skipped subtrees
+ *  on engines that support it; the manual fallback covers the rest. */
+export function isPointerReachableElement(element: HTMLElement): boolean {
+  if (typeof element.checkVisibility === "function") {
+    try {
+      return element.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true });
+    } catch {
+      // fall through to the manual check
+    }
+  }
+  if (element.getClientRects().length === 0) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse";
 }
 
 /**
