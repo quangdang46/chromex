@@ -112,3 +112,11 @@ export const configUpdateSchema = z.object({
 export const browserBackendSchema = z.object({
   backend: z.enum(["chrome-extension", "playwright-isolated", "playwright-cdp"]).optional(),
 });
+
+export const artifactUploadSchema = z.object({
+  taskId,
+  kind: z.string().min(1).max(64),
+  mimeType: z.string().min(1).max(128),
+  /** base64 payload — decoded cap enforced in handler (artifact.too_large) */
+  dataBase64: z.string().min(1),
+});

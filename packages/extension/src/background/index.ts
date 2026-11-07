@@ -225,6 +225,17 @@ setGatewayServerRequestHandler(
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
     },
+    captureVisibleTab: async (windowId) =>
+      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 70 }),
+    uploadArtifact: async (input) => {
+      const rt = await getGatewayRuntime();
+      if (!rt) throw new Error("gateway runtime unavailable");
+      return (await rt.request("artifact.upload", input)) as {
+        artifactRef: string;
+        sha256: string;
+        bytes: number;
+      };
+    },
   }),
 );
 

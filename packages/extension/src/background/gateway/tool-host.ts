@@ -20,6 +20,15 @@ import { SnapshotRegistry, urlOriginPath } from "@codex-sidepanel/shared";
 import type { BrowserDomActionResult, BrowserDomSnapshot } from "@codex-sidepanel/shared";
 
 export interface ToolHostDeps {
+  /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL */
+  captureVisibleTab?(windowId: number): Promise<string>;
+  /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
+  uploadArtifact?(input: {
+    taskId: string;
+    kind: string;
+    mimeType: string;
+    dataBase64: string;
+  }): Promise<{ artifactRef: string; sha256: string; bytes: number }>;
   /** chrome.tabs.sendMessage with content-script ensure (index.ts helper) */
   sendToTab(tabId: number, message: Record<string, unknown>): Promise<unknown>;
   getTab(tabId: number): Promise<chrome.tabs.Tab | undefined>;
@@ -50,6 +59,9 @@ const SUPPORTED = new Set([
   "browser.page.scroll",
   "browser.page.navigate",
   "browser.page.wait",
+  "browser.page.screenshot",
+  "browser.page.extract",
+  "browser.page.upload",
 ]);
 
 async function resolveTabId(deps: ToolHostDeps, args: Record<string, unknown>): Promise<number> {
@@ -168,6 +180,55 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const ms = Math.min(Math.max(typeof args.ms === "number" ? args.ms : 1000, 0), 30_000);
         await new Promise((r) => setTimeout(r, ms));
         return { waitedMs: ms };
+      }
+      case "browser.page.screenshot": {
+        if (!deps.captureVisibleTab) {
+          throw toolError("proto.unsupported", "screenshot capture is not available on this host");
+        }
+        const tabId = await resolveTabId(deps, args);
+        const tab = await deps.getTab(tabId);
+        if (typeof tab?.windowId !== "number") {
+          throw toolError("browser.no_tab", `tab ${tabId} has no window`);
+        }
+        const dataUrl = await deps.captureVisibleTab(tab.windowId);
+        const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(dataUrl);
+        if (!m) throw toolError("browser.action_failed", "captureVisibleTab returned unexpected format");
+        const mimeType = m[1]!;
+        const dataBase64 = m[2]!;
+        if (!deps.uploadArtifact) {
+          // no artifact channel → bounded inline fallback is NOT allowed
+          // for screenshots (egress risk) — fail honestly.
+          throw toolError("proto.unsupported", "artifact upload channel unavailable");
+        }
+        const art = await deps.uploadArtifact({
+          taskId: req.taskId ?? "",
+          kind: "screenshot",
+          mimeType,
+          dataBase64,
+        });
+        return { artifactRef: art.artifactRef, sha256: art.sha256, bytes: art.bytes, mimeType };
+      }
+      case "browser.page.extract": {
+        const tabId = await resolveTabId(deps, args);
+        const maxChars = typeof args.maxChars === "number" ? Math.min(args.maxChars, 50_000) : 12_000;
+        const res = (await deps.sendToTab(tabId, {
+          type: "page.extract",
+          maxChars,
+        })) as { text?: string; truncated?: boolean; url?: string; title?: string };
+        return {
+          text: res.text ?? "",
+          truncated: res.truncated === true,
+          url: res.url ?? "",
+          title: res.title ?? "",
+        };
+      }
+      case "browser.page.upload": {
+        // §6.8: DOM file pickers need a REAL user gesture — synthetic
+        // clicks cannot satisfy file inputs. Honest refusal, never fake.
+        throw toolError(
+          "browser.gesture_required",
+          "file upload requires a real user gesture; ask the user to attach the file in the page",
+        );
       }
       default: {
         // DOM action tools → single page.dom.perform step

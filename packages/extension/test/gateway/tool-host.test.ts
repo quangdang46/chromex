@@ -91,7 +91,7 @@ describe("tool host (P1-09)", () => {
 
   test("unimplemented tools reject proto.unsupported — never fake", async () => {
     const h = createToolHostHandler(deps());
-    for (const tool of ["browser.page.evaluate", "browser.page.screenshot", "browser.page.extract", "browser.page.upload"]) {
+    for (const tool of ["browser.page.evaluate", "browser.page.cookies", "browser.page.localStorage", "browser.page.download"]) {
       await expect(h(req(tool))).rejects.toMatchObject({ code: "proto.unsupported" });
     }
   });
@@ -156,5 +156,51 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "browser.stale_snapshot" });
     // newest snapshot still valid
     await h(req("browser.page.click", { ref: "e1", snapshotId: "snap:sfp1:changed" }));
+  });
+
+  test("page.extract forwards bounded maxChars to content", async () => {
+    const d = deps({
+      sendToTab: vi.fn(async () => ({ text: "hello", truncated: false, url: "https://x", title: "X" })),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.extract", { maxChars: 100 }))) as { text: string };
+    expect(res.text).toBe("hello");
+    expect((d.sendToTab as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({
+      type: "page.extract",
+      maxChars: 100,
+    });
+  });
+
+  test("page.upload → browser.gesture_required, never faked", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.upload", { ref: "e1" }))).rejects.toMatchObject({
+      code: "browser.gesture_required",
+    });
+  });
+
+  test("page.screenshot captures + uploads artifact", async () => {
+    const uploads: unknown[] = [];
+    const d = deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true })),
+      captureVisibleTab: vi.fn(async () => "data:image/jpeg;base64,QUJD"),
+      uploadArtifact: vi.fn(async (input: unknown) => {
+        uploads.push(input);
+        return { artifactRef: "artifact:art-1", sha256: "abc", bytes: 3 };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.screenshot"))) as { artifactRef: string; mimeType: string };
+    expect(res.artifactRef).toBe("artifact:art-1");
+    expect(res.mimeType).toBe("image/jpeg");
+    expect(uploads[0]).toMatchObject({ kind: "screenshot", mimeType: "image/jpeg", dataBase64: "QUJD" });
+  });
+
+  test("page.screenshot without artifact channel → proto.unsupported (no inline leak)", async () => {
+    const d = deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true })),
+      captureVisibleTab: vi.fn(async () => "data:image/jpeg;base64,QUJD"),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.screenshot"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 });

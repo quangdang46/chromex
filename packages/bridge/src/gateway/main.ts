@@ -10,6 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import { z } from "zod";
 import { LEGACY_COMPAT, LEGACY_SIDECAR_METHODS } from "./compat.js";
 import { loadGatewayConfig, updateGatewayConfig, type GatewayConfig } from "./config.js";
 import { SnapshotChunkStore } from "./chunks.js";
+import { ulid } from "./ulid.js";
 import {
   browserBackendSchema,
   configReadSchema,
@@ -28,6 +30,7 @@ import {
   gatewaySyncSchema,
   permissionRespondSchema,
   providerCatalogSchema,
+  artifactUploadSchema,
   taskCreateSchema,
   taskIdSchema,
   browserToolCallSchema,
@@ -768,6 +771,44 @@ async function handleGatewayRequest(
         );
       }
       return result;
+    }
+    case "artifact.upload": {
+      const p = parsePayload(artifactUploadSchema, req.payload) as z.infer<typeof artifactUploadSchema>;
+      const task = ctx.store.getTask(p.taskId);
+      if (!task) throw perr("task.not_found", `task ${p.taskId} not found`);
+      // §4.1: bounded artifacts — 512KiB decoded max per upload.
+      const MAX_B64 = 720_000;
+      if (p.dataBase64.length > MAX_B64) {
+        throw perr("artifact.too_large", `artifact exceeds ${MAX_B64} base64 chars`);
+      }
+      const buf = Buffer.from(p.dataBase64, "base64");
+      if (buf.length > 512 * 1024) {
+        throw perr("artifact.too_large", "artifact exceeds 512KiB decoded");
+      }
+      const sha256 = createHash("sha256").update(buf).digest("hex");
+      const artifactId = `art-${ulid()}`;
+      const ext = p.mimeType.includes("jpeg") ? "jpg" : p.mimeType.includes("png") ? "png" : "bin";
+      const dir = path.join(ctx.dataDir, "artifacts");
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = path.join(dir, `${artifactId}.${ext}`);
+      await fs.writeFile(filePath, buf);
+      const storeAny = ctx.store as {
+        insertArtifact?: (r: {
+          artifactId: string; taskId: string; kind: string; sha256: string;
+          path: string; mime?: string; bytes?: number; createdAt: number;
+        }) => void;
+      };
+      storeAny.insertArtifact?.({
+        artifactId,
+        taskId: p.taskId,
+        kind: p.kind,
+        sha256,
+        path: filePath,
+        mime: p.mimeType,
+        bytes: buf.length,
+        createdAt: Date.now(),
+      });
+      return { artifactRef: `artifact:${artifactId}`, sha256, bytes: buf.length, mimeType: p.mimeType };
     }
     case "browser.tool.call": {
       const p = parsePayload(browserToolCallSchema, req.payload) as z.infer<typeof browserToolCallSchema>;

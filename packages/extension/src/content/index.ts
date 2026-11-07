@@ -177,6 +177,18 @@ function chromexRuntimeMessageListener(
     return false;
   }
 
+  if (message.type === "page.extract") {
+    const maxChars = typeof message.maxChars === "number" ? message.maxChars : 12_000;
+    const text = collectBodyText();
+    sendResponse({
+      text: text.slice(0, maxChars),
+      truncated: text.length > maxChars,
+      url: window.location.href,
+      title: document.title,
+    });
+    return false;
+  }
+
   if (message.type === "page.collect") {
     void collectPageProbe()
       .then((probe) => sendResponse(probe))

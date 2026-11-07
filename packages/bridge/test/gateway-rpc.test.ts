@@ -295,4 +295,33 @@ describe("gateway RPC surface (P1-07)", () => {
     host.destroy();
     s.destroy();
   }, 30_000);
+
+  test("artifact.upload stores bounded artifact + rejects oversize", async () => {
+    await start();
+    const s = await authedConn();
+    const created = (await rpc(s, "c1", "task.create", { cwd: "/tmp", title: "art" })) as {
+      taskId: string;
+    };
+    const png = Buffer.from("fake-png-bytes").toString("base64");
+    const up = (await rpc(s, "u1", "artifact.upload", {
+      taskId: created.taskId,
+      kind: "screenshot",
+      mimeType: "image/png",
+      dataBase64: png,
+    })) as { artifactRef: string; sha256: string; bytes: number };
+    expect(up.artifactRef).toMatch(/^artifact:art-/);
+    expect(up.bytes).toBe(14);
+    expect(up.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // oversize → artifact.too_large
+    const big = Buffer.alloc(600 * 1024, 1).toString("base64");
+    await expect(
+      rpc(s, "u2", "artifact.upload", {
+        taskId: created.taskId,
+        kind: "screenshot",
+        mimeType: "image/png",
+        dataBase64: big,
+      }),
+    ).rejects.toMatchObject({ code: "artifact.too_large" });
+    s.destroy();
+  });
 });
