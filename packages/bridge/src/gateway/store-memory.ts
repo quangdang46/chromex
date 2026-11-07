@@ -25,6 +25,12 @@ export interface MemoryStoreStats {
 }
 
 export class InMemoryStore {
+  constructor(private readonly opts: { assertOwnership?: () => void } = {}) {}
+
+  #guard(): void {
+    this.opts.assertOwnership?.();
+  }
+
   private tasks = new Map<string, TaskRecord>();
   private turns = new Map<string, TurnRecord>();
   private taskEvents = new Map<string, DurableTaskEventEnvelope[]>();
@@ -63,6 +69,7 @@ export class InMemoryStore {
 
   /** Allocate next durable seq for a task stream and append. */
   appendTaskEvent(taskId: string, event: DurableTaskEvent): DurableTaskEventEnvelope {
+    this.#guard();
     const seq = (this.taskSeq.get(taskId) ?? 0) + 1;
     this.taskSeq.set(taskId, seq);
     const envelope = {
@@ -97,6 +104,7 @@ export class InMemoryStore {
 
   /** Append durable gateway event; returns envelope with allocated seq. */
   appendGatewayEvent(event: DurableGatewayEvent): DurableGatewayEventEnvelope {
+    this.#guard();
     this.gatewaySeq += 1;
     const envelope = {
       v: 1,

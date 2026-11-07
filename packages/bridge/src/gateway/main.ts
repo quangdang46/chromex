@@ -19,6 +19,7 @@ import { loadGatewayConfig, type GatewayConfig } from "./config.js";
 import {
   acquireOwnershipLock,
   LockHeldError,
+  StaleFenceError,
   type OwnershipLock,
 } from "./lock.js";
 import { GatewayIpcServer, type IpcConnection } from "./ipc-server.js";
@@ -76,13 +77,24 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
 
     // store: memory|sqlite flag (§P1-02). SQLite path runs integrity
     // checks + §5.6 recovery BEFORE ready.
+    // Stale-fence guard (§3.3.2): every durable write re-verifies our
+    // fence; a mismatch throws StaleFenceError → request fails AND the
+    // gateway self-shuts-down (set after ipc creation below).
+    const lock = lifetimeLock;
+    const assertOwnership = () => {
+      if (!lock.checkFence()) {
+        // self-shutdown is initiated by the IPC error path below; the
+        // guard itself only needs to refuse the write.
+        throw new StaleFenceError("lifetime");
+      }
+    };
     let store: InMemoryStore | SQLiteStore;
     let db: GatewayDb | null = null;
     let recoveredTurns = 0;
     let recoveredTasks = 0;
     if (config.store === "sqlite") {
       db = await openGatewayDb(dataDir);
-      const sqlite = new SQLiteStore(db);
+      const sqlite = new SQLiteStore(db, { assertOwnership });
       const violations = runIntegrityChecks(db);
       if (violations.length) {
         log(`integrity violations: ${violations.join("; ")}`);
@@ -95,7 +107,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       }
       store = sqlite;
     } else {
-      store = new InMemoryStore();
+      store = new InMemoryStore({ assertOwnership });
     }
 
     const providers: HelloResponseProviders = [
@@ -112,7 +124,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     ];
 
     ipc = new GatewayIpcServer(dataDir, config.gateway.maxEnvelopeBytes, async (req, conn) => {
-      return handleGatewayRequest(req, { store, config, providers, conn });
+      try {
+        return await handleGatewayRequest(req, { store, config, providers, conn });
+      } catch (err) {
+        if (err instanceof StaleFenceError) {
+          log("stale fence detected — self-shutdown");
+          void shutdown("stale-fence");
+          throw err;
+        }
+        throw err;
+      }
     });
     await ipc.writeTokenFile();
     await ipc.listen();

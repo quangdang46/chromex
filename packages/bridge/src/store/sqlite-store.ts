@@ -189,7 +189,19 @@ function eventEnvelopeFromRow(r: EventRow, taskIdOverride?: string): unknown {
 // ---------- store ----------
 
 export class SQLiteStore {
-  constructor(private readonly db: GatewayDb) {}
+  /**
+   * Optional ownership guard (§3.3.2 stale-fence): invoked synchronously
+   * before every BEGIN IMMEDIATE. Throwing aborts the write — the
+   * gateway wires this to OwnershipLock.checkFence + self-shutdown.
+   */
+  constructor(
+    private readonly db: GatewayDb,
+    private readonly opts: { assertOwnership?: () => void } = {},
+  ) {}
+
+  #guard(): void {
+    this.opts.assertOwnership?.();
+  }
 
   // ---- tasks ----
 
@@ -198,6 +210,7 @@ export class SQLiteStore {
    * (§7.2 ordering: tasks INSERT → conversations INSERT is_current=1).
    */
   createTask(task: TaskRecord): void {
+    this.#guard();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db
@@ -314,6 +327,7 @@ export class SQLiteStore {
     opts?: { turn?: TurnRecord; milestone?: number; turnId?: string },
   ): DurableTaskEventEnvelope {
     const ts = Date.now();
+    this.#guard();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const taskRow = this.db
@@ -381,6 +395,7 @@ export class SQLiteStore {
 
   appendGatewayEvent(event: DurableGatewayEvent): DurableGatewayEventEnvelope {
     const ts = Date.now();
+    this.#guard();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const row = this.db
@@ -572,6 +587,7 @@ export class SQLiteStore {
 
   /** Explicit task purge — §7.2 delete policy: explicit cascade in txn. */
   purgeTask(taskId: string): void {
+    this.#guard();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       // events have no FK — delete explicitly per §7.2

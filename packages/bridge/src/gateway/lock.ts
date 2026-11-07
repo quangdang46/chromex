@@ -16,7 +16,7 @@
  * stale owners detect their old fence and must refuse writes/self-shutdown.
  */
 
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
@@ -40,7 +40,23 @@ export interface OwnershipLock {
   readonly metadata: OwnershipMetadata;
   /** true while this process still holds the OS lock */
   isHeld(): boolean;
+  /**
+   * Stale-fence check (§3.3.2): re-reads the lock FILE metadata and
+   * compares the fence. The OS lock prevents a second holder, but the
+   * file can be replaced (delete+recreate → new inode) leaving this
+   * process holding a stale generation. Sync — called on the write
+   * path before every durable mutation.
+   */
+  checkFence(): boolean;
   release(): Promise<void>;
+}
+
+/** Thrown by store guards when the owner fence is stale. */
+export class StaleFenceError extends Error {
+  constructor(kind: string) {
+    super(`stale ${kind} fence — refusing write; self-shutdown required`);
+    this.name = "StaleFenceError";
+  }
 }
 
 export class LockHeldError extends Error {
@@ -151,11 +167,21 @@ export async function acquireOwnershipLock(
   }
 
   let held = true;
+  const checkFence = (): boolean => {
+    try {
+      const raw = readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw) as OwnershipMetadata;
+      return parsed.fence === fence;
+    } catch {
+      return false;
+    }
+  };
   return {
     kind,
     fence,
     metadata,
     isHeld: () => held,
+    checkFence,
     release: async () => {
       if (!held) return;
       held = false;

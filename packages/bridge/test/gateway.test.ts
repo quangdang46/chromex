@@ -300,3 +300,38 @@ describe("gateway boot with store=sqlite", () => {
     }
   });
 });
+
+describe("stale-fence write refusal (§3.3.2)", () => {
+  test("lock file replaced → checkFence false → store guard throws", async () => {
+    const { acquireOwnershipLock, StaleFenceError } = await import(
+      "../src/gateway/lock.js"
+    );
+    const lock = await acquireOwnershipLock(dir, "lifetime");
+    try {
+      expect(lock.checkFence()).toBe(true);
+      // simulate file replaced by a new generation (new inode scenario):
+      // overwrite metadata with a different fence
+      const metaPath = path.join(dir, "gateway.lock");
+      const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+      meta.fence = "01JFAKEFENCE0000000000000";
+      await fs.writeFile(metaPath, JSON.stringify(meta));
+      expect(lock.checkFence()).toBe(false);
+
+      const { SQLiteStore } = await import("../src/store/sqlite-store.js");
+      const { openGatewayDb } = await import("../src/store/db.js");
+      const db = await openGatewayDb(dir);
+      const store = new SQLiteStore(db, {
+        assertOwnership: () => {
+          if (!lock.checkFence()) throw new StaleFenceError("lifetime");
+        },
+      });
+      // any durable write must refuse
+      expect(() =>
+        store.appendGatewayEvent({ type: "gateway.started", version: "test" } as never),
+      ).toThrow(StaleFenceError);
+      db.close();
+    } finally {
+      await lock.release();
+    }
+  });
+});
