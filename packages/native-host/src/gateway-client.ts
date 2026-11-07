@@ -316,6 +316,13 @@ function resolveGatewayBin(override?: string | null): string | null {
  * gateway's own LIFETIME flock admits exactly one process — losers exit
  * during boot. (Client-side startup-lock serialization is a later
  * refinement if spawn storms prove costly.)
+ *
+ * §3.3.2 5b: a live owner that cannot be reached must NEVER trigger a
+ * spawn. `connect_failed` is only reachable after `endpointPidAlive`
+ * passed inside connect(), so it always means "owner alive, IPC
+ * unreachable" → retried as `unresponsive`, never spawn-eligible.
+ * Spawning is reserved for endpoint_missing / endpoint_stale (no live
+ * owner at all).
  */
 export async function ensureGateway(
   dataDir: string,
@@ -336,9 +343,19 @@ export async function ensureGateway(
     } catch (err) {
       const code = err instanceof GatewayClientError ? err.code : "connect_failed";
       const retryable = err instanceof GatewayClientError ? err.retryable : true;
-      if (!retryable || Date.now() >= deadline) throw err;
+      const ownerAliveUnreachable =
+        err instanceof GatewayClientError && err.code === "connect_failed";
+      if (!retryable || Date.now() >= deadline) {
+        if (ownerAliveUnreachable && err instanceof GatewayClientError) {
+          throw new GatewayClientError(
+            `gateway owner alive but IPC unreachable: ${err.message}`,
+            "unresponsive",
+          );
+        }
+        throw err;
+      }
 
-      if (!spawned && bin && (code === "endpoint_missing" || code === "endpoint_stale" || code === "connect_failed")) {
+      if (!spawned && bin && (code === "endpoint_missing" || code === "endpoint_stale")) {
         spawned = true;
         opts.log?.(`spawning gateway: ${bin}`);
         const { spawn } = await import("node:child_process");

@@ -165,8 +165,10 @@ describe("ensureGateway", () => {
     conn.close();
   });
 
-  test("connect_failed retries until the startup deadline, then throws", async () => {
-    // Endpoint points at a socket nothing listens on; no bin → pure retry loop.
+  test("connect_failed retries until the startup deadline, then surfaces unresponsive", async () => {
+    // Endpoint points at a socket nothing listens on; pid is alive (self)
+    // so this is the §3.3.2 5b live-owner-unreachable case: retried for
+    // the full deadline, never spawned, surfaced as `unresponsive`.
     await writeEndpoint(dir, path.join(dir, "run", "nobody.sock"));
     await writeToken(dir);
 
@@ -177,7 +179,7 @@ describe("ensureGateway", () => {
         gatewayBin: null,
         startupTimeoutMs: 1_200,
       }),
-    ).rejects.toMatchObject({ code: "connect_failed" });
+    ).rejects.toMatchObject({ code: "unresponsive" });
 
     const elapsed = Date.now() - started;
     // Retried for the full deadline rather than failing fast.
