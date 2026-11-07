@@ -58,6 +58,13 @@ export interface GatewayConfig {
   storeReasoning: boolean;
   /** P1-02: "memory" | "sqlite" — default memory until PR-D flips */
   store: "memory" | "sqlite";
+  /** §10 migration flags */
+  features: {
+    /** serve retired route.plan/browser.action.plan via legacy sidecar planning */
+    legacySidecarPlanning: boolean;
+    /** gateway-owned browser tool loop (P1-09) */
+    toolLoop: boolean;
+  };
 }
 
 export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
@@ -108,6 +115,10 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
   },
   storeReasoning: false,
   store: "memory",
+  features: {
+    legacySidecarPlanning: true,
+    toolLoop: false,
+  },
 };
 
 const KNOWN_KEYS = new Set([
@@ -118,6 +129,7 @@ const KNOWN_KEYS = new Set([
   "tasks",
   "storeReasoning",
   "store",
+  "features",
 ]);
 
 const BACKEND_IDS = ["chrome-extension", "playwright-isolated", "playwright-cdp"] as const;
@@ -251,6 +263,13 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
     },
     storeReasoning: bool(raw.storeReasoning, false),
     store: raw.store === "sqlite" ? "sqlite" : "memory",
+    features: (() => {
+      const f = isRecord(raw.features) ? raw.features : {};
+      return {
+        legacySidecarPlanning: bool(f.legacySidecarPlanning, true),
+        toolLoop: bool(f.toolLoop, false),
+      };
+    })(),
   };
 }
 
@@ -267,4 +286,40 @@ export async function loadGatewayConfig(dataDir: string): Promise<GatewayConfig>
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
   return resolveGatewayConfig(raw);
+}
+
+/**
+ * config.update — merge a partial patch over the current config,
+ * re-resolve through the same validator, write atomically (0600).
+ * Returns the resolved config. Unknown keys are rejected by
+ * resolveGatewayConfig's strict shape.
+ */
+export async function updateGatewayConfig(
+  dataDir: string,
+  patch: unknown,
+): Promise<GatewayConfig> {
+  const current = await loadGatewayConfig(dataDir);
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("config.update requires an object patch");
+  }
+  const merged = resolveGatewayConfig(deepMerge(current, patch as Record<string, unknown>));
+  const file = path.join(dataDir, "gateway.json");
+  await fs.mkdir(dataDir, { recursive: true });
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
+  await fs.rename(tmp, file);
+  return merged;
+}
+
+function deepMerge(base: unknown, patch: Record<string, unknown>): unknown {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(patch)) {
+    const bv = out[k];
+    out[k] =
+      v !== null && typeof v === "object" && !Array.isArray(v) &&
+      bv !== null && typeof bv === "object" && !Array.isArray(bv)
+        ? deepMerge(bv, v as Record<string, unknown>)
+        : v;
+  }
+  return out;
 }

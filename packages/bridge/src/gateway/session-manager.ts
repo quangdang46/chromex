@@ -460,6 +460,42 @@ export class SessionManager {
   }
 
   /**
+   * task.reopen (§5.2: cancelled/failed/completed → active). The next
+   * task.send starts a fresh turn on the SAME conversation; provider
+   * resume-ability is enforced by the session, not here.
+   */
+  reopenTask(taskId: string): TaskRecord {
+    const task = this.#requireTask(taskId);
+    this.#setTaskStatus(task, "active");
+    if (task.error) {
+      const cleared = { ...task, error: null };
+      this.opts.store.putTask(cleared);
+    }
+    return this.opts.store.getTask(taskId)!;
+  }
+
+  /**
+   * task.setBackend (§6.6): user action re-pins the backend mid-task.
+   * Refused while a turn is running — the binding must be stable for
+   * the duration of in-flight tool calls.
+   */
+  setBackend(taskId: string, backend: TaskRecord["backend"]): TaskRecord {
+    const task = this.#requireTask(taskId);
+    if (this.opts.store.activeTurn(taskId)?.status === "running") {
+      throw new Error("task.setBackend refused while a turn is running");
+    }
+    const next = { ...task, backend, updatedAt: Date.now() };
+    this.opts.store.putTask(next);
+    this.#persist(taskId, {
+      type: "task.backend_changed",
+      from: task.backend,
+      to: backend,
+      by: "user",
+    } as DurableTaskEvent);
+    return next;
+  }
+
+  /**
    * Route a permission decision to the owning session. The approval
    * store (P1-06 full) is the source of truth; this resolves the
    * provider-side mirror. Returns false when no session owns requestId.

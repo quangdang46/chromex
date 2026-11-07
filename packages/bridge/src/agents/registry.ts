@@ -14,10 +14,13 @@ import type {
   AgentCapabilityFlags,
   AgentProvider,
   AgentSessionConfig,
+  FetchCatalogOptions,
+  ProviderCatalog,
   ProviderId,
 } from "@codex-sidepanel/shared";
 
 import type { GatewayProviderConfig } from "../gateway/config.js";
+import { CatalogCache } from "./catalog-cache.js";
 
 export type ProviderFactory = () => AgentProvider | Promise<AgentProvider>;
 
@@ -54,8 +57,23 @@ export interface ResolvedSessionTarget {
 export class ProviderRegistry {
   private entries = new Map<ProviderId, RegistryProviderEntry>();
   private profileIndex = new Map<string, { providerId: ProviderId; profile: DerivedProfile }>();
+  private readonly catalogCache = new CatalogCache(() => this.providerValues());
 
   constructor(private readonly providerConfigs: Record<string, GatewayProviderConfig>) {}
+
+  private *providerValues(): Iterable<AgentProvider> {
+    for (const e of this.entries.values()) yield e.provider;
+  }
+
+  /** provider.catalog — single-flight + TTL cached provider catalog (§8.4). */
+  catalog(id: ProviderId, opts: FetchCatalogOptions = {}): Promise<ProviderCatalog> {
+    return this.catalogCache.fetch(id, opts);
+  }
+
+  /** Config/profile change → drop cached catalogs. */
+  invalidateCatalog(id?: ProviderId): void {
+    this.catalogCache.invalidate(id);
+  }
 
   /** Register a provider implementation + its §5.8 config block. */
   async register(id: ProviderId, factory: ProviderFactory): Promise<void> {
