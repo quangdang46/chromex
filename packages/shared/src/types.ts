@@ -605,6 +605,9 @@ export interface BrowserDomActionStep {
   modifiers?: string[];
   /** upload: files to attach via DataTransfer (base64 bytes) */
   files?: BrowserDomUploadFile[];
+  /** click: mouse button — "left" (default) | "right" | "middle".
+   *  right dispatches the contextmenu sequence; middle fires auxclick. */
+  button?: string;
   /** drag: destination element — same target triple as the source
    *  (targetRef/selector/label on this step). At least one must be set. */
   dropTargetRef?: string;

@@ -297,7 +297,15 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
     let ok = true;
     let message = "";
     switch (step.action) {
-      case "click":
+      case "click": {
+        const button = typeof step.button === "string" ? step.button : "left";
+        if (button === "right" || button === "middle") {
+          // contextmenu / auxclick path — same untrusted-event caveat
+          // as click; no default activation via .click().
+          dispatchButtonSequence(element, button);
+          message = `Clicked ${getElementLabel(element) || "the target element"} with the ${button} button.`;
+          break;
+        }
         // Full pointer/mouse sequence then HTMLElement.click() — bare
         // .click() only fires `click`, so components listening on
         // pointerdown/mousedown (menus, drag handles, press-and-hold
@@ -309,6 +317,7 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         element.click();
         message = `Clicked ${getElementLabel(element) || "the target element"}.`;
         break;
+      }
       case "focus":
         element.focus();
         message = `Focused ${getElementLabel(element) || "the target element"}.`;
@@ -542,6 +551,31 @@ export function dispatchClickSequence(element: HTMLElement): void {
   const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
   element.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mousedown", common));
+  element.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new MouseEvent("mouseup", common));
+}
+
+/**
+ * click with a non-primary button: right → contextmenu sequence,
+ * middle → auxclick. button 2/1 in MouseEventInit; pointer events
+ * carry the same button. UNTRUSTED — page JS sees them, browser
+ * chrome (native context menu) does NOT open.
+ */
+export function dispatchButtonSequence(element: HTMLElement, button: "right" | "middle"): void {
+  const buttonCode = button === "right" ? 2 : 1;
+  const rect = element.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: buttonCode };
+  element.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new MouseEvent("mousedown", common));
+  if (button === "right") {
+    element.dispatchEvent(new PointerEvent("contextmenu", { ...common, pointerType: "mouse" }));
+    element.dispatchEvent(new MouseEvent("contextmenu", common));
+  } else {
+    element.dispatchEvent(new PointerEvent("auxclick", { ...common, pointerType: "mouse" }));
+    element.dispatchEvent(new MouseEvent("auxclick", common));
+  }
   element.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mouseup", common));
 }

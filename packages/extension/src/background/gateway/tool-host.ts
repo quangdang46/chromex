@@ -842,8 +842,13 @@ function domStepFor(tool: string, args: Record<string, unknown>): Record<string,
     ...(str(args.label) ? { label: str(args.label) } : {}),
   };
   switch (tool) {
-    case "browser.page.click":
-      return { ...base, action: "click" };
+    case "browser.page.click": {
+      const button = str(args.button);
+      if (button !== undefined && !["left", "right", "middle"].includes(button)) {
+        throw toolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
+      }
+      return { ...base, action: "click", ...(button && button !== "left" ? { button } : {}) };
+    }
     case "browser.page.focus":
       return { ...base, action: "focus" };
     case "browser.page.fill":

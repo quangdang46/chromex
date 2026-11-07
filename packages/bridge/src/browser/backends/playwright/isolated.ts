@@ -407,9 +407,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const selector = await this.#requireSelector(args);
     const locator = page.locator(selector).first();
     switch (tool) {
-      case "browser.page.click":
-        await locator.click({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+      case "browser.page.click": {
+        const button = typeof args.button === "string" ? args.button : "left";
+        if (!["left", "right", "middle"].includes(button)) {
+          throw protocolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
+        }
+        await locator.click({ button: button as "left" | "right" | "middle", timeout: DEFAULT_NAV_TIMEOUT_MS });
         return { clicked: true };
+      }
       case "browser.page.focus":
         await locator.focus();
         return { focused: true };
