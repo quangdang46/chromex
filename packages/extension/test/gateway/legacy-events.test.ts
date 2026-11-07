@@ -87,6 +87,37 @@ describe("gatewayEventToLegacy", () => {
     const out = gatewayEventToLegacy(durable("t1", "turn.cancelled", { turnId: "g1" }));
     expect(out).toMatchObject({ type: "turn.completed", stopReason: "cancelled" });
   });
+  it("provider.notice warn → failed turn.activity trace row", () => {
+    const out = gatewayEventToLegacy(durable("t1", "provider.notice", {
+      level: "warn", message: "turn exceeded budget 5000ms; stop confirmed",
+    }, 7));
+    expect(out).toMatchObject({
+      type: "turn.activity",
+      threadId: "t1",
+      turnId: "provider-notice",
+      itemId: "provider-notice-7",
+      kind: "tool",
+      title: "Provider warning",
+      detail: "turn exceeded budget 5000ms; stop confirmed",
+      status: "failed",
+    });
+  });
+  it("provider.notice info → completed trace row; empty message dropped", () => {
+    const out = gatewayEventToLegacy(durable("t1", "provider.notice", {
+      level: "info", message: "provider reconnected",
+    }));
+    expect(out).toMatchObject({
+      type: "turn.activity", status: "completed", title: "Provider notice",
+      detail: "provider reconnected",
+    });
+    expect(gatewayEventToLegacy(durable("t1", "provider.notice", { level: "info", message: "  " }))).toBeNull();
+  });
+  it("provider.notice keeps a real turnId when the payload carries one", () => {
+    const out = gatewayEventToLegacy(durable("t1", "provider.notice", {
+      level: "warn", message: "rate limited", turnId: "g9",
+    }));
+    expect(out).toMatchObject({ type: "turn.activity", turnId: "g9", status: "failed" });
+  });
   it("unmapped types return null (never faked)", () => {
     expect(gatewayEventToLegacy(durable("t1", "task.paused", { taskId: "t1" }))).toBeNull();
     expect(gatewayEventToLegacy({ v: 1, kind: "response" } as unknown as Envelope)).toBeNull();

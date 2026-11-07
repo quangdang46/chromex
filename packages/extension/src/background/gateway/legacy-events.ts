@@ -200,6 +200,29 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         type: "plan.user_input.resolved",
         requestId: (payload as { requestId?: string }).requestId ?? "",
       };
+    case "provider.notice": {
+      // durable task-level notice (warnings/info from providers or the
+      // gateway itself). There is no dedicated legacy event, so surface
+      // it as a trace row: warn → failed status, info → completed.
+      // Notices usually carry no turnId — group them under a synthetic
+      // per-task turn so they render as their own trace message.
+      const isWarn = payload.level === "warn";
+      const message = typeof payload.message === "string" ? payload.message.trim() : "";
+      if (!message) return null;
+      const noticeTurnId = turnId || "provider-notice";
+      const seq = typeof (env as { seq?: unknown }).seq === "number" ? (env as { seq: number }).seq : 0;
+      return {
+        type: "turn.activity",
+        threadId: taskId,
+        turnId: noticeTurnId,
+        itemId: `provider-notice-${seq || Date.now()}`,
+        kind: "tool",
+        title: isWarn ? "Provider warning" : "Provider notice",
+        detail: message,
+        status: isWarn ? "failed" : "completed",
+        timestampMs: Date.now(),
+      };
+    }
     case "tool.started":
     case "tool.completed": {
       // sidepanel renders agent activity via legacy `turn.activity`
