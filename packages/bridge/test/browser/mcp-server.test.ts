@@ -373,3 +373,164 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
     ).toBe(true);
   });
 });
+
+// ---- chromex-22wi follow-up: args.expect advertised + screenshot image blocks ----
+
+/** Tools the server-side dispatchers accept args.expect on — mirrors
+ *  EXPECTABLE_TOOLS in backends/playwright/isolated.ts and the
+ *  extension host's page.dom.perform default branch. */
+const EXPECTABLE = [
+  "browser.page.navigate",
+  "browser.page.click",
+  "browser.page.focus",
+  "browser.page.type",
+  "browser.page.fill",
+  "browser.page.select",
+  "browser.page.submit",
+  "browser.page.scroll",
+  "browser.page.hover",
+  "browser.page.press",
+  "browser.page.upload",
+] as const;
+
+describe("args.expect advertisement (chromex-22wi)", () => {
+  it("every expectable tool advertises an expect object property", () => {
+    for (const internal of EXPECTABLE) {
+      const props = toolListEntry(internal).inputSchema.properties as Record<
+        string,
+        Schema
+      >;
+      expect(props.expect, `${internal} missing args.expect in inputSchema`).toBeDefined();
+      expect(props.expect.type).toBe("object");
+      // a full BrowserExpectCondition validates against the advertised schema
+      expect(
+        schemaValid(toolListEntry(internal).inputSchema, {
+          ...SAMPLE_ARGS[internal],
+          expect: {
+            selector: ".done",
+            text: "saved",
+            urlContains: "/saved",
+            goneSelector: ".spin",
+            timeoutMs: 2000,
+          },
+        }),
+        `${internal} rejects a valid args.expect`,
+      ).toBe(true);
+      // expect is closed: unknown keys rejected
+      expect(
+        schemaValid(props.expect, { bogus: 1 }),
+        `${internal} expect schema allows arbitrary keys`,
+      ).toBe(false);
+    }
+  });
+
+  it("non-expectable tools do not advertise expect", () => {
+    for (const internal of BROWSER_TOOL_NAMES) {
+      if ((EXPECTABLE as readonly string[]).includes(internal)) continue;
+      const props = toolListEntry(internal).inputSchema.properties as Record<
+        string,
+        Schema
+      >;
+      expect(props.expect, `${internal} should not advertise args.expect`).toBeUndefined();
+    }
+  });
+});
+
+describe("screenshot result → MCP image block (chromex-22wi)", () => {
+  function screenshotServer(result: unknown) {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    return new BrowserMcpServer({
+      scope: {
+        taskId: "task-1",
+        profileId: "prof-1",
+        backendId: "chrome-extension",
+        token: tokens.issue({
+          taskId: "task-1",
+          profileId: "prof-1",
+          backendId: "chrome-extension",
+          allowedTools: ["browser.page.screenshot"],
+          now: NOW,
+        }).token,
+      },
+      allowedTools: new Set(["browser.page.screenshot"]),
+      server: {
+        execute: async (req: ToolCallRequest): Promise<ToolCallOutcome> => ({
+          toolCallId: req.toolCallId,
+          tool: req.tool,
+          status: "completed",
+          result,
+        }),
+      },
+    });
+  }
+
+  it("emits an image content block and strips dataBase64 from the fenced text", async () => {
+    const result = {
+      artifactRef: "artifact:art-1",
+      sha256: "ab".repeat(32),
+      bytes: 3,
+      mimeType: "image/jpeg",
+      dataBase64: "aGk=",
+      resolvedTabId: 7,
+    };
+    const server = screenshotServer(result);
+    const resp = JSON.parse(
+      (await server.handleLine(
+        rpc(30, "tools/call", { name: "browser_page_screenshot", arguments: {} }),
+      ))!,
+    ) as {
+      result: {
+        isError: boolean;
+        content: Array<Record<string, unknown>>;
+      };
+    };
+    expect(resp.result.isError).toBe(false);
+    expect(resp.result.content).toHaveLength(2);
+
+    const [textBlock, imageBlock] = resp.result.content;
+    expect(textBlock.type).toBe("text");
+    expect(imageBlock).toEqual({ type: "image", data: "aGk=", mimeType: "image/jpeg" });
+
+    // fenced payload keeps everything except the (now-redundant) base64
+    const { payload } = unwrapFencedResult(textBlock.text as string);
+    expect(payload).toEqual({
+      artifactRef: "artifact:art-1",
+      sha256: "ab".repeat(32),
+      bytes: 3,
+      mimeType: "image/jpeg",
+      resolvedTabId: 7,
+    });
+    expect(JSON.stringify(payload)).not.toContain("aGk=");
+  });
+
+  it("playwright-isolated shape (no artifactRef) gets the same treatment", async () => {
+    const server = screenshotServer({
+      dataBase64: "aGVsbG8=",
+      mimeType: "image/jpeg",
+      bytes: 5,
+    });
+    const resp = JSON.parse(
+      (await server.handleLine(
+        rpc(31, "tools/call", { name: "browser_page_screenshot", arguments: {} }),
+      ))!,
+    ) as { result: { content: Array<Record<string, unknown>> } };
+    expect(resp.result.content[1]).toEqual({
+      type: "image",
+      data: "aGVsbG8=",
+      mimeType: "image/jpeg",
+    });
+    const { payload } = unwrapFencedResult(resp.result.content[0].text as string);
+    expect(payload).toEqual({ mimeType: "image/jpeg", bytes: 5 });
+  });
+
+  it("non-image results stay a single fenced text block", async () => {
+    const server = screenshotServer({ ok: true, text: "plain" });
+    const resp = JSON.parse(
+      (await server.handleLine(
+        rpc(32, "tools/call", { name: "browser_page_screenshot", arguments: {} }),
+      ))!,
+    ) as { result: { content: Array<Record<string, unknown>> } };
+    expect(resp.result.content).toHaveLength(1);
+    expect(resp.result.content[0].type).toBe("text");
+  });
+});
