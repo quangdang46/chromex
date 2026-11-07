@@ -264,5 +264,6 @@ Representative; full coverage lives in the cited test files.
 | 24 | post-prune snapshot | user+assistant messages retained | snapshot = checkpoint+retained events | snapshot tests |
 
 Environment-pending rows (honest): real-Chrome SW-kill cycle (#4 variant
-on extension host), Windows ACP/Claude e2e (chromex-xki), live opencode
-turn (stale creds).
+on extension host), Windows ACP/Claude e2e (chromex-xki — env requirements
+and skip conditions in [docs/testing-windows-e2e.md](testing-windows-e2e.md)),
+live opencode turn (stale creds).
