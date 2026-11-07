@@ -224,6 +224,13 @@ setGatewayServerRequestHandler(
     },
   }),
 );
+
+// P1-08: when gatewayMode is on, route agent-domain bridge.request calls
+// through the Gateway runtime (compat layer returns legacy shapes).
+// Events/delta streaming migration is P1-10 — request path only.
+void getGatewayRuntime().then((rt) => {
+  bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
+});
 const UI_BRIDGE_TIMEOUT_MS = 4000;
 const UI_CONTEXT_TIMEOUT_MS = 2500;
 const PLAYWRIGHT_RUNTIME_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -4746,7 +4753,9 @@ async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<
   const settings = await updateStoredSettings(patch);
   if (patch.gatewayMode !== undefined && patch.gatewayMode !== previousSettings.gatewayMode) {
     resetGatewayRuntime();
-    void getGatewayRuntime();
+    void getGatewayRuntime().then((rt) => {
+      bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
+    });
   }
   if (
     !shouldRefreshCatalogAfterSettingsUpdate({

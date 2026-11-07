@@ -20,8 +20,16 @@ import { toFriendlyNativeHostErrorMessage } from "./native-host-errors.js";
 
 const NATIVE_HOST_NAME = "com.codex.sidepanel.bridge";
 
+export interface GatewayRequestDelegate {
+  request(method: string, payload?: unknown): Promise<unknown>;
+}
+
 export class NativeBridgeClient {
   #port: chrome.runtime.Port | null = null;
+  /** P1-08 dual-path: when the Gateway runtime is active (gatewayMode
+   *  on), agent-domain requests go through it as Envelope RPCs; the
+   *  compat layer returns legacy-shaped results. null = legacy NM path. */
+  #gatewayDelegate: GatewayRequestDelegate | null = null;
   #lastDisconnectError: string | null = null;
   #pending = new Map<string, PendingBridgeRequest>();
   #listeners = new Set<(event: unknown) => void>();
@@ -31,11 +39,28 @@ export class NativeBridgeClient {
     return () => this.#listeners.delete(listener);
   }
 
+  setGatewayDelegate(delegate: GatewayRequestDelegate | null): void {
+    this.#gatewayDelegate = delegate;
+  }
+
   async request<TResult = unknown>(
     method: string,
     params: Record<string, unknown> = {},
     options: BridgeRequestOptions = {},
   ): Promise<TResult> {
+    if (this.#gatewayDelegate) {
+      const delegate = this.#gatewayDelegate;
+      const call = delegate.request(method, params);
+      if (!options.timeoutMs || options.timeoutMs <= 0) {
+        return call.then((v) => v as TResult);
+      }
+      return Promise.race([
+        call.then((v) => v as TResult),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(options.timeoutMessage ?? `${method} did not respond in time.`)), options.timeoutMs),
+        ),
+      ]);
+    }
     const port = this.#ensurePort();
     const id = crypto.randomUUID();
     const response = new Promise<TResult>((resolve, reject) => {
