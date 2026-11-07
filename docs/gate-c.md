@@ -17,16 +17,19 @@ no capability counts as done until an end-to-end user scenario passes
 on a real browser. The 8 gate scenarios are S1–S8; APIs, classes, and
 unit tests are necessary, not sufficient.
 
-| # | Scenario | Blocking work |
-|---|----------|----------------|
-| S1 | Build a web feature end-to-end (understand → edit → run → drive UI → iterate → report) | chromex-cl0, chromex-d9o |
-| S2 | Debug a live website on a logged-in tab | chromex-cl0, chromex-d9o |
-| S3 | Multi-tab/multi-app work without scope bleed | chromex-7k3 |
-| S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff | chromex-d7v |
-| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicates | partially evidenced (recovery tests); real-Chrome legs pending |
-| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, never fake success | needs failed-plan handling proof |
-| S7 | Protection: sensitive actions → contextual approval; denial honored | partially evidenced (approval flows) |
-| S8 | Verifiable deliverable rendered in sidepanel | chromex-5rf |
+| # | Scenario | Blocking work | Real-browser result (2026-11-07) |
+|---|----------|----------------|----------------------------------|
+| S1 | Build a web feature end-to-end (understand → edit → run → drive UI → iterate → report) | chromex-cl0, chromex-d9o | **PASS** — codex live turn, 7/7 browser actions classified |
+| S2 | Debug a live website on a logged-in tab | chromex-cl0, chromex-d9o | pending — runner exists (`s2-debug-live.mjs`), not yet executed |
+| S3 | Multi-tab/multi-app work without scope bleed | chromex-7k3 | **PASS** — isolated tab scopes, cross-task access refused |
+| S4 | Real web workflow: logged-in session, multi-step form, file use, auth handoff | chromex-d7v | BLOCKED-by-design — needs real credentials/site; dialogs await chromex-qddi |
+| S5 | Interruption recovery: close panel / kill SW / restart gateway mid-turn → resume without duplicates | gateway-restart re-register bug fixed in `8409af2` (auto-reconnect + backoff); real-Chrome re-verify pending | **FAIL**→fix landed — was `browser.no_host` after respawn; unit-tested, awaiting harness re-run |
+| S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, never fake success | — | **PASS** — stale snapshotId rejected, re-observe + retry succeeded |
+| S7 | Protection: sensitive actions → contextual approval; denial honored | — | **PASS** — deny→`approval_denied`, allow→navigated |
+| S8 | Verifiable deliverable rendered in sidepanel | chromex-5rf | **PASS** — durable tool evidence + sidepanel render in real Chrome |
+
+Evidence: `artifacts/acceptance/<scenario>/<runId>/` (committed). Harness:
+`scripts/acceptance/` — real-browser runs require `CHROMEX_ACCEPTANCE_ENABLE=1`.
 
 Old §14 criteria → new mapping:
 
