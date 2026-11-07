@@ -172,3 +172,62 @@ export function resolveSelectedCatalogModel(input: {
 
   return input.models.find((model) => model.isDefault)?.id ?? input.models[0]?.id ?? "";
 }
+
+// ---- persistent catalog cache (stale-while-revalidate) ----
+// chrome.storage.local survives service-worker restarts, so a cold SW can
+// paint the last known catalog instantly while refreshAppServerCatalog
+// revalidates in the background.
+
+export const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
+const CATALOG_CACHE_KEY = "codex.sidepanel.catalogCache.v1";
+
+export interface CatalogCacheEntry {
+  savedAt: number;
+  workspaceRoot: string;
+  providerId: string;
+  customModels: string[];
+  models: CodexModelOption[];
+  agentProviders: import("../types.js").AgentProviderOption[];
+  appServerSkills: import("@codex-sidepanel/shared").CodexSkillOption[];
+  connectedApps: import("@codex-sidepanel/shared").CodexAppOption[];
+  appServerPlugins: import("@codex-sidepanel/shared").CodexPluginOption[];
+  mcpServers: import("@codex-sidepanel/shared").CodexMcpServerOption[];
+  serverThreads: import("@codex-sidepanel/shared").CodexThreadSummary[];
+  rateLimits: import("@codex-sidepanel/shared").CodexRateLimits | null;
+}
+
+export async function readCatalogCache(): Promise<CatalogCacheEntry | null> {
+  try {
+    const result = (await chrome.storage.local.get(CATALOG_CACHE_KEY))[CATALOG_CACHE_KEY];
+    const entry = result as CatalogCacheEntry | undefined;
+    if (!entry || typeof entry.savedAt !== "number" || !Array.isArray(entry.models)) {
+      return null;
+    }
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeCatalogCache(entry: CatalogCacheEntry): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [CATALOG_CACHE_KEY]: entry });
+  } catch {
+    // cache is best-effort — never fail a refresh over persistence
+  }
+}
+
+export function isCatalogCacheFresh(entry: CatalogCacheEntry, now = Date.now()): boolean {
+  return now - entry.savedAt < CATALOG_CACHE_TTL_MS;
+}
+
+export function catalogCacheMatches(
+  entry: CatalogCacheEntry,
+  input: { workspaceRoot: string; providerId: string; customModels: readonly string[] },
+): boolean {
+  return (
+    entry.workspaceRoot === input.workspaceRoot &&
+    entry.providerId === input.providerId &&
+    entry.customModels.join("\n") === input.customModels.join("\n")
+  );
+}

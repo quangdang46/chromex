@@ -112,14 +112,18 @@ import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
 import {
+  catalogCacheMatches,
+  isCatalogCacheFresh,
   isRecoverableModelCatalogAuthError,
   mergeCustomCatalogModels,
+  readCatalogCache,
   recoverModelCatalogAfterAuthError,
   normalizeCatalogWorkspaceRoot,
   resolveCatalogModelState,
   resolveSelectedCatalogModel,
   shouldRefreshCatalogAfterSettingsUpdate,
   shouldTriggerCatalogRefresh,
+  writeCatalogCache,
 } from "./catalog-refresh.js";
 import {
   resolveUploadedImageReferenceInputs,
@@ -425,7 +429,12 @@ bridge.subscribe((event) => {
   } else if (bridgeEvent.type === "model.rerouted") {
     state.latestReroute = (event as { reroute: CodexModelReroute }).reroute;
   } else if (bridgeEvent.type === "catalog.updated") {
-    void triggerCatalogRefresh();
+    const kind = (bridgeEvent as { kind?: string }).kind;
+    if (kind === "skills" || kind === "apps" || kind === "mcp") {
+      void refreshCatalogKind(kind);
+    } else {
+      void triggerCatalogRefresh(state.workspaceHarness?.workspaceRoot || undefined);
+    }
   }
   broadcastBridgeEvent(annotateBridgeEventConversation(event, eventConversationId));
 });
@@ -4542,6 +4551,29 @@ async function refreshAppServerCatalog(
   const previousModels = state.models;
   const catalogSettings = await getStoredSettings().catch(() => null);
   state.selectedProviderId = catalogSettings?.agentProviderId || "codex";
+  // SWR: paint the last known catalog instantly on cold service-worker
+  // start; the fetches below revalidate and overwrite it.
+  const cachedCatalog = await readCatalogCache();
+  if (
+    cachedCatalog &&
+    isCatalogCacheFresh(cachedCatalog) &&
+    catalogCacheMatches(cachedCatalog, {
+      workspaceRoot: normalizedWorkspaceRoot,
+      providerId: state.selectedProviderId,
+      customModels: catalogSettings?.customModels ?? [],
+    })
+  ) {
+    state.models = cachedCatalog.models;
+    state.agentProviders = cachedCatalog.agentProviders;
+    state.appServerSkills = cachedCatalog.appServerSkills;
+    state.connectedApps = cachedCatalog.connectedApps;
+    state.appServerPlugins = cachedCatalog.appServerPlugins;
+    state.mcpServers = cachedCatalog.mcpServers;
+    state.serverThreads = cachedCatalog.serverThreads;
+    state.rateLimits = cachedCatalog.rateLimits;
+    state.modelCatalogState = cachedCatalog.models.length ? "ready" : "empty";
+    state.modelCatalogErrorMessage = "";
+  }
   if (catalogSettings?.gatewayMode) {
     const catalogs = await bridge
       .request<{ catalogs?: Array<{ providerId: string; displayName?: string }> }>(
@@ -4613,6 +4645,20 @@ async function refreshAppServerCatalog(
   });
   state.modelCatalogErrorMessage =
     modelRequestFailed && !isRecoverableModelCatalogAuthError(modelRequestErrorMessage) ? modelRequestErrorMessage : "";
+  void writeCatalogCache({
+    savedAt: Date.now(),
+    workspaceRoot: normalizedWorkspaceRoot,
+    providerId: state.selectedProviderId,
+    customModels: [...(catalogSettings?.customModels ?? [])],
+    models: state.models,
+    agentProviders: state.agentProviders,
+    appServerSkills: state.appServerSkills,
+    connectedApps: state.connectedApps,
+    appServerPlugins: state.appServerPlugins,
+    mcpServers: state.mcpServers,
+    serverThreads: state.serverThreads,
+    rateLimits: state.rateLimits,
+  });
   await reconcileSelectedModelWithCatalog(state.selectedModel);
 }
 
@@ -4685,6 +4731,24 @@ function mergeCodexSkills(left: CodexSkillOption[], right: CodexSkillOption[]): 
     byId.set(skill.id, skill);
   }
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function refreshCatalogKind(kind: "skills" | "apps" | "mcp"): Promise<void> {
+  const cwd = normalizeCatalogWorkspaceRoot(state.workspaceHarness?.workspaceRoot) || undefined;
+  if (kind === "skills") {
+    state.appServerSkills = await bridge
+      .request<CodexSkillOption[]>("skills.list", { ...(cwd ? { cwd } : {}), forceReload: true })
+      .catch(() => state.appServerSkills);
+  } else if (kind === "apps") {
+    state.connectedApps = await bridge
+      .request<CodexAppOption[]>("apps.list", { forceRefetch: true })
+      .catch(() => state.connectedApps);
+  } else {
+    state.mcpServers = await bridge
+      .request<CodexMcpServerOption[]>("mcp.servers.list", { detail: "toolsAndAuthOnly", limit: 100 })
+      .catch(() => state.mcpServers);
+  }
+  broadcastBridgeEvent({ type: "catalog.updated" });
 }
 
 function triggerCatalogRefresh(

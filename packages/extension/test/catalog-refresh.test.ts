@@ -217,3 +217,38 @@ describe("mergeCustomCatalogModels", () => {
     expect(mergeCustomCatalogModels(models, ["gpt-5.5"])).toBe(models);
   });
 });
+
+describe("catalog cache helpers", () => {
+  test("catalogCacheMatches requires workspace+provider+customModels equality", async () => {
+    const { catalogCacheMatches } = await import("../src/background/catalog-refresh.js");
+    const entry = {
+      savedAt: 0,
+      workspaceRoot: "/repo",
+      providerId: "codex",
+      customModels: ["a", "b"],
+      models: [],
+      agentProviders: [],
+      appServerSkills: [],
+      connectedApps: [],
+      appServerPlugins: [],
+      mcpServers: [],
+      serverThreads: [],
+      rateLimits: null,
+    };
+    const base = { workspaceRoot: "/repo", providerId: "codex", customModels: ["a", "b"] };
+    expect(catalogCacheMatches(entry, base)).toBe(true);
+    expect(catalogCacheMatches(entry, { ...base, workspaceRoot: "/other" })).toBe(false);
+    expect(catalogCacheMatches(entry, { ...base, providerId: "claude" })).toBe(false);
+    expect(catalogCacheMatches(entry, { ...base, customModels: ["a"] })).toBe(false);
+    expect(catalogCacheMatches(entry, { ...base, customModels: ["b", "a"] })).toBe(false);
+  });
+
+  test("isCatalogCacheFresh respects TTL", async () => {
+    const { isCatalogCacheFresh, CATALOG_CACHE_TTL_MS } = await import(
+      "../src/background/catalog-refresh.js"
+    );
+    const entry = { savedAt: 1000 } as never;
+    expect(isCatalogCacheFresh(entry, 1000 + CATALOG_CACHE_TTL_MS - 1)).toBe(true);
+    expect(isCatalogCacheFresh(entry, 1000 + CATALOG_CACHE_TTL_MS + 1)).toBe(false);
+  });
+});
