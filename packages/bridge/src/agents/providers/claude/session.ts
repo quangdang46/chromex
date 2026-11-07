@@ -58,6 +58,24 @@ const INTERRUPT_WAIT_MS = 30_000;
 interface PendingPermission {
   request: PermissionRequest;
   resolve: (r: PermissionResult | null) => void;
+  /** set when the pending request is an AskUserQuestion dialog — the
+   *  SDK contract is canUseTool → allow + updatedInput.answers keyed by
+   *  question text (agent-sdk user-input docs). */
+  askUser?: {
+    questions: AskUserQuestionEntry[];
+    /** raw questions array from tool input, passed back verbatim */
+    inputQuestions: unknown;
+  };
+}
+
+/** Normalized AskUserQuestion entry — id is positional (q0..q3) since
+ *  the SDK question shape has no id; answers map back via questionText. */
+interface AskUserQuestionEntry {
+  id: string;
+  questionText: string;
+  header: string;
+  options: Array<{ id: string; label: string; description?: string }>;
+  multiSelect?: boolean;
 }
 
 /** Minimal async queue feeding the SDK streaming prompt. */
@@ -292,6 +310,9 @@ export class ClaudeAgentSession implements AgentSession {
     input: Record<string, unknown>,
     opts: { toolUseID: string; requestId?: string; prompt?: string; description?: string },
   ): Promise<PermissionResult | null> {
+    if (toolName === "AskUserQuestion") {
+      return this.#canUseAskUserQuestion(input, opts);
+    }
     const requestId = `perm-${opts.toolUseID || randomUUID()}`;
     const turnId = this.activeTurn?.gatewayTurnId;
     const request = permissionRequestForToolCall({
@@ -311,6 +332,67 @@ export class ClaudeAgentSession implements AgentSession {
     return promise;
   }
 
+  /**
+   * AskUserQuestion → permission.requested in the shared ask-user shape
+   * (details.argsPreview.questions, same contract as codex
+   * requestUserInput). Answers return through canUseTool as
+   * `{behavior:"allow", updatedInput:{questions, answers}}` where
+   * answers is keyed by question TEXT → selected label(s).
+   */
+  async #canUseAskUserQuestion(
+    input: Record<string, unknown>,
+    opts: { toolUseID: string },
+  ): Promise<PermissionResult | null> {
+    const requestId = `perm-${opts.toolUseID || randomUUID()}`;
+    const turnId = this.activeTurn?.gatewayTurnId;
+    const questions = normalizeAskUserQuestions(input.questions);
+    if (questions.length === 0) {
+      return { behavior: "deny", message: "AskUserQuestion input had no questions" };
+    }
+    const request: PermissionRequest = {
+      requestId,
+      taskId: "", // Gateway stamps at persist time
+      ...(turnId ? { turnId } : {}),
+      kind: "provider_permission",
+      risk: "low",
+      summary: questions[0]!.questionText,
+      actionDigest: "",
+      details: {
+        tool: "AskUserQuestion",
+        argsPreview: {
+          questionCount: questions.length,
+          questions: questions.map((q) => ({
+            id: q.id,
+            header: q.header,
+            question: q.questionText,
+            options: q.options.map((o) => ({
+              id: o.id,
+              label: o.label,
+              ...(o.description ? { description: o.description } : {}),
+            })),
+            ...(q.multiSelect ? { multiSelect: true } : {}),
+          })),
+        },
+        origin: "provider",
+      },
+      options: [
+        { id: "submit", label: "Submit answers", kind: "allow_once" },
+        { id: "deny", label: "Dismiss", kind: "deny" },
+      ],
+    };
+    const promise = new Promise<PermissionResult | null>((resolve) => {
+      this.pendingPermissions.set(requestId, {
+        request,
+        resolve,
+        askUser: { questions, inputQuestions: input.questions },
+      });
+    });
+    for (const l of this.listeners) {
+      l({ type: "permission.requested", ...(turnId ? { turnId } : {}), request } as AgentEvent);
+    }
+    return promise;
+  }
+
   async respondToPermission(
     requestId: string,
     response: PermissionResponse,
@@ -318,26 +400,64 @@ export class ClaudeAgentSession implements AgentSession {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return {};
     this.pendingPermissions.delete(requestId);
-    const allow = response.optionId === "allow" || response.optionId === "allow_once";
-    pending.resolve(
-      allow
+    const optionId = response.optionId ?? "";
+    const result: PermissionResult = pending.askUser
+      ? this.#askUserResult(pending.askUser, response)
+      : optionId === "allow" || optionId === "allow_once"
         ? { behavior: "allow" }
-        : { behavior: "deny", message: "denied by user via Chromex" },
-    );
-    const option = pending.request.options.find((o) => o.id === response.optionId);
+        : { behavior: "deny", message: "denied by user via Chromex" };
+    pending.resolve(result);
+    const option = pending.request.options.find((o) => o.id === optionId);
+    const denied = result.behavior === "deny";
     for (const l of this.listeners) {
       l({
         type: "permission.resolved",
         requestId,
         decision: {
-          optionId: response.optionId,
-          kind: option?.kind ?? (allow ? "allow_once" : "deny"),
+          optionId: optionId || (denied ? "deny" : "answered"),
+          kind: option?.kind ?? (denied ? "deny" : "allow_once"),
           decidedAt: Date.now(),
           decidedBy: "user",
         },
       });
     }
     return {};
+  }
+
+  /** AskUserQuestion resolution: deny on dismiss/no answers, else allow
+   *  with updatedInput.answers keyed by question text (SDK contract). */
+  #askUserResult(
+    askUser: NonNullable<PendingPermission["askUser"]>,
+    response: PermissionResponse,
+  ): PermissionResult {
+    const optionId = response.optionId ?? "";
+    const dismissed = optionId === "deny" || optionId.startsWith("reject");
+    const provided = response.answers ?? {};
+    const hasAnswers = askUser.questions.some((q) =>
+      (provided[q.id] ?? []).some((a) => a.trim().length > 0),
+    );
+    if (dismissed || !hasAnswers) {
+      return {
+        behavior: "deny",
+        message: dismissed ? "dismissed by user via Chromex" : "no answers provided",
+      };
+    }
+    const answers: Record<string, string> = {};
+    for (const q of askUser.questions) {
+      const values = (provided[q.id] ?? [])
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+      if (values.length > 0) {
+        answers[q.questionText] = values.join(", ");
+      }
+    }
+    return {
+      behavior: "allow",
+      updatedInput: {
+        questions: askUser.inputQuestions,
+        answers,
+      },
+    };
   }
 
   getPendingPermissions(): PermissionRequest[] {
@@ -403,4 +523,40 @@ export class ClaudeAgentSession implements AgentSession {
       l({ type: "conversation.closed", sessionKey: this.sessionKey, reason: "closed" });
     }
   }
+}
+
+/** SDK AskUserQuestion input.questions → shared ask-user shape.
+ *  Option id = label (the SDK answers contract uses labels as values). */
+function normalizeAskUserQuestions(value: unknown): AskUserQuestionEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((q, index) => {
+      const r = q as Record<string, unknown>;
+      const questionText = String(r.question ?? "").trim();
+      if (!questionText) return null;
+      const options = Array.isArray(r.options)
+        ? (r.options as Array<Record<string, unknown>>)
+            .map((o) => {
+              const label = String(o.label ?? "").trim();
+              if (!label) return null;
+              const description = typeof o.description === "string" ? o.description.trim() : "";
+              return {
+                id: label,
+                label,
+                ...(description ? { description } : {}),
+              };
+            })
+            .filter((o): o is NonNullable<typeof o> => o !== null)
+        : [];
+      const header = typeof r.header === "string" && r.header.trim() ? r.header.trim() : `Q${index + 1}`;
+      const entry: AskUserQuestionEntry = {
+        id: `q${index}`,
+        questionText,
+        header,
+        options,
+        ...(r.multiSelect === true ? { multiSelect: true } : {}),
+      };
+      return entry;
+    })
+    .filter((q): q is AskUserQuestionEntry => q !== null);
 }

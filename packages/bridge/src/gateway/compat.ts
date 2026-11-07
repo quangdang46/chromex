@@ -130,19 +130,41 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
     },
   },
   "plan.user_input.respond": {
-    // lossy: legacy answers map → first optionId; multi-answer prompts
-    // need the permission-card UI (P1-08) rather than this compat path.
+    // legacy answers map {qid:{answers:[...]}} → PermissionResponse.answers
+    // {qid:[...]}; an empty map is a dismiss → optionId "deny".
     toRequest: (payload) => {
       const p = asRecord(payload);
-      const answers = asRecord(p.answers);
-      const first = Object.values(answers)[0] as { answers?: string[] } | undefined;
-      const optionId = first?.answers?.[0];
-      if (!p.requestId || !optionId) {
-        throw perr("proto.invalid", "plan.user_input.respond compat requires requestId + a single answer");
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      if (!requestId) {
+        throw perr("proto.invalid", "plan.user_input.respond compat requires requestId");
       }
+      const answers = asRecord(p.answers);
+      const flat: Record<string, string[]> = {};
+      for (const [qid, v] of Object.entries(answers)) {
+        const list = (v as { answers?: unknown } | null)?.answers;
+        if (Array.isArray(list)) {
+          flat[qid] = list.filter((x): x is string => typeof x === "string");
+        }
+      }
+      const hasAnswers = Object.values(flat).some((list) => list.length > 0);
+      const directOption =
+        typeof p.optionId === "string" && p.optionId ? p.optionId : undefined;
+      if (!hasAnswers && !directOption) {
+        return {
+          method: "permission.respond",
+          payload: { requestId, optionId: "deny" },
+        };
+      }
+      const firstAnswer = Object.values(flat)
+        .flat()
+        .find((a) => a.trim().length > 0);
       return {
         method: "permission.respond",
-        payload: { requestId: p.requestId, optionId },
+        payload: {
+          requestId,
+          optionId: directOption ?? firstAnswer ?? "answered",
+          ...(hasAnswers ? { answers: flat } : {}),
+        },
       };
     },
     fromResult: () => ({ ok: true }),

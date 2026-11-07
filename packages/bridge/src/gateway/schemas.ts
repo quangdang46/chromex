@@ -61,10 +61,16 @@ export const turnInterruptSchema = z.object({
   turnId: z.string().optional(),
 });
 
-export const permissionRespondSchema = z.object({
-  requestId: z.string().min(1),
-  optionId: z.string().min(1),
-});
+export const permissionRespondSchema = z
+  .object({
+    requestId: z.string().min(1),
+    optionId: z.string().min(1).optional(),
+    answers: z.record(z.string(), z.array(z.string())).optional(),
+  })
+  .refine(
+    (v) => v.optionId !== undefined || (v.answers !== undefined && Object.keys(v.answers).length > 0),
+    { message: "permission.respond requires optionId or answers" },
+  );
 
 export const taskSyncSchema = z.object({
   taskId,

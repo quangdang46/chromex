@@ -274,15 +274,25 @@ export class CodexAgentSession implements AgentSession {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return {};
     this.pendingPermissions.delete(requestId);
-    const answers: Record<string, { answers: string[] }> = {};
     // compat path may pass an option label where an id is expected —
     // resolve either, then answer with the canonical option id.
+    const optionId = response.optionId ?? "";
     const option =
-      pending.request.options.find((o) => o.id === response.optionId) ??
-      pending.request.options.find((o) => o.label === response.optionId);
-    const answerValue = option?.id ?? response.optionId;
-    for (const qid of pending.questionIds) {
-      answers[qid] = { answers: [answerValue] };
+      pending.request.options.find((o) => o.id === optionId) ??
+      pending.request.options.find((o) => o.label === optionId);
+    const fallback = option?.id ?? optionId;
+    const answers: Record<string, { answers: string[] }> = {};
+    if (response.answers) {
+      // per-question answers (permission.respond answers field) — used
+      // verbatim; questions the client left blank resolve empty.
+      for (const qid of pending.questionIds) {
+        answers[qid] = { answers: response.answers[qid] ?? [] };
+      }
+    } else {
+      // single-option path: the same answer goes to every question.
+      for (const qid of pending.questionIds) {
+        answers[qid] = { answers: fallback ? [fallback] : [] };
+      }
     }
     pending.resolve({ answers });
     for (const l of this.listeners) {
@@ -290,8 +300,8 @@ export class CodexAgentSession implements AgentSession {
         type: "permission.resolved",
         requestId,
         decision: {
-          optionId: response.optionId,
-          kind: pending.request.options.find((o) => o.id === response.optionId)?.kind ?? "allow_once",
+          optionId: response.optionId ?? option?.id ?? "answered",
+          kind: option?.kind ?? "allow_once",
           decidedAt: Date.now(),
           decidedBy: "user",
         },

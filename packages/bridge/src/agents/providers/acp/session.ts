@@ -374,19 +374,20 @@ export class AcpAgentSession implements AgentSession {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return {};
     this.pendingPermissions.delete(requestId);
-    const allow = response.optionId !== "deny" && !response.optionId.startsWith("reject");
+    const optionId = response.optionId ?? "";
+    const allow = optionId !== "" && optionId !== "deny" && !optionId.startsWith("reject");
     pending.resolve({
       outcome: allow
-        ? { outcome: "selected", optionId: response.optionId }
+        ? { outcome: "selected", optionId }
         : { outcome: "cancelled" },
     });
-    const option = pending.request.options.find((o) => o.id === response.optionId);
+    const option = pending.request.options.find((o) => o.id === optionId);
     for (const l of this.listeners) {
       l({
         type: "permission.resolved",
         requestId,
         decision: {
-          optionId: response.optionId,
+          optionId: optionId || "cancelled",
           kind: option?.kind ?? (allow ? "allow_once" : "deny"),
           decidedAt: Date.now(),
           decidedBy: "user",

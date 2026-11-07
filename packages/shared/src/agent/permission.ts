@@ -49,7 +49,13 @@ export interface PermissionDecision {
 /** User response to a permission.requested event / permission.respond RPC. */
 export interface PermissionResponse {
   requestId: string;
-  optionId: string;
+  /** single-option decision — kept for allow/deny prompts. Ask-user
+   *  prompts (provider_permission with argsPreview.questions) answer
+   *  per question via `answers` instead; optionId may be omitted then. */
+  optionId?: string;
+  /** per-question answers for ask-user prompts: questionId → answer
+   *  strings (selected option ids/labels, or "Other" free text). */
+  answers?: Record<string, string[]>;
 }
 
 export type { RiskLevel, ProtocolError };

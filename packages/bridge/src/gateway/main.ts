@@ -870,7 +870,10 @@ async function handleGatewayRequest(
     }
     case "permission.respond": {
       const p = parsePayload(permissionRespondSchema, req.payload) as z.infer<typeof permissionRespondSchema>;
-      const result = await ctx.sessionManager.respondToPermission(p.requestId, p.optionId);
+      const result = await ctx.sessionManager.respondToPermission(p.requestId, {
+        ...(p.optionId !== undefined ? { optionId: p.optionId } : {}),
+        ...(p.answers !== undefined ? { answers: p.answers } : {}),
+      });
       // browser-tool approvals live in the approvals table, not provider
       // sessions — resolve the row directly (idempotent no-op if the
       // provider path already handled it).

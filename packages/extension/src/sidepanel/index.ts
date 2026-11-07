@@ -5717,7 +5717,10 @@ function applyPlanUserInputRequest(event: SidepanelBridgeEvent): void {
             options: question.options
               .map((option) => ({
                 label: option.label.trim(),
-                description: option.description.trim(),
+                description: (option.description ?? "").trim(),
+                ...(typeof option.id === "string" && option.id.trim()
+                  ? { id: option.id.trim() }
+                  : {}),
               }))
               .filter((option) => option.label),
           }

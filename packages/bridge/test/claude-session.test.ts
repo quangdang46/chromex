@@ -343,6 +343,92 @@ describe("ClaudeAgentSession", () => {
     await session.close();
   });
 
+  test("AskUserQuestion → permission.requested; answers resolve allow + updatedInput", async () => {
+    let resolved: unknown = null;
+    const { session } = makeSession((_uuid, q) => {
+      const opts = q.capturedOptions as {
+        canUseTool?: (n: string, i: Record<string, unknown>, o: object) => Promise<unknown>;
+      };
+      void opts
+        ?.canUseTool?.(
+          "AskUserQuestion",
+          {
+            questions: [
+              {
+                question: "Pick a color?",
+                header: "Color",
+                options: [
+                  { label: "Red", description: "warm" },
+                  { label: "Blue", description: "cool" },
+                ],
+              },
+              {
+                question: "Pick a size?",
+                header: "Size",
+                options: [{ label: "S" }, { label: "L" }],
+              },
+            ],
+          },
+          { toolUseID: "tu-q" },
+        )
+        .then((r) => {
+          resolved = r;
+        });
+    });
+    collect(session);
+    await session.startTurn(INPUT as never);
+    await vi.waitFor(() => expect(session.getPendingPermissions()).toHaveLength(1));
+    const req = session.getPendingPermissions()[0]!;
+    expect(req.kind).toBe("provider_permission");
+    expect(req.details.tool).toBe("AskUserQuestion");
+    const qs = (
+      req.details.argsPreview as { questions: Array<{ id: string; question: string; header: string }> }
+    ).questions;
+    expect(qs.map((q) => q.id)).toEqual(["q0", "q1"]);
+    expect(qs[0]).toMatchObject({ question: "Pick a color?", header: "Color" });
+
+    await session.respondToPermission(req.requestId, {
+      requestId: req.requestId,
+      answers: { q0: ["Blue"], q1: ["S", "Custom size"] },
+    });
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({
+      behavior: "allow",
+      updatedInput: {
+        answers: { "Pick a color?": "Blue", "Pick a size?": "S, Custom size" },
+      },
+    });
+    const updated = (resolved as { updatedInput?: { questions?: unknown } }).updatedInput;
+    expect(Array.isArray(updated?.questions)).toBe(true);
+    await session.close();
+  });
+
+  test("AskUserQuestion dismiss (optionId deny) resolves deny", async () => {
+    let resolved: unknown = null;
+    const { session } = makeSession((_uuid, q) => {
+      const opts = q.capturedOptions as {
+        canUseTool?: (n: string, i: Record<string, unknown>, o: object) => Promise<unknown>;
+      };
+      void opts
+        ?.canUseTool?.(
+          "AskUserQuestion",
+          { questions: [{ question: "Q?", options: [{ label: "A" }, { label: "B" }] }] },
+          { toolUseID: "tu-q2" },
+        )
+        .then((r) => {
+          resolved = r;
+        });
+    });
+    collect(session);
+    await session.startTurn(INPUT as never);
+    await vi.waitFor(() => expect(session.getPendingPermissions()).toHaveLength(1));
+    const req = session.getPendingPermissions()[0]!;
+    await session.respondToPermission(req.requestId, { requestId: req.requestId, optionId: "deny" });
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({ behavior: "deny" });
+    await session.close();
+  });
+
   test("deny response resolves canUseTool with deny behavior", async () => {
     let resolved: unknown = null;
     const { session } = makeSession((_uuid, q) => {

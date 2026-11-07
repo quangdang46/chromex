@@ -189,6 +189,44 @@ describe("CodexAgentSession", () => {
     void serverResolved;
   });
 
+  test("requestUserInput → respondToPermission honors per-question answers", async () => {
+    const { session, client } = makeSession();
+    client.autoComplete = false;
+    await session.startTurn(INPUT);
+    await new Promise((r) => setTimeout(r, 5));
+
+    let serverResponse: Promise<unknown> | null = null;
+    for (const h of client.requests) {
+      serverResponse = Promise.resolve(
+        h({
+          id: "rpc-2",
+          method: "item/tool/requestUserInput",
+          params: {
+            questions: [
+              { id: "q1", question: "First?", options: [{ id: "a1", label: "A1" }, { id: "a2", label: "A2" }] },
+              { id: "q2", question: "Second?", options: [{ id: "b1", label: "B1" }] },
+            ],
+          },
+        }),
+      );
+    }
+    await new Promise((r) => setTimeout(r, 5));
+    expect(session.getPendingPermissions().map((p) => p.requestId)).toContain("rpc-2");
+
+    await session.respondToPermission("rpc-2", {
+      requestId: "rpc-2",
+      answers: { q1: ["a2"], q2: ["free text"] },
+    });
+    expect(await serverResponse).toEqual({
+      answers: {
+        q1: { answers: ["a2"] },
+        q2: { answers: ["free text"] },
+      },
+    });
+    await session.interrupt();
+    await session.close();
+  });
+
   test("interrupt sends turn/interrupt and resolves", async () => {
     const { session, client } = makeSession();
     client.autoComplete = false;
