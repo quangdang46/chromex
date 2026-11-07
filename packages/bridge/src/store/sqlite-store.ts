@@ -253,7 +253,7 @@ export class SQLiteStore {
            mode_id=excluded.mode_id, thinking_option_id=excluded.thinking_option_id,
            provider_options_json=excluded.provider_options_json,
            backend_json=excluded.backend_json, tab_intent_json=excluded.tab_intent_json,
-           last_seq=excluded.last_seq, last_read_seq=excluded.last_read_seq,
+           last_read_seq=excluded.last_read_seq,
            error_json=excluded.error_json`,
       )
       .run(...(taskToRow(task) as never[]));

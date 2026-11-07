@@ -166,6 +166,22 @@ describe("SQLite store — seq allocation", () => {
     expect(store.lastTaskSeq("t1")).toBe(4); // not MAX(seq)+1 = 2
     store.close();
   });
+
+  test("putTask with a stale lastSeq must not rewind the seq counter", async () => {
+    const db = await openGatewayDb(dir);
+    const store = new SQLiteStore(db);
+    const task = makeTask("t1");
+    store.createTask(task);
+    store.appendTaskEvent("t1", { type: "task.status_changed", from: "active", to: "active" });
+    // caller's in-memory record still says lastSeq: 0 — putTask must not
+    // write it back or the next append collides on (stream,task_id,seq)
+    store.putTask({ ...task, title: "renamed", lastSeq: 0 });
+    store.appendTaskEvent("t1", { type: "task.status_changed", from: "active", to: "active" });
+    expect(store.lastTaskSeq("t1")).toBe(2);
+    const page = store.taskEventsAfter("t1", 0, 10);
+    expect(page.events.map((e) => e.seq)).toEqual([1, 2]);
+    store.close();
+  });
 });
 
 describe("SQLite store — recovery scan (§5.6)", () => {
