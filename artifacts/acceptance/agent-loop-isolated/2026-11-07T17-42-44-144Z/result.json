@@ -1,0 +1,16 @@
+{
+  "scenario": "agent-loop-isolated",
+  "status": "FAIL",
+  "summary": "Assignment to constant variable.",
+  "notes": [
+    "ok — tab.create returned tabId=0",
+    "ok — snapshot observes the form page",
+    "ok — page.wait text=Submitted resolved",
+    "ok — extract verifies submit-ok page",
+    "ok — fixture server received POST /submit",
+    "ok — POST body carries name=Agent",
+    "ok — POST body carries plan field",
+    "ok — broken page honestly still reports 'broken' (no fake success)",
+    "ok — tabs.list sees 2 task tabs"
+  ]
+}

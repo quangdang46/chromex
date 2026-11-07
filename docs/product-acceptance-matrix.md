@@ -50,7 +50,9 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   verification (code landed: all_frames + frameId end-to-end),
   dialogs/file-picker/trusted-input (debugger-tier, deferred),
   response-body inspection (needs debugger/CDP tier)
-- Agent loop proof: scripted E2E where provider iterates browser tools
+- Agent loop proof: `agent-loop-isolated` scenario PASS — scripted
+  provider-style iteration on headless chromium (form submit verified
+  server-side + honest-failure check); runs in `run-all` without a token
 - Browser↔code loop: S1/S2 scripted scenarios
 - Injection defense audit + content fencing
 - Deliverable/evidence rendering (S8)
