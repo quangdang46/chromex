@@ -119,8 +119,11 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     screenshot: true,
     screenshotImagePayload: true,
     upload: true,
-    // PROVISIONAL(spike-B4): claimed "all" pending real frame tests.
-    iframe: "all",
+    // page.locator does not pierce frame boundaries — DOM actions and
+    // frame-scoped args.frameId are refused proto.unsupported until
+    // frameLocator support lands. ariaSnapshot may still surface iframe
+    // content for observation, but the proven action level is "none".
+    iframe: "none",
     nativeDialogs: false,
     filePicker: false, // setInputFiles works; native picker does not
     trustedGesture: false,

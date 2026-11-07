@@ -32,6 +32,19 @@ describe("PlaywrightIsolatedBackend", () => {
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("args.frameId > 0 → proto.unsupported (locators don't pierce frames)", async () => {
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => ({ chromium: { launch: async () => { throw new Error("no launch in test"); } } }) as never,
+    });
+    // frameId guard runs before any page resolution — no launch needed
+    await expect(
+      backend.execute("t1", "browser.page.click", { selector: "button", frameId: 2 }),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(
+      backend.execute("t1", "browser.page.snapshot", { frameId: 7 }),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("capabilities match ADR-B4: isolated, no user session/tabs", () => {
     const backend = new PlaywrightIsolatedBackend();
     expect(backend.id).toBe("playwright-isolated");

@@ -171,6 +171,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // chromex-0fza: a malformed args.expect must fail BEFORE the action
     // dispatches — #withExpect re-parses after the fact for the poll.
     if (EXPECTABLE_TOOLS.has(tool)) parseExpectCondition(args.expect);
+    // args.frameId targets a subframe — playwright locators do not pierce
+    // frame boundaries, so silently ignoring it would act on the TOP
+    // document while the caller believes it targeted the iframe. Refuse
+    // honestly until frameLocator support lands.
+    if (typeof args.frameId === "number" && args.frameId > 0) {
+      throw protocolError(
+        "proto.unsupported",
+        "args.frameId is not supported on playwright-isolated (frame locators unimplemented)",
+      );
+    }
     switch (tool) {
       case "browser.tabs.list":
         return this.#tabsList(taskId);

@@ -225,11 +225,11 @@ describe("CatalogCache", () => {
 });
 
 describe("B4 capability flags match ADR outcome", () => {
-  test("playwright-isolated: ariaSnapshot-based a11y, iframe all, upload yes / filePicker no", async () => {
+  test("playwright-isolated: ariaSnapshot-based a11y, iframe none (locators don't pierce frames), upload yes / filePicker no", async () => {
     const { DEFAULT_BACKEND_CAPABILITIES } = await import("@codex-sidepanel/shared");
     const caps = DEFAULT_BACKEND_CAPABILITIES["playwright-isolated"];
     expect(caps.accessibility).toBe(true);
-    expect(caps.iframe).toBe("all");
+    expect(caps.iframe).toBe("none");
     expect(caps.upload).toBe(true);
     expect(caps.filePicker).toBe(false);
   });
