@@ -298,6 +298,14 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
     let message = "";
     switch (step.action) {
       case "click":
+        // Full pointer/mouse sequence then HTMLElement.click() — bare
+        // .click() only fires `click`, so components listening on
+        // pointerdown/mousedown (menus, drag handles, press-and-hold
+        // buttons) never see the action. .click() itself still runs so
+        // default activation (checkbox toggle, label forwarding,
+        // overridden click() methods) keeps working exactly once.
+        dispatchHoverSequence(element);
+        dispatchClickSequence(element);
         element.click();
         message = `Clicked ${getElementLabel(element) || "the target element"}.`;
         break;
@@ -491,6 +499,24 @@ export function dispatchHoverSequence(element: HTMLElement): void {
   element.dispatchEvent(new MouseEvent("mouseover", common));
   element.dispatchEvent(new MouseEvent("mouseenter", common));
   element.dispatchEvent(new MouseEvent("mousemove", common));
+}
+
+/**
+ * click (chromex-cly): pointerdown → mousedown → pointerup → mouseup,
+ * then the caller runs element.click() for the click event + default
+ * activation. Synthetic events are UNTRUSTED — isTrusted=false, so
+ * trusted-gesture checks (popup blockers, some payment buttons) still
+ * refuse; JS listeners see the full sequence.
+ */
+export function dispatchClickSequence(element: HTMLElement): void {
+  const rect = element.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
+  element.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new MouseEvent("mousedown", common));
+  element.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
+  element.dispatchEvent(new MouseEvent("mouseup", common));
 }
 
 /** Normalize step.modifiers → KeyboardEventInit modifier flags. */
