@@ -212,6 +212,7 @@ export interface ExtensionSettings {
   planModeEnabled: boolean;
   playwrightBrowserControlEnabled: boolean;
   browserPolicyV2: boolean;
+  gatewayMode: boolean;
   preferredVoice: string;
   voiceInputAudioSource: VoiceInputAudioSource;
   workspaceRoot: string;

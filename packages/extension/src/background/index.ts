@@ -97,6 +97,7 @@ import {
 } from "./storage.js";
 import { resolveVisibleCurrentConversation } from "./conversation-history.js";
 import { NativeBridgeClient } from "./native-bridge-client.js";
+import { getGatewayRuntime, resetGatewayRuntime } from "./gateway/runtime.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
 import { inferActionCardsForOpenTab } from "./site-suggestions.js";
@@ -4716,6 +4717,10 @@ async function getWorkspaceHarness(): Promise<WorkspaceHarnessSnapshot> {
 async function handleSettingsUpdate(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const previousSettings = await getStoredSettings();
   const settings = await updateStoredSettings(patch);
+  if (patch.gatewayMode !== undefined && patch.gatewayMode !== previousSettings.gatewayMode) {
+    resetGatewayRuntime();
+    void getGatewayRuntime();
+  }
   if (
     !shouldRefreshCatalogAfterSettingsUpdate({
       previousWorkspaceRoot: previousSettings.workspaceRoot,
