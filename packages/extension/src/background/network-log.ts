@@ -66,8 +66,16 @@ function push(tabId: number, entry: NetworkLogEntry): void {
  *  proto.unsupported via the missing dep instead of faking data. */
 export function installNetworkLog(): void {
   if (installed || typeof chrome === "undefined" || !chrome.webRequest) return;
-  installed = true;
-  const onCompleted = chrome.webRequest.onCompleted;
+  try {
+    installNetworkLogInner();
+  } catch {
+    // permission absent or API shape changed — the tool reports
+    // proto.unsupported via the missing dep instead of faking data.
+  }
+}
+
+function installNetworkLogInner(): void {
+  const onCompleted = chrome.webRequest!.onCompleted;
   const onError = chrome.webRequest.onErrorOccurred;
   const filters = { urls: ["<all_urls>"] };
   onCompleted.addListener((details) => {
@@ -95,6 +103,7 @@ export function installNetworkLog(): void {
       ts: Date.now(),
     });
   }, filters);
+  installed = true;
 }
 
 export interface NetworkQuery {
