@@ -72,7 +72,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.downloads.list");
     expect(tools).not.toContain("browser.downloads.save");
     expect(tools).not.toContain("browser.page.drag");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 3);
+    expect(tools).not.toContain("browser.page.network");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 4);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

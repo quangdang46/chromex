@@ -73,6 +73,10 @@ export interface BrowserBackendCapabilities {
   /** browser.downloads.save — agent-initiated http(s) download into the
    *  profile's download dir (extension only; same permission). */
   downloadsSave?: boolean;
+  /** browser.page.network — chrome.webRequest metadata log: method,
+   *  sanitized url, status/error, mime, size. Bodies are NOT observable
+   *  at this tier — the capability is metadata inspection only. */
+  networkInspection?: boolean;
 }
 
 /**
@@ -112,6 +116,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     pageHistory: true,
     downloadsList: true,
     downloadsSave: true,
+    networkInspection: true,
   },
   "playwright-isolated": {
     existingUserTabs: false,

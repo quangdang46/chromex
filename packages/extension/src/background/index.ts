@@ -104,6 +104,7 @@ import {
   validateRuntimeMessage,
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
+import { installNetworkLog, listNetworkRequests } from "./network-log.js";
 import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
@@ -227,6 +228,8 @@ const degradedReport = createDegradedReporter();
 // unconditionally — the runtime only exists when gatewayMode is on.
 // The runtime calls handler(method, payload); the tool host takes the
 // payload only, so dispatch on the method here.
+installNetworkLog();
+
 const toolHostHandler = createToolHostHandler({
     sendToTab: async (tabId, message, options) => {
       const tab = await chrome.tabs.get(tabId);
@@ -234,6 +237,7 @@ const toolHostHandler = createToolHostHandler({
       return sendMessageToTab(tab as chrome.tabs.Tab & { id: number; url: string }, message, options);
     },
     getTab: async (tabId) => chrome.tabs.get(tabId),
+    listNetworkRequests: (tabId, query) => listNetworkRequests(tabId, query),
     listFrames: async (tabId) => {
       const frames = await chrome.webNavigation.getAllFrames({ tabId });
       return (frames ?? []).map((f) => ({

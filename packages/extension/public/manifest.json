@@ -23,7 +23,8 @@
     "nativeMessaging",
     "desktopCapture",
     "downloads",
-    "webNavigation"
+    "webNavigation",
+    "webRequest"
   ],
   "host_permissions": [
     "<all_urls>"

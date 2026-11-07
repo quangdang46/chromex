@@ -279,6 +279,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
     files: [{ name: "a.png", mimeType: "image/png", base64: "aGk=" }],
   },
   "browser.page.drag": { ref: "e1", snapshotId: "snap-1", toRef: "e9" },
+  "browser.page.network": { limit: 20, status: "error" },
   "browser.page.find": { text: "Sign in", limit: 10 },
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },

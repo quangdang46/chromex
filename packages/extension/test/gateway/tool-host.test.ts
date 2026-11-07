@@ -402,6 +402,39 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.network maps the webRequest log; filters validated", async () => {
+    const queries: unknown[] = [];
+    const d = deps({
+      listNetworkRequests: vi.fn((tabId: number, q: { limit: number; status?: string }) => {
+        queries.push({ tabId, ...q });
+        return [
+          { method: "GET", url: "https://api.example.com/v1/items", type: "xhr", status: 500, mimeType: "application/json", ts: 1 },
+          { method: "POST", url: "https://api.example.com/v1/pay", type: "fetch", error: "net::ERR_FAILED", ts: 2 },
+        ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.network", { limit: 10, status: "error" }))) as {
+      requests: Array<{ method: string; status?: number; error?: string }>;
+    };
+    expect(res.requests).toHaveLength(2);
+    expect(res.requests[0]).toMatchObject({ method: "GET", status: 500 });
+    expect(res.requests[1]).toMatchObject({ method: "POST", error: "net::ERR_FAILED" });
+    expect(queries[0]).toMatchObject({ limit: 10, status: "error" });
+    await expect(h(req("browser.page.network", { status: "bogus" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    // requests span frames — frameId is meaningless here
+    await expect(h(req("browser.page.network", { frameId: 2 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
+  test("page.network without dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.network"))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("downloads.save without dep → proto.unsupported", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.downloads.save", { url: "https://example.com/f" }))).rejects.toMatchObject({

@@ -62,6 +62,20 @@ export interface ToolHostDeps {
       fileExists?: boolean;
     }>
   >;
+  /** chrome.webRequest metadata log (browser.page.network) — absent dep
+   *  → proto.unsupported (permission missing or listeners not installed). */
+  listNetworkRequests?(
+    tabId: number,
+    query: { limit: number; urlContains?: string; type?: string; status?: string },
+  ): Array<{
+    method?: string;
+    url?: string;
+    type?: string;
+    status?: number;
+    error?: string;
+    mimeType?: string;
+    ts?: number;
+  }>;
   /** chrome.downloads.download (browser.downloads.save) — starts a
    *  download into the profile's download dir; absent dep →
    *  proto.unsupported. */
@@ -151,6 +165,7 @@ const SUPPORTED = new Set([
   "browser.page.history",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.page.network",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -690,6 +705,43 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           downloadId: typeof res?.id === "number" ? res.id : undefined,
           filename: res?.filename,
           note: "Download started — call browser.downloads.list to resolve the final on-disk path.",
+        };
+      }
+      case "browser.page.network": {
+        // Tab-scoped (requests span frames — frameId is rejected by the
+        // FRAME_SCOPED_TOOLS guard). Metadata only: status/mime/size,
+        // never response bodies.
+        if (!deps.listNetworkRequests) {
+          throw toolError("proto.unsupported", "network log requires the webRequest permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+            : 50;
+        const status = str(args.status);
+        if (status !== undefined && status !== "error" && !/^[245]xx$/.test(status)) {
+          throw toolError("proto.invalid", "browser.page.network args.status must be error|2xx|4xx|5xx");
+        }
+        const urlContains = str(args.urlContains);
+        const type = str(args.type);
+        const entries = deps.listNetworkRequests(tabId, {
+          limit,
+          ...(urlContains ? { urlContains } : {}),
+          ...(type ? { type } : {}),
+          ...(status ? { status } : {}),
+        });
+        return {
+          requests: (Array.isArray(entries) ? entries : []).map((e) => ({
+            method: e.method ?? "",
+            url: e.url ?? "",
+            type: e.type ?? "",
+            ...(typeof e.status === "number" ? { status: e.status } : {}),
+            ...(e.error ? { error: e.error } : {}),
+            ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+            ts: e.ts ?? 0,
+          })),
+          resolvedTabId: tabId,
         };
       }
       case "browser.page.screenshot": {

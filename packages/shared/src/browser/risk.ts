@@ -94,6 +94,7 @@ const READ_TOOLS = new Set([
   "browser.page.console",
   "browser.page.find",
   "browser.downloads.list",
+  "browser.page.network",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;

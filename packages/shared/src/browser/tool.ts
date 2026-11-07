@@ -28,6 +28,7 @@ export type BrowserToolName =
   | "browser.page.press"
   | "browser.page.upload"
   | "browser.page.drag"
+  | "browser.page.network"
   | "browser.page.find"
   | "browser.page.history"
   | "browser.downloads.list"
@@ -56,6 +57,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.press",
   "browser.page.upload",
   "browser.page.drag",
+  "browser.page.network",
   "browser.page.find",
   "browser.page.history",
   "browser.downloads.list",

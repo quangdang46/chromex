@@ -205,7 +205,7 @@ function chromexRuntimeMessageListener(
     const raw =
       format === "html"
         ? el ? el.outerHTML : document.documentElement.outerHTML
-        : el ? el.innerText : collectBodyText();
+        : el instanceof HTMLElement ? el.innerText : collectBodyText();
     const text = raw.slice(0, maxChars);
     sendResponse({
       text,
