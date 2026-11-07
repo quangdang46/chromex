@@ -1865,6 +1865,7 @@ function collectBrowserDomSnapshot(): BrowserDomSnapshot {
     });
 
   return {
+    snapshotId: `snap:${crypto.randomUUID()}`,
     metadata: {
       url: window.location.href,
       title: document.title,

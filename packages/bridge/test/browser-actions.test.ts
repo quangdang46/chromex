@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createBrowserDomActionPlanPrompt, normalizeBrowserDomActionPlan } from "../src/browser-actions.js";
 
 const snapshot = {
+  snapshotId: "snap:test-1",
   metadata: {
     url: "https://example.com",
     title: "Example",
@@ -58,6 +59,7 @@ describe("browser action planner", () => {
     );
 
     expect(plan.shouldAct).toBe(true);
+    expect(plan.snapshotId).toBe("snap:test-1");
     expect(plan.steps).toEqual([
       {
         action: "navigate",

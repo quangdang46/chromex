@@ -264,6 +264,7 @@ export function normalizeBrowserDomActionPlan(rawPlan: unknown, snapshot: Browse
 
   return {
     shouldAct,
+    snapshotId: snapshot.snapshotId,
     summary:
       typeof raw.summary === "string" && raw.summary.trim()
         ? raw.summary.trim()

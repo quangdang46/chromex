@@ -547,6 +547,8 @@ export interface BrowserDomElementSnapshot {
 }
 
 export interface BrowserDomSnapshot {
+  /** correlation id stamped by content script; echoed into plans for stale detection */
+  snapshotId?: string;
   metadata: PageMetadata;
   elements: BrowserDomElementSnapshot[];
   capabilities?: {
@@ -570,6 +572,8 @@ export interface BrowserDomActionStep {
 
 export interface BrowserDomActionPlan {
   shouldAct: boolean;
+  /** snapshotId this plan was built against (echoed from BrowserDomSnapshot) */
+  snapshotId?: string;
   summary: string;
   steps: BrowserDomActionStep[];
   requiresConfirmation: boolean;
