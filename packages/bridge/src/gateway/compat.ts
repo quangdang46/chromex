@@ -13,6 +13,8 @@
  * dual-path migration and are NOT served by the Gateway.
  */
 
+import os from "node:os";
+
 import { protocolError as perr } from "@codex-sidepanel/shared";
 
 export interface CompatRewrite {
@@ -48,7 +50,9 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
       return {
         method: "task.create",
         payload: {
-          cwd: p.cwd,
+          // legacy clients omit cwd when no workspace is configured;
+          // task.create requires a real path — home dir is the honest default
+          cwd: typeof p.cwd === "string" && p.cwd ? p.cwd : os.homedir(),
           ...(p.model ? { model: p.model } : {}),
           ...(p.profileId ? { profileId: p.profileId } : {}),
           ...(p.providerId ? { providerId: p.providerId } : {}),

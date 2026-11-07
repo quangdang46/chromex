@@ -4940,9 +4940,19 @@ async function dockChat(targetWindowId?: number, popupWindowId?: number) {
 }
 
 async function getWorkspaceHarness(): Promise<WorkspaceHarnessSnapshot> {
-  const harness = await bridge.request<WorkspaceHarnessSnapshot>("workspace.harness.read");
-  state.workspaceHarness = harness;
-  return harness;
+  try {
+    const harness = await bridge.request<WorkspaceHarnessSnapshot>("workspace.harness.read");
+    state.workspaceHarness = harness;
+    return harness;
+  } catch {
+    // Gateway mode does not serve the sidecar's workspace scan yet — fall
+    // back so catalog refresh and skill merges keep working.
+    const fallback = createFallbackWorkspaceHarness(
+      (await getStoredSettings().catch(() => null))?.workspaceRoot,
+    );
+    state.workspaceHarness = fallback;
+    return fallback;
+  }
 }
 
 function refreshCatalogAfterProviderChange(settings: ExtensionSettings): void {
