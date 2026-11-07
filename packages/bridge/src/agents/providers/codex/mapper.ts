@@ -213,7 +213,9 @@ export class CodexEventMapper {
         const turn = asRecord(p.turn);
         const status = str(turn?.status) ?? str(p.status);
         const error = asRecord(turn?.error);
-        this.withAnyTurn((turnId) => {
+        // route through withTurn so a completion arriving before
+        // bindTurn() buffers like every other turn-scoped event (§4.4.1)
+        this.withTurn(str(turn?.id) ?? str(p.turnId), (turnId) => {
           if (status === "interrupted" || status === "cancelled") {
             this.emitDurable({ type: "turn.cancelled", turnId, reason: status });
           } else if (error || status === "failed" || status === "error") {
@@ -232,7 +234,6 @@ export class CodexEventMapper {
             this.emitDurable({ type: "turn.completed", turnId });
           }
         });
-        this.unbindTurn();
         return;
       }
       default:
@@ -261,14 +262,6 @@ export class CodexEventMapper {
       return;
     }
     // no turnId: assign only when exactly one bound/active turn
-    if (this.gatewayTurnId) {
-      fn(this.gatewayTurnId);
-      return;
-    }
-    this.droppedNoTurnId += 1;
-  }
-
-  private withAnyTurn(fn: (gatewayTurnId: string) => void): void {
     if (this.gatewayTurnId) {
       fn(this.gatewayTurnId);
       return;
