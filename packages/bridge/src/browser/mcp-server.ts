@@ -1030,9 +1030,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.processes": {
     description:
-      "Browser process inventory (chrome.processes) — the task-manager surface: every browser process (browser/renderer/gpu/utility/extension/service_worker/worker/...) with its type, osProcessId, cumulative cpu, and the tabs it hosts. Use it to find runaway renderers or map a hung tab to its process before acting (tab.discard/reload). args.action: 'list' (default) returns sanitized processes [{id, type, osProcessId?, cpu?, tabs:[{tabId, title, url}]}] — workers included, capped at 200 processes / 50 tabs per process; 'permission' returns the granted state. Requires the optional 'processes' permission — ungranted → proto.unsupported. Results carry tab titles/urls (page-text egress, same class as tabs.list). On playwright-isolated → proto.unsupported (no process table).",
+      "Browser process inventory and control (chrome.processes) — the task-manager surface: every browser process (browser/renderer/gpu/utility/extension/service_worker/worker/...) with its type, id, osProcessId, cumulative cpu, and the tabs it hosts. Use it to find runaway renderers or map a hung tab to its process before acting. args.action: 'list' (default) returns sanitized processes [{id, type, osProcessId?, cpu?, tabs:[{tabId, title, url}]}] — workers included, capped at 200 processes / 50 tabs per process; 'terminate' kills a process — args.processId is the Process.id from list (NOT osProcessId), renderer processes only (the host refuses other types honestly); 'permission' returns the granted state. Terminating a renderer destroys that tab's page state → always requires approval, never task-eligible (same blast radius as tab.close). Requires the optional 'processes' permission — ungranted → proto.unsupported. List results carry tab titles/urls (page-text egress, same class as tabs.list). On playwright-isolated → proto.unsupported (no process table).",
     inputSchema: objectSchema({
-      action: { type: "string", enum: ["list", "permission"], description: "Operation (default list)." },
+      action: { type: "string", enum: ["list", "terminate", "permission"], description: "Operation (default list)." },
+      processId: { type: "integer", description: "terminate: Process.id from the list result (not osProcessId)." },
     }),
   },
   "browser.dns": {

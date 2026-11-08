@@ -443,6 +443,20 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     }
   });
 
+  test("browser.processes terminate: approval, never task-eligible (kills page state)", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.processes", processesOp: "terminate" }));
+    expect(v.risk).toBe("external_mutation");
+    expect(v.needsApproval).toBe(true);
+    expect(v.allowTaskEligible).toBe(false);
+    expect(v.kind).toBe("browser_action");
+    // list/permission stay reads
+    for (const op of ["list", "permission"]) {
+      const r = classifyActionRisk(ctx({ action: "browser.processes", processesOp: op }));
+      expect(r.risk).toBe("read");
+      expect(r.needsApproval).toBe(false);
+    }
+  });
+
   test("browser.dns: pure read; browser.power: permission read, request/release approval task-eligible", () => {
     const dns = classifyActionRisk(ctx({ action: "browser.dns" }));
     expect(dns.risk).toBe("read");

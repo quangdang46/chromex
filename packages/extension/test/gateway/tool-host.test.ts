@@ -2288,6 +2288,64 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.processes terminate: renderer-only kill with pre-flight type check", async () => {
+    const calls: string[] = [];
+    const procs = {
+      permission: vi.fn(async () => "granted"),
+      list: vi.fn(async () => []),
+      info: vi.fn(async (pid: number) => {
+        calls.push(`info:${pid}`);
+        return pid === 102 ? { id: 102, type: "renderer" } : pid === 101 ? { id: 101, type: "browser" } : null;
+      }),
+      terminate: vi.fn(async (pid: number) => {
+        calls.push(`terminate:${pid}`);
+        return {};
+      }),
+    };
+    const h = createToolHostHandler(deps({ processes: procs }));
+    // happy path — renderer pid terminates
+    const ok = (await h(req("browser.processes", { action: "terminate", processId: 102 }))) as {
+      terminated: boolean; processId: number; type: string;
+    };
+    expect(ok).toEqual({ terminated: true, processId: 102, type: "renderer" });
+    expect(calls).toEqual(["info:102", "terminate:102"]);
+    // non-renderer refused before terminate is ever called
+    calls.length = 0;
+    await expect(h(req("browser.processes", { action: "terminate", processId: 101 })))
+      .rejects.toMatchObject({ code: "proto.invalid", message: expect.stringContaining("renderer") });
+    expect(calls).toEqual(["info:101"]);
+    // unknown pid → honest not-found
+    await expect(h(req("browser.processes", { action: "terminate", processId: 999 })))
+      .rejects.toMatchObject({ code: "browser.action_failed" });
+    // invalid args
+    await expect(h(req("browser.processes", { action: "terminate" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.processes", { action: "terminate", processId: -1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.processes", { action: "terminate", processId: 1.5 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel propagates
+    const dPerm = deps({
+      processes: {
+        permission: vi.fn(async () => "permission" as const),
+        list: vi.fn(async () => "permission" as const),
+        info: vi.fn(async () => "permission" as const),
+        terminate: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.processes", { action: "terminate", processId: 1 })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("processes permission") });
+    // host without info/terminate → proto.unsupported
+    const dOld = deps({
+      processes: {
+        permission: vi.fn(async () => "granted"),
+        list: vi.fn(async () => []),
+      },
+    });
+    await expect(createToolHostHandler(dOld)(req("browser.processes", { action: "terminate", processId: 1 })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.dns marshals resolve/permission + validates hostname", async () => {
     const calls: Array<{ op: string; args: unknown[] }> = [];
     const dns = {

@@ -502,6 +502,9 @@ export function buildActionContext(
     ...(req.tool === "browser.dnr"
       ? { dnrOp: typeof args.action === "string" ? args.action : "list" }
       : {}),
+    ...(req.tool === "browser.processes"
+      ? { processesOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
     ...(req.tool === "browser.userScripts"
       ? { userScriptsOp: typeof args.action === "string" ? args.action : "list" }
       : {}),

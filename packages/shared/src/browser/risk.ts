@@ -89,6 +89,9 @@ export interface ActionContext {
   /** browser.dnr sub-action — list/matched/test/permission read rule
    *  and match state, add/remove/clear mutate session network rules. */
   dnrOp?: string;
+  /** browser.processes sub-action — list/permission read the process
+   *  table, terminate kills a renderer (page-state loss). */
+  processesOp?: string;
   /** browser.userScripts sub-action — list/worlds read script and world
    *  state, register/unregister/update/configureWorld/resetWorld mutate
    *  persistent injections, execute runs one-shot page script. */
@@ -695,10 +698,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // data, every op is a read.
       return verdict("read", { reason: "system resource stats read" });
 
-    case "browser.processes":
+    case "browser.processes": {
       // Process inventory — tab titles/urls ride inside each Process,
       // so the egress classifier treats this like tabs.list (page-text).
+      const op = ctx.processesOp ?? "list";
+      if (op === "terminate") {
+        // Killing a renderer destroys that tab's page state — same
+        // blast radius as tab.close, which fails closed to approval.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "process terminate destroys the tab's page state",
+        });
+      }
       return verdict("read", { reason: "browser process inventory read" });
+    }
 
     case "browser.dns":
       // Hostname → address resolution — agent supplies the hostname,

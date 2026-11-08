@@ -1514,9 +1514,22 @@ await runScenario(
       );
       const procErr = procRes?.error ?? {};
       sys.processesUnsupportedOk = procRes?.status === "failed" && procErr.code === "proto.unsupported";
+      // terminate: arg validation fires before the permission boundary;
+      // a well-formed call then hits the same ungranted-permission wall.
+      const termNoPid = await runner.browserToolCall(
+        taskId, "browser.processes", { action: "terminate" }, token, 60_000,
+      );
+      sys.termNoPidOk = (termNoPid?.error?.code ?? "") === "proto.invalid";
+      const termRes = await runner.browserToolCall(
+        taskId, "browser.processes", { action: "terminate", processId: 1 }, token, 60_000,
+      );
+      sys.termUnsupportedOk = termRes?.status === "failed" &&
+        (termRes?.error?.code ?? "") === "proto.unsupported" &&
+        /processes permission/.test(termRes?.error?.message ?? "");
       evidence.note(`system/processes → ${JSON.stringify(sys).slice(0, 300)}`);
       results.systemProcesses = {
-        ok: sys.memoryUnsupportedOk === true && sys.processesUnsupportedOk === true,
+        ok: sys.memoryUnsupportedOk === true && sys.processesUnsupportedOk === true &&
+          sys.termNoPidOk === true && sys.termUnsupportedOk === true,
         ...sys,
       };
 

@@ -294,6 +294,11 @@ export interface ToolHostDeps {
   processes?: {
     permission(): Promise<string | "permission" | null>;
     list(): Promise<unknown[] | "permission" | null>;
+    /** Single-process lookup for the terminate pre-flight type check.
+     *  null → process not found; "permission" → ungranted;
+     *  "unavailable" → chrome.processes missing on this build. */
+    info?(processId: number): Promise<{ id: number | null; type: string } | "permission" | "unavailable" | null>;
+    terminate?(processId: number): Promise<unknown | "permission" | "unavailable" | null>;
   } | undefined;
   /** chrome.dns (browser.dns) — hostname resolution.
    *  "permission" → optional dns permission not granted; null → API
@@ -3376,6 +3381,41 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             const procs = await procSentinel(api.list());
             return { processes: procs, count: procs.length };
           }
+          case "terminate": {
+            // Renderer-kill recovery path: look the process up first so
+            // non-renderer types (browser/gpu/utility/…) are refused
+            // honestly instead of crashing Chrome. chrome.processes
+            // .terminate only accepts renderer pids, but the pre-flight
+            // check gives a typed error and guards API drift.
+            if (!api.info || !api.terminate) {
+              throw toolError("proto.unsupported", "process terminate is not available on this host");
+            }
+            const pid = args.processId;
+            if (typeof pid !== "number" || !Number.isInteger(pid) || pid < 0) {
+              throw toolError("proto.invalid", "browser.processes terminate requires args.processId (integer ≥ 0 — the Process.id from list, not osProcessId)");
+            }
+            const info = await api.info(pid);
+            if (info === "permission") {
+              throw toolError("proto.unsupported", "processes permission is not granted");
+            }
+            if (info === "unavailable") {
+              throw toolError("proto.unsupported", "chrome.processes is not available on this Chrome build");
+            }
+            if (info === null) {
+              throw toolError("browser.action_failed", `process ${pid} not found`);
+            }
+            if (info.type !== "renderer") {
+              throw toolError("proto.invalid", `browser.processes terminate only supports renderer processes — pid ${pid} is type '${info.type}'`);
+            }
+            const term = await api.terminate(pid);
+            if (term === "permission") {
+              throw toolError("proto.unsupported", "processes permission is not granted");
+            }
+            if (term === "unavailable" || term === null) {
+              throw toolError("proto.unsupported", "chrome.processes is not available on this Chrome build");
+            }
+            return { terminated: true, processId: pid, type: info.type };
+          }
           case "permission": {
             const p = await api.permission();
             if (p === "permission") {
@@ -3387,7 +3427,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return { permission: p, granted: p === "granted" };
           }
           default:
-            throw toolError("proto.invalid", "browser.processes args.action must be list|permission");
+            throw toolError("proto.invalid", "browser.processes args.action must be list|terminate|permission");
         }
       }
       case "browser.dns": {

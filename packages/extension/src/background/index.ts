@@ -1129,6 +1129,33 @@ const toolHostHandler = createToolHostHandler({
             })),
         }));
       },
+      info: async (processId: number) => {
+        const granted = await chrome.permissions.contains({ permissions: ["processes"] });
+        if (!granted) return "permission";
+        const api = (chrome as unknown as {
+          processes?: {
+            getProcessInfo(ids?: number[], includeWorkers?: boolean): Promise<Array<Record<string, unknown>>>;
+          };
+        }).processes;
+        if (!api?.getProcessInfo) return "unavailable";
+        const procs = await api.getProcessInfo([processId], false);
+        const p = Array.isArray(procs) ? procs[0] : undefined;
+        if (!p) return null;
+        return {
+          id: typeof p.id === "number" ? p.id : null,
+          type: typeof p.type === "string" ? p.type.slice(0, 40) : "unknown",
+        };
+      },
+      terminate: async (processId: number) => {
+        const granted = await chrome.permissions.contains({ permissions: ["processes"] });
+        if (!granted) return "permission";
+        const api = (chrome as unknown as {
+          processes?: { terminate(processId: number): Promise<void> };
+        }).processes;
+        if (!api?.terminate) return "unavailable";
+        await api.terminate(processId);
+        return {};
+      },
     },
     dns: {
       // chrome.dns — optional "dns" permission checked per call.
