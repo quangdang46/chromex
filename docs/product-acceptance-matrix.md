@@ -22,6 +22,7 @@ not sufficient.
 | S6 | Failed plan: stale selector / UI change / tool failure → re-observe, re-plan, continue; never fake success | Injected failure run | **PASS** (headless Chromium, real ext): stale `snapshotId` rejected loudly (`browser.stale_snapshot`), re-observe + retry succeeded |
 | S7 | Protection: sensitive actions (send/post/delete/pay) → contextual approval; denial is honored, never bypassed | Approval-flow run incl. deny path | **PASS** (headless Chromium, real ext): deny→`browser.approval_denied`, allow→navigated, permission.resolved×2 |
 | S8 | Verifiable deliverable: diff, changed files, test results, browser evidence, known limits | Deliverable rendered in sidepanel | **PASS** (headless Chromium, real ext): task.sync carries full tool evidence (started/completed/classified per call); sidepanel renders composer UI |
+| S9 | Stop + message queue: interrupt a running turn (no turnId), queued follow-up auto-dispatches, never fakes success | Deterministic provider-path run | **PASS** (2026-11-08, fake ACP agent + real gateway): `task.send` during running turn → `queued:true`; `turn.interrupt` without turnId → `turn.cancelled{interrupted}`; queued turn → `turn.completed`; zero `turn.unknown`. Codex adapter fix `97cdead` (keep turn bound until terminal notification) |
 
 Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.jsonl,task.sync.*.json,screenshots/}`. Harness: `scripts/acceptance/`.
 
