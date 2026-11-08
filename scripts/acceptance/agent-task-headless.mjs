@@ -74,6 +74,9 @@ await runScenario(
       const snap2 = await call("browser.page.snapshot", { tabId });
       const snapId2 = JSON.stringify(snap2?.result ?? {}).match(/"snapshotId"\s*:\s*"([^"]+)"/)?.[1];
       await call("browser.page.navigate", { tabId, url: fixture.url("/form") });
+      // wait for the NEW document so the stale check sees the committed
+      // url — navigate can return before tabs.get reflects the swap
+      await call("browser.page.wait", { tabId, selector: "#name", timeoutMs: 8000 });
       const staleClick = await call("browser.page.click", {
         tabId, selector: "#next", snapshotId: snapId2,
       }).catch((e) => ({ rpcError: e?.message }));
@@ -101,7 +104,32 @@ await runScenario(
       const evVal = ev?.result?.value ?? ev?.value;
       assert(evVal === "Fixture Form", `evaluate reads page title (${JSON.stringify(evVal)})`);
 
-      // ── Loop 4: honest negative — evaluate on missing expr refused ──
+      // ── Loop 4: network control — route fulfill mocks the API, the
+      // agent observes the mocked state, unroute restores reality ────
+      const rt = await call("browser.page.route", {
+        tabId, match: "/api/ping", status: 200,
+        contentType: "application/json", body: '{"v":"agent-mock"}',
+      });
+      assert(rt?.status === "completed" && rt?.result?.routeId, "route rule registered");
+      await call("browser.page.navigate", { tabId, url: fixture.url("/fetch") });
+      await call("browser.page.wait", { tabId, text: "pong:agent-mock", timeoutMs: 10_000 });
+      const mocked = await call("browser.page.extract", { tabId, selector: "#out" });
+      assert(
+        JSON.stringify(mocked?.result ?? {}).includes("pong:agent-mock"),
+        "agent observes the fulfilled (mocked) response",
+      );
+      const routeId = rt?.result?.routeId;
+      await call("browser.page.unroute", { tabId, routeId });
+      await call("browser.page.navigate", { tabId, url: fixture.url("/fetch") });
+      await call("browser.page.wait", { tabId, text: "pong:ok", timeoutMs: 10_000 });
+      const real = await call("browser.page.extract", { tabId, selector: "#out" });
+      assert(
+        JSON.stringify(real?.result ?? {}).includes("pong:ok"),
+        "unroute restores the real server response",
+      );
+      evidence.note("network: route fulfill → observed mock → unroute → real response");
+
+      // ── Loop 5: honest negative — evaluate on missing expr refused ──
       const badEv = await call("browser.page.evaluate", { tabId, expression: "" }).catch((e) => ({ rpcError: e?.message }));
       const badEvFailed = badEv == null || badEv.rpcError || badEv.status === "failed";
       assert(badEvFailed, "empty evaluate refused, never faked");

@@ -1,0 +1,12 @@
+{
+  "scenario": "agent-task-headless",
+  "runId": "2026-11-08T02-20-45-909Z-6e5a1d",
+  "status": "FAIL",
+  "summary": "harness error: ASSERT FAIL: agent observes the fulfilled (mocked) response",
+  "durationMs": 8665,
+  "error": "Error: ASSERT FAIL: agent observes the fulfilled (mocked) response\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:21:20)\n    at runScenario.autoAnswer (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:114:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:25:1",
+  "notes": [
+    "[2026-11-08T02:20:51.766Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T02:20:53.087Z] recovery: stale snapshot → re-observe → fill succeeded"
+  ]
+}

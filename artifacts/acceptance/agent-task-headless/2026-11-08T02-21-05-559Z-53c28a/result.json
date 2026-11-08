@@ -1,0 +1,11 @@
+{
+  "scenario": "agent-task-headless",
+  "runId": "2026-11-08T02-21-05-559Z-53c28a",
+  "status": "FAIL",
+  "summary": "harness error: ASSERT FAIL: stale snapshotId rejected loudly mid-task",
+  "durationMs": 5137,
+  "error": "Error: ASSERT FAIL: stale snapshotId rejected loudly mid-task\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:21:20)\n    at runScenario.autoAnswer (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:83:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:25:1",
+  "notes": [
+    "[2026-11-08T02:21:09.779Z] authed gateway connections=2 (1=client, 2+=browser host)"
+  ]
+}
