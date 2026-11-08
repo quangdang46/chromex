@@ -627,7 +627,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#ensureResponseTap(page);
     this.#ensureWsTap(page);
     this.#ensureDialogCapture(page);
+    page.on("close", () => this.#forgetPage(page));
     return page;
+  }
+
+  /** Drop every per-page buffer when a page closes — without this the
+   *  strong Map keys keep closed Page objects (and their response/WS/
+   *  route buffers) alive for the backend's lifetime. */
+  #forgetPage(page: PwPage): void {
+    this.#consoleBuffers.delete(page);
+    this.#networkBuffers.delete(page);
+    this.#responseBuffers.delete(page);
+    this.#wsBuffers.delete(page);
+    this.#routeRules.delete(page);
+    this.#fulfilledBodies.delete(page);
+    this.#pendingDialogs.delete(page);
   }
 
   #ensureDialogCapture(page: PwPage): void {
@@ -2331,7 +2345,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const ctx = this.#contexts.get(taskId);
     this.#contexts.delete(taskId);
     this.#activePages.delete(taskId);
-    for (const p of ctx?.pages() ?? []) this.#consoleBuffers.delete(p);
+    for (const p of ctx?.pages() ?? []) this.#forgetPage(p);
     await ctx?.close().catch(() => {});
   }
 
@@ -2340,7 +2354,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     for (const ctx of this.#contexts.values()) await ctx.close().catch(() => {});
     this.#contexts.clear();
     this.#activePages.clear();
-    this.#consoleBuffers.clear();
+    for (const map of [
+      this.#consoleBuffers, this.#networkBuffers, this.#responseBuffers,
+      this.#wsBuffers, this.#routeRules, this.#fulfilledBodies,
+      this.#pendingDialogs,
+    ]) map.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;
   }
