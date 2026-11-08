@@ -113,6 +113,20 @@ async function build(): Promise<GatewayRuntime | null> {
       for (const l of snapshotListeners) l(taskId, snapshot);
     },
     onTasksChanged: () => {
+      // Attention badge: the whole point of gateway attention states is
+      // telling a user who walked away that a task needs them (approval,
+      // finished, error, browser offline). The sidepanel may be closed —
+      // the action badge is the only always-visible surface. Count of
+      // attention-bearing tasks; clears itself when attention resolves.
+      try {
+        const pending = tasks.listTasks().filter((t) => t.attention !== null).length;
+        void chrome.action.setBadgeText({ text: pending > 0 ? String(pending) : "" });
+        if (pending > 0) {
+          void chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+        }
+      } catch {
+        /* chrome.action unavailable (tests/stubbed runtime) */
+      }
       try {
         void chrome.runtime
           .sendMessage({ type: "gateway.tasks.changed" })

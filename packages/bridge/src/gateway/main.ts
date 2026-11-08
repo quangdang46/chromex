@@ -1020,6 +1020,7 @@ async function handleGatewayRequest(
         store: ctx.store,
         config: ctx.config,
         providers: ctx.providers,
+        attentionForTask: (taskId) => ctx.sessionManager.attentionFor(taskId),
       });
     }
     case "task.create": {

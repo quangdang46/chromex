@@ -15,6 +15,7 @@ import type {
   HelloResponse,
   HelloTaskSummary,
   BrowserBindingState,
+  TaskAttention,
 } from "@codex-sidepanel/shared";
 
 import type { GatewayConfig } from "./config.js";
@@ -38,6 +39,10 @@ export interface HelloDeps {
   providers: HelloResponse["providers"];
   /** extra feature gates beyond config defaults */
   features?: Record<string, boolean>;
+  /** derived attention per §4.7 — hello carries it so reconnecting
+   *  clients restore attention without replaying the full event log
+   *  (cursor dedup would drop attention_changed events already seen) */
+  attentionForTask?: (taskId: string) => TaskAttention | null;
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -108,6 +113,7 @@ export function buildHelloResponse(
       ? t.binding.state
       : "needs_confirmation") as BrowserBindingState,
     backendId: t.backend.backendId,
+    attention: deps.attentionForTask?.(t.taskId) ?? null,
   }));
 
   const allowed = new Set(deps.config.browser.allowedBackends);

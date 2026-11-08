@@ -3,7 +3,7 @@ import type { AgentCapabilityFlags } from "../agent/capabilities.js";
 import type { BrowserBackendId, BrowserBackendCapabilities } from "../browser/backend.js";
 import type { BrowserBindingState } from "../browser/identity.js";
 import type { TaskSnapshot } from "../tasks/snapshot.js";
-import type { TaskStatus } from "../tasks/record.js";
+import type { TaskAttention, TaskStatus } from "../tasks/record.js";
 import type { DurableTaskEventEnvelope, DurableGatewayEventEnvelope } from "./envelope.js";
 
 /**
@@ -36,6 +36,8 @@ export interface HelloTaskSummary {
   browserBinding: BrowserBindingState;
   /** pinned browser backend (P2-07 badge) — optional for older gateways */
   backendId?: import("../browser/backend.js").BrowserBackendId;
+  /** derived attention (§4.7) — optional for older gateways; absent ⇒ null */
+  attention?: TaskAttention | null;
 }
 
 export interface HelloResponse {

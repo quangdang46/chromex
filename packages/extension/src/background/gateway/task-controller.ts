@@ -90,7 +90,10 @@ export class TaskController {
       status: t.status,
       lastSeq: Math.max(lastSeq, existing?.lastSeq ?? 0),
       lastReadSeq: this.#cursors.lastReadSeqByTask[t.taskId] ?? existing?.lastReadSeq ?? 0,
-      attention: null,
+      // hello carries derived attention — replayed attention_changed
+      // events older than the persisted cursor are deduped away, so
+      // without this seed a restart would hide pending attention.
+      attention: t.attention ?? existing?.attention ?? null,
       title: existing?.title ?? null,
       activeTurnId: t.activeTurnId ?? existing?.activeTurnId ?? null,
       backendId: t.backendId ?? existing?.backendId ?? null,
