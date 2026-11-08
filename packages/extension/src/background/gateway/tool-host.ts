@@ -564,6 +564,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
     const tool = req.tool ?? "";
     const args = req.args ?? {};
     const tabScope = parseTabScope(payload);
+    // §4.8 dispatch binding: facts the tool server's risk classifier
+    // approved — forwarded to whichever dispatch path runs (DOM step,
+    // trusted locate, or targetless describe-verify) so the content
+    // script re-derives them at the closest atomic point before acting.
+    // Sanitized to known string keys; malformed payloads drop the check
+    // (unbound dispatch is honest — the action still runs).
+    const expectedTarget = sanitizeExpectedTarget(req.expectedTarget);
     // §4.8 risk preflight — NOT an agent tool: the tool server calls this
     // internally before classification so the verdict sees ground-truth
     // element/page facts instead of only agent-supplied args. Resolves
@@ -1696,7 +1703,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // viewport coords via DOM.getContentQuads. Never silently
         // downgrades — absent CDP dep fails proto.unsupported.
         if (tool === "browser.page.click" && args.trusted === true) {
-          return await trustedClick(deps, tabId, args, expectCond, frameId);
+          return await trustedClick(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         // Keyboard trusted ops work in subframes too: the element is
         // focused through that frame's content script and CDP key
@@ -1704,19 +1711,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // subframes — element targets resolve to absolute viewport
         // coordinates via CDP DOM quads before dispatch.
         if (tool === "browser.page.press" && args.trusted === true) {
-          return await trustedPress(deps, tabId, args, expectCond, frameId);
+          return await trustedPress(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         if (tool === "browser.page.type" && args.trusted === true) {
-          return await trustedType(deps, tabId, args, expectCond, frameId);
+          return await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         if (tool === "browser.page.fill" && args.trusted === true) {
-          return await trustedFill(deps, tabId, args, expectCond, frameId);
+          return await trustedFill(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         if (tool === "browser.page.hover" && args.trusted === true) {
-          return await trustedHover(deps, tabId, args, expectCond, frameId);
+          return await trustedHover(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         if (tool === "browser.page.drag" && args.trusted === true) {
-          return await trustedDrag(deps, tabId, args, expectCond, frameId);
+          return await trustedDrag(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.
@@ -1727,13 +1734,6 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           );
         }
         const step = domStepFor(tool, args);
-        // §4.8 dispatch binding: facts the tool server's risk
-        // classifier approved — the content script re-derives them from
-        // the resolved element synchronously before acting and aborts
-        // with browser.target_changed on drift. Sanitized to known
-        // string keys; anything malformed is dropped (no verification
-        // is honest — the action still runs unbound).
-        const expectedTarget = sanitizeExpectedTarget(req.expectedTarget);
         if (expectedTarget) step.expectedTarget = expectedTarget;
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
@@ -2130,6 +2130,18 @@ function formatAxTree(nodes: AxNode[]): { tree: string; nodeCount: number; trunc
   return { tree: lines.join("\n"), nodeCount: nodes.length, truncated };
 }
 
+/** Map a locate/geom/describe `target_changed` reason to the coded
+ *  tool error — the approved facts no longer hold for the resolved
+ *  element, so the action must not dispatch. */
+function throwIfTargetChanged(reason: string | undefined): void {
+  if (reason === "target_changed") {
+    throw toolError(
+      "browser.target_changed",
+      "target changed since the action was risk-checked — take a fresh browser.page.snapshot and retry",
+    );
+  }
+}
+
 /** Locate an element target in the top frame via the content script and
  *  return its viewport-center point + a querySelector-able selector. */
 async function cdpLocatePoint(
@@ -2138,6 +2150,7 @@ async function cdpLocatePoint(
   target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
   frameId = 0,
   scrollIntoView = false,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<{ x: number; y: number; width?: number; height?: number; selector: string }> {
   const loc = (await deps.sendToTab(tabId, {
     type: "page.dom.locate",
@@ -2145,10 +2158,12 @@ async function cdpLocatePoint(
     ...(target.selector ? { selector: target.selector } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(scrollIntoView ? { scrollIntoView: true } : {}),
+    ...(expectedTarget ? { expectedTarget } : {}),
   }, { frameId })) as {
     found?: boolean; reason?: string; count?: number;
     x?: number; y?: number; width?: number; height?: number; selector?: string;
   };
+  throwIfTargetChanged(loc?.reason);
   if (loc?.found !== true || typeof loc.x !== "number" || typeof loc.y !== "number" || typeof loc.selector !== "string") {
     if (loc?.reason === "ambiguous") {
       throw toolError("browser.ambiguous_target", `target matches ${loc.count ?? "multiple"} elements`);
@@ -2170,12 +2185,13 @@ async function cdpLocateElement(
   args: Record<string, unknown>,
   frameId = 0,
   scrollIntoView = false,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<{ x: number; y: number; width?: number; height?: number; selector: string }> {
   return cdpLocatePoint(deps, tabId, {
     ref: str(args.ref),
     selector: str(args.selector),
     label: str(args.label),
-  }, frameId, scrollIntoView);
+  }, frameId, scrollIntoView, expectedTarget);
 }
 
 /** Element target inside a subframe → top-viewport coordinates via the
@@ -2188,6 +2204,7 @@ async function frameAbsolutePoint(
   target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
   frameId: number,
   scrollIntoView = false,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<{ x: number; y: number; width?: number; height?: number; selector?: string }> {
   const res = (await deps.sendToTab(tabId, {
     type: "page.geom.absolute",
@@ -2195,10 +2212,12 @@ async function frameAbsolutePoint(
     ...(target.selector ? { selector: target.selector } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(scrollIntoView ? { scrollIntoView: true } : {}),
+    ...(expectedTarget ? { expectedTarget } : {}),
   }, { frameId })) as {
     found?: boolean; reason?: string; count?: number;
     x?: number; y?: number; width?: number; height?: number; selector?: string;
   };
+  throwIfTargetChanged(res?.reason);
   if (res?.found !== true || typeof res.x !== "number" || typeof res.y !== "number") {
     if (res?.reason === "ambiguous") {
       throw toolError("browser.ambiguous_target", `target matches ${res.count ?? "multiple"} elements`);
@@ -2237,6 +2256,7 @@ async function trustedClick(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const button = str(args.button);
   if (button !== undefined && !CDP_MOUSE_BUTTONS.has(button)) {
@@ -2273,8 +2293,8 @@ async function trustedClick(
     : frameId !== 0
       ? await frameAbsolutePoint(deps, tabId, {
           ref: str(args.ref), selector: str(args.selector), label: str(args.label),
-        }, frameId)
-      : await cdpLocateElement(deps, tabId, args);
+        }, frameId, false, expectedTarget)
+      : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2328,6 +2348,7 @@ async function trustedHover(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const xArg = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
   const yArg = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
@@ -2344,8 +2365,8 @@ async function trustedHover(
     : frameId !== 0
       ? await frameAbsolutePoint(deps, tabId, {
           ref: str(args.ref), selector: str(args.selector), label: str(args.label),
-        }, frameId)
-      : await cdpLocateElement(deps, tabId, args);
+        }, frameId, false, expectedTarget)
+      : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2382,6 +2403,7 @@ async function trustedDrag(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const coordFields = [args.x, args.y, args.dropX, args.dropY];
   const coordCount = coordFields.filter((v) => v !== undefined && v !== null).length;
@@ -2408,10 +2430,10 @@ async function trustedDrag(
       ref: str(args.toRef), selector: str(args.toSelector), label: str(args.toLabel),
     };
     if (frameId !== 0) {
-      from = await frameAbsolutePoint(deps, tabId, srcTarget, frameId);
+      from = await frameAbsolutePoint(deps, tabId, srcTarget, frameId, false, expectedTarget);
       to = await frameAbsolutePoint(deps, tabId, dstTarget, frameId);
     } else {
-      const src = await cdpLocatePoint(deps, tabId, srcTarget);
+      const src = await cdpLocatePoint(deps, tabId, srcTarget, 0, false, expectedTarget);
       const dst = await cdpLocatePoint(deps, tabId, dstTarget);
       from = { x: src.x, y: src.y };
       to = { x: dst.x, y: dst.y };
@@ -2571,10 +2593,23 @@ async function cdpFocusTarget(
   tabId: number,
   args: Record<string, unknown>,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<void> {
   const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
-  if (!hasTarget) return;
-  const loc = await cdpLocateElement(deps, tabId, args, frameId);
+  if (!hasTarget) {
+    // Targetless trusted key op (press/type on the focused element):
+    // the classifier described document.activeElement — verify those
+    // facts still hold right before the CDP keys dispatch.
+    if (expectedTarget) {
+      const res = (await deps.sendToTab(tabId, {
+        type: "page.dom.describe",
+        expectedTarget,
+      }, { frameId })) as { found?: boolean; reason?: string } | undefined;
+      throwIfTargetChanged(res?.reason);
+    }
+    return;
+  }
+  const loc = await cdpLocateElement(deps, tabId, args, frameId, false, expectedTarget);
   const focusRes = (await deps.sendToTab(tabId, {
     type: "page.dom.perform",
     steps: [{ action: "focus", selector: loc.selector, reason: "trusted input focus" }],
@@ -2623,6 +2658,7 @@ async function trustedPress(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const key = str(args.key);
   if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");
@@ -2634,7 +2670,7 @@ async function trustedPress(
     );
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
-  await cdpFocusTarget(deps, tabId, args, frameId);
+  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2689,6 +2725,7 @@ async function trustedType(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const text = str(args.text) ?? str(args.value);
   if (text === undefined || text.length === 0) {
@@ -2696,7 +2733,7 @@ async function trustedType(
   }
   const keys = cdpResolveTypeText("browser.page.type", text);
   cdpRequired(deps);
-  await cdpFocusTarget(deps, tabId, args, frameId);
+  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2734,6 +2771,7 @@ async function trustedFill(
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
   frameId = 0,
+  expectedTarget?: Record<string, string> | null,
 ): Promise<Record<string, unknown>> {
   const text = str(args.text) ?? str(args.value);
   if (text === undefined) {
@@ -2744,8 +2782,8 @@ async function trustedFill(
   if (!del) throw toolError("proto.invalid", "internal: fill key definitions missing");
   cdpRequired(deps);
   // fill always targets an element — focus is mandatory, not optional
-  const loc = await cdpLocateElement(deps, tabId, args, frameId);
-  await cdpFocusTarget(deps, tabId, args, frameId);
+  const loc = await cdpLocateElement(deps, tabId, args, frameId, false, expectedTarget);
+  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
   // Select-all via the content script (input.select()/execCommand) —
   // the select-all CHORD does not survive CDP dispatch reliably on
   // every platform, and selection is not the trusted part anyway: the

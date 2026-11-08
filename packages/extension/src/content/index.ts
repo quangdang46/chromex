@@ -19,6 +19,7 @@ import {
   EDITOR_LIKE_SELECTOR,
   buildElementSelector,
   describeDomElementFacts,
+  domElementFactsMatch,
   getElementLabel,
   isDomActionElementVisible,
   isTextEntryCandidate,
@@ -324,6 +325,15 @@ function chromexRuntimeMessageListener(
     return false;
   }
 
+  /** §4.8: when the caller carries expectedTarget facts (approved by
+   *  the risk classifier), the resolved element must still match them —
+   *  checked synchronously with resolution, the closest atomic point
+   *  before async CDP/DOM dispatch. */
+  const expectedTargetViolation = (el: HTMLElement): boolean =>
+    message.expectedTarget !== null &&
+    typeof message.expectedTarget === "object" &&
+    !domElementFactsMatch(message.expectedTarget, el);
+
   if (message.type === "page.dom.locate") {
     // CDP-tier support: resolve a ref/selector/label to viewport
     // geometry + a querySelector-able selector for DOM.* commands.
@@ -347,6 +357,12 @@ function chromexRuntimeMessageListener(
         }
         resolved.element.scrollIntoView({ block: "center", inline: "center" });
         await new Promise((r) => setTimeout(r, 80));
+        // Check AFTER the scroll settle — lazy-load/observer mutations
+        // during the wait must not slip a changed target to CDP dispatch.
+        if (expectedTargetViolation(resolved.element)) {
+          sendResponse({ found: false, reason: "target_changed" });
+          return;
+        }
         const el = resolved.element;
         const rect = el.getBoundingClientRect();
         sendResponse({
@@ -375,6 +391,10 @@ function chromexRuntimeMessageListener(
         reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
         ...(resolved.status === "ambiguous" ? { count: resolved.count } : {}),
       });
+      return false;
+    }
+    if (expectedTargetViolation(resolved.element)) {
+      sendResponse({ found: false, reason: "target_changed" });
       return false;
     }
     const el = resolved.element;
@@ -423,6 +443,12 @@ function chromexRuntimeMessageListener(
     }
     if (!el) {
       sendResponse({ found: false, reason: "not_found" });
+      return false;
+    }
+    // Verify mode: caller passed expectedTarget — report target_changed
+    // instead of facts when the element drifted (trusted-path check).
+    if (expectedTargetViolation(el)) {
+      sendResponse({ found: false, reason: "target_changed" });
       return false;
     }
     sendResponse({ found: true, ...describeDomElementFacts(el) });
@@ -491,6 +517,12 @@ function chromexRuntimeMessageListener(
       const offset = await askFrameOffset();
       if (offset === null) {
         sendResponse({ found: false, reason: "frame_geometry_unavailable" });
+        return;
+      }
+      // Verify at the last synchronous point — askFrameOffset is an
+      // async postMessage round-trip the page can mutate through.
+      if (expectedTargetViolation(resolved.element)) {
+        sendResponse({ found: false, reason: "target_changed" });
         return;
       }
       sendResponse({

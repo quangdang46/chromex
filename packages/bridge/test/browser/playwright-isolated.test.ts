@@ -574,3 +574,62 @@ describe("PlaywrightIsolatedBackend §4.8 describeTarget preflight", () => {
     expect(res.found).toBe(false);
   });
 });
+
+describe("PlaywrightIsolatedBackend §4.8 dispatch binding", () => {
+  function clickPage(label: string, clicks: { n: number }) {
+    return {
+      url: () => "https://app.example.com/",
+      evaluate: async () => ({
+        found: true,
+        label,
+        tagName: "button",
+        pageOrigin: "https://app.example.com",
+        pageUrl: "https://app.example.com/",
+      }),
+      locator: () => ({
+        first: () => ({
+          click: async () => {
+            clicks.n += 1;
+          },
+        }),
+      }),
+    };
+  }
+
+  test("matching expectedTarget → action dispatches", async () => {
+    const clicks = { n: 0 };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([clickPage("Search", clicks)]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.click", { selector: "#go" }, {
+      expectedTarget: { label: "Search", tagName: "button" },
+    })) as { clicked: boolean };
+    expect(res.clicked).toBe(true);
+    expect(clicks.n).toBe(1);
+  });
+
+  test("mutated target → browser.target_changed, click never fires", async () => {
+    const clicks = { n: 0 };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([clickPage("Delete account", clicks)]) as never,
+    });
+    await expect(
+      backend.execute("t1", "browser.page.click", { selector: "#go" }, {
+        expectedTarget: { label: "Search" },
+      }),
+    ).rejects.toMatchObject({ code: "browser.target_changed" });
+    expect(clicks.n).toBe(0);
+  });
+
+  test("no expectedTarget → unbound dispatch unchanged (preflight fail-open)", async () => {
+    const clicks = { n: 0 };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([clickPage("Anything", clicks)]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.click", { selector: "#go" })) as {
+      clicked: boolean;
+    };
+    expect(res.clicked).toBe(true);
+    expect(clicks.n).toBe(1);
+  });
+});

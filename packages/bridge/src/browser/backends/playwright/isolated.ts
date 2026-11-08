@@ -212,8 +212,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   /** Execute a browser tool on the isolated backend. Throws
-   *  ProtocolError-coded failures; returns the tool result payload. */
-  async execute(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {
+   *  ProtocolError-coded failures; returns the tool result payload.
+   *  opts.expectedTarget carries the §4.8 facts the risk classifier
+   *  approved — re-derived inside the page immediately before dispatch
+   *  so a mutation during the approval round-trip cannot slip through. */
+  async execute(
+    taskId: string,
+    tool: BrowserToolName,
+    args: Record<string, unknown>,
+    opts?: { expectedTarget?: Record<string, string> },
+  ): Promise<unknown> {
     // §4.8 preflight pseudo-tool — resolved inside the page so the risk
     // classifier sees ground truth, not agent-supplied args. Internal:
     // never listed in supportedTools, never agent-visible.
@@ -288,6 +296,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.hover":
       case "browser.page.press":
       case "browser.page.drag":
+        await this.#assertExpectedTarget(taskId, tool, args, opts?.expectedTarget);
         return this.#withExpect(taskId, args, await this.#domAction(taskId, tool, args));
       case "browser.page.wait":
         return this.#wait(taskId, args);
@@ -812,6 +821,43 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }, sel)
       .catch(() => null);
     return facts ?? { found: false, reason: "evaluate_failed" };
+  }
+
+  /** §4.8 dispatch binding (playwright-isolated parity with the
+   *  extension content script): re-derive the approved facts inside
+   *  the page immediately before the action and refuse with
+   *  browser.target_changed when the target drifted. Coordinate clicks
+   *  have no DOM target — same exemption as the extension path. */
+  async #assertExpectedTarget(
+    taskId: string,
+    tool: BrowserToolName,
+    args: Record<string, unknown>,
+    expectedTarget: Record<string, string> | undefined,
+  ): Promise<void> {
+    if (!expectedTarget || Object.keys(expectedTarget).length === 0) return;
+    const hasElementTarget =
+      (typeof args.selector === "string" && args.selector.length > 0) ||
+      (typeof args.ref === "string" && args.ref.length > 0) ||
+      (typeof args.label === "string" && args.label.length > 0);
+    const isCoordinateClick =
+      tool === "browser.page.click" &&
+      typeof args.x === "number" &&
+      typeof args.y === "number" &&
+      !hasElementTarget;
+    if (isCoordinateClick) return;
+    const desc = (await this.#describeTarget(taskId, args)) as Record<string, unknown>;
+    // Target vanished → let the dispatch surface its honest not-found;
+    // only a RESOLVED-but-different element is target_changed.
+    if (desc.found !== true) return;
+    for (const [key, expected] of Object.entries(expectedTarget)) {
+      const actual = desc[key];
+      if (String(actual ?? "") !== String(expected ?? "")) {
+        throw protocolError(
+          "browser.target_changed",
+          `target changed since the action was risk-checked (${key}) — take a fresh browser.page.snapshot and retry`,
+        );
+      }
+    }
   }
 
   async #domAction(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {

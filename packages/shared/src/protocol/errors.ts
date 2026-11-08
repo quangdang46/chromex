@@ -62,6 +62,7 @@ export type ProtocolErrorCode =
   | "browser.action_failed"
   | "browser.denied"
   | "browser.ambiguous_target"
+  | "browser.target_changed"
   | "browser.host_lost_after_dispatch"
   | "browser.result_lost"
   | "browser.unsupported_command"

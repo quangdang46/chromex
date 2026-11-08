@@ -1721,6 +1721,43 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
   });
 
+  test("trusted click aborts with browser.target_changed when locate reports drift — nothing dispatched", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(510, cdp, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.locate") {
+          return { found: false, reason: "target_changed" };
+        }
+        return { ok: true };
+      }),
+    }));
+    await expect(h({
+      ...req("browser.page.click", { tabId: 510, selector: "#btn", trusted: true }),
+      expectedTarget: { label: "Search", tagName: "button" },
+    })).rejects.toMatchObject({ code: "browser.target_changed" });
+    expect(cdp.sent.filter((s) => s.method.startsWith("Input."))).toHaveLength(0);
+  });
+
+  test("trusted targetless press verifies activeElement via page.dom.describe", async () => {
+    const cdp = fakeCdp();
+    const sentToTab: Array<Record<string, unknown>> = [];
+    const h = createToolHostHandler(cdpDeps(511, cdp, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        sentToTab.push(message);
+        if (message.type === "page.dom.describe") {
+          return { found: false, reason: "target_changed" };
+        }
+        return { ok: true, results: [{ ok: true }] };
+      }),
+    }));
+    await expect(h({
+      ...req("browser.page.press", { tabId: 511, key: "Enter", trusted: true }),
+      expectedTarget: { label: "Password", inputType: "password" },
+    })).rejects.toMatchObject({ code: "browser.target_changed" });
+    expect(sentToTab.some((m) => m.type === "page.dom.describe")).toBe(true);
+    expect(cdp.sent.filter((s) => s.method.startsWith("Input."))).toHaveLength(0);
+  });
+
   test("click trusted in a subframe resolves absolute coords via page.geom.absolute", async () => {
     const cdp = fakeCdp();
     const sentToTab: Array<{ message: Record<string, unknown>; options?: { frameId?: number } }> = [];

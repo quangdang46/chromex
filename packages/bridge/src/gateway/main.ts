@@ -449,8 +449,14 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           return {
             hostInstanceId: "playwright-isolated",
             send: async (_method, payload) => {
-              const p = payload as { tool?: string; args?: Record<string, unknown> };
-              return playwrightBackend.execute(taskId, p.tool as never, p.args ?? {});
+              const p = payload as {
+                tool?: string;
+                args?: Record<string, unknown>;
+                expectedTarget?: Record<string, string>;
+              };
+              return playwrightBackend.execute(taskId, p.tool as never, p.args ?? {}, {
+                ...(p.expectedTarget ? { expectedTarget: p.expectedTarget } : {}),
+              });
             },
             onDisconnect: () => {},
           };
