@@ -1051,9 +1051,9 @@ export interface BrowserBackendCapabilities {
   /** Mức đã CHỨNG MINH bằng test. MVP extension = "none" (mọi iframe, kể cả same-origin).
    *  `all_frames:false` KHÔNG tự tạo capability nào. `same-origin` chỉ sau implementation + test. */
   iframe: "none" | "same-origin" | "all";
-  nativeDialogs: false;                        // mọi backend hiện tại
+  nativeDialogs: boolean;                      // extension: CDP Page domain (đã verify headless); playwright: false
   filePicker: boolean;                         // extension: chỉ qua user gesture; playwright: true
-  trustedGesture: boolean;                     // extension: partial (DOM synthetic click ≠ user gesture)
+  trustedGesture: boolean;                     // extension: true — mọi gesture tool có args.trusted qua CDP (đã verify headless)
   browserChrome: boolean;                      // false (không điều khiển thanh địa chỉ/UI Chrome)
   networkInspection?: boolean;
   attachToRunningChrome?: boolean;
