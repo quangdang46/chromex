@@ -717,6 +717,42 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("downloads.open validates the id and delegates open vs reveal", async () => {
+    const calls: Array<{ id: number; reveal?: boolean }> = [];
+    const d = deps({
+      openDownload: vi.fn(async (id: number, opts?: { reveal?: boolean }) => {
+        calls.push({ id, reveal: opts?.reveal });
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.downloads.open", { downloadId: 42 }))) as { opened?: boolean };
+    expect(res.opened).toBe(true);
+    expect(calls).toEqual([{ id: 42, reveal: false }]);
+    await h(req("browser.downloads.open", { downloadId: 7, reveal: true }));
+    expect(calls[1]).toEqual({ id: 7, reveal: true });
+
+    await expect(h(req("browser.downloads.open", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.downloads.open", { downloadId: -1 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.downloads.open", { downloadId: 1, frameId: 2 }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    // dep absent → honest unsupported, never a fake open
+    const h2 = createToolHostHandler(deps({}));
+    await expect(h2(req("browser.downloads.open", { downloadId: 1 }))).rejects.toMatchObject({
+      code: "proto.unsupported",
+    });
+    // chrome-side failure (unknown/in-progress id) propagates honestly
+    const dFail = deps({
+      openDownload: vi.fn(async () => {
+        throw new Error("Download id does not exist");
+      }),
+    });
+    await expect(createToolHostHandler(dFail)(req("browser.downloads.open", { downloadId: 99 })))
+      .rejects.toThrow(/does not exist/);
+  });
+
   test("page.network maps the webRequest log; filters validated", async () => {
     const queries: unknown[] = [];
     const d = deps({

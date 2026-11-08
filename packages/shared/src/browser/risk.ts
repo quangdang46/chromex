@@ -839,6 +839,17 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       });
     }
 
+    case "browser.downloads.open":
+      // Launches the downloaded file with the OS default handler (or
+      // reveals it in the file manager) — an external app spawn on the
+      // user's machine, heavier than any in-browser mutation.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "opens a file with the OS handler — external side effect",
+      });
+
     default:
       // unknown tool → fail closed for anything that isn't provably read
       return verdict("external_mutation", {

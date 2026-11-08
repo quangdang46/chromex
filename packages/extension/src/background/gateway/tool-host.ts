@@ -118,6 +118,10 @@ export interface ToolHostDeps {
   /** chrome.downloads.cancel (browser.downloads.cancel) — stops an
    *  in-progress download; absent dep → proto.unsupported. */
   cancelDownload?(downloadId: number): Promise<unknown>;
+  /** chrome.downloads.open/show (browser.downloads.open) — hands a
+   *  completed download to the OS handler or file manager; absent dep
+   *  → proto.unsupported. */
+  openDownload?(downloadId: number, opts?: { reveal?: boolean }): Promise<unknown>;
   /** chrome.windows.getAll/create/update (browser.windows.*) — absent
    *  deps → proto.unsupported. */
   listWindows?(): Promise<Array<{
@@ -474,6 +478,7 @@ const SUPPORTED = new Set([
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
+  "browser.downloads.open",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",
@@ -2256,6 +2261,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // instead of claiming a cancellation that never happened.
         await deps.cancelDownload(downloadId);
         return { downloadId, cancelled: true };
+      }
+      case "browser.downloads.open": {
+        // Deliverable handoff: launch the file with the OS default
+        // handler, or reveal it in the file manager. External app
+        // spawn — the risk classifier always gates this behind
+        // approval. chrome.downloads.open rejects on unknown/in-
+        // progress ids — the error propagates honestly.
+        if (!deps.openDownload) {
+          throw toolError("proto.unsupported", "download open requires the downloads permission");
+        }
+        const downloadId = args.downloadId;
+        if (typeof downloadId !== "number" || !Number.isInteger(downloadId) || downloadId < 0) {
+          throw toolError("proto.invalid", "browser.downloads.open requires args.downloadId (integer from browser.downloads.list)");
+        }
+        const reveal = args.reveal === true;
+        await deps.openDownload(downloadId, { reveal });
+        return { downloadId, opened: true, ...(reveal ? { revealed: true } : {}) };
       }
       case "browser.tabGroups": {
         // Tab-strip organization via chrome.tabs.group/ungroup +

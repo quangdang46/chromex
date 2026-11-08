@@ -430,6 +430,13 @@ const toolHostHandler = createToolHostHandler({
     cancelDownload: async (downloadId) => {
       await chrome.downloads.cancel(downloadId);
     },
+    openDownload: async (downloadId, opts) => {
+      if (opts?.reveal === true) {
+        await chrome.downloads.show(downloadId);
+      } else {
+        await chrome.downloads.open(downloadId);
+      }
+    },
     listWindows: async () => {
       const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
       return wins

@@ -932,6 +932,7 @@ try {
   await expectReject("browser.dns", { action: "resolve", hostname: "example.com" }, "does not support", "dns refused on isolated (no system resolver API)");
   await expectReject("browser.power", { action: "request" }, "does not support", "power refused on isolated (no host power API)");
   await expectReject("browser.runtime", { action: "info" }, "does not support", "runtime refused on isolated (no extension runtime)");
+  await expectReject("browser.downloads.open", { downloadId: 1 }, "does not support", "downloads.open refused on isolated (no OS-handler channel)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

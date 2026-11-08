@@ -1478,6 +1478,22 @@ await runScenario(
         ...dp,
       };
 
+      // --- downloads.open: approval-gated OS handoff — bogus id proves
+      // real dispatch (Chrome rejects before any app can launch) ---
+      let dlo = {};
+      const dloRes = await runner.browserToolCall(
+        taskId, "browser.downloads.open", { downloadId: 999999 }, token, 60_000,
+      );
+      const dloErr = dloRes?.error ?? {};
+      // Reached chrome.downloads.open → Chrome's own "id does not
+      // exist" error, NOT a proto refusal and NOT a fake success.
+      dlo.reachedChrome = dloRes?.status === "failed" &&
+        dloErr.code !== "proto.unsupported" && dloErr.code !== "proto.invalid" &&
+        /download|id|exist|invalid/i.test(String(dloErr.message ?? ""));
+      dlo.msg = String(dloErr.message ?? "").slice(0, 160);
+      evidence.note(`downloads.open → ${JSON.stringify(dlo).slice(0, 300)}`);
+      results.downloadsOpen = { ok: dlo.reachedChrome === true, ...dlo };
+
       // --- runtime: no permission needed — verify REAL host info ---
       const rtRes = await runner.browserToolCall(
         taskId, "browser.runtime", { action: "info" }, token, 60_000,

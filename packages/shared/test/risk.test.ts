@@ -469,6 +469,14 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.needsApproval).toBe(false);
   });
 
+  test("browser.downloads.open: external app spawn — approval, never task-eligible", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.downloads.open" }));
+    expect(v.risk).toBe("external_mutation");
+    expect(v.needsApproval).toBe(true);
+    expect(v.allowTaskEligible).toBe(false);
+    expect(v.kind).toBe("browser_action");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));
