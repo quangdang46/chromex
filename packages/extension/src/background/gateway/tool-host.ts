@@ -7439,6 +7439,32 @@ async function setInputFiles(
     }
     return f;
   });
+  // pz refs resolve straight to a backendNodeId — no content-script
+  // marker needed (it could never reach a closed shadow root anyway).
+  const sifRef = str(args.ref);
+  if (sifRef !== undefined && PIERCE_REF_RE.test(sifRef)) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+    }
+    if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+    }
+    cdpRequired(deps);
+    const backendNodeId = pierceBackendNodeId(tabId, sifRef);
+    const { session, release } = await cdpAcquire(deps, tabId);
+    try {
+      await session.send("DOM.setFileInputFiles", { backendNodeId, files });
+    } finally {
+      await release();
+    }
+    return {
+      ok: true,
+      files: files.length,
+      fileNames: files.map(pathBaseName),
+      pierced: true,
+      resolvedTabId: tabId,
+    };
+  }
   if (str(args.ref) === undefined && str(args.selector) === undefined && str(args.label) === undefined) {
     throw toolError("proto.invalid", "browser.page.setInputFiles requires args.ref, args.selector or args.label");
   }

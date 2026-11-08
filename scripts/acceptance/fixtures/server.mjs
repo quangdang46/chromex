@@ -251,12 +251,16 @@ const sr = h.attachShadow({ mode: 'closed' });
 sr.innerHTML = \`
   <button id="inner" style="width:140px;height:44px">closed action</button>
   <input id="field" placeholder="closed-input" style="width:200px;height:30px">
+  <input id="upload" type="file" style="width:200px;height:30px">
 \`;
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
 });
 sr.getElementById('field').addEventListener('input', (e) => {
   window.__pierceValue = e.target.value;
+});
+sr.getElementById('upload').addEventListener('change', (e) => {
+  window.__pierceFiles = Array.from(e.target.files || []).map((f) => f.name).join(',');
 });
 </script>
 </body></html>`,

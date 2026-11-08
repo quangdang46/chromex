@@ -4295,9 +4295,22 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     };
     expect(pr.ok).toBe(true);
     expect(pr.pierced).toBe(true);
-    // pz ref + selector combo → proto.invalid
+    // setInputFiles — backendNodeId straight to DOM.setFileInputFiles
+    const sif = (await h(req("browser.page.setInputFiles", {
+      tabId: 523, ref, files: ["/tmp/pierce-file.txt"],
+    }))) as { ok: boolean; pierced?: boolean };
+    expect(sif.ok).toBe(true);
+    expect(sif.pierced).toBe(true);
+    expect(cdp.sent.some((s) =>
+      s.method === "DOM.setFileInputFiles" && s.params?.backendNodeId === 42 &&
+      (s.params?.files as string[] | undefined)?.[0] === "/tmp/pierce-file.txt",
+    )).toBe(true);
+    // pz ref + selector combo → proto.invalid on keyboard tools
     await expect(
       h(req("browser.page.type", { tabId: 523, ref, selector: "#x", text: "a" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.setInputFiles", { tabId: 523, ref, selector: "#x", files: ["/tmp/a"] })),
     ).rejects.toMatchObject({ code: "proto.invalid" });
     // stale ref → element_not_found
     await h(req("browser.page.pierce", { tabId: 523 }));

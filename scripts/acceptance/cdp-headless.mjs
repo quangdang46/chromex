@@ -2033,8 +2033,30 @@ await runScenario(
                 token, 60_000,
               ).catch(() => null);
               pj.evalOk = String(pev?.result?.value ?? "") === "pierce-text!";
+              // file input inside the closed root — setInputFiles via
+              // backendNodeId, verified by the change handler
+              const up = elements.find((e) => e.id === "upload");
+              pj.upOk = typeof up?.ref === "string";
+              if (pj.upOk) {
+                const upDir = mkdtempSync(join(tmpdir(), "chromex-pierce-"));
+                const upPath = join(upDir, "pierce-upload.txt");
+                writeFileSync(upPath, "pierce-bytes");
+                const upRes = await runner.browserToolCall(
+                  taskId, "browser.page.setInputFiles",
+                  { tabId: pjTab, ref: up.ref, files: [upPath] }, token, 60_000,
+                ).catch(() => null);
+                pj.uploadOk = (upRes?.result ?? upRes ?? {}).pierced === true;
+                const ev3 = await runner.browserToolCall(
+                  taskId, "browser.page.evaluate",
+                  { tabId: pjTab, expression: "window.__pierceFiles||''" }, token, 60_000,
+                ).catch(() => null);
+                pj.filesOk = String(ev3?.result?.value ?? ev3?.value ?? "") === "pierce-upload.txt";
+              } else {
+                pj.uploadOk = pj.filesOk = false;
+              }
             } else {
               pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
+              pj.upOk = pj.uploadOk = pj.filesOk = false;
             }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
@@ -2043,11 +2065,13 @@ await runScenario(
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
+            pj.upOk = pj.uploadOk = pj.filesOk = false;
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
+          pj.upOk = pj.uploadOk = pj.filesOk = false;
         }
       } catch (e) {
         pj.error = String(e?.message ?? e).slice(0, 200);
@@ -2058,7 +2082,7 @@ await runScenario(
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
           pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
-          pj.evalOk === true,
+          pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true,
         ...pj,
       };
 
