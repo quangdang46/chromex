@@ -74,6 +74,7 @@ export type BrowserToolName =
   | "browser.dns"
   | "browser.power"
   | "browser.runtime"
+  | "browser.permissions"
   | "browser.windows.list"
   | "browser.windows.get"
   | "browser.windows.create"
@@ -148,6 +149,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.dns",
   "browser.power",
   "browser.runtime",
+  "browser.permissions",
   "browser.windows.list",
   "browser.windows.get",
   "browser.windows.create",

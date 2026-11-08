@@ -320,6 +320,17 @@ export interface ToolHostDeps {
   runtime?: {
     info(): Promise<unknown>;
   } | undefined;
+  /** chrome.permissions (browser.permissions) — optional-permission
+   *  lifecycle. optionalPermissions is the manifest's requestable set —
+   *  used to validate request/remove args BEFORE any Chrome call.
+   *  null results → API unavailable → proto.unsupported. */
+  permissions?: {
+    optionalPermissions(): string[];
+    getAll(): Promise<{ permissions?: string[]; origins?: string[] } | null>;
+    contains(permissions: string[]): Promise<boolean | null>;
+    request(permissions: string[]): Promise<boolean | null>;
+    remove(permissions: string[]): Promise<boolean | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -502,6 +513,7 @@ const SUPPORTED = new Set([
   "browser.dns",
   "browser.power",
   "browser.runtime",
+  "browser.permissions",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -3533,6 +3545,73 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.invalid", "browser.runtime args.action must be info");
         }
         return deps.runtime.info();
+      }
+      case "browser.permissions": {
+        // chrome.permissions — optional-permission lifecycle. Not
+        // tab-scoped. request/remove are approval-gated upstream;
+        // args are validated against the manifest's optional set
+        // BEFORE any Chrome call so an invalid name can never pop a
+        // prompt.
+        if (!deps.permissions) {
+          throw toolError("proto.unsupported", "permission management is not available on this host");
+        }
+        const api = deps.permissions;
+        const action = str(args.action) ?? "getAll";
+        if (action !== "getAll" && action !== "contains" && action !== "request" && action !== "remove") {
+          throw toolError("proto.invalid", "browser.permissions args.action must be getAll|contains|request|remove");
+        }
+        if (args.origins !== undefined) {
+          throw toolError("proto.invalid", "browser.permissions does not support args.origins — host-origin grants are a different class");
+        }
+        const optional = new Set(api.optionalPermissions());
+        const parsePerms = (): string[] => {
+          const raw = args.permissions;
+          if (!Array.isArray(raw) || raw.length === 0 || raw.length > 32) {
+            throw toolError("proto.invalid", "browser.permissions args.permissions must be a non-empty array (≤32)");
+          }
+          const names: string[] = [];
+          for (const p of raw) {
+            if (typeof p !== "string" || !/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/.test(p)) {
+              throw toolError("proto.invalid", `browser.permissions args.permissions entries must be permission names — got ${JSON.stringify(p).slice(0, 60)}`);
+            }
+            if (!optional.has(p)) {
+              throw toolError("proto.invalid", `browser.permissions '${p}' is not an optional permission of this extension`);
+            }
+            names.push(p);
+          }
+          return [...new Set(names)];
+        };
+        const callOrUnsupported = async <T>(v: Promise<T | null>): Promise<T> => {
+          const r = await v;
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.permissions is not available on this Chrome build");
+          }
+          return r;
+        };
+        switch (action) {
+          case "getAll": {
+            const all = await callOrUnsupported(api.getAll());
+            return {
+              permissions: Array.isArray(all?.permissions) ? all.permissions.slice(0, 200) : [],
+              origins: Array.isArray(all?.origins) ? all.origins.slice(0, 200) : [],
+            };
+          }
+          case "contains": {
+            const perms = parsePerms();
+            const granted = await callOrUnsupported(api.contains(perms));
+            return { granted, permissions: perms };
+          }
+          case "request": {
+            const perms = parsePerms();
+            const granted = await callOrUnsupported(api.request(perms));
+            return { granted, permissions: perms };
+          }
+          case "remove": {
+            const perms = parsePerms();
+            const removed = await callOrUnsupported(api.remove(perms));
+            return { removed, permissions: perms };
+          }
+        }
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

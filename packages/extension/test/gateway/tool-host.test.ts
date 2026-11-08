@@ -2346,6 +2346,76 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.permissions marshals getAll/contains/request/remove + validates against optional set", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const perms = {
+      optionalPermissions: vi.fn(() => ["history", "bookmarks", "declarativeNetRequest"]),
+      getAll: vi.fn(async () => {
+        calls.push({ op: "getAll", args: [] });
+        return { permissions: ["history", "tabs"], origins: ["https://*.example.com/*"] };
+      }),
+      contains: vi.fn(async (p: string[]) => {
+        calls.push({ op: "contains", args: [p] });
+        return p.every((n) => n === "history");
+      }),
+      request: vi.fn(async (p: string[]) => {
+        calls.push({ op: "request", args: [p] });
+        return true;
+      }),
+      remove: vi.fn(async (p: string[]) => {
+        calls.push({ op: "remove", args: [p] });
+        return true;
+      }),
+    };
+    const h = createToolHostHandler(deps({ permissions: perms }));
+    // getAll is the default
+    const all = (await h(req("browser.permissions", {}))) as { permissions: string[]; origins: string[] };
+    expect(all.permissions).toContain("history");
+    expect(all.origins).toEqual(["https://*.example.com/*"]);
+    // contains — all-or-nothing over the named set
+    const c1 = (await h(req("browser.permissions", { action: "contains", permissions: ["history"] }))) as { granted: boolean };
+    expect(c1.granted).toBe(true);
+    const c2 = (await h(req("browser.permissions", { action: "contains", permissions: ["history", "bookmarks"] }))) as { granted: boolean };
+    expect(c2.granted).toBe(false);
+    // request/remove delegate with the validated name set
+    const rq = (await h(req("browser.permissions", { action: "request", permissions: ["history", "history"] }))) as { granted: boolean; permissions: string[] };
+    expect(rq.granted).toBe(true);
+    expect(rq.permissions).toEqual(["history"]); // deduped
+    const rm = (await h(req("browser.permissions", { action: "remove", permissions: ["bookmarks"] }))) as { removed: boolean };
+    expect(rm.removed).toBe(true);
+    expect(calls.map((c) => c.op)).toEqual(["getAll", "contains", "contains", "request", "remove"]);
+    // validation fires BEFORE any chrome call
+    calls.length = 0;
+    await expect(h(req("browser.permissions", { action: "request", permissions: ["history", "notARealPerm"] })))
+      .rejects.toMatchObject({ code: "proto.invalid", message: expect.stringContaining("notARealPerm") });
+    await expect(h(req("browser.permissions", { action: "request", permissions: ["tabs"] })))
+      .rejects.toMatchObject({ code: "proto.invalid" }); // required perm, not optional
+    await expect(h(req("browser.permissions", { action: "contains" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.permissions", { action: "contains", permissions: [] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.permissions", { action: "contains", permissions: ["history"], origins: ["https://x.com/*"] })))
+      .rejects.toMatchObject({ code: "proto.invalid", message: expect.stringContaining("origins") });
+    await expect(h(req("browser.permissions", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    expect(calls).toEqual([]); // nothing reached chrome
+    // API unavailable → proto.unsupported
+    const dNull = deps({
+      permissions: {
+        optionalPermissions: vi.fn(() => ["history"]),
+        getAll: vi.fn(async () => null),
+        contains: vi.fn(async () => null),
+        request: vi.fn(async () => null),
+        remove: vi.fn(async () => null),
+      },
+    });
+    await expect(createToolHostHandler(dNull)(req("browser.permissions", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.permissions", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.dns marshals resolve/permission + validates hostname", async () => {
     const calls: Array<{ op: string; args: unknown[] }> = [];
     const dns = {

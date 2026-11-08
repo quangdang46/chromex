@@ -477,6 +477,21 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.needsApproval).toBe(false);
   });
 
+  test("browser.permissions: reads free, request/remove approval never task-eligible", () => {
+    for (const op of ["getAll", "contains"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.permissions", permissionsOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["request", "remove"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.permissions", permissionsOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

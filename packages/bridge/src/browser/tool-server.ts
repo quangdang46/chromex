@@ -358,6 +358,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.dns",
   "browser.power",
   "browser.runtime",
+  "browser.permissions",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -504,6 +505,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.processes"
       ? { processesOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
+    ...(req.tool === "browser.permissions"
+      ? { permissionsOp: typeof args.action === "string" ? args.action : "getAll" }
       : {}),
     ...(req.tool === "browser.userScripts"
       ? { userScriptsOp: typeof args.action === "string" ? args.action : "list" }

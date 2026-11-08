@@ -92,6 +92,10 @@ export interface ActionContext {
   /** browser.processes sub-action — list/permission read the process
    *  table, terminate kills a renderer (page-state loss). */
   processesOp?: string;
+  /** browser.permissions sub-action — getAll/contains read grant
+   *  state, request shows the user a permission prompt, remove revokes
+   *  an optional grant. */
+  permissionsOp?: string;
   /** browser.userScripts sub-action — list/worlds read script and world
    *  state, register/unregister/update/configureWorld/resetWorld mutate
    *  persistent injections, execute runs one-shot page script. */
@@ -725,6 +729,24 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // manifest version, platform os/arch. The extension's own
       // metadata, no page or profile data.
       return verdict("read", { reason: "runtime host info read" });
+
+    case "browser.permissions": {
+      const op = ctx.permissionsOp ?? "getAll";
+      if (op === "getAll" || op === "contains") {
+        return verdict("read", { reason: "permission grant state read" });
+      }
+      // request pops a user-visible Chrome permission dialog;
+      // remove revokes a grant other tools may depend on. Both are
+      // profile-significant → approval, never task-eligible.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: op === "request"
+          ? "permission request shows a user-visible grant prompt"
+          : "permission remove revokes a granted capability",
+      });
+    }
 
     case "browser.power": {
       const op = ctx.powerOp ?? "request";

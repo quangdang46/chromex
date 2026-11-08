@@ -1615,6 +1615,38 @@ await runScenario(
       evidence.note(`runtime → ${JSON.stringify(rt).slice(0, 300)}`);
       results.runtime = { ok: rtOk === true, browserVersion: rtBrowser.version ?? null, extId: rtExt.id ?? null };
 
+      // --- permissions: getAll/contains real; request validated BEFORE
+      // any prompt (invalid names → proto.invalid, never a dialog) ---
+      let pm = {};
+      try {
+        const pmAll = await runner.browserToolCall(
+          taskId, "browser.permissions", { action: "getAll" }, token, 60_000,
+        );
+        const pmAllRes = pmAll?.result ?? {};
+        pm.getAllOk = pmAll?.status === "completed" &&
+          Array.isArray(pmAllRes.permissions) && pmAllRes.permissions.includes("tabs");
+        const pmC = await runner.browserToolCall(
+          taskId, "browser.permissions", { action: "contains", permissions: ["history"] }, token, 60_000,
+        );
+        pm.containsOk = pmC?.status === "completed" && (pmC?.result ?? {}).granted === false;
+        const pmBad = await runner.browserToolCall(
+          taskId, "browser.permissions", { action: "request", permissions: ["history", "bogusPerm"] }, token, 60_000,
+        );
+        pm.badNameOk = (pmBad?.error?.code ?? "") === "proto.invalid" &&
+          /bogusPerm/.test(pmBad?.error?.message ?? "");
+        const pmOrig = await runner.browserToolCall(
+          taskId, "browser.permissions", { action: "contains", permissions: ["history"], origins: ["https://x.com/*"] }, token, 60_000,
+        );
+        pm.originsOk = (pmOrig?.error?.code ?? "") === "proto.invalid";
+      } catch (e) {
+        pm.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`permissions → ${JSON.stringify(pm).slice(0, 300)}`);
+      results.permissions = {
+        ok: pm.getAllOk === true && pm.containsOk === true && pm.badNameOk === true && pm.originsOk === true,
+        ...pm,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

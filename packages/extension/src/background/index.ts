@@ -1265,6 +1265,41 @@ const toolHostHandler = createToolHostHandler({
         };
       },
     },
+    permissions: {
+      // chrome.permissions — always available in MV3, no permission
+      // needed for the API itself. optionalPermissions comes from the
+      // manifest so request/remove validation matches exactly what
+      // Chrome would accept.
+      optionalPermissions: () => {
+        const m = chrome.runtime.getManifest() as { optional_permissions?: unknown };
+        return Array.isArray(m?.optional_permissions)
+          ? m.optional_permissions.filter((p): p is string => typeof p === "string")
+          : [];
+      },
+      getAll: async () => {
+        const r = await chrome.permissions.getAll().catch(() => null);
+        if (!r) return null;
+        return {
+          permissions: Array.isArray(r.permissions) ? r.permissions.slice(0, 200) : [],
+          origins: Array.isArray(r.origins) ? r.origins.slice(0, 200) : [],
+        };
+      },
+      contains: async (permissions: string[]) => {
+        const r = await chrome.permissions.contains({ permissions }).catch(() => null);
+        return typeof r === "boolean" ? r : null;
+      },
+      // request/remove let Chrome errors propagate — a gesture
+      // rejection or dialog failure must surface its real message,
+      // not collapse into "API unavailable".
+      request: async (permissions: string[]) => {
+        const r = await chrome.permissions.request({ permissions });
+        return typeof r === "boolean" ? r : null;
+      },
+      remove: async (permissions: string[]) => {
+        const r = await chrome.permissions.remove({ permissions });
+        return typeof r === "boolean" ? r : null;
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

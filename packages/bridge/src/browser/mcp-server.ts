@@ -1059,6 +1059,21 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       action: { type: "string", enum: ["info"], description: "Operation (default info)." },
     }),
   },
+  "browser.permissions": {
+    description:
+      "Extension permission management (chrome.permissions) — the capability-escalation surface: ask the user for optional permissions mid-task instead of failing proto.unsupported forever. args.action: 'getAll' (default) returns every currently granted permission + origin pattern; 'contains' with args.permissions (string[], 1–32) returns {granted} — true only when ALL named permissions are granted; 'request' prompts the user to grant args.permissions — names must be a subset of the manifest's optional_permissions (validated against chrome.runtime.getManifest, invalid names → proto.invalid BEFORE any prompt); 'remove' revokes args.permissions (same subset rule, no prompt). request/remove change what the extension can do → always requires approval and is never task-eligible; the Chrome dialog itself is the user's consent for request. Origins are out of scope (host permissions are a different grant class — proto.invalid if args.origins is passed). On playwright-isolated → proto.unsupported (no chrome.permissions).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["getAll", "contains", "request", "remove"], description: "Operation (default getAll)." },
+      permissions: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: 32,
+        description: "contains/request/remove: permission names (e.g. history, bookmarks, declarativeNetRequest) — must be optional_permissions from the manifest.",
+      },
+      origins: { type: "array", items: { type: "string" }, description: "Unsupported — host-origin grants are refused proto.invalid." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
