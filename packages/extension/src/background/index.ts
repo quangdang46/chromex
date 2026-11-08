@@ -437,6 +437,16 @@ const toolHostHandler = createToolHostHandler({
         await chrome.downloads.open(downloadId);
       }
     },
+    manageDownload: async (downloadId, op) => {
+      // chrome.downloads.pause/resume/erase can silently no-op on
+      // unknown ids — preflight existence so {paused,resumed,erased}:
+      // true is never claimed for a download that was not there.
+      const found = await chrome.downloads.search({ id: downloadId });
+      if (!found.length) throw new Error(`download ${downloadId} not found`);
+      if (op === "pause") await chrome.downloads.pause(downloadId);
+      else if (op === "resume") await chrome.downloads.resume(downloadId);
+      else await chrome.downloads.erase({ id: downloadId });
+    },
     listWindows: async () => {
       const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
       return wins

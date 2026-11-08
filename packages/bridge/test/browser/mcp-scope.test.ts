@@ -87,7 +87,10 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.runtime");
     expect(tools).not.toContain("browser.permissions");
     expect(tools).not.toContain("browser.action");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 20);
+    expect(tools).not.toContain("browser.downloads.pause");
+    expect(tools).not.toContain("browser.downloads.resume");
+    expect(tools).not.toContain("browser.downloads.erase");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 23);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

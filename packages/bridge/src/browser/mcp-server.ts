@@ -892,6 +892,36 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["downloadId"],
     ),
   },
+  "browser.downloads.pause": {
+    description:
+      "Pause an in-progress download by id (from browser.downloads.list) — chrome.downloads.pause. Lets the agent throttle a large transfer to prioritize other work or stop bandwidth burn on a stalled fetch. Chrome rejects pause on terminal/unknown ids with its real error. Downloads are profile-wide — always requires approval, never task-eligible (same class as cancel: can affect a download the user started). Not tab-scoped; chrome-extension only (playwright-isolated → proto.unsupported — its download surface has no pause primitive).",
+    inputSchema: objectSchema(
+      {
+        downloadId: { type: "integer", description: "The download id from browser.downloads.list (required)." },
+      },
+      ["downloadId"],
+    ),
+  },
+  "browser.downloads.resume": {
+    description:
+      "Resume a paused/interrupted download by id (from browser.downloads.list) — chrome.downloads.resume. Pair with browser.downloads.pause for bandwidth management. Chrome rejects resume on non-resumable/unknown ids with its real error. Downloads are profile-wide — always requires approval, never task-eligible. Not tab-scoped; chrome-extension only (playwright-isolated → proto.unsupported).",
+    inputSchema: objectSchema(
+      {
+        downloadId: { type: "integer", description: "The download id from browser.downloads.list (required)." },
+      },
+      ["downloadId"],
+    ),
+  },
+  "browser.downloads.erase": {
+    description:
+      "Erase a download's record (and its file when safe) by id (from browser.downloads.list) — chrome.downloads.erase. Removes the entry from download history AND deletes the partial/completed file from disk — destructive on user data, always requires approval, never task-eligible. Prefer browser.downloads.cancel for stopping an in-progress transfer without deleting the file. Chrome rejects erase on unknown ids with its real error. Not tab-scoped; chrome-extension only (playwright-isolated → proto.unsupported).",
+    inputSchema: objectSchema(
+      {
+        downloadId: { type: "integer", description: "The download id from browser.downloads.list (required)." },
+      },
+      ["downloadId"],
+    ),
+  },
   "browser.tabGroups": {
     description:
       "Organize tabs into Chrome tab groups — the agent's tab-strip management. args.action: 'list' (default) returns groups containing in-scope tabs only (id, windowId, title, color, collapsed, in-scope tabIds — foreign groups are never surfaced); 'create' groups args.tabIds (1–50 in-scope tab ids, optionally joining existing args.groupId) with optional args.title/args.color; 'update' sets title/color/collapsed on args.groupId (requires ≥1 in-scope member tab); 'ungroup' dissolves args.tabIds from their groups. Colors: grey|blue|red|yellow|green|pink|purple|cyan|orange. Mutations ALWAYS require approval and are never task-eligible — group state is shared browser chrome. On playwright-isolated → proto.unsupported (no tab-group equivalent). Requires the 'tabGroups' permission.",

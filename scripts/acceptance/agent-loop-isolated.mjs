@@ -964,6 +964,9 @@ try {
   await expectReject("browser.permissions", { action: "getAll" }, "does not support", "permissions refused on isolated (no chrome.permissions)");
   await expectReject("browser.action", { action: "set", text: "x" }, "does not support", "action refused on isolated (no browser chrome)");
   await expectReject("browser.downloads.open", { downloadId: 1 }, "does not support", "downloads.open refused on isolated (no OS-handler channel)");
+  for (const op of ["pause", "resume", "erase"]) {
+    await expectReject(`browser.downloads.${op}`, { downloadId: 1 }, "does not support", `downloads.${op} refused on isolated (no queue-management primitive)`);
+  }
   await expectReject("browser.windows.get", { lastFocused: true }, "does not support", "windows.get refused on isolated (no window manager)");
 
   // ── frameId parity: page.get frames[] discovery → evaluate/fill/click

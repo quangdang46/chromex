@@ -2462,6 +2462,39 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.downloads.pause/resume/erase marshal manageDownload + validate id", async () => {
+    const calls: Array<{ id: number; op: string }> = [];
+    const manage = {
+      manageDownload: vi.fn(async (id: number, op: "pause" | "resume" | "erase") => {
+        calls.push({ id, op });
+      }),
+    };
+    const h = createToolHostHandler(deps(manage));
+    const p = (await h(req("browser.downloads.pause", { downloadId: 7 }))) as { paused: boolean };
+    expect(p.paused).toBe(true);
+    const r = (await h(req("browser.downloads.resume", { downloadId: 7 }))) as { resumed: boolean };
+    expect(r.resumed).toBe(true);
+    const e = (await h(req("browser.downloads.erase", { downloadId: 7 }))) as { erased: boolean };
+    expect(e.erased).toBe(true);
+    expect(calls).toEqual([
+      { id: 7, op: "pause" },
+      { id: 7, op: "resume" },
+      { id: 7, op: "erase" },
+    ]);
+    // validation rejects BEFORE any chrome call
+    calls.length = 0;
+    await expect(h(req("browser.downloads.pause", {})))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.downloads.resume", { downloadId: -1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.downloads.erase", { downloadId: 1.5 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    expect(calls).toEqual([]);
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.downloads.pause", { downloadId: 1 })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.dns marshals resolve/permission + validates hostname", async () => {
     const calls: Array<{ op: string; args: unknown[] }> = [];
     const dns = {

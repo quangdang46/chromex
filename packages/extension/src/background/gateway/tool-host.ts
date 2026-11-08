@@ -137,6 +137,9 @@ export interface ToolHostDeps {
    *  completed download to the OS handler or file manager; absent dep
    *  → proto.unsupported. */
   openDownload?(downloadId: number, opts?: { reveal?: boolean }): Promise<unknown>;
+  /** chrome.downloads.pause/resume/erase (browser.downloads.pause/
+   *  resume/erase) — queue management; absent dep → proto.unsupported. */
+  manageDownload?(downloadId: number, op: "pause" | "resume" | "erase"): Promise<unknown>;
   /** chrome.windows.getAll/create/update (browser.windows.*) — absent
    *  deps → proto.unsupported. */
   listWindows?(): Promise<Array<{
@@ -527,6 +530,9 @@ const SUPPORTED = new Set([
   "browser.downloads.save",
   "browser.downloads.cancel",
   "browser.downloads.open",
+  "browser.downloads.pause",
+  "browser.downloads.resume",
+  "browser.downloads.erase",
   "browser.windows.list",
   "browser.windows.get",
   "browser.windows.create",
@@ -2406,6 +2412,25 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const reveal = args.reveal === true;
         await deps.openDownload(downloadId, { reveal });
         return { downloadId, opened: true, ...(reveal ? { revealed: true } : {}) };
+      }
+      case "browser.downloads.pause":
+      case "browser.downloads.resume":
+      case "browser.downloads.erase": {
+        // Download-queue management — profile-wide like cancel, so the
+        // risk classifier's default fail-closed keeps these
+        // approval-gated. Chrome rejects on terminal/unknown ids with
+        // its real error; nothing is faked.
+        const op = tool === "browser.downloads.pause" ? "pause"
+          : tool === "browser.downloads.resume" ? "resume" : "erase";
+        if (!deps.manageDownload) {
+          throw toolError("proto.unsupported", `download ${op} requires the downloads permission`);
+        }
+        const downloadId = args.downloadId;
+        if (typeof downloadId !== "number" || !Number.isInteger(downloadId) || downloadId < 0) {
+          throw toolError("proto.invalid", `browser.downloads.${op} requires args.downloadId (integer from browser.downloads.list)`);
+        }
+        await deps.manageDownload(downloadId, op);
+        return { downloadId, [op === "erase" ? "erased" : op === "pause" ? "paused" : "resumed"]: true };
       }
       case "browser.tabGroups": {
         // Tab-strip organization via chrome.tabs.group/ungroup +

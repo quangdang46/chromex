@@ -1568,6 +1568,31 @@ await runScenario(
       evidence.note(`downloads.open → ${JSON.stringify(dlo).slice(0, 300)}`);
       results.downloadsOpen = { ok: dlo.reachedChrome === true, ...dlo };
 
+      // --- downloads.pause/resume/erase: same bogus-id dispatch proof.
+      // pause/resume → Chrome's real "Invalid download id"; erase →
+      // our existence preflight refuses before chrome.downloads.erase
+      // can silently no-op (erased:true would be a lie). ---
+      let dmq = {};
+      try {
+        for (const op of ["pause", "resume", "erase"]) {
+          const res = await runner.browserToolCall(
+            taskId, `browser.downloads.${op}`, { downloadId: 999999 }, token, 60_000,
+          );
+          const err = res?.error ?? {};
+          dmq[`${op}Ok`] = res?.status === "failed" &&
+            err.code !== "proto.unsupported" && err.code !== "proto.invalid" &&
+            /download|id|exist|invalid|not found/i.test(String(err.message ?? ""));
+          dmq[`${op}Msg`] = String(err.message ?? "").slice(0, 120);
+        }
+      } catch (e) {
+        dmq.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`downloads.manage → ${JSON.stringify(dmq).slice(0, 400)}`);
+      results.downloadsManage = {
+        ok: dmq.pauseOk === true && dmq.resumeOk === true && dmq.eraseOk === true,
+        ...dmq,
+      };
+
       // --- windows.get: real chrome.windows.get / getLastFocused ---
       let wg = {};
       const wlRes = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 60_000);
