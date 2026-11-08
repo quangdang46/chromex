@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { homedir, platform } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const NATIVE_HOST_NAME = "com.codex.sidepanel.bridge";
@@ -90,6 +91,7 @@ await assertBuiltAsset(
 await rm(hostInstallDir, { recursive: true, force: true });
 await mkdir(hostInstallDir, { recursive: true });
 await cp(hostSourceDir, hostInstallDir, { recursive: true });
+await installHostRuntimeDeps(hostSourceDir, hostInstallDir);
 await writeFile(
   resolve(hostInstallDir, "package.json"),
   JSON.stringify(
@@ -647,4 +649,56 @@ function readEnvValue(env, key) {
   const actualKey = Object.keys(env).find((candidate) => candidate.toLowerCase() === normalizedKey);
   const value = actualKey ? env[actualKey] : undefined;
   return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * dist/ is tsc output only — bare package imports (e.g. fs-ext) are not
+ * bundled. Copy each resolved package into <install>/node_modules so the
+ * installed host resolves them next to bin.js.
+ */
+async function installHostRuntimeDeps(sourceDir, installDir) {
+  const bareSpecifiers = new Set();
+  const specifierPatterns = [
+    /^(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']/,
+    /^import\s*["']([^"']+)["']/,
+    /\b(?:require|import)\s*\(\s*["']([^"']+)["']/,
+  ];
+  for (const file of await readdir(sourceDir)) {
+    if (!file.endsWith(".js")) continue;
+    const src = await readFile(resolve(sourceDir, file), "utf8");
+    for (const line of src.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+      for (const pattern of specifierPatterns) {
+        const match = trimmed.match(pattern);
+        if (!match) continue;
+        const specifier = match[1];
+        if (specifier.startsWith("node:") || specifier.startsWith(".")) break;
+        const parts = specifier.split("/");
+        bareSpecifiers.add(specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]);
+        break;
+      }
+    }
+  }
+  if (bareSpecifiers.size === 0) return;
+
+  const requireFromHost = createRequire(resolve(repoRoot, "packages/native-host/package.json"));
+  for (const specifier of bareSpecifiers) {
+    const entryPath = requireFromHost.resolve(specifier);
+    let packageDir = dirname(entryPath);
+    for (;;) {
+      const manifestPath = join(packageDir, "package.json");
+      if (await pathExists(manifestPath)) {
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+        if (manifest.name === specifier) break;
+      }
+      const parent = dirname(packageDir);
+      if (parent === packageDir) {
+        throw new Error(`Could not locate package root for ${specifier} (resolved ${entryPath})`);
+      }
+      packageDir = parent;
+    }
+    await cp(packageDir, resolve(installDir, "node_modules", specifier), { recursive: true });
+    console.log(`Copied runtime dependency ${specifier}`);
+  }
 }
