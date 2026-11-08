@@ -978,6 +978,24 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       request: { type: "object", description: "test: hypothetical request {url required, type required (main_frame|script|xmlhttprequest|…), method?, initiator?, tabId?}." },
     }),
   },
+  "browser.userScripts": {
+    description:
+      "User scripts (chrome.userScripts) — persistent JavaScript the extension injects into matching pages automatically on every navigation, plus one-shot execution. Tampermonkey-style capability without a debugger: registered scripts survive navigations and run in the isolated USER_SCRIPT world by default (page CSP does not apply) or MAIN world on request. args.action: 'list' (default) returns this extension's registered scripts ({ids?} filter); 'worlds' returns user-script world configurations; 'register' installs args.scripts (1-20 — each {id required (not '_'-prefixed), matches required (match patterns), js required ([{code} XOR {file}]), excludeMatches?, includeGlobs?, excludeGlobs?, runAt? document_start|document_end|document_idle, world? MAIN|USER_SCRIPT, allFrames?, worldId?}); 'update' patches existing scripts by id (same shape); 'unregister' removes scripts ({ids?} — omitted removes ALL registered scripts); 'execute' runs one-shot code NOW in a tab ({tabId resolved like page tools, code required ≤256KiB, allFrames?, frameIds?, world?, worldId?, injectImmediately?} — returns per-frame {documentId, frameId, result|error}); 'configureWorld' sets {worldId?, csp?, messaging?} on a user-script world; 'resetWorld' restores a world's default config ({worldId?}); 'permission' returns the Chrome permission level. 'register'/'update'/'unregister'/'configureWorld'/'resetWorld'/'execute' always require approval — never task-eligible (persistent injection changes what runs in matching pages browser-wide; execute is arbitrary page-world script like page.evaluate). Script code and match patterns are agent-supplied and untrusted to the page. On chrome-extension requires the optional 'userScripts' permission — ungranted → proto.unsupported. On playwright-isolated → proto.unsupported (no persistent injection API; use page.evaluate per call).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["list", "worlds", "register", "update", "unregister", "execute", "configureWorld", "resetWorld", "permission"], description: "Operation (default list)." },
+      ids: { type: "array", description: "list/unregister: script ids to filter (strings)." },
+      scripts: { type: "array", description: "register/update: RegisteredUserScript objects (1-20). Shape: {id, matches, js:[{code}|{file}], excludeMatches?, includeGlobs?, excludeGlobs?, runAt?, world?, allFrames?, worldId?}." },
+      tabId: { type: "integer", description: "execute: target tab (resolved like other page tools when omitted)." },
+      code: { type: "string", description: "execute: JavaScript source to run (≤256KiB)." },
+      allFrames: { type: "boolean", description: "execute: inject into all frames (default false)." },
+      frameIds: { type: "array", description: "execute: specific frame ids to inject into." },
+      world: { type: "string", enum: ["MAIN", "USER_SCRIPT"], description: "execute/register: JavaScript world (default USER_SCRIPT)." },
+      worldId: { type: "string", description: "execute/register/configureWorld/resetWorld: specific user-script world id (not '_'-prefixed)." },
+      injectImmediately: { type: "boolean", description: "execute: inject without waiting for document_idle." },
+      csp: { type: "string", description: "configureWorld: world CSP override." },
+      messaging: { type: "boolean", description: "configureWorld: expose messaging APIs in the world." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

@@ -906,6 +906,101 @@ const toolHostHandler = createToolHostHandler({
         return res?.matchedRules ?? [];
       },
     },
+    userScripts: {
+      // chrome.userScripts — optional "userScripts" permission checked
+      // per call (runtime grant works without SW restart). Scripts and
+      // injections arrive pre-validated by the tool host; this layer
+      // only marshals to the Chrome API and sanitizes results.
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        return "granted";
+      },
+      list: async (ids) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          getScripts(f?: { ids?: string[] }): Promise<Array<Record<string, unknown>>>;
+        } | undefined;
+        if (!api?.getScripts) return null;
+        const scripts = await api.getScripts(ids?.length ? { ids } : undefined);
+        return (Array.isArray(scripts) ? scripts : []).map(sanitizeUserScript);
+      },
+      register: async (scripts) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          register(s: Array<Record<string, unknown>>): Promise<void>;
+        } | undefined;
+        if (!api?.register) return null;
+        await api.register(scripts);
+        return { registered: scripts.length };
+      },
+      unregister: async (ids) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          unregister(f?: { ids?: string[] }): Promise<void>;
+        } | undefined;
+        if (!api?.unregister) return null;
+        await api.unregister(ids?.length ? { ids } : undefined);
+        return { unregistered: ids?.length ?? "all" };
+      },
+      update: async (scripts) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          update(s: Array<Record<string, unknown>>): Promise<void>;
+        } | undefined;
+        if (!api?.update) return null;
+        await api.update(scripts);
+        return { updated: scripts.length };
+      },
+      execute: async (injection) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          execute<T = unknown>(i: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
+        } | undefined;
+        if (!api?.execute) return null;
+        const results = await api.execute(injection);
+        return (Array.isArray(results) ? results : []).map((r) => ({
+          documentId: typeof r.documentId === "string" ? r.documentId : undefined,
+          frameId: typeof r.frameId === "number" ? r.frameId : undefined,
+          ...(typeof r.error === "string" ? { error: r.error.slice(0, 500) } : {}),
+          ...(r.result !== undefined ? { result: r.result } : {}),
+        }));
+      },
+      worlds: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          getWorldConfigurations(): Promise<Array<Record<string, unknown>>>;
+        } | undefined;
+        if (!api?.getWorldConfigurations) return null;
+        return api.getWorldConfigurations();
+      },
+      configureWorld: async (properties) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          configureWorld(p: Record<string, unknown>): Promise<void>;
+        } | undefined;
+        if (!api?.configureWorld) return null;
+        await api.configureWorld(properties);
+        return { configured: true };
+      },
+      resetWorld: async (worldId) => {
+        const granted = await chrome.permissions.contains({ permissions: ["userScripts"] });
+        if (!granted) return "permission";
+        const api = chrome.userScripts as unknown as {
+          resetWorldConfiguration(w?: string): Promise<void>;
+        } | undefined;
+        if (!api?.resetWorldConfiguration) return null;
+        await api.resetWorldConfiguration(worldId);
+        return { reset: true };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
@@ -1093,6 +1188,30 @@ function sanitizeExtensionInfo(e: Record<string, unknown>, selfId: string): Reco
   if (Array.isArray(e.permissions)) out.permissions = e.permissions;
   if (Array.isArray(e.hostPermissions)) out.hostPermissions = e.hostPermissions;
   if (typeof e.id === "string" && e.id === selfId) out.self = true;
+  return out;
+}
+
+/** chrome.userScripts.getScripts rows → bounded JSON-safe shape. js code
+ *  can be large — truncate per-source at 64KiB so a registered script
+ *  can't flood the tool result; matches/patterns pass through. */
+function sanitizeUserScript(s: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "id", "matches", "excludeMatches", "includeGlobs", "excludeGlobs",
+    "runAt", "world", "worldId", "allFrames",
+  ]) {
+    if (s[key] !== undefined) out[key] = s[key];
+  }
+  if (Array.isArray(s.js)) {
+    out.js = s.js.slice(0, 20).map((src) => {
+      const o = src as Record<string, unknown>;
+      if (typeof o.code === "string") {
+        return { code: o.code.length > 64 * 1024 ? `${o.code.slice(0, 64 * 1024)}…[truncated]` : o.code };
+      }
+      if (typeof o.file === "string") return { file: o.file.slice(0, 1024) };
+      return {};
+    });
+  }
   return out;
 }
 

@@ -1938,6 +1938,168 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.userScripts marshals lifecycle + execute and validates the script contract", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const us = {
+      permission: vi.fn(async () => {
+        calls.push({ op: "permission", args: [] });
+        return "granted";
+      }),
+      list: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "list", args });
+        return [{ id: "s1", matches: ["https://a/*"], js: [{ code: "1" }] }];
+      }),
+      register: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "register", args });
+        return { registered: (args[0] as unknown[]).length };
+      }),
+      unregister: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "unregister", args });
+        return { unregistered: "all" };
+      }),
+      update: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "update", args });
+        return { updated: (args[0] as unknown[]).length };
+      }),
+      execute: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "execute", args });
+        return [{ documentId: "d1", frameId: 0, result: 2 }];
+      }),
+      worlds: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "worlds", args });
+        return [{ csp: "default-src 'self'" }];
+      }),
+      configureWorld: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "configureWorld", args });
+        return { configured: true };
+      }),
+      resetWorld: vi.fn(async (...args: unknown[]) => {
+        calls.push({ op: "resetWorld", args });
+        return { reset: true };
+      }),
+    };
+    const h = createToolHostHandler(deps({ userScripts: us }));
+    // list is the default action; ids filter forwarded
+    const listRes = (await h(req("browser.userScripts", {}))) as { count: number };
+    expect(listRes.count).toBe(1);
+    expect(calls[0]).toEqual({ op: "list", args: [undefined] });
+    await h(req("browser.userScripts", { action: "list", ids: ["s1", "s2"] }));
+    expect(calls[1]).toEqual({ op: "list", args: [["s1", "s2"]] });
+    // permission passthrough
+    const permRes = (await h(req("browser.userScripts", { action: "permission" }))) as { granted: boolean };
+    expect(permRes.granted).toBe(true);
+    // register validates + marshals the script shape
+    const regRes = (await h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{
+        id: "hook1",
+        matches: ["https://app.example.com/*"],
+        js: [{ code: "window.__x = 1;" }],
+        runAt: "document_idle",
+        world: "USER_SCRIPT",
+        allFrames: true,
+      }],
+    }))) as { registered: number };
+    expect(regRes.registered).toBe(1);
+    const regArgs = calls.find((c) => c.op === "register")!.args[0] as Array<Record<string, unknown>>;
+    expect(regArgs[0]).toMatchObject({ id: "hook1", matches: ["https://app.example.com/*"], world: "USER_SCRIPT", allFrames: true });
+    // update patches by id (matches/js optional)
+    await h(req("browser.userScripts", { action: "update", scripts: [{ id: "hook1", world: "MAIN" }] }));
+    const updArgs = calls.find((c) => c.op === "update")!.args[0] as Array<Record<string, unknown>>;
+    expect(updArgs[0]).toEqual({ id: "hook1", world: "MAIN" });
+    // unregister: ids filter vs all
+    await h(req("browser.userScripts", { action: "unregister", ids: ["hook1"] }));
+    expect(calls.filter((c) => c.op === "unregister").pop()!.args[0]).toEqual(["hook1"]);
+    await h(req("browser.userScripts", { action: "unregister" }));
+    expect(calls.filter((c) => c.op === "unregister").pop()!.args).toEqual([undefined]);
+    // execute resolves the scoped tab and builds the injection
+    const exRes = (await h(req("browser.userScripts", {
+      action: "execute",
+      code: "1+1",
+      world: "USER_SCRIPT",
+    }))) as { results: Array<{ result: number }>; resolvedTabId: number };
+    expect(exRes.resolvedTabId).toBe(7);
+    expect(exRes.results[0].result).toBe(2);
+    const exArgs = calls.find((c) => c.op === "execute")!.args[0] as Record<string, unknown>;
+    expect(exArgs).toMatchObject({
+      js: [{ code: "1+1" }],
+      world: "USER_SCRIPT",
+      target: { tabId: 7 },
+    });
+    // worlds / configureWorld / resetWorld
+    await h(req("browser.userScripts", { action: "worlds" }));
+    await h(req("browser.userScripts", { action: "configureWorld", messaging: true }));
+    expect(calls.filter((c) => c.op === "configureWorld").pop()!.args[0]).toEqual({ messaging: true });
+    await h(req("browser.userScripts", { action: "resetWorld", worldId: "w1" }));
+    expect(calls.filter((c) => c.op === "resetWorld").pop()!.args[0]).toBe("w1");
+    // validation
+    await expect(h(req("browser.userScripts", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.userScripts", { action: "register" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ matches: ["https://a/*"], js: [{ code: "1" }] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // id required
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "_sys", matches: ["https://a/*"], js: [{ code: "1" }] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // '_' prefix reserved
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "s", js: [{ code: "1" }] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // matches required on register
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "s", matches: ["https://a/*"] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // js required on register
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "s", matches: ["https://a/*"], js: [{ code: "1", file: "x.js" }] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // code XOR file
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "s", matches: ["https://a/*"], js: [{ file: "../escape.js" }] }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // traversal refused
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [
+        { id: "dup", matches: ["https://a/*"], js: [{ code: "1" }] },
+        { id: "dup", matches: ["https://b/*"], js: [{ code: "2" }] },
+      ],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // duplicate ids
+    await expect(h(req("browser.userScripts", {
+      action: "register",
+      scripts: [{ id: "s", matches: ["https://a/*"], js: [{ code: "1" }], bogus: 1 }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // unknown field
+    await expect(h(req("browser.userScripts", { action: "execute" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.userScripts", { action: "execute", code: "1", world: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.userScripts", { action: "execute", code: "1", allFrames: true, frameIds: [0] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.userScripts", { action: "configureWorld" })))
+      .rejects.toMatchObject({ code: "proto.invalid" }); // needs csp or messaging
+    await expect(h(req("browser.userScripts", { action: "list", ids: "s1" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      userScripts: {
+        permission: vi.fn(async () => "permission" as const),
+        list: vi.fn(async () => "permission" as const),
+        register: vi.fn(async () => "permission" as const),
+        unregister: vi.fn(async () => "permission" as const),
+        update: vi.fn(async () => "permission" as const),
+        execute: vi.fn(async () => "permission" as const),
+        worlds: vi.fn(async () => "permission" as const),
+        configureWorld: vi.fn(async () => "permission" as const),
+        resetWorld: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.userScripts", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("userScripts permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.userScripts", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

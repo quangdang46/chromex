@@ -419,6 +419,22 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.dnr" })).risk).toBe("read");
   });
 
+  test("browser.userScripts: list/worlds/permission read, mutations + execute always approval", () => {
+    for (const op of ["list", "worlds", "permission"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.userScripts", userScriptsOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["register", "update", "unregister", "configureWorld", "resetWorld", "execute"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.userScripts", userScriptsOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.userScripts" })).risk).toBe("read");
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

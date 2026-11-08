@@ -355,6 +355,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.management": { action: "list", maxResults: 10 },
   "browser.notifications": { action: "send", title: "Done", message: "Task finished" },
   "browser.dnr": { action: "list" },
+  "browser.userScripts": { action: "list" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
   "browser.downloads.cancel": { downloadId: 42 },

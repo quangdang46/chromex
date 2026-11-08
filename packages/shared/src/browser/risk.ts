@@ -89,6 +89,10 @@ export interface ActionContext {
   /** browser.dnr sub-action — list/matched/test/permission read rule
    *  and match state, add/remove/clear mutate session network rules. */
   dnrOp?: string;
+  /** browser.userScripts sub-action — list/worlds read script and world
+   *  state, register/unregister/update/configureWorld/resetWorld mutate
+   *  persistent injections, execute runs one-shot page script. */
+  userScriptsOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -655,6 +659,27 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // list/matched/test/permission — matched returns real request
       // URLs (page-text egress like other read tools).
       return verdict("read", { reason: "network rule state read" });
+    }
+
+    case "browser.userScripts": {
+      const op = ctx.userScriptsOp ?? "list";
+      if (op === "list" || op === "worlds" || op === "permission") {
+        return verdict("read", { reason: "user script state read" });
+      }
+      // register/unregister/update/configureWorld/resetWorld install or
+      // change code that runs in matching pages across navigations —
+      // profile-wide persistent injection, never task-eligible. execute
+      // is arbitrary script in a page world — same class as
+      // browser.page.evaluate.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason:
+          op === "execute"
+            ? "arbitrary script execution in a page world requires approval"
+            : "persistent user script change affects matching pages browser-wide",
+      });
     }
 
     case "browser.page.caches": {

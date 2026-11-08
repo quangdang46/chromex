@@ -239,6 +239,22 @@ export interface ToolHostDeps {
     matched(filter: Record<string, unknown>): Promise<unknown[] | "permission" | null>;
     test(request: Record<string, unknown>): Promise<unknown[] | "permission" | null>;
   } | undefined;
+  /** chrome.userScripts (browser.userScripts) — persistent page
+   *  injections + one-shot execution. "permission" → optional
+   *  userScripts permission not granted; null → API unavailable →
+   *  proto.unsupported. Scripts/injections arrive pre-validated; this
+   *  layer only marshals to the Chrome API. */
+  userScripts?: {
+    permission(): Promise<string | "permission" | null>;
+    list(ids?: string[]): Promise<unknown[] | "permission" | null>;
+    register(scripts: Array<Record<string, unknown>>): Promise<unknown | "permission" | null>;
+    unregister(ids?: string[]): Promise<unknown | "permission" | null>;
+    update(scripts: Array<Record<string, unknown>>): Promise<unknown | "permission" | null>;
+    execute(injection: Record<string, unknown>): Promise<unknown[] | "permission" | null>;
+    worlds(): Promise<unknown | "permission" | null>;
+    configureWorld(properties: Record<string, unknown>): Promise<unknown | "permission" | null>;
+    resetWorld(worldId?: string): Promise<unknown | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -414,6 +430,7 @@ const SUPPORTED = new Set([
   "browser.management",
   "browser.notifications",
   "browser.dnr",
+  "browser.userScripts",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2977,6 +2994,125 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           omitted: matchedRules.length - bounded.length,
         };
       }
+      case "browser.userScripts": {
+        // chrome.userScripts — persistent page injections + one-shot
+        // execution. Optional "userScripts" permission checked per call
+        // in index.ts ("permission" sentinel → proto.unsupported).
+        // Scripts/worlds/lifecycle args are validated here; the dep
+        // only marshals to the Chrome API.
+        if (!deps.userScripts) {
+          throw toolError("proto.unsupported", "user scripts are not available on this host");
+        }
+        const api = deps.userScripts;
+        const action = str(args.action) ?? "list";
+        const usSentinel = async <T>(v: Promise<T | "permission" | null>): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", "userScripts permission is not granted");
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.userScripts is not available on this Chrome build");
+          }
+          return r as T;
+        };
+        const worldIdArg = (): string | undefined => {
+          const w = str(args.worldId);
+          if (w === undefined) return undefined;
+          if (w.length > 128 || w.startsWith("_")) {
+            throw toolError("proto.invalid", "browser.userScripts args.worldId must be ≤128 chars and not '_'-prefixed");
+          }
+          return w;
+        };
+        switch (action) {
+          case "permission": {
+            const p = await api.permission();
+            if (p === "permission") {
+              return { permission: "not_granted", granted: false };
+            }
+            if (p === null) {
+              throw toolError("proto.unsupported", "chrome.userScripts is not available on this Chrome build");
+            }
+            return { permission: p, granted: p === "granted" };
+          }
+          case "list": {
+            const ids = usStrArray(args.ids, "ids", 100);
+            const scripts = await usSentinel(api.list(ids));
+            return { scripts, count: scripts.length };
+          }
+          case "worlds": {
+            const worlds = await usSentinel(api.worlds());
+            return { worlds };
+          }
+          case "register":
+          case "update": {
+            const scripts = usValidateScripts(args.scripts, action === "register");
+            const out = await usSentinel(
+              action === "register" ? api.register(scripts) : api.update(scripts),
+            );
+            return out ?? { ok: true };
+          }
+          case "unregister": {
+            const ids = usStrArray(args.ids, "ids", 100);
+            const out = await usSentinel(api.unregister(ids));
+            return out ?? { ok: true };
+          }
+          case "execute": {
+            const tabId = await resolveScopedTabId(deps, args, tabScope);
+            const code = str(args.code);
+            if (!code || code.length > 256 * 1024) {
+              throw toolError("proto.invalid", "browser.userScripts execute requires args.code (≤256KiB)");
+            }
+            const world = str(args.world);
+            if (world !== undefined && world !== "MAIN" && world !== "USER_SCRIPT") {
+              throw toolError("proto.invalid", "browser.userScripts args.world must be MAIN|USER_SCRIPT");
+            }
+            const frameIds = usIntArray(args.frameIds, "frameIds", 100);
+            if (frameIds && args.allFrames === true) {
+              throw toolError("proto.invalid", "browser.userScripts execute args.allFrames and args.frameIds are mutually exclusive");
+            }
+            const worldId = worldIdArg();
+            const injection: Record<string, unknown> = {
+              js: [{ code }],
+              target: {
+                tabId,
+                ...(args.allFrames === true ? { allFrames: true } : {}),
+                ...(frameIds ? { frameIds } : {}),
+              },
+              ...(world ? { world } : {}),
+              ...(worldId ? { worldId } : {}),
+              ...(args.injectImmediately === true ? { injectImmediately: true } : {}),
+            };
+            const results = await usSentinel(api.execute(injection));
+            return { results, resolvedTabId: tabId };
+          }
+          case "configureWorld": {
+            const worldId = worldIdArg();
+            const csp = str(args.csp);
+            if (csp !== undefined && csp.length > 8192) {
+              throw toolError("proto.invalid", "browser.userScripts args.csp must be ≤8KiB");
+            }
+            if (csp === undefined && typeof args.messaging !== "boolean") {
+              throw toolError("proto.invalid", "browser.userScripts configureWorld requires args.csp and/or args.messaging");
+            }
+            const props: Record<string, unknown> = {
+              ...(worldId ? { worldId } : {}),
+              ...(csp !== undefined ? { csp } : {}),
+              ...(typeof args.messaging === "boolean" ? { messaging: args.messaging } : {}),
+            };
+            const out = await usSentinel(api.configureWorld(props));
+            return out ?? { ok: true };
+          }
+          case "resetWorld": {
+            const out = await usSentinel(api.resetWorld(worldIdArg()));
+            return out ?? { ok: true };
+          }
+          default:
+            throw toolError(
+              "proto.invalid",
+              "browser.userScripts args.action must be list|worlds|register|update|unregister|execute|configureWorld|resetWorld|permission",
+            );
+        }
+      }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.
         if (!deps.listWindows) {
@@ -4048,6 +4184,152 @@ function parseDnrRuleIds(raw: unknown): number[] {
     return n as number;
   });
   return [...new Set(ids)];
+}
+
+// --- browser.userScripts validation ----------------------------------
+// chrome.userScripts RegisteredUserScript/UserScriptInjection shapes.
+// Every field is whitelisted here — script code is agent-supplied and
+// runs in page contexts, so unknown keys and oversized payloads must
+// fail proto.invalid before reaching Chrome.
+
+const US_RUN_AT = new Set(["document_start", "document_end", "document_idle"]);
+const US_WORLDS = new Set(["MAIN", "USER_SCRIPT"]);
+const US_SCRIPT_KEYS = new Set([
+  "id", "matches", "excludeMatches", "includeGlobs", "excludeGlobs",
+  "js", "runAt", "world", "worldId", "allFrames",
+]);
+const US_JS_SOURCE_KEYS = new Set(["code", "file"]);
+const US_CODE_MAX = 256 * 1024;
+
+function usInvalid(msg: string): never {
+  throw toolError("proto.invalid", `browser.userScripts ${msg}`);
+}
+
+function usStrArray(raw: unknown, field: string, max: number): string[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > max) {
+    usInvalid(`args.${field} must be an array of 1-${max} strings`);
+  }
+  return (raw as unknown[]).map((v) => {
+    if (typeof v !== "string" || v.length === 0 || v.length > 1024) {
+      usInvalid(`args.${field} entries must be strings 1-1024 chars`);
+    }
+    return v as string;
+  });
+}
+
+function usIntArray(raw: unknown, field: string, max: number): number[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > max) {
+    usInvalid(`args.${field} must be an array of 1-${max} integers`);
+  }
+  return (raw as unknown[]).map((v) => {
+    if (typeof v !== "number" || !Number.isInteger(v)) {
+      usInvalid(`args.${field} entries must be integers`);
+    }
+    return v as number;
+  });
+}
+
+function usScriptId(v: unknown, required: boolean): string | undefined {
+  if (v === undefined) {
+    if (required) usInvalid("script id is required");
+    return undefined;
+  }
+  if (typeof v !== "string" || v.length === 0 || v.length > 128 || v.startsWith("_")) {
+    usInvalid("script id must be a string 1-128 chars and not '_'-prefixed");
+  }
+  return v as string;
+}
+
+function usPatternList(v: unknown, field: string, required: boolean): string[] | undefined {
+  if (v === undefined) {
+    if (required) usInvalid(`script ${field} is required`);
+    return undefined;
+  }
+  return usStrArray(v, `scripts[].${field}`, 100) ?? usInvalid(`script ${field} must be a non-empty array`);
+}
+
+function usValidateScript(raw: unknown, requireFull: boolean): Record<string, unknown> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    usInvalid("scripts entries must be objects");
+  }
+  const s = raw as Record<string, unknown>;
+  for (const key of Object.keys(s)) {
+    if (!US_SCRIPT_KEYS.has(key)) usInvalid(`script has unknown field '${key.slice(0, 40)}'`);
+  }
+  const out: Record<string, unknown> = {};
+  const id = usScriptId(s.id, true);
+  if (id !== undefined) out.id = id;
+  const matches = usPatternList(s.matches, "matches", requireFull);
+  if (matches !== undefined) out.matches = matches;
+  for (const key of ["excludeMatches", "includeGlobs", "excludeGlobs"] as const) {
+    const list = usPatternList(s[key], key, false);
+    if (list !== undefined) out[key] = list;
+  }
+  if (s.js !== undefined || requireFull) {
+    if (!Array.isArray(s.js) || s.js.length === 0 || s.js.length > 20) {
+      usInvalid("script js must be an array of 1-20 sources");
+    }
+    out.js = (s.js as unknown[]).map((src) => {
+      if (src === null || typeof src !== "object" || Array.isArray(src)) {
+        usInvalid("script js entries must be objects");
+      }
+      const o = src as Record<string, unknown>;
+      for (const key of Object.keys(o)) {
+        if (!US_JS_SOURCE_KEYS.has(key)) usInvalid(`script js entry has unknown field '${key.slice(0, 40)}'`);
+      }
+      const hasCode = typeof o.code === "string";
+      const hasFile = typeof o.file === "string";
+      if (hasCode === hasFile) usInvalid("script js entry needs exactly one of code|file");
+      if (hasCode) {
+        const code = o.code as string;
+        if (code.length === 0 || code.length > US_CODE_MAX) {
+          usInvalid(`script js code must be 1-${US_CODE_MAX} chars`);
+        }
+        return { code };
+      }
+      const file = o.file as string;
+      if (file.length === 0 || file.length > 1024 || file.includes("..") || file.startsWith("/")) {
+        usInvalid("script js file must be a relative extension path ≤1024 chars without '..'");
+      }
+      return { file };
+    });
+  }
+  if (s.runAt !== undefined) {
+    if (typeof s.runAt !== "string" || !US_RUN_AT.has(s.runAt)) {
+      usInvalid("script runAt must be document_start|document_end|document_idle");
+    }
+    out.runAt = s.runAt;
+  }
+  if (s.world !== undefined) {
+    if (typeof s.world !== "string" || !US_WORLDS.has(s.world)) {
+      usInvalid("script world must be MAIN|USER_SCRIPT");
+    }
+    out.world = s.world;
+  }
+  if (s.allFrames !== undefined) {
+    if (typeof s.allFrames !== "boolean") usInvalid("script allFrames must be a boolean");
+    out.allFrames = s.allFrames;
+  }
+  if (s.worldId !== undefined) {
+    if (typeof s.worldId !== "string" || s.worldId.length === 0 || s.worldId.length > 128 || s.worldId.startsWith("_")) {
+      usInvalid("script worldId must be a string 1-128 chars and not '_'-prefixed");
+    }
+    out.worldId = s.worldId;
+    if (out.world === "MAIN") usInvalid("worldId is only valid with world USER_SCRIPT or omitted");
+  }
+  return out;
+}
+
+function usValidateScripts(raw: unknown, requireFull: boolean): Array<Record<string, unknown>> {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 20) {
+    usInvalid("args.scripts must be an array of 1-20 scripts");
+  }
+  const scripts = (raw as unknown[]).map((s) => usValidateScript(s, requireFull));
+  const ids = scripts.map((s) => s.id as string);
+  if (new Set(ids).size !== ids.length) usInvalid("args.scripts contains duplicate ids");
+  return scripts;
 }
 
 /** Map a locate/geom/describe `target_changed` reason to the coded

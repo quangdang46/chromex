@@ -904,6 +904,7 @@ try {
   await expectReject("browser.management", { action: "list" }, "does not support", "management refused on isolated (no extension inventory)");
   await expectReject("browser.notifications", { action: "send", title: "t", message: "m" }, "does not support", "notifications refused on isolated (no OS channel)");
   await expectReject("browser.dnr", { action: "list" }, "does not support", "dnr refused on isolated (no browser-wide rule engine)");
+  await expectReject("browser.userScripts", { action: "list" }, "does not support", "userScripts refused on isolated (no persistent injection API)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

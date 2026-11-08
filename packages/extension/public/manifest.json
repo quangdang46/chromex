@@ -41,7 +41,8 @@
     "privacy",
     "management",
     "notifications",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "userScripts"
   ],
   "background": {
     "service_worker": "background.js",

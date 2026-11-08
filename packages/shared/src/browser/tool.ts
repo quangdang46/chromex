@@ -66,6 +66,7 @@ export type BrowserToolName =
   | "browser.management"
   | "browser.notifications"
   | "browser.dnr"
+  | "browser.userScripts"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -131,6 +132,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.management",
   "browser.notifications",
   "browser.dnr",
+  "browser.userScripts",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",
