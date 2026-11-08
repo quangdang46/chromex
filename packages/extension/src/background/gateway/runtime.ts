@@ -62,9 +62,21 @@ function renderBadge(): void {
     void chrome.action.setTitle({ title: "Chromex tasks need attention" }).catch(() => undefined);
   } else if (agentBadge) {
     void chrome.action.setBadgeBackgroundColor({ color: agentBadge.color ?? "#5f6368" });
-    if (agentBadge.title) {
-      void chrome.action.setTitle({ title: agentBadge.title }).catch(() => undefined);
-    }
+    void chrome.action
+      .setTitle({ title: agentBadge.title ?? defaultActionTitle() })
+      .catch(() => undefined);
+  } else {
+    // Nothing to show — badge text is already "" above, but a stale title
+    // would survive an agentBadge clear or a service-worker restart.
+    void chrome.action.setTitle({ title: defaultActionTitle() }).catch(() => undefined);
+  }
+}
+
+function defaultActionTitle(): string {
+  try {
+    return chrome.runtime.getManifest?.().name ?? "Chromex";
+  } catch {
+    return "Chromex";
   }
 }
 

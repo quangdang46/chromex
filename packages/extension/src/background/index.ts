@@ -1174,11 +1174,16 @@ const toolHostHandler = createToolHostHandler({
       // legitimate results — returned in-band as resolved:false,
       // not thrown as protocol errors.
       permission: async () => {
-        const granted = await chrome.permissions.contains({ permissions: ["dns"] });
+        // "dns" postdates the @types/chrome ManifestPermission union.
+        const granted = await chrome.permissions.contains({
+          permissions: ["dns"] as unknown as chrome.runtime.ManifestPermission[],
+        });
         return granted ? "granted" : "permission";
       },
       resolve: async (hostname: string) => {
-        const granted = await chrome.permissions.contains({ permissions: ["dns"] });
+        const granted = await chrome.permissions.contains({
+          permissions: ["dns"] as unknown as chrome.runtime.ManifestPermission[],
+        });
         if (!granted) return "permission";
         const api = (chrome as unknown as {
           dns?: { resolve(hostname: string): Promise<string[]> };
@@ -1250,11 +1255,13 @@ const toolHostHandler = createToolHostHandler({
           // always carries the Chrome version.
           const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
           const m = /(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+){1,3})/.exec(ua);
-          if (m) {
+          const version = m?.[1];
+          const major = version?.split(".")[0];
+          if (version) {
             browser = {
               brand: "Chromium",
-              version: m[1],
-              majorVersion: m[1].split(".")[0],
+              version,
+              ...(major ? { majorVersion: major } : {}),
             };
           }
         }
@@ -1295,18 +1302,24 @@ const toolHostHandler = createToolHostHandler({
         };
       },
       contains: async (permissions: string[]) => {
-        const r = await chrome.permissions.contains({ permissions }).catch(() => null);
+        const r = await chrome.permissions
+          .contains({ permissions: permissions as chrome.runtime.ManifestPermission[] })
+          .catch(() => null);
         return typeof r === "boolean" ? r : null;
       },
       // request/remove let Chrome errors propagate — a gesture
       // rejection or dialog failure must surface its real message,
       // not collapse into "API unavailable".
       request: async (permissions: string[]) => {
-        const r = await chrome.permissions.request({ permissions });
+        const r = await chrome.permissions.request({
+          permissions: permissions as chrome.runtime.ManifestPermission[],
+        });
         return typeof r === "boolean" ? r : null;
       },
       remove: async (permissions: string[]) => {
-        const r = await chrome.permissions.remove({ permissions });
+        const r = await chrome.permissions.remove({
+          permissions: permissions as chrome.runtime.ManifestPermission[],
+        });
         return typeof r === "boolean" ? r : null;
       },
     },
