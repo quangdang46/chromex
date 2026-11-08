@@ -186,7 +186,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       claude: config.providers.claude,
       ...config.providers.acp,
     };
-    const registry = new ProviderRegistry(providerConfigs);
+    const registry = new ProviderRegistry(providerConfigs, {
+      catalogDir: path.join(dataDir, "catalog"),
+    });
     if (config.providers.codex.enabled) {
       // external skill roots live under the sidepanel config dir
       // (same root the legacy sidecar's ExternalSkillArchiveStore uses)

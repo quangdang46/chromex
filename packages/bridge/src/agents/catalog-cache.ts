@@ -102,9 +102,8 @@ export class FileCatalogSnapshotStore implements CatalogSnapshotStore {
  * resolveDataDir for every real deployment. Returns undefined when the
  * env is absent (e.g. embedded/test gateways with an explicit dataDir)
  * — callers then pass an explicit catalogDir or leave persistence off.
- * TODO(chromex-w2h): once gateway/main.ts is editable, pass
- * `catalogDir: path.join(dataDir, "catalog")` to ProviderRegistry and
- * drop this env heuristic.
+ * gateway/main.ts passes `catalogDir: <dataDir>/catalog` explicitly;
+ * this env resolution remains the fallback for other entry points.
  */
 export function resolveCatalogSnapshotDir(
   env: NodeJS.ProcessEnv = process.env,
