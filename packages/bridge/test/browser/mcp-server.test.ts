@@ -336,6 +336,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.find": { text: "Sign in", limit: 10 },
   "browser.page.history": { action: "back" },
   "browser.page.cookies": { action: "list" },
+  "browser.page.localStorage": { action: "list" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
   "browser.downloads.cancel": { downloadId: 42 },

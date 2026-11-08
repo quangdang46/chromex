@@ -53,7 +53,6 @@ const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
  *  Residual caveat: an approved expression can still trigger in-page
  *  side effects (fetch etc.) that no tool-level gate observes. */
 export const HARD_BLOCKED_TOOLS: ReadonlySet<string> = new Set([
-  "browser.page.localStorage",
   "browser.page.download",
 ]);
 
@@ -419,6 +418,12 @@ export function buildActionContext(
       ? {
           cookieOp: typeof args.action === "string" ? args.action : "list",
           cookieValues: args.includeValues === true,
+        }
+      : {}),
+    ...(req.tool === "browser.page.localStorage"
+      ? {
+          storageOp: typeof args.action === "string" ? args.action : "list",
+          storageValues: args.action === "get" || args.includeValues === true,
         }
       : {}),
     withinTabScope,

@@ -491,6 +491,32 @@ try {
   assert((ckList3?.cookies ?? []).length === 0, "clear emptied the jar");
   await expectReject("browser.page.cookies", { tabId: ckId, action: "clear" }, "url or args.domain", "clear without scope refused");
 
+  // ── Loop 14: page.localStorage — keys/values/session area ──────────
+  await call("browser.page.localStorage", { tabId: ckId, action: "set", key: "theme", value: "dark" });
+  const lsKeys = await call("browser.page.localStorage", { tabId: ckId });
+  assert(
+    (lsKeys?.keys ?? []).includes("theme") && lsKeys?.entries === undefined,
+    "storage list returns keys only (values withheld by default)",
+  );
+  const lsGet = await call("browser.page.localStorage", { tabId: ckId, action: "get", key: "theme" });
+  assert(lsGet?.value === "dark" && lsGet?.found === true, "storage get returns the value");
+  await call("browser.page.localStorage", { area: "session", action: "set", key: "sflag", value: "1" });
+  const ssKeys = await call("browser.page.localStorage", { tabId: ckId, area: "session" });
+  assert((ssKeys?.keys ?? []).includes("sflag"), "sessionStorage is a separate area");
+  const lsDom = await call("browser.page.evaluate", {
+    tabId: ckId,
+    expression: "localStorage.getItem('theme') + '|' + sessionStorage.getItem('sflag')",
+  });
+  assert(
+    String(lsDom?.value ?? "") === "dark|1",
+    `in-page storage sees tool writes (got ${lsDom?.value})`,
+  );
+  await call("browser.page.localStorage", { tabId: ckId, action: "remove", key: "theme" });
+  await call("browser.page.localStorage", { tabId: ckId, area: "session", action: "clear" });
+  const lsAfter = await call("browser.page.localStorage", { tabId: ckId });
+  assert(!(lsAfter?.keys ?? []).includes("theme"), "remove deleted the key");
+  await expectReject("browser.page.localStorage", { tabId: ckId, action: "set", key: "x" }, "args.value", "set without value refused");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

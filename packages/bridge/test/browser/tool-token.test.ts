@@ -94,7 +94,7 @@ describe("BrowserToolServer", () => {
     expect(out.error?.code).toBe("browser.no_host");
   });
 
-  it("hard-blocks cookies/localStorage/download", async () => {
+  it("hard-blocks the remaining blocked tools", async () => {
     // token must scope-allow the tools for the hard block to be reached
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = issue(tokens, { allowedTools: [...HARD_BLOCKED_TOOLS] });

@@ -696,6 +696,20 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.page.localStorage": {
+    description:
+      "Read and manage the page's Web Storage — localStorage (default) or sessionStorage via args.area. action=list (default) returns keys only unless includeValues:true; action=get returns one key's value (requires args.key); action=set writes a key (args.key + args.value required); action=remove deletes one key; action=clear empties the store. Values are page data — often tokens or session state — so get and includeValues always require approval, and set/remove/clear are approval-gated mutations. Key listing is read-only. Both backends support it (chrome-extension via chrome.scripting MAIN world, playwright-isolated via page.evaluate).",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        area: { type: "string", enum: ["local", "session"], description: "localStorage (default) or sessionStorage." },
+        action: { type: "string", enum: ["list", "get", "set", "remove", "clear"], description: "Storage operation (default list)." },
+        key: { type: "string", description: "Storage key — required for get/set/remove." },
+        value: { type: "string", description: "Value to store — required for set." },
+        includeValues: { type: "boolean", description: "list only: include stored values (always requires approval)." },
+      },
+    ),
+  },
   "browser.downloads.list": {
     description:
       "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",

@@ -198,6 +198,26 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     }
   });
 
+  test("browser.page.localStorage: keys read; values/mutations always approval", () => {
+    const keys = classifyActionRisk(ctx({ action: "browser.page.localStorage", storageOp: "list" }));
+    expect(keys.risk).toBe("read");
+    expect(keys.needsApproval).toBe(false);
+    for (const [op, vals] of [["get", true], ["list", true], ["set", false], ["remove", false], ["clear", false]] as const) {
+      const v = classifyActionRisk(
+        ctx({ action: "browser.page.localStorage", storageOp: op, storageValues: vals }),
+      );
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+    }
+    // mutations are browser_action; value reads are agent_egress
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.localStorage", storageOp: "set" })).kind,
+    ).toBe("browser_action");
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.localStorage", storageOp: "get", storageValues: true })).kind,
+    ).toBe("agent_egress");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

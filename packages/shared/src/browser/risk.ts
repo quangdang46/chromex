@@ -50,6 +50,11 @@ export interface ActionContext {
   cookieOp?: string;
   /** list was asked to include cookie values — credential-grade egress */
   cookieValues?: boolean;
+  /** browser.page.localStorage sub-action — same tool name spans
+   *  keys-only read, value egress and storage mutation. */
+  storageOp?: string;
+  /** storage list/get returns values — page data egress */
+  storageValues?: boolean;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -416,6 +421,31 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "cookie metadata list (values withheld)" });
+    }
+
+    case "browser.page.localStorage": {
+      const op = ctx.storageOp ?? "list";
+      if (op === "set" || op === "remove" || op === "clear") {
+        // Web-storage mutation can corrupt app state / session tokens —
+        // never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "web storage mutation changes page state",
+        });
+      }
+      if (op === "get" || ctx.storageValues === true) {
+        // Stored values are page data — often tokens/session state —
+        // per-call approval regardless of destination.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "agent_egress",
+          allowTaskEligible: false,
+          reason: "web storage values are page data — per-call approval",
+        });
+      }
+      return verdict("read", { reason: "storage key list (values withheld)" });
     }
 
     case "browser.windows.update":

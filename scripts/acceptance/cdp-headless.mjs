@@ -715,11 +715,59 @@ await runScenario(
         ...ck,
       };
 
+      // --- localStorage/sessionStorage: fixed-shape MAIN-world access ---
+      // keys-only list is read; get/values/mutations are approval-gated
+      // (auto-answered). In-page DOM check proves real storage writes.
+      let ls = {};
+      try {
+        await runner.browserToolCall(
+          taskId, "browser.page.localStorage",
+          { action: "set", key: "cdplsk", value: "lsv" }, token, 60_000,
+        );
+        const lsList = await runner.browserToolCall(
+          taskId, "browser.page.localStorage", {}, token, 60_000,
+        );
+        const lsRes = lsList?.result ?? lsList ?? {};
+        ls.keysOk = Array.isArray(lsRes.keys) && lsRes.keys.includes("cdplsk") && lsRes.entries === undefined;
+        const lsGet = await runner.browserToolCall(
+          taskId, "browser.page.localStorage", { action: "get", key: "cdplsk" }, token, 60_000,
+        );
+        ls.getOk = (lsGet?.result ?? lsGet ?? {}).value === "lsv";
+        const lsDom = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: "localStorage.getItem('cdplsk')" }, token, 60_000,
+        );
+        ls.domOk = String(lsDom?.result?.value ?? lsDom?.value ?? "") === "lsv";
+        await runner.browserToolCall(
+          taskId, "browser.page.localStorage",
+          { area: "session", action: "set", key: "cdpss", value: "1" }, token, 60_000,
+        );
+        const ssList = await runner.browserToolCall(
+          taskId, "browser.page.localStorage", { area: "session" }, token, 60_000,
+        );
+        ls.sessionOk = ((ssList?.result ?? ssList ?? {}).keys ?? []).includes("cdpss");
+        await runner.browserToolCall(
+          taskId, "browser.page.localStorage", { action: "clear" }, token, 60_000,
+        );
+        const lsAfter = await runner.browserToolCall(
+          taskId, "browser.page.localStorage", {}, token, 60_000,
+        );
+        ls.clearOk = !((lsAfter?.result ?? lsAfter ?? {}).keys ?? []).includes("cdplsk");
+      } catch (e) {
+        ls.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`localStorage → ${JSON.stringify(ls).slice(0, 300)}`);
+      results.localStorage = {
+        ok: ls.keysOk === true && ls.getOk === true && ls.domOk === true &&
+          ls.sessionOk === true && ls.clearOk === true,
+        ...ls,
+      };
+
       const pass = Object.values(results).every((r) => r.ok === true);
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

@@ -941,6 +941,37 @@ describe("tool host (P1-09)", () => {
     await expect(noDep(req("browser.page.evaluate", { expression: "1" }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.localStorage marshals fixed-shape args into chromexStorageOp", async () => {
+    const calls: Array<{ funcName: string; args: unknown[] | undefined; frameIds: unknown }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[], frameIds?: number[]) => {
+        calls.push({ funcName: func.name, args, frameIds });
+        return { ok: true, result: { area: "local", keys: ["theme"] } };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.localStorage", {
+      tabId: 42, action: "list", area: "local",
+    }))) as { keys: string[]; area: string; resolvedTabId: number };
+    expect(res.keys).toEqual(["theme"]);
+    expect(res.resolvedTabId).toBe(42);
+    expect(calls[0]).toMatchObject({
+      funcName: "chromexStorageOp",
+      args: ["local", "list", "", "", false],
+      frameIds: [0],
+    });
+    // session area + set args marshal through
+    await h(req("browser.page.localStorage", {
+      tabId: 42, area: "session", action: "set", key: "k", value: "v",
+    }));
+    expect(calls[1]?.args).toEqual(["session", "set", "k", "v", false]);
+    // validation: missing key/value, bad action, frameId all refuse
+    await expect(h(req("browser.page.localStorage", { tabId: 42, action: "get" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.localStorage", { tabId: 42, action: "set", key: "k" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.localStorage", { tabId: 42, action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.localStorage", { tabId: 42, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

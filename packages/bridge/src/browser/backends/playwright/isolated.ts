@@ -69,6 +69,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.find",
   "browser.page.history",
   "browser.page.cookies",
+  "browser.page.localStorage",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -400,6 +401,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#history(taskId, args);
       case "browser.page.cookies":
         return this.#cookies(taskId, args);
+      case "browser.page.localStorage":
+        return this.#storage(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -2115,6 +2118,77 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       await context.clearCookies({ name: c.name, domain: c.domain, path: c.path });
     }
     return { cleared: matched.length };
+  }
+
+  // ---- web storage ----
+
+  /** Same contract as the extension backend's chromexStorageOp: fixed
+   *  in-page function, agent supplies keys/values never code. Values
+   *  are bounded per-entry and the whole result drops to keys-only
+   *  past the size cap (truncated flag stays honest). */
+  async #storage(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "list";
+    if (!["list", "get", "set", "remove", "clear"].includes(action)) {
+      throw protocolError("proto.invalid", "browser.page.localStorage args.action must be list|get|set|remove|clear");
+    }
+    const area = args.area === "session" ? "session" : "local";
+    const key = typeof args.key === "string" ? args.key : "";
+    if ((action === "get" || action === "set" || action === "remove") && !key) {
+      throw protocolError("proto.invalid", `browser.page.localStorage ${action} requires args.key`);
+    }
+    if (action === "set" && typeof args.value !== "string") {
+      throw protocolError("proto.invalid", "browser.page.localStorage set requires args.value");
+    }
+    const includeValues = args.includeValues === true;
+    const value = typeof args.value === "string" ? args.value : "";
+    const out = (await page.evaluate(
+      ([a, act, k, v, iv]: [string, string, string, string, boolean]) => {
+        const VALUE_CHAR_CAP = 32 * 1024;
+        const RESULT_CHAR_CAP = 200 * 1024;
+        const s = a === "session" ? window.sessionStorage : window.localStorage;
+        if (act === "set") {
+          s.setItem(k, v);
+          return { area: a, set: true, key: k };
+        }
+        if (act === "remove") {
+          s.removeItem(k);
+          return { area: a, removed: k };
+        }
+        if (act === "clear") {
+          s.clear();
+          return { area: a, cleared: true };
+        }
+        if (act === "get") {
+          const val = s.getItem(k);
+          return {
+            area: a, key: k, found: val !== null,
+            value: val === null ? null : val.slice(0, VALUE_CHAR_CAP),
+            ...(val !== null && val.length > VALUE_CHAR_CAP ? { truncated: true } : {}),
+          };
+        }
+        const keys: string[] = [];
+        const entries: Record<string, string> = {};
+        for (let i = 0; i < s.length; i += 1) {
+          const kk = s.key(i);
+          if (kk === null) continue;
+          keys.push(kk);
+          if (iv) {
+            const val = s.getItem(kk);
+            if (val !== null) entries[kk] = val.slice(0, VALUE_CHAR_CAP);
+          }
+        }
+        const result: Record<string, unknown> = iv
+          ? { area: a, entries, truncatedValues: Object.values(entries).some((x) => x.length >= VALUE_CHAR_CAP) }
+          : { area: a, keys };
+        if (JSON.stringify(result).length > RESULT_CHAR_CAP) {
+          return { area: a, keys, truncated: true };
+        }
+        return result;
+      },
+      [area, action, key, value, includeValues] as [string, string, string, string, boolean],
+    )) as Record<string, unknown> | undefined;
+    return { ...(out ?? {}), area };
   }
 
   // ---- downloads ----

@@ -36,6 +36,7 @@ import type {
 
 import { chromexConsoleCollect } from "../../content/console-capture.js";
 import { chromexEvaluate } from "../../content/evaluate.js";
+import { chromexStorageOp } from "../../content/storage.js";
 import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
@@ -257,6 +258,7 @@ const SUPPORTED = new Set([
   "browser.page.find",
   "browser.page.history",
   "browser.page.cookies",
+  "browser.page.localStorage",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -1281,6 +1283,40 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.invalid", "browser.page.cookies is tab-scoped; args.frameId is not supported");
         }
         return await pageCookies(deps, tabId, args);
+      }
+      case "browser.page.localStorage": {
+        // Fixed-shape storage access in the page MAIN world — the agent
+        // supplies keys/values, never code. Risk gating lives in the
+        // classifier (values + mutations always approval).
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "web storage access requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.localStorage is tab-scoped; args.frameId is not supported");
+        }
+        const action = str(args.action) ?? "list";
+        if (!["list", "get", "set", "remove", "clear"].includes(action)) {
+          throw toolError("proto.invalid", "browser.page.localStorage args.action must be list|get|set|remove|clear");
+        }
+        const area = str(args.area) === "session" ? "session" : "local";
+        const key = str(args.key);
+        if ((action === "get" || action === "set" || action === "remove") && !key) {
+          throw toolError("proto.invalid", `browser.page.localStorage ${action} requires args.key`);
+        }
+        if (action === "set" && typeof args.value !== "string") {
+          throw toolError("proto.invalid", "browser.page.localStorage set requires args.value");
+        }
+        const res = (await deps.runInMainWorld!(
+          tabId,
+          chromexStorageOp as (...fnArgs: unknown[]) => unknown,
+          [area, action, key ?? "", typeof args.value === "string" ? args.value : "", args.includeValues === true],
+          [0],
+        )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
+        if (!res || res.ok !== true) {
+          throw toolError("browser.action_failed", `storage op failed: ${res?.error ?? "no result"}`);
+        }
+        return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
       }
       case "browser.downloads.list": {
         // Not tab-scoped: lists the profile's downloads via chrome.downloads.

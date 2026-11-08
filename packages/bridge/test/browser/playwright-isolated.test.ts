@@ -761,3 +761,92 @@ describe("PlaywrightIsolatedBackend page.cookies", () => {
     await backend.close();
   });
 });
+
+describe("PlaywrightIsolatedBackend page.localStorage", () => {
+  test("keys-only list; get/set/remove/clear round-trip; validation refuses", async () => {
+    const makeStorage = () => {
+      const m = new Map<string, string>();
+      return {
+        get length() { return m.size; },
+        key: (i: number) => [...m.keys()][i] ?? null,
+        getItem: (k: string) => m.get(k) ?? null,
+        setItem: (k: string, v: string) => void m.set(k, v),
+        removeItem: (k: string) => void m.delete(k),
+        clear: () => m.clear(),
+        _map: m,
+      };
+    };
+    const local = makeStorage();
+    const session = makeStorage();
+    const g = globalThis as Record<string, unknown>;
+    const prevWindow = g.window;
+    g.window = { localStorage: local, sessionStorage: session };
+    try {
+      const page = {
+        url: () => "https://x.example/",
+        // playwright serializes fn+arg into the page — emulate by
+        // invoking the same function against the window shim.
+        evaluate: async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg),
+      };
+      const context = {
+        pages: () => [page],
+        newPage: async () => page,
+        close: async () => {},
+      };
+      const browser = { isConnected: () => true, newContext: async () => context, close: async () => {} };
+      const backend = new PlaywrightIsolatedBackend({
+        loadPlaywright: async () => ({ chromium: { launch: async () => browser } }) as never,
+      });
+
+      const list = (await backend.execute("t1", "browser.page.localStorage", {})) as {
+        keys: string[];
+      };
+      expect(list.keys).toEqual([]);
+
+      await backend.execute("t1", "browser.page.localStorage", {
+        action: "set", key: "theme", value: "dark",
+      });
+      expect(local._map.get("theme")).toBe("dark");
+
+      // keys-only list still withholds values
+      const list2 = (await backend.execute("t1", "browser.page.localStorage", {})) as { keys: string[] };
+      expect(list2.keys).toEqual(["theme"]);
+
+      const got = (await backend.execute("t1", "browser.page.localStorage", {
+        action: "get", key: "theme",
+      })) as { found: boolean; value: string };
+      expect(got).toMatchObject({ found: true, value: "dark" });
+
+      const vals = (await backend.execute("t1", "browser.page.localStorage", {
+        includeValues: true,
+      })) as { entries: Record<string, string> };
+      expect(vals.entries).toEqual({ theme: "dark" });
+
+      // session area is a separate store
+      await backend.execute("t1", "browser.page.localStorage", {
+        area: "session", action: "set", key: "s1", value: "sv",
+      });
+      expect(session._map.get("s1")).toBe("sv");
+      expect(local._map.has("s1")).toBe(false);
+
+      await backend.execute("t1", "browser.page.localStorage", { action: "remove", key: "theme" });
+      expect(local._map.has("theme")).toBe(false);
+      await backend.execute("t1", "browser.page.localStorage", { action: "clear", area: "session" });
+      expect(session._map.size).toBe(0);
+
+      await expect(
+        backend.execute("t1", "browser.page.localStorage", { action: "get" }),
+      ).rejects.toMatchObject({ code: "proto.invalid" });
+      await expect(
+        backend.execute("t1", "browser.page.localStorage", { action: "set", key: "k" }),
+      ).rejects.toMatchObject({ code: "proto.invalid" });
+      await expect(
+        backend.execute("t1", "browser.page.localStorage", { action: "bogus" }),
+      ).rejects.toMatchObject({ code: "proto.invalid" });
+      await backend.close();
+    } finally {
+      if (prevWindow === undefined) delete g.window;
+      else g.window = prevWindow;
+    }
+  });
+});
