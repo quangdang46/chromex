@@ -363,6 +363,18 @@ try {
   const dlgNone = await call("browser.page.dialog", { tabId: dlgId, timeoutMs: 1000 });
   assert(dlgNone?.handled === false && dlgNone?.reason === "no_dialog", "dialog reports no_dialog honestly");
 
+  // ── Loop 10d: page.webSocket — fixture /ws echoes hello-agent ─────
+  const wsTab = await call("browser.tab.create", { url: fixture.url("/ws"), active: false });
+  const wTab = wsTab?.tabId ?? wsTab?.id;
+  await call("browser.page.wait", { tabId: wTab, text: "echo:hello-agent", timeoutMs: 8000 });
+  const wsList = await call("browser.page.webSocket", { tabId: wTab });
+  const sock = (wsList?.sockets ?? [])[0];
+  assert(!!sock?.requestId, "webSocket lists the fixture connection");
+  const wsFrames = await call("browser.page.webSocket", { tabId: wTab, requestId: sock.requestId });
+  const payloads = (wsFrames?.frames ?? []).map((f) => `${f.dir}:${f.data}`);
+  assert(payloads.includes("sent:hello-agent"), `ws sent frame captured (${payloads.join("|")})`);
+  assert(payloads.includes("recv:echo:hello-agent"), `ws recv frame captured (${payloads.join("|")})`);
+
   // ── Loop 11: open shadow DOM on the isolated backend — playwright
   //  locators pierce open roots natively; text/extract must too ─────
   const shTab = await call("browser.tab.create", { url: fixture.url("/shadow"), active: false });
