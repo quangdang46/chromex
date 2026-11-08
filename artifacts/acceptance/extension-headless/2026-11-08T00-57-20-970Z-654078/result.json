@@ -1,0 +1,21 @@
+{
+  "scenario": "extension-headless",
+  "runId": "2026-11-08T00-57-20-970Z-654078",
+  "status": "PASS",
+  "summary": "real extension SW in headless Chromium: host registered, page.get + page.snapshot + tabs.list completed through MCP→gateway→NM→SW→content",
+  "details": {
+    "extensionId": "menmlhahmendmkiicbjihgjhppkgaeom",
+    "authedConnections": 2,
+    "pageGetStatus": "completed",
+    "snapshotStatus": "completed",
+    "tabsStatus": "completed"
+  },
+  "notes": [
+    "[2026-11-08T00:57:22.798Z] extension menmlhahmendmkiicbjihgjhppkgaeom headless=true",
+    "[2026-11-08T00:57:25.303Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T00:57:25.308Z] task 01M6WAHZHT2YTAG1MRNWM8CG0C",
+    "[2026-11-08T00:57:25.641Z] page.get → {\"toolCallId\":\"rpc-mw74hjsy-cmhjlf\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1145642307,\"tabId\":1145642307,\"url\":\"http://127.0.0.1:64893/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
+    "[2026-11-08T00:57:25.910Z] page.snapshot → {\"toolCallId\":\"rpc-mw74hk0a-qh22o3\",\"tool\":\"browser.page.snapshot\",\"status\":\"completed\",\"result\":{\"snapshotId\":\"snap:ce511ca0-ea35-404a-80c9-de9eae6e4e9b\",\"structuralFingerprint\":\"sfp1:23641dacb38b506",
+    "[2026-11-08T00:57:25.914Z] tabs.list → {\"toolCallId\":\"rpc-mw74hk7r-bke0t3\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[{\"id\":1145642307,\"title\":\"Fixture Home\",\"url\":\"http://127.0.0.1:64893/\",\"origin\":\"http://127.0.0.1"
+  ]
+}
