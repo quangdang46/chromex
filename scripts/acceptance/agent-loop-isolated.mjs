@@ -230,7 +230,9 @@ try {
   assert((netFiltered?.requests ?? []).some((r) => String(r.url).includes("/api/ping")), "status/type filters work");
 
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
-  await expectReject("browser.page.evaluate", {}, "unsupported", "evaluate refused (no arbitrary JS)");
+  const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
+  assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);
+  await expectReject("browser.page.evaluate", {}, "invalid", "evaluate without expression refused");
   await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
   await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");
   await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");

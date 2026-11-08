@@ -163,24 +163,24 @@ try {
     assert(String(e.rpcMessage ?? e.message).includes("proto.unsupported"), "unsupported tool refused at MCP scope gate");
   }
 
-  // ── Loop 5: hard-blocked tool (evaluate) — needs a token whose
+  // ── Loop 5: hard-blocked tool (cookies) — needs a token whose
   // allowedTools includes it, otherwise the scope check fires first ────
   const { token: wideToken } = tokens.issue({
     taskId: TASK,
     profileId: "profile-e2e",
     backendId: "playwright-isolated",
-    allowedTools: [...allowed, "browser.page.evaluate"],
+    allowedTools: [...allowed, "browser.page.cookies"],
   });
   const blocked = await toolServer.execute({
     toolCallId: "mcp-e2e-blocked-1",
     taskId: TASK,
-    tool: "browser.page.evaluate",
+    tool: "browser.page.cookies",
     args: {},
     token: wideToken,
     profileId: "profile-e2e",
     backendId: "playwright-isolated",
   });
-  assert(blocked.status === "failed" && blocked.error?.code === "browser.tool_blocked", "evaluate hard-blocked by tool server");
+  assert(blocked.status === "failed" && blocked.error?.code === "browser.tool_blocked", "cookies hard-blocked by tool server");
 
   // ── Loop 6: token rejection — a forged token never reaches dispatch ──
   const forged = await toolServer.execute({
