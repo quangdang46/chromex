@@ -202,6 +202,13 @@ export interface ToolHostDeps {
   }): Promise<
     Array<{ url: string; title?: string; visitCount?: number; lastVisitTime?: number }> | null
   >;
+  /** chrome.history.deleteUrl/deleteRange — same optional 'history'
+   *  permission as searchHistory; null → proto.unsupported. */
+  deleteHistory?(q: {
+    url?: string;
+    startTime?: number;
+    endTime?: number;
+  }): Promise<unknown | null>;
   /** chrome.bookmarks — needs the OPTIONAL "bookmarks" permission.
    *  Return null when the permission is not granted → proto.unsupported. */
   bookmarkOp?(op: {
@@ -290,6 +297,7 @@ const SUPPORTED = new Set([
   "browser.page.serviceWorker",
   "browser.page.cdp",
   "browser.history.search",
+  "browser.history.delete",
   "browser.bookmarks",
   "browser.downloads.list",
   "browser.downloads.save",
@@ -1469,8 +1477,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.invalid", "browser.page.serviceWorker is tab-scoped; args.frameId is not supported");
         }
         const action = str(args.action) ?? "list";
-        if (!["list", "unregister"].includes(action)) {
-          throw toolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister");
+        if (!["list", "unregister", "update"].includes(action)) {
+          throw toolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister|update");
         }
         const scope = str(args.scope);
         if (action === "unregister" && !scope) {
@@ -1546,6 +1554,40 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } finally {
           await release().catch(() => {});
         }
+      }
+      case "browser.history.delete": {
+        // Not tab-scoped: profile history deletion via chrome.history.
+        // Same OPTIONAL "history" permission — ungranted → unsupported.
+        if (!deps.deleteHistory) {
+          throw toolError("proto.unsupported", "history delete requires the optional history permission");
+        }
+        const url = str(args.url);
+        const parseTime = (v: unknown): number | undefined => {
+          if (typeof v === "number" && Number.isFinite(v)) return v;
+          if (typeof v === "string") {
+            const t = Date.parse(v);
+            if (Number.isFinite(t)) return t;
+          }
+          return undefined;
+        };
+        const startTime = parseTime(args.startTime);
+        const endTime = parseTime(args.endTime);
+        const hasRange = startTime !== undefined || endTime !== undefined;
+        if (url && hasRange) {
+          throw toolError("proto.invalid", "browser.history.delete takes args.url OR args.startTime+args.endTime, not both");
+        }
+        if (!url && (startTime === undefined || endTime === undefined)) {
+          throw toolError("proto.invalid", "browser.history.delete requires args.url or args.startTime+args.endTime");
+        }
+        const res = await deps.deleteHistory({
+          ...(url ? { url } : {}),
+          ...(startTime !== undefined ? { startTime } : {}),
+          ...(endTime !== undefined ? { endTime } : {}),
+        });
+        if (res === null) {
+          throw toolError("proto.unsupported", "history permission is not granted");
+        }
+        return res as Record<string, unknown>;
       }
       case "browser.history.search": {
         // Not tab-scoped: profile browsing history via chrome.history.

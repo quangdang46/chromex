@@ -75,6 +75,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.serviceWorker",
   "browser.page.cdp",
   "browser.history.search",
+  "browser.history.delete",
   "browser.bookmarks",
   "browser.page.network",
   "browser.page.responseBody",
@@ -431,6 +432,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#cdp(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
+      case "browser.history.delete":
+        return this.#historyDelete(taskId, args);
       case "browser.bookmarks":
         return this.#bookmarks(taskId, args);
       case "browser.downloads.list":
@@ -2096,6 +2099,43 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return { visits, count: visits.length, scope: "task" };
   }
 
+  /** browser.history.delete over the task visit log — same arg
+   *  contract as chrome.history.deleteUrl/deleteRange: exact url OR a
+   *  startTime+endTime range. Task-scoped, honestly reported. */
+  async #historyDelete(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const url = typeof args.url === "string" && args.url ? args.url : undefined;
+    const parseTime = (v: unknown): number | undefined => {
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string") {
+        const t = Date.parse(v);
+        if (Number.isFinite(t)) return t;
+      }
+      return undefined;
+    };
+    const startTime = parseTime(args.startTime);
+    const endTime = parseTime(args.endTime);
+    const hasRange = startTime !== undefined || endTime !== undefined;
+    if (url && hasRange) {
+      throw protocolError("proto.invalid", "browser.history.delete takes args.url OR args.startTime+args.endTime, not both");
+    }
+    if (!url && (startTime === undefined || endTime === undefined)) {
+      throw protocolError("proto.invalid", "browser.history.delete requires args.url or args.startTime+args.endTime");
+    }
+    const log = this.#visitLogs.get(taskId) ?? [];
+    const kept = log.filter((v) => {
+      if (url) return v.url !== url;
+      return !(v.ts >= startTime! && v.ts <= endTime!);
+    });
+    const deleted = log.length - kept.length;
+    this.#visitLogs.set(taskId, kept);
+    return {
+      deleted: deleted > 0,
+      removed: deleted,
+      ...(url ? { url, mode: "url" } : { mode: "range", startTime, endTime }),
+      scope: "task",
+    };
+  }
+
   // ---- caches (Cache API) ----
 
   /** Same contract as the extension backend's chromexCacheOp — fixed
@@ -2256,8 +2296,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #serviceWorker(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const action = typeof args.action === "string" ? args.action : "list";
-    if (!["list", "unregister"].includes(action)) {
-      throw protocolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister");
+    if (!["list", "unregister", "update"].includes(action)) {
+      throw protocolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister|update");
     }
     const scope = typeof args.scope === "string" && args.scope ? args.scope : "";
     if (action === "unregister" && !scope) {
@@ -2297,6 +2337,35 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
             }
             const ok = await target.unregister();
             return { ok: true, result: { scope: sc, unregistered: ok, found: true } };
+          }
+          if (act === "update") {
+            // update() resolves when the update CHECK completes — not
+            // when a new worker installs. Report the check honestly.
+            const regs = await sw.getRegistrations();
+            const targets = sc ? regs.filter((r) => r.scope === sc) : regs;
+            if (sc && targets.length === 0) {
+              return { ok: true, result: { scope: sc, found: false, updated: [] } };
+            }
+            const updated: Array<Record<string, unknown>> = [];
+            for (const r of targets) {
+              try {
+                await r.update();
+                updated.push({ scope: r.scope, ok: true });
+              } catch (e) {
+                updated.push({
+                  scope: r.scope, ok: false,
+                  error: e instanceof Error ? e.message : String(e),
+                });
+              }
+            }
+            return {
+              ok: true,
+              result: {
+                updated,
+                count: updated.length,
+                ...(sc ? { scope: sc, found: true } : {}),
+              },
+            };
           }
           return { ok: false, error: `unknown action: ${act}` };
         } catch (e) {

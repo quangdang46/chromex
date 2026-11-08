@@ -342,6 +342,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.serviceWorker": { action: "list" },
   "browser.page.cdp": { method: "Page.getFrameTree" },
   "browser.history.search": { text: "example", limit: 10 },
+  "browser.history.delete": { url: "https://example.com/" },
   "browser.bookmarks": { action: "list" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },

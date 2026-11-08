@@ -483,6 +483,17 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       return verdict("read", { reason: "indexedDB metadata/key list" });
     }
 
+    case "browser.history.delete": {
+      // Deletes the user's browsing history — irreversible profile-data
+      // destruction, never task-eligible.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "history deletion destroys profile data",
+      });
+    }
+
     case "browser.bookmarks": {
       const op = ctx.bookmarkOp ?? "list";
       if (op === "create" || op === "update" || op === "remove") {
@@ -539,14 +550,14 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
 
     case "browser.page.serviceWorker": {
       const op = ctx.swOp ?? "list";
-      if (op === "unregister") {
-        // Removing a registration kills the worker controlling the
-        // origin — never task-eligible.
+      if (op === "unregister" || op === "update") {
+        // unregister kills the worker; update can swap the controlling
+        // worker for a new script — both change origin behavior.
         return verdict("external_mutation", {
           needsApproval: true,
           kind: "browser_action",
           allowTaskEligible: false,
-          reason: "service worker unregister changes origin behavior",
+          reason: "service worker lifecycle change alters origin behavior",
         });
       }
       return verdict("read", { reason: "service worker registration list" });

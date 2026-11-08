@@ -905,6 +905,11 @@ await runScenario(
         sw.listOk = String(swReg?.scriptURL ?? "").endsWith("/sw.js") &&
           String(swReg?.scope ?? "").startsWith(fixture.url("/"));
         sw.stateOk = ["active", "waiting", "installing"].includes(swReg?.state);
+        const swUpd = await runner.browserToolCall(
+          taskId, "browser.page.serviceWorker",
+          { tabId: swTabId, action: "update" }, token, 60_000,
+        );
+        sw.updOk = ((swUpd?.result ?? swUpd ?? {}).count ?? 0) >= 1;
         const swUn = await runner.browserToolCall(
           taskId, "browser.page.serviceWorker",
           { tabId: swTabId, action: "unregister", scope: swReg?.scope }, token, 60_000,
@@ -922,7 +927,7 @@ await runScenario(
       }
       evidence.note(`serviceWorker → ${JSON.stringify(sw).slice(0, 300)}`);
       results.serviceWorker = {
-        ok: sw.listOk === true && sw.stateOk === true && sw.unregOk === true && sw.emptyOk === true,
+        ok: sw.listOk === true && sw.stateOk === true && sw.updOk === true && sw.unregOk === true && sw.emptyOk === true,
         ...sw,
       };
 
@@ -972,6 +977,22 @@ await runScenario(
       bm.msg = String(bmErr.message ?? "").slice(0, 160);
       evidence.note(`bookmarks → ${JSON.stringify(bm).slice(0, 300)}`);
       results.bookmarks = { ok: bm.unsupportedOk === true, ...bm };
+
+      // --- history.delete: optional permission — ungranted → honest unsupported ---
+      // Same "history" optional permission as history.search; the
+      // acceptance profile never grants it → proto.unsupported, and the
+      // approval gate must fire first (deletion is never task-eligible).
+      let hd = {};
+      const hdRes = await runner.browserToolCall(
+        taskId, "browser.history.delete", { url: fixture.url("/keys") }, token, 60_000,
+      );
+      const hdErr = hdRes?.error ?? {};
+      hd.status = hdRes?.status;
+      hd.code = hdErr.code;
+      hd.unsupportedOk = hdRes?.status === "failed" && hdErr.code === "proto.unsupported";
+      hd.msg = String(hdErr.message ?? "").slice(0, 160);
+      evidence.note(`history.delete → ${JSON.stringify(hd).slice(0, 300)}`);
+      results.historyDelete = { ok: hd.unsupportedOk === true, ...hd };
 
       const pass = Object.values(results).every((r) => r.ok === true);
       return {

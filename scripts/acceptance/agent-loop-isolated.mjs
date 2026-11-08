@@ -537,6 +537,38 @@ try {
   const hsLimit = await call("browser.history.search", { limit: 1 });
   assert((hsLimit?.visits ?? []).length === 1, "limit bounds results");
 
+  // ── Loop 15b: history.delete — url + range removal from visit log ──
+  const keysUrl = fixture.url("/keys");
+  const hsBefore = await call("browser.history.search", { url: keysUrl, limit: 200 });
+  const keysVisits = (hsBefore?.visits ?? []).filter((v) => v.url === keysUrl).length;
+  assert(keysVisits > 0, `history has ${keysVisits} visits to ${keysUrl}`);
+  const hdUrl = await call("browser.history.delete", { url: keysUrl });
+  assert(
+    hdUrl?.removed >= keysVisits && hdUrl?.scope === "task" && hdUrl?.mode === "url",
+    `history.delete removed the url visits (got ${JSON.stringify(hdUrl).slice(0, 120)})`,
+  );
+  const hsAfter = await call("browser.history.search", { url: keysUrl, limit: 200 });
+  assert(
+    !(hsAfter?.visits ?? []).some((v) => v.url === keysUrl),
+    "search confirms the url visits are gone",
+  );
+  // range delete wipes everything recorded so far
+  const hsRemain = await call("browser.history.search", { limit: 200 });
+  const hdRange = await call("browser.history.delete", {
+    startTime: 0, endTime: Date.now() + 60_000,
+  });
+  assert(
+    hdRange?.removed === (hsRemain?.count ?? -1) && hdRange?.scope === "task",
+    `range delete removed all ${hsRemain?.count} remaining visits`,
+  );
+  const hsEmpty = await call("browser.history.search", {});
+  assert((hsEmpty?.count ?? -1) === 0, "visit log is empty after range delete");
+  await expectReject("browser.history.delete", {}, "args.url", "delete without url/range refused");
+  await expectReject("browser.history.delete", {
+    url: keysUrl, startTime: 0, endTime: 1,
+  }, "not both", "delete url+range together refused");
+  await expectReject("browser.history.delete", { startTime: 0 }, "args.endTime", "delete partial range refused");
+
   // ── Loop 16: page.indexedDB — createStore/put/get/keys/delete ──────
   // Read ops must not create a missing DB (exists:false, no side effect).
   const idbMissing = await call("browser.page.indexedDB", {
@@ -683,6 +715,18 @@ try {
   );
   assert(swList?.controlled === true || swReg?.state === "active" || swReg?.state === "waiting" || swReg?.state === "installing",
     `registration reported with a real state (state=${swReg?.state})`);
+  // update re-checks the script URL — resolves when the CHECK completes
+  const swUpd = await call("browser.page.serviceWorker", { tabId: swId, action: "update" });
+  assert((swUpd?.count ?? 0) >= 1 && (swUpd?.updated ?? []).every((u) => u.ok === true),
+    `serviceWorker update checked the registration (got ${JSON.stringify(swUpd).slice(0, 120)})`);
+  const swUpdScoped = await call("browser.page.serviceWorker", {
+    tabId: swId, action: "update", scope: swReg.scope,
+  });
+  assert(swUpdScoped?.found === true && swUpdScoped?.count === 1, "scoped update hit exactly one registration");
+  const swUpdNone = await call("browser.page.serviceWorker", {
+    tabId: swId, action: "update", scope: fixture.url("/none"),
+  });
+  assert(swUpdNone?.found === false && (swUpdNone?.updated ?? []).length === 0, "update of unknown scope is honest no-op");
   // unregister by exact scope
   const swUn = await call("browser.page.serviceWorker", {
     tabId: swId, action: "unregister", scope: swReg.scope,
@@ -695,7 +739,7 @@ try {
   });
   assert(swMissing?.found === false && swMissing?.unregistered === false, "unregister of unknown scope is honest no-op");
   await expectReject("browser.page.serviceWorker", { tabId: swId, action: "unregister" }, "args.scope", "unregister without scope refused");
-  await expectReject("browser.page.serviceWorker", { tabId: swId, action: "bogus" }, "list|unregister", "bogus action refused");
+  await expectReject("browser.page.serviceWorker", { tabId: swId, action: "bogus" }, "list|unregister|update", "bogus action refused");
   await call("browser.tab.close", { tabId: swId });
 
   // ── Loop 20: page.cdp — raw CDP passthrough on the isolated backend ──

@@ -317,6 +317,21 @@ const toolHostHandler = createToolHostHandler({
           ...(typeof h.lastVisitTime === "number" ? { lastVisitTime: h.lastVisitTime } : {}),
         }));
     },
+    deleteHistory: async ({ url, startTime, endTime }) => {
+      const granted = await chrome.permissions.contains({ permissions: ["history"] });
+      if (!granted || !chrome.history) return null;
+      const toUs = (ms: number | undefined) =>
+        ms === undefined ? undefined : ms > 1e14 ? ms : ms * 1000;
+      if (url) {
+        await chrome.history.deleteUrl({ url });
+        return { deleted: "url", url };
+      }
+      await chrome.history.deleteRange({
+        startTime: toUs(startTime)!,
+        endTime: toUs(endTime)!,
+      });
+      return { deleted: "range", startTime, endTime };
+    },
     bookmarkOp: async (op) => {
       const granted = await chrome.permissions.contains({ permissions: ["bookmarks"] });
       if (!granted || !chrome.bookmarks) return null;

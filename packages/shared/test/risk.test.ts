@@ -276,11 +276,21 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     const list = classifyActionRisk(ctx({ action: "browser.page.serviceWorker", swOp: "list" }));
     expect(list.risk).toBe("read");
     expect(list.needsApproval).toBe(false);
-    const un = classifyActionRisk(ctx({ action: "browser.page.serviceWorker", swOp: "unregister" }));
-    expect(un.needsApproval).toBe(true);
-    expect(un.allowTaskEligible).toBe(false);
-    expect(un.kind).toBe("browser_action");
+    for (const op of ["unregister", "update"] as const) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.serviceWorker", swOp: op }));
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
     expect(classifyActionRisk(ctx({ action: "browser.page.serviceWorker" })).risk).toBe("read");
+  });
+
+  test("browser.history.delete: always approval, never task-eligible", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.history.delete" }));
+    expect(v.risk).toBe("external_mutation");
+    expect(v.needsApproval).toBe(true);
+    expect(v.allowTaskEligible).toBe(false);
+    expect(v.kind).toBe("browser_action");
   });
 
   test("browser.page.cdp: always approval, never task-eligible", () => {

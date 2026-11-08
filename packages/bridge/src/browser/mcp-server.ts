@@ -745,11 +745,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.serviceWorker": {
     description:
-      "Inspect and manage the page origin's Service Worker registrations — the workers that intercept fetch and decide whether Cache Storage entries are ever consulted. actions: 'list' (default — every registration with scope, scriptURL, installing/waiting/active state + activeState, plus whether this page is controlled and by which script), 'unregister' (args.scope exact-match required — removes the registration; the worker stops controlling the origin on next navigation). Registration metadata is a read; unregister always requires approval. Requires a secure context (https/localhost) — on insecure pages navigator.serviceWorker is absent and the call fails honestly. Available on both backends (page-context API). frameId is rejected (top-frame scope).",
+      "Inspect and manage the page origin's Service Worker registrations — the workers that intercept fetch and decide whether Cache Storage entries are ever consulted. actions: 'list' (default — every registration with scope, scriptURL, installing/waiting/active state + activeState, plus whether this page is controlled and by which script), 'unregister' (args.scope exact-match required — removes the registration; the worker stops controlling the origin on next navigation), 'update' (re-checks each registration's script URL for a newer worker — args.scope optional filters to one registration; resolves when the CHECK completes, not when a new worker installs). Registration metadata is a read; unregister and update always require approval. Requires a secure context (https/localhost) — on insecure pages navigator.serviceWorker is absent and the call fails honestly. Available on both backends (page-context API). frameId is rejected (top-frame scope).",
     inputSchema: objectSchema(
       {
-        action: { type: "string", enum: ["list", "unregister"], description: "Default 'list'." },
-        scope: { type: "string", description: "unregister: exact registration scope URL to remove." },
+        action: { type: "string", enum: ["list", "unregister", "update"], description: "Default 'list'." },
+        scope: { type: "string", description: "unregister: exact registration scope URL to remove (required). update: optional scope filter." },
       },
     ),
   },
@@ -777,6 +777,15 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         limit: { type: "integer", description: "Max results (1–200, default 50)." },
       },
     ),
+  },
+  "browser.history.delete": {
+    description:
+      "Delete browsing history — not tab-scoped, ALWAYS requires approval (irreversible profile-data destruction, never task-eligible). args.url deletes every visit to that exact URL; args.startTime+args.endTime (epoch ms or ISO date strings, both required) deletes the range — provide url OR the time range, never both. On chrome-extension this uses chrome.history.deleteUrl/deleteRange and requires the optional 'history' permission — ungranted → proto.unsupported. On playwright-isolated it deletes matching entries from the task's own visit log (scope:'task' — there is no browser profile).",
+    inputSchema: objectSchema({
+      url: { type: "string", description: "Exact URL whose visits are deleted (deleteUrl). Mutually exclusive with startTime/endTime." },
+      startTime: { description: "Range start — epoch ms or ISO date string (with endTime).", anyOf: [{ type: "number" }, { type: "string" }] },
+      endTime: { description: "Range end — epoch ms or ISO date string (with startTime).", anyOf: [{ type: "number" }, { type: "string" }] },
+    }),
   },
   "browser.bookmarks": {
     description:

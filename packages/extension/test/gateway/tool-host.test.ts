@@ -1051,6 +1051,9 @@ describe("tool host (P1-09)", () => {
       tabId: 42, action: "unregister", scope: "https://x.test/",
     }));
     expect(calls[1]!.args).toEqual(["unregister", "https://x.test/"]);
+    // update needs no scope — marshals empty scope like list
+    await h(req("browser.page.serviceWorker", { tabId: 42, action: "update" }));
+    expect(calls[2]!.args).toEqual(["update", ""]);
     await expect(h(req("browser.page.serviceWorker", { tabId: 42, action: "unregister" })))
       .rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.serviceWorker", { tabId: 42, action: "bogus" })))
@@ -1121,6 +1124,44 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
     // missing dep → proto.unsupported too
     await expect(createToolHostHandler(deps())(req("browser.history.search", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("browser.history.delete marshals url/range + validates exclusivity", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const d = deps({
+      deleteHistory: vi.fn(async (q: Record<string, unknown>) => {
+        calls.push(q);
+        return { deleted: "url", url: q.url };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.history.delete", { url: "https://x.example/a" }))) as {
+      deleted: string;
+    };
+    expect(res.deleted).toBe("url");
+    expect(calls[0]).toEqual({ url: "https://x.example/a" });
+    // range form: ISO strings parsed to ms
+    await h(req("browser.history.delete", {
+      startTime: "2026-01-01T00:00:00Z", endTime: "2026-01-02T00:00:00Z",
+    }));
+    expect(calls[1]).toMatchObject({
+      startTime: Date.parse("2026-01-01T00:00:00Z"),
+      endTime: Date.parse("2026-01-02T00:00:00Z"),
+    });
+    // validation: neither, both, partial range
+    await expect(h(req("browser.history.delete", {})))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.history.delete", {
+      url: "https://x", startTime: 1, endTime: 2,
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.history.delete", { startTime: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // ungranted permission (null) and missing dep → proto.unsupported
+    const dNull = deps({ deleteHistory: vi.fn(async () => null) });
+    await expect(createToolHostHandler(dNull)(req("browser.history.delete", { url: "https://x" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(createToolHostHandler(deps())(req("browser.history.delete", { url: "https://x" })))
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
