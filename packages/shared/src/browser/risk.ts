@@ -524,6 +524,19 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       return verdict("read", { reason: "cache metadata/key list" });
     }
 
+    case "browser.page.cdp": {
+      // Raw DevTools protocol — the classifier cannot inspect the
+      // method, and even read-sounding domains can mutate page or
+      // browser state (Runtime.evaluate runs arbitrary JS). Always
+      // approval, never task-eligible.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "raw CDP command requires approval",
+      });
+    }
+
     case "browser.page.serviceWorker": {
       const op = ctx.swOp ?? "list";
       if (op === "unregister") {

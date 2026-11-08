@@ -43,6 +43,7 @@ const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
   "browser.page.pdf": 60_000,
   "browser.page.wait": 35_000,
   "browser.page.evaluate": 20_000,
+  "browser.page.cdp": 20_000,
 };
 
 /** Tools that are hard-blocked (§9.1/§9.2). browser.page.evaluate was
@@ -297,6 +298,9 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.console": "page-text",
   // evaluate returns arbitrary page-derived values — same egress class.
   "browser.page.evaluate": "page-text",
+  // CDP results are page-derived data (DOM trees, runtime values) —
+  // same egress class, though the action is approval-gated anyway.
+  "browser.page.cdp": "page-text",
   // find returns page text + element selectors — same egress class.
   "browser.page.find": "page-text",
   // CDP response bodies are page content (docs/adr/debugger-tier.md).

@@ -753,6 +753,18 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.page.cdp": {
+    description:
+      "Send a raw Chrome DevTools Protocol command to the page's target — the deepest ownership surface. Any CDP domain is reachable (Page, DOM, Runtime, Network, Accessibility, Performance, Storage, Emulation, ...): chrome-extension goes through chrome.debugger, playwright-isolated through a CDPSession — same contract on both. args.method is required ('Domain.method', e.g. 'Page.getFrameTree'); args.params is an optional JSON object (≤64KiB serialized). Returns {method, ok:true, result, resultBytes} — the raw CDP result object, or {ok:true, omitted:true, resultBytes} when the result exceeds 256KiB. Protocol errors return {ok:false, error:{code,message}} in-band instead of failing the call. ALWAYS requires approval — the classifier cannot inspect the method and even read-sounding domains can mutate state (Runtime.evaluate runs arbitrary JS). frameId is rejected (top-frame target only).",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        method: { type: "string", description: "CDP method 'Domain.method' (required, ≤128 chars), e.g. 'Page.getFrameTree'." },
+        params: { type: "object", description: "Optional CDP params object — JSON-serializable, ≤64KiB." },
+      },
+      ["method"],
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",

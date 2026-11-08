@@ -283,6 +283,16 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.page.serviceWorker" })).risk).toBe("read");
   });
 
+  test("browser.page.cdp: always approval, never task-eligible", () => {
+    for (const action of ["browser.page.cdp"] as const) {
+      const v = classifyActionRisk(ctx({ action }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

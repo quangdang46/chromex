@@ -667,11 +667,13 @@ try {
   // ── Loop 19: page.serviceWorker — registration list + unregister ───
   const swTab = await call("browser.tab.create", { url: fixture.url("/sw"), active: false });
   const swId = swTab?.tabId ?? swTab?.id;
-  // registration is async — poll the tool until the worker appears
+  // registration is async — and a fresh registration can appear in
+  // getRegistrations() before its worker slot populates
+  // (scriptURL:null/state:"none") — poll until it materializes
   let swList;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     swList = await call("browser.page.serviceWorker", { tabId: swId });
-    if ((swList?.count ?? 0) > 0) break;
+    if ((swList?.registrations ?? []).some((r) => typeof r?.scriptURL === "string" && r.scriptURL)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   const swReg = (swList?.registrations ?? [])[0];
@@ -695,6 +697,32 @@ try {
   await expectReject("browser.page.serviceWorker", { tabId: swId, action: "unregister" }, "args.scope", "unregister without scope refused");
   await expectReject("browser.page.serviceWorker", { tabId: swId, action: "bogus" }, "list|unregister", "bogus action refused");
   await call("browser.tab.close", { tabId: swId });
+
+  // ── Loop 20: page.cdp — raw CDP passthrough on the isolated backend ──
+  const cdpTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const cdpId = cdpTab?.tabId ?? cdpTab?.id;
+  const cdpTree = await call("browser.page.cdp", { tabId: cdpId, method: "Page.getFrameTree" });
+  const cdpFrameUrl = cdpTree?.result?.frameTree?.frame?.url ?? "";
+  assert(
+    cdpTree?.ok === true && cdpFrameUrl.startsWith(fixture.url("/")),
+    `cdp Page.getFrameTree returns the real frame url (got ${cdpFrameUrl || JSON.stringify(cdpTree).slice(0, 120)})`,
+  );
+  // params pass through — Page.getNavigationHistory needs the page nav'd
+  const cdpNav = await call("browser.page.cdp", {
+    tabId: cdpId, method: "Page.getNavigationHistory",
+  });
+  assert(
+    cdpNav?.ok === true && typeof cdpNav?.result?.currentIndex === "number",
+    `cdp Page.getNavigationHistory returns real nav state (got ${JSON.stringify(cdpNav?.result ?? cdpNav).slice(0, 120)})`,
+  );
+  // protocol errors are honest in-band results, not thrown failures
+  const cdpBad = await call("browser.page.cdp", { tabId: cdpId, method: "Nope.nothing" });
+  assert(cdpBad?.ok === false && typeof cdpBad?.error?.message === "string",
+    `cdp unknown method reports in-band error (got ${JSON.stringify(cdpBad).slice(0, 120)})`);
+  await expectReject("browser.page.cdp", { tabId: cdpId }, "Domain.method", "cdp without method refused");
+  await expectReject("browser.page.cdp", { tabId: cdpId, method: "bad" }, "Domain.method", "cdp malformed method refused");
+  await expectReject("browser.page.cdp", { tabId: cdpId, method: "Page.x", params: [1] }, "JSON object", "cdp array params refused");
+  await call("browser.tab.close", { tabId: cdpId });
 
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });

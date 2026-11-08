@@ -1615,9 +1615,47 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.setInputFiles", { tabId: 501, selector: "input", files: ["/tmp/a"] }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.responseBody", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.snapshot", { tabId: 501, mode: "aria" }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.cdp", { tabId: 501, method: "Page.getFrameTree" }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.click", { tabId: 501, selector: "#b", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.press", { tabId: 501, key: "Enter", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.fill", { tabId: 501, selector: "#i", text: "x", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.cdp sends raw CDP commands + validates", async () => {
+    const cdp = fakeCdp({
+      "Page.getFrameTree": () => ({
+        frameTree: { frame: { id: "F1", url: "https://x/", mimeType: "text/html" } },
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(503, cdp));
+    const res = (await h(req("browser.page.cdp", {
+      tabId: 503, method: "Page.getFrameTree", params: { depth: 1 },
+    }))) as { ok: boolean; method: string; result: { frameTree?: unknown }; resultBytes: number };
+    expect(res.ok).toBe(true);
+    expect(res.method).toBe("Page.getFrameTree");
+    expect(res.result.frameTree).toBeDefined();
+    expect(cdp.sent).toEqual([{ method: "Page.getFrameTree", params: { depth: 1 } }]);
+    // protocol errors come back in-band, not as thrown tool errors
+    const bad = fakeCdp({});
+    bad.session.send.mockRejectedValueOnce(new Error("'Foo.bar' wasn't found"));
+    const h2 = createToolHostHandler(cdpDeps(504, bad));
+    const errRes = (await h2(req("browser.page.cdp", { tabId: 504, method: "Foo.bar" }))) as {
+      ok: boolean; error: { code: string };
+    };
+    expect(errRes.ok).toBe(false);
+    expect(errRes.error.code).toBe("cdp_error");
+    // validation refuses
+    await expect(h(req("browser.page.cdp", { tabId: 503 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.cdp", { tabId: 503, method: "notamethod" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.cdp", { tabId: 503, method: "Page.x", params: [1, 2] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.cdp", {
+      tabId: 503, method: "Page.x", params: { blob: "x".repeat(70 * 1024) },
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.cdp", { tabId: 503, method: "Page.x", frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
   });
 
   test("snapshot mode:aria returns a formatted AX tree", async () => {

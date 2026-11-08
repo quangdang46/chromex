@@ -288,6 +288,7 @@ const SUPPORTED = new Set([
   "browser.page.indexedDB",
   "browser.page.caches",
   "browser.page.serviceWorker",
+  "browser.page.cdp",
   "browser.history.search",
   "browser.bookmarks",
   "browser.downloads.list",
@@ -487,6 +488,10 @@ export function toolHostSnapshotRegistry(): SnapshotRegistry {
 /** Mirrors the gateway artifact.upload decoded cap (512KiB) — keep in
  *  sync with packages/bridge/src/gateway/main.ts. */
 const SCREENSHOT_MAX_DECODED_BYTES = 512 * 1024;
+/** browser.page.cdp result bound — oversized CDP payloads (DOM trees,
+ *  heap snapshots) report omitted:true + resultBytes instead of
+ *  flooding the tool-result channel. */
+const CDP_RESULT_MAX_BYTES = 256 * 1024;
 /** jpeg quality ladder tried after the dep's default capture. */
 const SCREENSHOT_QUALITY_RETRY = [45, 25] as const;
 
@@ -1481,6 +1486,66 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("browser.action_failed", `serviceWorker op failed: ${res?.error ?? "no result"}`);
         }
         return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+      }
+      case "browser.page.cdp": {
+        // Raw CDP passthrough — the deepest protocol surface. One-shot
+        // acquire/send/release on the tab target; the risk classifier
+        // already forced approval for every call.
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.cdp is tab-scoped; args.frameId is not supported");
+        }
+        const method = str(args.method);
+        if (
+          !method ||
+          method.length > 128 ||
+          !/^[A-Za-z][A-Za-z0-9]{0,63}\.[A-Za-z][A-Za-z0-9]{0,63}$/.test(method)
+        ) {
+          throw toolError(
+            "proto.invalid",
+            "browser.page.cdp requires args.method as 'Domain.method' (≤128 chars)",
+          );
+        }
+        let params: Record<string, unknown> | undefined;
+        if (args.params !== undefined && args.params !== null) {
+          if (typeof args.params !== "object" || Array.isArray(args.params)) {
+            throw toolError("proto.invalid", "browser.page.cdp args.params must be a JSON object");
+          }
+          try {
+            if ((JSON.stringify(args.params) ?? "").length > 64 * 1024) {
+              throw new Error("params too large");
+            }
+            params = args.params as Record<string, unknown>;
+          } catch {
+            throw toolError("proto.invalid", "browser.page.cdp args.params must be JSON-serializable ≤64KiB");
+          }
+        }
+        const { session, release } = await cdpAcquire(deps, tabId);
+        try {
+          const result = await session.send(method, params);
+          const serialized = JSON.stringify(result ?? null);
+          const bytes = serialized?.length ?? 0;
+          if (bytes > CDP_RESULT_MAX_BYTES) {
+            return {
+              method, ok: true, result: null, omitted: true,
+              resultBytes: bytes, resolvedTabId: tabId,
+            };
+          }
+          return {
+            method, ok: true, result: result ?? null,
+            resultBytes: bytes, resolvedTabId: tabId,
+          };
+        } catch (e) {
+          // CDP protocol errors are data, not transport failure — an
+          // agent probing domains iterates on {ok:false,error} honestly.
+          return {
+            method, ok: false,
+            error: { code: "cdp_error", message: String((e as Error)?.message ?? e).slice(0, 500) },
+            resolvedTabId: tabId,
+          };
+        } finally {
+          await release().catch(() => {});
+        }
       }
       case "browser.history.search": {
         // Not tab-scoped: profile browsing history via chrome.history.

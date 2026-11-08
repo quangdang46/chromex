@@ -73,6 +73,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.indexedDB",
   "browser.page.caches",
   "browser.page.serviceWorker",
+  "browser.page.cdp",
   "browser.history.search",
   "browser.bookmarks",
   "browser.page.network",
@@ -426,6 +427,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#caches(taskId, args);
       case "browser.page.serviceWorker":
         return this.#serviceWorker(taskId, args);
+      case "browser.page.cdp":
+        return this.#cdp(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.bookmarks":
@@ -2306,6 +2309,60 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("browser.action_failed", `serviceWorker op failed: ${out?.error ?? "no result"}`);
     }
     return out.result ?? {};
+  }
+
+  // ---- cdp ----
+
+  /** Raw CDP passthrough — same contract as the extension backend's
+   *  chrome.debugger path: {method, ok, result|error}. Reuses the
+   *  per-page CDPSession cache (#emulationSession is just a cached
+   *  session — the name predates this use). */
+  async #cdp(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const method = typeof args.method === "string" ? args.method : "";
+    if (
+      method.length > 128 ||
+      !/^[A-Za-z][A-Za-z0-9]{0,63}\.[A-Za-z][A-Za-z0-9]{0,63}$/.test(method)
+    ) {
+      throw protocolError(
+        "proto.invalid",
+        "browser.page.cdp requires args.method as 'Domain.method' (≤128 chars)",
+      );
+    }
+    let params: Record<string, unknown> | undefined;
+    if (args.params !== undefined && args.params !== null) {
+      if (typeof args.params !== "object" || Array.isArray(args.params)) {
+        throw protocolError("proto.invalid", "browser.page.cdp args.params must be a JSON object");
+      }
+      try {
+        if ((JSON.stringify(args.params) ?? "").length > 64 * 1024) {
+          throw new Error("params too large");
+        }
+        params = args.params as Record<string, unknown>;
+      } catch {
+        throw protocolError("proto.invalid", "browser.page.cdp args.params must be JSON-serializable ≤64KiB");
+      }
+    }
+    const session = await this.#emulationSession(page);
+    try {
+      // playwright types send() against known CommandParameters keys —
+      // browser.page.cdp accepts any protocol method by design.
+      const result = await (session.send as (m: string, p?: unknown) => Promise<unknown>)(
+        method,
+        params,
+      );
+      const serialized = JSON.stringify(result ?? null);
+      const bytes = serialized?.length ?? 0;
+      if (bytes > 256 * 1024) {
+        return { method, ok: true, result: null, omitted: true, resultBytes: bytes };
+      }
+      return { method, ok: true, result: result ?? null, resultBytes: bytes };
+    } catch (e) {
+      return {
+        method, ok: false,
+        error: { code: "cdp_error", message: String((e as Error)?.message ?? e).slice(0, 500) },
+      };
+    }
   }
 
   // ---- bookmarks ----

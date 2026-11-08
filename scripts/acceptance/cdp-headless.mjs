@@ -888,13 +888,16 @@ await runScenario(
           taskId, "browser.tab.create", { url: fixture.url("/sw") }, token, 60_000,
         );
         const swTabId = swTab?.result?.tabId ?? swTab?.result?.openedTabId ?? swTab?.tabId;
-        // registration is async — poll the tool until the worker appears
+        // registration is async — and a fresh registration can appear in
+        // getRegistrations() before its worker slot populates
+        // (scriptURL:null/state:"none") — poll until it materializes
         let swList;
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 30; i++) {
           swList = await runner.browserToolCall(
             taskId, "browser.page.serviceWorker", { tabId: swTabId }, token, 60_000,
           );
-          if (((swList?.result ?? swList ?? {}).count ?? 0) > 0) break;
+          const regs = (swList?.result ?? swList ?? {}).registrations ?? [];
+          if (regs.some((r) => typeof r?.scriptURL === "string" && r.scriptURL)) break;
           await new Promise((r) => setTimeout(r, 250));
         }
         const swRes = swList?.result ?? swList ?? {};
@@ -923,6 +926,38 @@ await runScenario(
         ...sw,
       };
 
+      // --- cdp: raw CDP passthrough via chrome.debugger ---
+      let cdp = {};
+      try {
+        const cdpTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys") }, token, 60_000,
+        );
+        const cdpTabId = cdpTab?.result?.tabId ?? cdpTab?.result?.openedTabId ?? cdpTab?.tabId;
+        const cdpTreeRes = await runner.browserToolCall(
+          taskId, "browser.page.cdp",
+          { tabId: cdpTabId, method: "Page.getFrameTree" }, token, 60_000,
+        );
+        const cdpTree = cdpTreeRes?.result ?? cdpTreeRes ?? {};
+        const cdpFrameUrl = cdpTree?.result?.frameTree?.frame?.url ?? "";
+        cdp.treeOk = cdpTree?.ok === true && cdpFrameUrl.startsWith(fixture.url("/"));
+        const cdpBadRes = await runner.browserToolCall(
+          taskId, "browser.page.cdp",
+          { tabId: cdpTabId, method: "Nope.nothing" }, token, 60_000,
+        );
+        const cdpBad = cdpBadRes?.result ?? cdpBadRes ?? {};
+        cdp.errOk = cdpBad?.ok === false && typeof cdpBad?.error?.message === "string";
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: cdpTabId }, token, 60_000,
+        );
+      } catch (e) {
+        cdp.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`cdp → ${JSON.stringify(cdp).slice(0, 300)}`);
+      results.cdp = {
+        ok: cdp.treeOk === true && cdp.errOk === true,
+        ...cdp,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.
@@ -942,7 +977,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches + serviceWorker"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches + serviceWorker + raw CDP"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

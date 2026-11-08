@@ -340,6 +340,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.indexedDB": { action: "listDbs" },
   "browser.page.caches": { action: "listCaches" },
   "browser.page.serviceWorker": { action: "list" },
+  "browser.page.cdp": { method: "Page.getFrameTree" },
   "browser.history.search": { text: "example", limit: 10 },
   "browser.bookmarks": { action: "list" },
   "browser.downloads.list": { state: "complete", limit: 20 },
@@ -416,6 +417,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.downloads.save",
           "browser.downloads.cancel",
           "browser.windows.update",
+          "browser.page.cdp",
         ].includes(internal)
           ? false
           : true,
