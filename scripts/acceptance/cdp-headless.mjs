@@ -1080,6 +1080,52 @@ await runScenario(
           const cdpSameErr = cdpSameRes?.error ?? {};
           cdp.sameUnsupported = cdpSameRes?.status === "failed" && cdpSameErr.code === "proto.unsupported";
         }
+        // pierce into iframe closed shadow roots: tab-scoped pierce
+        // covers the SAME-PROCESS iframe via contentDocument traversal
+        // (subframe:true, AX via queryAXTree); the OOPIF needs its own
+        // frameId — refs minted there dispatch on the frame target with
+        // frame-local coords. Clicking both must beacon from BOTH
+        // origins, and element-scoped evaluate must resolve inside the
+        // right frame's context.
+        const cfpRes = await runner.browserToolCall(
+          taskId, "browser.page.pierce", { tabId: cdpFrameTabId }, token, 60_000,
+        );
+        const cfp = cfpRes?.result ?? cfpRes ?? {};
+        const cfbSame = (cfp.elements ?? []).filter((e) => e.id === "cfb");
+        cdp.pierceIframeFound = cfbSame.length;
+        cdp.pierceIframeOk = cfp.ok === true && cfbSame.length >= 1 && cfbSame[0]?.subframe === true;
+        const cfpXRes = cdpCross?.frameId
+          ? await runner.browserToolCall(
+              taskId, "browser.page.pierce",
+              { tabId: cdpFrameTabId, frameId: cdpCross.frameId }, token, 60_000,
+            )
+          : null;
+        const cfpX = cfpXRes?.result ?? cfpXRes ?? {};
+        const cfbCross = (cfpX.elements ?? []).filter((e) => e.id === "cfb");
+        cdp.pierceOopifFound = cfbCross.length;
+        cdp.pierceOopifOk = cfpX.ok === true && cfbCross.length >= 1;
+        for (const el of [...cfbSame.slice(0, 1), ...cfbCross.slice(0, 1)]) {
+          await runner.browserToolCall(
+            taskId, "browser.page.click", { tabId: cdpFrameTabId, ref: el.ref }, token, 60_000,
+          ).catch(() => null);
+        }
+        await sleep(700);
+        const closedOrigins = new Set(
+          fixture.requests
+            .filter((r) => String(r.src ?? "").startsWith("closed-"))
+            .map((r) => r.src),
+        );
+        cdp.pierceIframeClickOk = closedOrigins.size >= 2;
+        cdp.pierceIframeOrigins = [...closedOrigins];
+        if (cfbCross[0]) {
+          const pev = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { tabId: cdpFrameTabId, ref: cfbCross[0].ref, expression: "this.id+'|'+this.textContent" },
+            token, 60_000,
+          ).catch(() => null);
+          const pevVal = pev?.result?.value;
+          cdp.pierceIframeEvalOk = pev?.result?.ok === true && String(pevVal).includes("cfb");
+        }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1088,7 +1134,9 @@ await runScenario(
       }
       evidence.note(`cdp → ${JSON.stringify(cdp).slice(0, 300)}`);
       results.cdp = {
-        ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true,
+        ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true &&
+          cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
+          cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true,
         ...cdp,
       };
 

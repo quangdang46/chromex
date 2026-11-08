@@ -4242,6 +4242,82 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     ).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("page.pierce frameId discovers OOPIF closed roots; pz ref acts on the frame target", async () => {
+    const tabCdp = fakeCdp({});
+    const frameCdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "BUTTON", backendNodeId: 77,
+                attributes: ["id", "pay-btn"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 77, role: { value: "button" }, name: { value: "pay now" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [5, 6, 105, 6, 105, 46, 5, 46] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-frame" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: "pay-btn|Pay" } }),
+    });
+    const h = createToolHostHandler(cdpDeps(521, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 9, url: "https://pay.example/frame" },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-page", type: "page", url: "https://x/" },
+        { id: "t-frame", type: "iframe", url: "https://pay.example/frame" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    const res = (await h(req("browser.page.pierce", { tabId: 521, frameId: 9 }))) as {
+      ok: boolean; resolvedFrameId?: number;
+      elements: Array<{ ref: string; id?: string; name: string }>;
+    };
+    expect(res.ok).toBe(true);
+    expect(res.resolvedFrameId).toBe(9);
+    expect(res.elements).toHaveLength(1);
+    expect(res.elements[0]!.id).toBe("pay-btn");
+    // all discovery traffic went to the FRAME session, not the tab one
+    expect(frameCdp.sent.map((s) => s.method)).toContain("DOM.getDocument");
+    expect(tabCdp.sent).toHaveLength(0);
+    const ref = res.elements[0]!.ref;
+    // click auto-routes trusted dispatch ON THE FRAME TARGET (frame-local coords)
+    const clk = (await h(req("browser.page.click", { tabId: 521, ref }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(clk.ok).toBe(true);
+    expect(clk.pierced).toBe(true);
+    const mv = frameCdp.sent.find((s) => s.method === "Input.dispatchMouseEvent");
+    expect(mv?.params).toMatchObject({ type: "mouseMoved", x: 55, y: 26 });
+    expect(tabCdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent")).toHaveLength(0);
+    // element-scoped evaluate resolves inside the frame's own context
+    const ev = (await h(req("browser.page.evaluate", {
+      tabId: 521, ref, expression: "this.id",
+    }))) as { ok: boolean; value?: unknown; pierced?: boolean };
+    expect(ev.ok).toBe(true);
+    expect(ev.pierced).toBe(true);
+    // frameId arg on a pz ref is redundant — the ref carries its frame
+    await expect(h(req("browser.page.click", { tabId: 521, ref, frameId: 9 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // re-piercing the SAME frame scope invalidates its refs; the tab
+    // scope is untouched
+    await h(req("browser.page.pierce", { tabId: 521, frameId: 9 }));
+    await expect(h(req("browser.page.click", { tabId: 521, ref })))
+      .rejects.toMatchObject({ code: "browser.element_not_found" });
+  });
+
   test("pz ref type/fill/press route through DOM.focus + trusted keys", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({
@@ -4512,8 +4588,20 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.pierce", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
     const cdp = fakeCdp();
     const h2 = createToolHostHandler(cdpDeps(521, cdp));
+    // frameId scopes pierce to that frame's debugger target — without
+    // the frame-target tier that's honestly unsupported
     await expect(
       h2(req("browser.page.pierce", { tabId: 521, frameId: 3 })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+    // with the tier present but no such frame → proto.invalid
+    const h2b = createToolHostHandler(cdpDeps(521, cdp, {
+      listFrames: vi.fn(async () => [{ frameId: 0, url: "https://x/" }]),
+      listCdpTargets: vi.fn(async () => []),
+      acquireCdpTarget: vi.fn(async () => { throw new Error("unused"); }),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    await expect(
+      h2b(req("browser.page.pierce", { tabId: 521, frameId: 3 })),
     ).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(
       h2(req("browser.page.pierce", { tabId: 521, text: "x".repeat(600) })),

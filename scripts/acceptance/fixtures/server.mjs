@@ -330,7 +330,18 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <input id="ffile" type="file" onchange="document.getElementById('fout2').textContent='files:'+Array.from(event.target.files).map(f=>f.name).join(',')" />
 <p id="fout2">none</p>
 <div id="sh-host" style="position:absolute;top:8px;right:8px"></div>
+<div id="cfh" style="position:absolute;left:8px;top:170px"></div>
 <script>
+// closed shadow root — pierce (CDP DOM.getDocument pierce) is the only
+// way to reach it; click beacons back with this frame's origin so the
+// acceptance leg can prove the hit landed inside the right frame.
+(function(){
+  var cr = document.getElementById('cfh').attachShadow({mode:'closed'});
+  cr.innerHTML = '<button id="cfb" style="position:absolute;left:0;top:0;width:60px;height:24px">cfb</button>';
+  cr.getElementById('cfb').addEventListener('click', function(){
+    fetch('/api/frame-hit?src=closed-'+encodeURIComponent(location.origin));
+  });
+})();
 (function(){
   var r = document.getElementById('sh-host').attachShadow({mode:'open'});
   r.innerHTML = '<button id="sfb">shadow-child-btn</button><input id="sfin">';
@@ -479,8 +490,8 @@ export async function startFixtureServer() {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(`<!doctype html><html><head><title>Iframe Parent</title></head><body>
 <h1>Iframe Parent</h1><p id="pout">parent-idle</p>
-<iframe id="f-same" src="${same}"></iframe>
-<iframe id="f-cross" src="${cross}"></iframe>
+<iframe id="f-same" src="${same}" style="width:640px;height:260px;border:0"></iframe>
+<iframe id="f-cross" src="${cross}" style="width:640px;height:260px;border:0"></iframe>
 </body></html>`);
       return;
     }
