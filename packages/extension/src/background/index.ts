@@ -1320,8 +1320,8 @@ const toolHostHandler = createToolHostHandler({
         ]);
         return { text: text ?? "", title: title ?? "" };
       },
-      set: async (state) => {
-        setAgentBadge(state);
+      set: async (state, ownerTaskId) => {
+        setAgentBadge(state, ownerTaskId);
       },
     },
     activeTabId: async () => {

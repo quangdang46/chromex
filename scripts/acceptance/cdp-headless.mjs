@@ -1733,6 +1733,8 @@ await runScenario(
           taskId, "browser.action", { action: "set", text: "agent", color: "#336699", title: "chromex agent busy" }, token, 60_000,
         );
         ac.setOk = acSet?.status === "completed" && (acSet?.result ?? {}).set === true;
+        // badge is owned by this task — auto-clears on terminal status
+        ac.ownerOk = (acSet?.result ?? {}).ownerTaskId === taskId;
         const acGet = await runner.browserToolCall(
           taskId, "browser.action", {}, token, 60_000,
         );
@@ -1750,7 +1752,7 @@ await runScenario(
       }
       evidence.note(`action → ${JSON.stringify(ac).slice(0, 300)}`);
       results.action = {
-        ok: ac.setOk === true && ac.getOk === true && ac.clearOk === true && ac.badTextOk === true,
+        ok: ac.setOk === true && ac.ownerOk === true && ac.getOk === true && ac.clearOk === true && ac.badTextOk === true,
         ...ac,
       };
 

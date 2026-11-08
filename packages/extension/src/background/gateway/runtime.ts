@@ -46,8 +46,11 @@ export function setGatewayServerRequestHandler(
 }
 
 /** Agent status badge (browser.action) — merged UNDER the attention
- *  count so a pending approval can never be hidden by agent text. */
-let agentBadge: { text: string; color?: string; title?: string } | null = null;
+ *  count so a pending approval can never be hidden by agent text.
+ *  ownerTaskId ties the badge to the task that set it: when that task
+ *  reaches a terminal status (or disappears) the badge auto-clears —
+ *  a stale "working" badge is the agent lying to the user. */
+let agentBadge: { text: string; color?: string; title?: string; ownerTaskId?: string } | null = null;
 let attentionCount = 0;
 
 function renderBadge(): void {
@@ -65,10 +68,18 @@ function renderBadge(): void {
   }
 }
 
+const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
 /** browser.action set/clear — writes the agent badge. Attention count
- *  takes precedence over agent text; clearing only removes agent text. */
-export function setAgentBadge(state: { text: string; color?: string; title?: string } | null): void {
-  agentBadge = state;
+ *  takes precedence over agent text; clearing only removes agent text.
+ *  ownerTaskId (the calling task) auto-clears the badge when that task
+ *  finishes — pass undefined for a standing status that must be
+ *  cleared explicitly. */
+export function setAgentBadge(
+  state: { text: string; color?: string; title?: string } | null,
+  ownerTaskId?: string,
+): void {
+  agentBadge = state ? { ...state, ...(ownerTaskId ? { ownerTaskId } : {}) } : null;
   renderBadge();
 }
 
@@ -147,6 +158,14 @@ async function build(): Promise<GatewayRuntime | null> {
       // attention-bearing tasks; clears itself when attention resolves.
       try {
         attentionCount = tasks.listTasks().filter((t) => t.attention !== null).length;
+        // Stale-badge guard: an owner-tasked badge dies with its task —
+        // terminal status or the task vanishing entirely.
+        if (agentBadge?.ownerTaskId) {
+          const owner = tasks.listTasks().find((t) => t.taskId === agentBadge!.ownerTaskId);
+          if (!owner || TERMINAL_TASK_STATUSES.has(owner.status)) {
+            agentBadge = null;
+          }
+        }
         renderBadge();
       } catch {
         /* chrome.action unavailable (tests/stubbed runtime) */

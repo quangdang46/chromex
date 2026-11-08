@@ -2423,8 +2423,8 @@ describe("tool host (P1-09)", () => {
         calls.push({ op: "get", args: [] });
         return { text: "3", title: "Chromex tasks need attention" };
       }),
-      set: vi.fn(async (state: unknown) => {
-        calls.push({ op: "set", args: [state] });
+      set: vi.fn(async (state: unknown, ownerTaskId?: string) => {
+        calls.push({ op: "set", args: [state, ownerTaskId] });
       }),
     };
     const h = createToolHostHandler(deps({ actionBadge: badge }));
@@ -2434,14 +2434,14 @@ describe("tool host (P1-09)", () => {
     // set validates text/color/title before delegating
     const s = (await h(req("browser.action", { action: "set", text: "working", color: "#336699", title: "agent busy" }))) as { set: boolean };
     expect(s.set).toBe(true);
-    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "working", color: "#336699", title: "agent busy" }] });
+    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "working", color: "#336699", title: "agent busy" }, "t1"] });
     // minimal set — only text
     await h(req("browser.action", { action: "set", text: "ok" }));
-    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "ok" }] });
+    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "ok" }, "t1"] });
     // clear passes null
     const cl = (await h(req("browser.action", { action: "clear" }))) as { cleared: boolean };
     expect(cl.cleared).toBe(true);
-    expect(calls.at(-1)).toEqual({ op: "set", args: [null] });
+    expect(calls.at(-1)).toEqual({ op: "set", args: [null, undefined] });
     // validation rejects BEFORE any chrome call
     calls.length = 0;
     await expect(h(req("browser.action", { action: "set" })))

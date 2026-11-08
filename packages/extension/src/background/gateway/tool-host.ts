@@ -340,7 +340,9 @@ export interface ToolHostDeps {
    *  approval can never be hidden by agent text. */
   actionBadge?: {
     get(): Promise<{ text: string; title: string }>;
-    set(state: { text: string; color?: string; title?: string } | null): Promise<void>;
+    /** ownerTaskId ties the badge to the calling task — auto-clears
+     *  when that task reaches a terminal status. */
+    set(state: { text: string; color?: string; title?: string } | null, ownerTaskId?: string): Promise<void>;
   } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
@@ -3823,8 +3825,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           title = args.title;
         }
-        await api.set({ text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}) });
-        return { set: true, text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}) };
+        const ownerTaskId = typeof req.taskId === "string" && req.taskId ? req.taskId : undefined;
+        await api.set({ text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}) }, ownerTaskId);
+        return { set: true, text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}), ...(ownerTaskId ? { ownerTaskId } : {}) };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.
