@@ -317,6 +317,9 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.tabGroups": "page-text",
   // recently-closed entries carry personal URLs — same egress gate.
   "browser.sessions": "page-text",
+  // matched rules surface real request URLs; list echoes urlFilters —
+  // browsing-derived data, same egress gate.
+  "browser.dnr": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -341,6 +344,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.privacy",
   "browser.management",
   "browser.notifications",
+  "browser.dnr",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -481,6 +485,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.notifications"
       ? { notifyOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
+    ...(req.tool === "browser.dnr"
+      ? { dnrOp: typeof args.action === "string" ? args.action : "list" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

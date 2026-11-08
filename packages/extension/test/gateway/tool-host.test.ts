@@ -1811,6 +1811,133 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.dnr marshals session rules + validates the rule contract", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      dnr: {
+        permission: vi.fn(async () => {
+          calls.push({ op: "permission", args: [] });
+          return "granted";
+        }),
+        list: vi.fn(async () => {
+          calls.push({ op: "list", args: [] });
+          return [{ id: 7, priority: 1, action: { type: "block" }, condition: { urlFilter: "||ads.example.com^" } }];
+        }),
+        update: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "update", args });
+          return { applied: true };
+        }),
+        matched: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "matched", args });
+          return [{ rule: { id: 7 }, request: { url: "https://a/ads/x.js" } }];
+        }),
+        test: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "test", args });
+          return [{ rule: { id: 7 } }];
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    // list is the default action
+    const listRes = (await h(req("browser.dnr", {}))) as { count: number };
+    expect(listRes.count).toBe(1);
+    expect(calls[0]).toEqual({ op: "list", args: [] });
+    // permission passthrough
+    const permRes = (await h(req("browser.dnr", { action: "permission" }))) as { permission: string };
+    expect(permRes.permission).toBe("granted");
+    // add: explicit id preserved, omitted id auto-assigned from existing rules
+    const addRes = (await h(req("browser.dnr", {
+      action: "add",
+      rules: [
+        { id: 42, action: { type: "block" }, condition: { urlFilter: "||tracker.example^" } },
+        { action: { type: "redirect", redirect: { url: "https://localhost:9/hit" } }, condition: { requestDomains: ["api.example.com"] } },
+      ],
+    }))) as { added: number; ids: number[] };
+    expect(addRes).toEqual({ added: 2, ids: [42, 1] });
+    const updArgs = calls.find((c) => c.op === "update")!.args[0] as { addRules: Array<Record<string, unknown>> };
+    expect(updArgs.addRules[0]).toMatchObject({ id: 42, action: { type: "block" } });
+    expect(updArgs.addRules[1]).toMatchObject({ id: 1, action: { type: "redirect" } });
+    // remove + clear
+    await h(req("browser.dnr", { action: "remove", ruleIds: [42, 8, 8] }));
+    const rmCall = calls.filter((c) => c.op === "update").pop()!;
+    expect(rmCall.args[0]).toEqual({ removeRuleIds: [42, 8] });
+    await h(req("browser.dnr", { action: "clear" }));
+    const clearCall = calls.filter((c) => c.op === "update").pop()!;
+    expect(clearCall.args[0]).toEqual({ removeRuleIds: [7] });
+    // matched forwards the filter and bounds the result
+    const mRes = (await h(req("browser.dnr", { action: "matched", tabId: 5, minTimeStamp: 1000 }))) as { totalCount: number };
+    expect(mRes.totalCount).toBe(1);
+    expect(calls.filter((c) => c.op === "matched").pop()!.args[0]).toEqual({ tabId: 5, minTimeStamp: 1000 });
+    // test dry-runs a hypothetical request
+    const tRes = (await h(req("browser.dnr", {
+      action: "test",
+      request: { url: "https://api.example.com/v1", type: "xmlhttprequest", method: "post" },
+    }))) as { url: string; totalCount: number };
+    expect(tRes.url).toBe("https://api.example.com/v1");
+    expect(tRes.totalCount).toBe(1);
+    // validation
+    await expect(h(req("browser.dnr", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "add" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{ action: { type: "block" }, condition: {} }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // empty condition = match-all refused
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{ action: { type: "block" }, condition: { resourceTypes: ["script"] } }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // no URL/initiator/tab scoping
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{ action: { type: "bogus" }, condition: { urlFilter: "x" } }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{ action: { type: "redirect" }, condition: { urlFilter: "x" } }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // redirect needs redirect{}
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{ action: { type: "block", redirect: { url: "https://x" } }, condition: { urlFilter: "x" } }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // redirect only on redirect type
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{
+        action: { type: "redirect", redirect: { regexSubstitution: "https://x/\\1" } },
+        condition: { urlFilter: "x" },
+      }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // regexSubstitution needs regexFilter
+    await expect(h(req("browser.dnr", {
+      action: "add",
+      rules: [{
+        action: { type: "redirect", redirect: { extensionPath: "/x.html" } },
+        condition: { urlFilter: "x" },
+      }],
+    }))).rejects.toMatchObject({ code: "proto.invalid" }); // extensionPath refused
+    await expect(h(req("browser.dnr", { action: "add", rules: [{ action: { type: "block" }, condition: { urlFilter: "x", bogus: 1 } }] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "remove", ruleIds: [] }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "remove", ruleIds: [0] }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "matched", tabId: -2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "test", request: { url: "not a url", type: "script" } })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dnr", { action: "test", request: { url: "https://x", type: "bogus" } })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      dnr: {
+        permission: vi.fn(async () => "permission" as const),
+        list: vi.fn(async () => "permission" as const),
+        update: vi.fn(async () => "permission" as const),
+        matched: vi.fn(async () => "permission" as const),
+        test: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.dnr", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("declarativeNetRequest permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.dnr", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

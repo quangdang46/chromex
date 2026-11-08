@@ -403,6 +403,22 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.notifications" })).risk).toBe("read");
   });
 
+  test("browser.dnr: list/matched/test/permission read, add/remove/clear always approval", () => {
+    for (const op of ["list", "matched", "test", "permission"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.dnr", dnrOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["add", "remove", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.dnr", dnrOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.dnr" })).risk).toBe("read");
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

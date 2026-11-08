@@ -856,6 +856,56 @@ const toolHostHandler = createToolHostHandler({
         return { ids: Object.keys(all ?? {}).sort() };
       },
     },
+    dnr: {
+      // chrome.declarativeNetRequest session rules — optional
+      // "declarativeNetRequest" permission checked per call (runtime
+      // grant works without SW restart). Rules arrive pre-validated by
+      // the tool host; this layer only marshals to the Chrome API.
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["declarativeNetRequest"] });
+        if (!granted) return "permission";
+        return "granted";
+      },
+      list: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["declarativeNetRequest"] });
+        if (!granted) return "permission";
+        const api = chrome.declarativeNetRequest as unknown as {
+          getSessionRules(): Promise<Array<Record<string, unknown>>>;
+        } | undefined;
+        if (!api?.getSessionRules) return null;
+        return api.getSessionRules();
+      },
+      update: async (options) => {
+        const granted = await chrome.permissions.contains({ permissions: ["declarativeNetRequest"] });
+        if (!granted) return "permission";
+        const api = chrome.declarativeNetRequest as unknown as {
+          updateSessionRules(o: Record<string, unknown>): Promise<void>;
+        } | undefined;
+        if (!api?.updateSessionRules) return null;
+        await api.updateSessionRules(options);
+        return { applied: true };
+      },
+      matched: async (filter) => {
+        const granted = await chrome.permissions.contains({ permissions: ["declarativeNetRequest"] });
+        if (!granted) return "permission";
+        const api = chrome.declarativeNetRequest as unknown as {
+          getMatchedRules(f?: Record<string, unknown>): Promise<{ rulesMatchedInfo?: Array<Record<string, unknown>> }>;
+        } | undefined;
+        if (!api?.getMatchedRules) return null;
+        const details = await api.getMatchedRules(filter ?? {});
+        return details?.rulesMatchedInfo ?? [];
+      },
+      test: async (request) => {
+        const granted = await chrome.permissions.contains({ permissions: ["declarativeNetRequest"] });
+        if (!granted) return "permission";
+        const api = chrome.declarativeNetRequest as unknown as {
+          testMatchOutcome(r: Record<string, unknown>): Promise<{ matchedRules?: Array<Record<string, unknown>> }>;
+        } | undefined;
+        if (!api?.testMatchOutcome) return null;
+        const res = await api.testMatchOutcome(request);
+        return res?.matchedRules ?? [];
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

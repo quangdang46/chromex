@@ -86,6 +86,9 @@ export interface ActionContext {
   /** browser.notifications sub-action — list/permission read state,
    *  send/update/clear post or remove OS notifications. */
   notifyOp?: string;
+  /** browser.dnr sub-action — list/matched/test/permission read rule
+   *  and match state, add/remove/clear mutate session network rules. */
+  dnrOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -633,6 +636,25 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "notification state read" });
+    }
+
+    case "browser.dnr": {
+      const op = ctx.dnrOp ?? "list";
+      if (op === "add" || op === "remove" || op === "clear") {
+        // Session DNR rules intercept requests browser-wide (every tab,
+        // every frame, service workers) — a blocked/redirected request
+        // changes what the whole profile sees. Always approval, never
+        // task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "network rule change affects every request in the profile",
+        });
+      }
+      // list/matched/test/permission — matched returns real request
+      // URLs (page-text egress like other read tools).
+      return verdict("read", { reason: "network rule state read" });
     }
 
     case "browser.page.caches": {

@@ -1328,6 +1328,27 @@ await runScenario(
         ...nt,
       };
 
+      // --- dnr: optional "declarativeNetRequest" permission — ungranted → honest unsupported ---
+      let dn = {};
+      const dnRes = await runner.browserToolCall(
+        taskId, "browser.dnr", { action: "list" }, token, 60_000,
+      );
+      const dnErr = dnRes?.error ?? {};
+      dn.listUnsupportedOk = dnRes?.status === "failed" && dnErr.code === "proto.unsupported";
+      dn.msg = String(dnErr.message ?? "").slice(0, 160);
+      const dnAdd = await runner.browserToolCall(
+        taskId, "browser.dnr",
+        { action: "add", rules: [{ action: { type: "block" }, condition: { urlFilter: "||x^" } }] },
+        token, 60_000,
+      );
+      const dnAddErr = dnAdd?.error ?? {};
+      dn.addUnsupportedOk = dnAdd?.status === "failed" && dnAddErr.code === "proto.unsupported";
+      evidence.note(`dnr → ${JSON.stringify(dn).slice(0, 300)}`);
+      results.dnr = {
+        ok: dn.listUnsupportedOk === true && dn.addUnsupportedOk === true,
+        ...dn,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

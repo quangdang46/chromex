@@ -228,6 +228,17 @@ export interface ToolHostDeps {
     clear(id?: string): Promise<Record<string, unknown> | "permission" | null>;
     list(): Promise<Record<string, unknown> | "permission" | null>;
   } | undefined;
+  /** chrome.declarativeNetRequest (browser.dnr) — session network rules.
+   *  "permission" → optional declarativeNetRequest permission not
+   *  granted; null → API unavailable → proto.unsupported. Rules arrive
+   *  pre-validated; this layer only marshals to the Chrome API. */
+  dnr?: {
+    permission(): Promise<string | "permission" | null>;
+    list(): Promise<unknown[] | "permission" | null>;
+    update(options: Record<string, unknown>): Promise<Record<string, unknown> | "permission" | null>;
+    matched(filter: Record<string, unknown>): Promise<unknown[] | "permission" | null>;
+    test(request: Record<string, unknown>): Promise<unknown[] | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -402,6 +413,7 @@ const SUPPORTED = new Set([
   "browser.privacy",
   "browser.management",
   "browser.notifications",
+  "browser.dnr",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2820,6 +2832,151 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
         return sentinel(await deps.notifications.send(options));
       }
+      case "browser.dnr": {
+        // Not tab-scoped: chrome.declarativeNetRequest SESSION rules —
+        // profile-wide network interception at the network stack (all
+        // tabs, frames, service workers; survives navigations, no
+        // debugger). Optional "declarativeNetRequest" permission —
+        // ungranted → unsupported.
+        if (!deps.dnr) {
+          throw toolError("proto.unsupported", "network rules are not available on this host");
+        }
+        const api = deps.dnr;
+        const action = str(args.action) ?? "list";
+        if (!["list", "add", "remove", "clear", "matched", "test", "permission"].includes(action)) {
+          throw toolError("proto.invalid", "browser.dnr args.action must be list|add|remove|clear|matched|test|permission");
+        }
+        const dnrSentinel = async <T>(v: Promise<T | "permission" | null>): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", "declarativeNetRequest permission is not granted");
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "declarativeNetRequest is not available on this host");
+          }
+          return r as T;
+        };
+        if (action === "permission") {
+          return { permission: await dnrSentinel(api.permission()) };
+        }
+        if (action === "list") {
+          const rules = await dnrSentinel(api.list());
+          return { rules, count: rules.length };
+        }
+        if (action === "add") {
+          const rules = parseDnrRules(args.rules);
+          const needIds = rules.filter((r) => r.id === undefined);
+          if (needIds.length > 0) {
+            const existing = await dnrSentinel(api.list());
+            const used = new Set<number>();
+            for (const r of existing) {
+              const id = (r as { id?: unknown })?.id;
+              if (typeof id === "number" && Number.isInteger(id)) used.add(id);
+            }
+            // explicit ids in this batch must not be re-assigned either
+            for (const r of rules) {
+              if (typeof r.id === "number") used.add(r.id);
+            }
+            let next = 1;
+            for (const rule of needIds) {
+              while (used.has(next)) next += 1;
+              rule.id = next;
+              used.add(next);
+              next += 1;
+            }
+          }
+          await dnrSentinel(api.update({ addRules: rules }));
+          return { added: rules.length, ids: rules.map((r) => r.id) };
+        }
+        if (action === "remove") {
+          const ids = parseDnrRuleIds(args.ruleIds);
+          await dnrSentinel(api.update({ removeRuleIds: ids }));
+          return { removed: ids.length };
+        }
+        if (action === "clear") {
+          const existing = await dnrSentinel(api.list());
+          const ids = existing
+            .map((r) => (r as { id?: unknown })?.id)
+            .filter((n): n is number => typeof n === "number" && Number.isInteger(n));
+          if (ids.length === 0) return { removed: 0 };
+          await dnrSentinel(api.update({ removeRuleIds: ids }));
+          return { removed: ids.length };
+        }
+        if (action === "matched") {
+          const filter: Record<string, unknown> = {};
+          if (args.tabId !== undefined) {
+            const t = args.tabId;
+            if (typeof t !== "number" || !Number.isInteger(t) || t < -1) {
+              throw toolError("proto.invalid", "browser.dnr args.tabId must be an integer >= -1 (-1 = requests with no tab)");
+            }
+            filter.tabId = t;
+          }
+          if (args.minTimeStamp !== undefined) {
+            const n = args.minTimeStamp;
+            if (typeof n !== "number" || !Number.isFinite(n) || n < 0) {
+              throw toolError("proto.invalid", "browser.dnr args.minTimeStamp must be a non-negative number (epoch ms)");
+            }
+            filter.minTimeStamp = n;
+          }
+          const matches = await dnrSentinel(api.matched(filter));
+          const bounded = matches.slice(0, 200);
+          return {
+            matches: bounded,
+            totalCount: matches.length,
+            omitted: matches.length - bounded.length,
+          };
+        }
+        // action === "test" — dry-run a hypothetical request against
+        // the current rule set; no traffic is affected.
+        const req = args.request;
+        if (req === null || typeof req !== "object" || Array.isArray(req)) {
+          throw toolError("proto.invalid", "browser.dnr test requires args.request {url, type}");
+        }
+        const ro = req as Record<string, unknown>;
+        const url = str(ro.url);
+        if (url === undefined || url.length === 0 || url.length > 2048) {
+          throw toolError("proto.invalid", "browser.dnr args.request.url is required (≤2048 chars)");
+        }
+        try {
+          new URL(url);
+        } catch {
+          throw toolError("proto.invalid", "browser.dnr args.request.url is not a valid URL");
+        }
+        const rtype = str(ro.type);
+        if (rtype === undefined || !DNR_RESOURCE_TYPES.has(rtype)) {
+          throw toolError("proto.invalid", `browser.dnr args.request.type must be one of ${[...DNR_RESOURCE_TYPES].join("|")}`);
+        }
+        const request: Record<string, unknown> = { url, type: rtype };
+        if (ro.method !== undefined) {
+          const m = str(ro.method);
+          if (m === undefined || !DNR_REQUEST_METHODS.has(m)) {
+            throw toolError("proto.invalid", `browser.dnr args.request.method must be one of ${[...DNR_REQUEST_METHODS].join("|")}`);
+          }
+          request.method = m;
+        }
+        if (ro.initiator !== undefined) {
+          const i = str(ro.initiator);
+          if (i === undefined || i.length > 2048) {
+            throw toolError("proto.invalid", "browser.dnr args.request.initiator must be ≤2048 chars");
+          }
+          request.initiator = i;
+        }
+        if (ro.tabId !== undefined) {
+          const t = ro.tabId;
+          if (typeof t !== "number" || !Number.isInteger(t)) {
+            throw toolError("proto.invalid", "browser.dnr args.request.tabId must be an integer");
+          }
+          request.tabId = t;
+        }
+        const matchedRules = await dnrSentinel(api.test(request));
+        const bounded = matchedRules.slice(0, 50);
+        return {
+          url,
+          matchedRules: bounded,
+          totalCount: matchedRules.length,
+          omitted: matchedRules.length - bounded.length,
+        };
+      }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.
         if (!deps.listWindows) {
@@ -3643,6 +3800,254 @@ function formatAxTree(nodes: AxNode[]): { tree: string; nodeCount: number; trunc
     }
   }
   return { tree: lines.join("\n"), nodeCount: nodes.length, truncated };
+}
+
+// --- browser.dnr rule validation -------------------------------------
+// chrome.declarativeNetRequest session rules. The tool host whitelists
+// every field before it reaches updateSessionRules — an unmatched-all
+// rule (empty condition) or an unbounded payload must fail proto.invalid
+// here, not silently widen inside Chrome.
+
+const DNR_ACTION_TYPES = new Set(["block", "redirect", "allow", "upgradeScheme", "allowAllRequests"]);
+const DNR_RESOURCE_TYPES = new Set([
+  "main_frame", "sub_frame", "stylesheet", "script", "image", "font",
+  "object", "xmlhttprequest", "ping", "csp_report", "media", "websocket",
+  "webtransport", "webbundle", "other",
+]);
+const DNR_REQUEST_METHODS = new Set([
+  "connect", "delete", "get", "head", "options", "patch", "post", "put", "other",
+]);
+const DNR_DOMAIN_TYPES = new Set(["firstParty", "thirdParty"]);
+const DNR_RULE_KEYS = new Set(["id", "priority", "action", "condition"]);
+const DNR_ACTION_KEYS = new Set(["type", "redirect"]);
+const DNR_REDIRECT_KEYS = new Set(["url", "transform", "regexSubstitution"]);
+const DNR_TRANSFORM_KEYS = new Set([
+  "scheme", "host", "port", "path", "query", "fragment", "username", "password",
+]);
+const DNR_CONDITION_KEYS = new Set([
+  "urlFilter", "regexFilter", "isUrlFilterCaseSensitive",
+  "initiatorDomains", "excludedInitiatorDomains",
+  "requestDomains", "excludedRequestDomains",
+  "resourceTypes", "requestMethods", "domainType",
+  "tabIds", "excludedTabIds",
+]);
+const DNR_DOMAIN_LIST_KEYS = new Set([
+  "initiatorDomains", "excludedInitiatorDomains",
+  "requestDomains", "excludedRequestDomains",
+]);
+const DNR_TAB_ID_KEYS = new Set(["tabIds", "excludedTabIds"]);
+// At least one of these must scope the rule — a condition with only
+// resourceTypes/requestMethods could still match nearly all traffic.
+const DNR_SCOPING_KEYS = [
+  "urlFilter", "regexFilter",
+  "initiatorDomains", "excludedInitiatorDomains",
+  "requestDomains", "excludedRequestDomains",
+  "tabIds", "excludedTabIds",
+];
+
+function dnrInvalid(msg: string): never {
+  throw toolError("proto.invalid", `browser.dnr ${msg}`);
+}
+
+function dnrStr(v: unknown, field: string, max: number, required = false): string | undefined {
+  if (v === undefined) {
+    if (required) dnrInvalid(`rule ${field} is required`);
+    return undefined;
+  }
+  if (typeof v !== "string" || v.length === 0 || v.length > max) {
+    dnrInvalid(`rule ${field} must be a string 1-${max} chars`);
+  }
+  return v as string;
+}
+
+function dnrDomainList(v: unknown, field: string): string[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > 100) {
+    dnrInvalid(`rule condition.${field} must be an array of 1-100 domains`);
+  }
+  return (v as unknown[]).map((d) => {
+    if (typeof d !== "string" || d.length === 0 || d.length > 253 || /\s/.test(d)) {
+      dnrInvalid(`rule condition.${field} entries must be domain strings ≤253 chars`);
+    }
+    return d as string;
+  });
+}
+
+function dnrIdList(v: unknown, field: string): number[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > 200) {
+    dnrInvalid(`rule condition.${field} must be an array of 1-200 tab ids`);
+  }
+  return (v as unknown[]).map((t) => {
+    if (typeof t !== "number" || !Number.isInteger(t)) {
+      dnrInvalid(`rule condition.${field} entries must be integers`);
+    }
+    return t as number;
+  });
+}
+
+function dnrEnumList(v: unknown, field: string, allowed: ReadonlySet<string>): string[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > allowed.size) {
+    dnrInvalid(`rule condition.${field} must be a non-empty array of known values`);
+  }
+  return (v as unknown[]).map((e) => {
+    const s = typeof e === "string" ? e : "";
+    if (!allowed.has(s)) {
+      dnrInvalid(`rule condition.${field} has unknown value '${String(e).slice(0, 40)}'`);
+    }
+    return s;
+  });
+}
+
+function parseDnrCondition(raw: unknown): Record<string, unknown> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    dnrInvalid("rule condition must be an object");
+  }
+  const src = raw as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!DNR_CONDITION_KEYS.has(k)) dnrInvalid(`rule condition has unsupported field '${k}'`);
+  }
+  const out: Record<string, unknown> = {};
+  const urlFilter = dnrStr(src.urlFilter, "condition.urlFilter", 2048);
+  if (urlFilter !== undefined) out.urlFilter = urlFilter;
+  const regexFilter = dnrStr(src.regexFilter, "condition.regexFilter", 1024);
+  if (regexFilter !== undefined) out.regexFilter = regexFilter;
+  if (src.isUrlFilterCaseSensitive !== undefined) {
+    if (typeof src.isUrlFilterCaseSensitive !== "boolean") {
+      dnrInvalid("rule condition.isUrlFilterCaseSensitive must be a boolean");
+    }
+    out.isUrlFilterCaseSensitive = src.isUrlFilterCaseSensitive;
+  }
+  for (const k of DNR_DOMAIN_LIST_KEYS) {
+    if (src[k] !== undefined) out[k] = dnrDomainList(src[k], k);
+  }
+  if (src.resourceTypes !== undefined) out.resourceTypes = dnrEnumList(src.resourceTypes, "resourceTypes", DNR_RESOURCE_TYPES);
+  if (src.requestMethods !== undefined) out.requestMethods = dnrEnumList(src.requestMethods, "requestMethods", DNR_REQUEST_METHODS);
+  if (src.domainType !== undefined) {
+    const dt = str(src.domainType);
+    if (dt === undefined || !DNR_DOMAIN_TYPES.has(dt)) {
+      dnrInvalid(`rule condition.domainType must be one of ${[...DNR_DOMAIN_TYPES].join("|")}`);
+    }
+    out.domainType = dt;
+  }
+  for (const k of DNR_TAB_ID_KEYS) {
+    if (src[k] !== undefined) out[k] = dnrIdList(src[k], k);
+  }
+  if (!DNR_SCOPING_KEYS.some((k) => out[k] !== undefined)) {
+    dnrInvalid("rule condition must scope the rule — urlFilter/regexFilter/domains/tabIds required (an empty condition matches ALL traffic)");
+  }
+  return out;
+}
+
+function parseDnrRedirect(raw: unknown): Record<string, unknown> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    dnrInvalid("rule action.redirect must be an object");
+  }
+  const src = raw as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!DNR_REDIRECT_KEYS.has(k)) {
+      dnrInvalid(`rule action.redirect field '${k}' is not supported (extensionPath redirects are refused)`);
+    }
+  }
+  const out: Record<string, unknown> = {};
+  const url = dnrStr(src.url, "action.redirect.url", 2048);
+  if (url !== undefined) {
+    try {
+      new URL(url);
+    } catch {
+      dnrInvalid("rule action.redirect.url is not a valid URL");
+    }
+    out.url = url;
+  }
+  const regexSub = dnrStr(src.regexSubstitution, "action.redirect.regexSubstitution", 2048);
+  if (regexSub !== undefined) out.regexSubstitution = regexSub;
+  if (src.transform !== undefined) {
+    if (src.transform === null || typeof src.transform !== "object" || Array.isArray(src.transform)) {
+      dnrInvalid("rule action.redirect.transform must be an object");
+    }
+    const t = src.transform as Record<string, unknown>;
+    const to: Record<string, unknown> = {};
+    for (const k of Object.keys(t)) {
+      if (!DNR_TRANSFORM_KEYS.has(k)) dnrInvalid(`rule action.redirect.transform field '${k}' is not supported`);
+      const v = dnrStr(t[k], `action.redirect.transform.${k}`, 2048);
+      if (v !== undefined) to[k] = v;
+    }
+    if (Object.keys(to).length === 0) dnrInvalid("rule action.redirect.transform must set at least one field");
+    out.transform = to;
+  }
+  if (out.url === undefined && out.transform === undefined && out.regexSubstitution === undefined) {
+    dnrInvalid("rule action.redirect needs url, transform, or regexSubstitution");
+  }
+  return out;
+}
+
+function parseDnrRule(raw: unknown): Record<string, unknown> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    dnrInvalid("each rule must be an object");
+  }
+  const src = raw as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!DNR_RULE_KEYS.has(k)) dnrInvalid(`rule field '${k}' is not supported`);
+  }
+  const out: Record<string, unknown> = {};
+  if (src.id !== undefined) {
+    const id = src.id;
+    if (typeof id !== "number" || !Number.isInteger(id) || id < 1) {
+      dnrInvalid("rule id must be an integer >= 1 (omit to auto-assign)");
+    }
+    out.id = id;
+  }
+  if (src.priority !== undefined) {
+    const p = src.priority;
+    if (typeof p !== "number" || !Number.isInteger(p)) {
+      dnrInvalid("rule priority must be an integer");
+    }
+    out.priority = p;
+  }
+  if (src.action === null || typeof src.action !== "object" || Array.isArray(src.action)) {
+    dnrInvalid("rule action must be an object {type, redirect?}");
+  }
+  const act = src.action as Record<string, unknown>;
+  for (const k of Object.keys(act)) {
+    if (!DNR_ACTION_KEYS.has(k)) dnrInvalid(`rule action field '${k}' is not supported`);
+  }
+  const type = str(act.type);
+  if (type === undefined || !DNR_ACTION_TYPES.has(type)) {
+    dnrInvalid(`rule action.type must be one of ${[...DNR_ACTION_TYPES].join("|")}`);
+  }
+  const outAction: Record<string, unknown> = { type };
+  if (act.redirect !== undefined) {
+    if (type !== "redirect") dnrInvalid("rule action.redirect is only valid with type 'redirect'");
+    outAction.redirect = parseDnrRedirect(act.redirect);
+  } else if (type === "redirect") {
+    dnrInvalid("rule action.type 'redirect' requires action.redirect {url|transform|regexSubstitution}");
+  }
+  out.action = outAction;
+  out.condition = parseDnrCondition(src.condition);
+  if (outAction.redirect !== undefined &&
+      (outAction.redirect as Record<string, unknown>).regexSubstitution !== undefined &&
+      (out.condition as Record<string, unknown>).regexFilter === undefined) {
+    dnrInvalid("rule action.redirect.regexSubstitution requires condition.regexFilter");
+  }
+  return out;
+}
+
+function parseDnrRules(raw: unknown): Array<Record<string, unknown> & { id?: number }> {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 50) {
+    dnrInvalid("args.rules must be an array of 1-50 rules");
+  }
+  return (raw as unknown[]).map((r) => parseDnrRule(r) as Record<string, unknown> & { id?: number });
+}
+
+function parseDnrRuleIds(raw: unknown): number[] {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 500) {
+    dnrInvalid("args.ruleIds must be an array of 1-500 rule ids");
+  }
+  const ids = (raw as unknown[]).map((n) => {
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
+      dnrInvalid("args.ruleIds entries must be integers >= 1");
+    }
+    return n as number;
+  });
+  return [...new Set(ids)];
 }
 
 /** Map a locate/geom/describe `target_changed` reason to the coded

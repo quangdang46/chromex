@@ -40,7 +40,8 @@
     "proxy",
     "privacy",
     "management",
-    "notifications"
+    "notifications",
+    "declarativeNetRequest"
   ],
   "background": {
     "service_worker": "background.js",
