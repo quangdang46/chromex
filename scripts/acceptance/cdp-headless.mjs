@@ -826,6 +826,21 @@ await runScenario(
         ...idb,
       };
 
+      // --- bookmarks: optional permission — ungranted → honest unsupported ---
+      // The acceptance profile never grants "bookmarks", so the tool must
+      // fail proto.unsupported rather than fake an empty jar.
+      let bm = {};
+      const bmRes = await runner.browserToolCall(
+        taskId, "browser.bookmarks", { action: "list" }, token, 60_000,
+      );
+      const bmErr = bmRes?.error ?? {};
+      bm.status = bmRes?.status;
+      bm.code = bmErr.code;
+      bm.unsupportedOk = bmRes?.status === "failed" && bmErr.code === "proto.unsupported";
+      bm.msg = String(bmErr.message ?? "").slice(0, 160);
+      evidence.note(`bookmarks → ${JSON.stringify(bm).slice(0, 300)}`);
+      results.bookmarks = { ok: bm.unsupportedOk === true, ...bm };
+
       const pass = Object.values(results).every((r) => r.ok === true);
       return {
         status: pass ? "PASS" : "FAIL",

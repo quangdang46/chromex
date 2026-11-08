@@ -1003,6 +1003,40 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("browser.bookmarks marshals ops and validates", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const d = deps({
+      bookmarkOp: vi.fn(async (op: Record<string, unknown>) => {
+        calls.push(op);
+        if (op.action === "create") {
+          return { node: { id: "bm1", parentId: "0", title: op.title, url: op.url } };
+        }
+        return { nodes: [], count: 0, truncated: false };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.bookmarks", { action: "list" }))) as { count: number };
+    expect(res.count).toBe(0);
+    expect(calls[0]).toMatchObject({ action: "list", limit: 100 });
+    await h(req("browser.bookmarks", {
+      action: "create", title: "Spec", url: "https://example.com/spec",
+    }));
+    expect(calls[1]).toMatchObject({ action: "create", title: "Spec", url: "https://example.com/spec" });
+    // validation refuses
+    await expect(h(req("browser.bookmarks", { action: "get" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.bookmarks", { action: "search" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.bookmarks", { action: "create" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.bookmarks", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission missing → unsupported
+    const d2 = deps({ bookmarkOp: vi.fn(async () => null) });
+    await expect(createToolHostHandler(d2)(req("browser.bookmarks", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.history.search marshals query and normalizes times", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const d = deps({

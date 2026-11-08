@@ -739,6 +739,21 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.bookmarks": {
+    description:
+      "Read and manage the browser's bookmarks — not tab-scoped. actions: 'list' (children of args.parentId, default top level; limit default 100 max 1000), 'search' (args.query substring over title+URL), 'get' (args.id), 'create' (args.title and/or args.url, optional args.parentId folder), 'update' (args.id + args.title/args.url), 'remove' (args.id — removing a folder removes its descendants, matching chrome.bookmarks semantics). Nodes are {id,parentId,title,url?,children?,dateAdded?}. On chrome-extension this uses chrome.bookmarks and requires the optional 'bookmarks' permission — when not granted the call fails proto.unsupported honestly. On playwright-isolated it operates on a per-task bookmark jar (scope:'task' — there is no browser profile); created ids are jar-local. Reads return personal profile data (page-text egress); create/update/remove always require approval.",
+    inputSchema: objectSchema(
+      {
+        action: { type: "string", enum: ["list", "search", "get", "create", "update", "remove"], description: "Default 'list'." },
+        id: { type: "string", description: "Node id — required for get/update/remove." },
+        parentId: { type: "string", description: "Folder node id — list children of this folder; create inside it." },
+        query: { type: "string", description: "search: substring matched against title and URL." },
+        title: { type: "string", description: "create/update: bookmark or folder title." },
+        url: { type: "string", description: "create/update: http(s) bookmark URL — omit to create a folder." },
+        limit: { type: "integer", description: "list/search max nodes (1–1000, default 100)." },
+      },
+    ),
+  },
   "browser.downloads.list": {
     description:
       "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",

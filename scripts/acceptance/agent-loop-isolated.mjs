@@ -588,6 +588,38 @@ try {
   });
   await expectReject("browser.page.indexedDB", { tabId: ckId, database: "chromex-test", action: "keys" }, "args.store", "store-scoped op without store refused");
 
+  // ── Loop 17: browser.bookmarks — per-task jar (scope:"task") ───────
+  const bmList0 = await call("browser.bookmarks", {});
+  assert(bmList0?.scope === "task" && (bmList0?.count ?? -1) === 0, "bookmark jar starts empty, honestly task-scoped");
+  const bmFolder = await call("browser.bookmarks", {
+    action: "create", title: "Research", url: undefined,
+  });
+  // url:undefined marshals as absent — folder create needs title only
+  const bmFolderId = bmFolder?.node?.id;
+  assert(typeof bmFolderId === "string" && bmFolderId.startsWith("bm"), `folder created (id=${bmFolderId})`);
+  const bmCreate = await call("browser.bookmarks", {
+    action: "create", parentId: bmFolderId, title: "Fixture Home",
+    url: fixture.url("/"),
+  });
+  const bmId = bmCreate?.node?.id;
+  assert(typeof bmId === "string", "bookmark created inside folder");
+  const bmGet = await call("browser.bookmarks", { action: "get", id: bmId });
+  assert(bmGet?.node?.title === "Fixture Home" && String(bmGet?.node?.url).includes("/"), "get returns the node");
+  const bmSearch = await call("browser.bookmarks", { action: "search", query: "fixture" });
+  assert((bmSearch?.nodes ?? []).some((n) => n.id === bmId), "search finds by title");
+  const bmChild = await call("browser.bookmarks", { action: "list", parentId: bmFolderId });
+  assert((bmChild?.nodes ?? []).some((n) => n.id === bmId), "list shows folder children");
+  await call("browser.bookmarks", { action: "update", id: bmId, title: "Fixture Renamed" });
+  const bmUp = await call("browser.bookmarks", { action: "get", id: bmId });
+  assert(bmUp?.node?.title === "Fixture Renamed", "update renamed the bookmark");
+  // removing the folder removes descendants (chrome.bookmarks parity)
+  await call("browser.bookmarks", { action: "remove", id: bmFolderId });
+  const bmGone = await call("browser.bookmarks", { action: "get", id: bmId });
+  assert(bmGone?.node === null, "folder removal took the child bookmark with it");
+  await expectReject("browser.bookmarks", { action: "search" }, "args.query", "search without query refused");
+  await expectReject("browser.bookmarks", { action: "create", url: "javascript:alert(1)" }, "http(s)", "non-http(s) bookmark url refused");
+  await expectReject("browser.bookmarks", { action: "list", parentId: "bm999" }, "not found", "unknown parentId refused");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

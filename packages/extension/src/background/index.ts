@@ -317,6 +317,53 @@ const toolHostHandler = createToolHostHandler({
           ...(typeof h.lastVisitTime === "number" ? { lastVisitTime: h.lastVisitTime } : {}),
         }));
     },
+    bookmarkOp: async (op) => {
+      const granted = await chrome.permissions.contains({ permissions: ["bookmarks"] });
+      if (!granted || !chrome.bookmarks) return null;
+      const norm = (n: chrome.bookmarks.BookmarkTreeNode): Record<string, unknown> => ({
+        id: n.id,
+        parentId: n.parentId ?? "",
+        title: n.title ?? "",
+        ...(n.url ? { url: n.url } : {}),
+        ...(typeof n.dateAdded === "number" ? { dateAdded: n.dateAdded } : {}),
+        ...(Array.isArray(n.children)
+          ? { children: n.children.slice(0, op.limit).map((c) => norm(c)) }
+          : {}),
+      });
+      const listResult = (nodes: chrome.bookmarks.BookmarkTreeNode[]) => ({
+        nodes: nodes.slice(0, op.limit).map((n) => norm(n)),
+        count: Math.min(nodes.length, op.limit),
+        truncated: nodes.length > op.limit,
+      });
+      switch (op.action) {
+        case "list":
+          return listResult(await chrome.bookmarks.getChildren(op.parentId ?? "0"));
+        case "search":
+          return listResult(await chrome.bookmarks.search({ query: op.query ?? "" }));
+        case "get": {
+          const nodes = await chrome.bookmarks.get(op.id ?? "");
+          return { node: nodes[0] ? norm(nodes[0]) : null };
+        }
+        case "create": {
+          const node = await chrome.bookmarks.create({
+            ...(op.parentId ? { parentId: op.parentId } : {}),
+            ...(op.title !== undefined ? { title: op.title } : {}),
+            ...(op.url !== undefined ? { url: op.url } : {}),
+          });
+          return { node: norm(node) };
+        }
+        case "update": {
+          const changes: chrome.bookmarks.UpdateChanges = {};
+          if (op.title !== undefined) changes.title = op.title;
+          if (op.url !== undefined) changes.url = op.url;
+          const node = await chrome.bookmarks.update(op.id ?? "", changes);
+          return { node: norm(node) };
+        }
+        case "remove":
+          await chrome.bookmarks.remove(op.id ?? "");
+          return { removed: op.id };
+      }
+    },
     listDownloads: async ({ state, limit, startTime }) => {
       const items = await chrome.downloads.search({
         ...(state ? { state: state as chrome.downloads.DownloadQuery["state"] } : {}),

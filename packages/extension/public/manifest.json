@@ -31,7 +31,8 @@
     "<all_urls>"
   ],
   "optional_permissions": [
-    "history"
+    "history",
+    "bookmarks"
   ],
   "background": {
     "service_worker": "background.js",

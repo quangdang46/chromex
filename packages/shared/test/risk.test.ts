@@ -237,6 +237,22 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     ).toBe("agent_egress");
   });
 
+  test("browser.bookmarks: reads are egress-gated; mutations always approval", () => {
+    for (const op of ["list", "search", "get"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.bookmarks", bookmarkOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["create", "update", "remove"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.bookmarks", bookmarkOp: op }));
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    // default op is list → read
+    expect(classifyActionRisk(ctx({ action: "browser.bookmarks" })).risk).toBe("read");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

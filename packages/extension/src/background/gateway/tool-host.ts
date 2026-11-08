@@ -200,6 +200,17 @@ export interface ToolHostDeps {
   }): Promise<
     Array<{ url: string; title?: string; visitCount?: number; lastVisitTime?: number }> | null
   >;
+  /** chrome.bookmarks — needs the OPTIONAL "bookmarks" permission.
+   *  Return null when the permission is not granted → proto.unsupported. */
+  bookmarkOp?(op: {
+    action: "list" | "search" | "get" | "create" | "update" | "remove";
+    id?: string;
+    parentId?: string;
+    query?: string;
+    title?: string;
+    url?: string;
+    limit: number;
+  }): Promise<unknown | null>;
 }
 
 function toolError(code: string, message: string): Error {
@@ -274,6 +285,7 @@ const SUPPORTED = new Set([
   "browser.page.localStorage",
   "browser.page.indexedDB",
   "browser.history.search",
+  "browser.bookmarks",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -1436,6 +1448,52 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           })),
           count: items.length,
         };
+      }
+      case "browser.bookmarks": {
+        // Not tab-scoped: the profile's bookmark tree via chrome.bookmarks.
+        // OPTIONAL permission — ungranted → proto.unsupported.
+        if (!deps.bookmarkOp) {
+          throw toolError("proto.unsupported", "bookmarks requires the optional bookmarks permission");
+        }
+        const bmAction = str(args.action) ?? "list";
+        const BM_VALID = ["list", "search", "get", "create", "update", "remove"];
+        if (!BM_VALID.includes(bmAction)) {
+          throw toolError("proto.invalid", `browser.bookmarks args.action must be ${BM_VALID.join("|")}`);
+        }
+        const bmId = str(args.id);
+        const bmParent = str(args.parentId);
+        const bmQuery = str(args.query);
+        const bmTitle = str(args.title);
+        const bmUrl = str(args.url);
+        if (["get", "update", "remove"].includes(bmAction) && !bmId) {
+          throw toolError("proto.invalid", `browser.bookmarks ${bmAction} requires args.id`);
+        }
+        if (bmAction === "search" && !bmQuery) {
+          throw toolError("proto.invalid", "browser.bookmarks search requires args.query");
+        }
+        if (bmAction === "create" && bmTitle === undefined && bmUrl === undefined) {
+          throw toolError("proto.invalid", "browser.bookmarks create requires args.title and/or args.url");
+        }
+        if (bmAction === "update" && bmTitle === undefined && bmUrl === undefined) {
+          throw toolError("proto.invalid", "browser.bookmarks update requires args.title and/or args.url");
+        }
+        const bmLimit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+            : 100;
+        const res = await deps.bookmarkOp({
+          action: bmAction as "list" | "search" | "get" | "create" | "update" | "remove",
+          ...(bmId ? { id: bmId } : {}),
+          ...(bmParent ? { parentId: bmParent } : {}),
+          ...(bmQuery ? { query: bmQuery } : {}),
+          ...(bmTitle !== undefined ? { title: bmTitle } : {}),
+          ...(bmUrl !== undefined ? { url: bmUrl } : {}),
+          limit: bmLimit,
+        });
+        if (res === null) {
+          throw toolError("proto.unsupported", "bookmarks permission is not granted");
+        }
+        return res as Record<string, unknown>;
       }
       case "browser.downloads.list": {
         // Not tab-scoped: lists the profile's downloads via chrome.downloads.

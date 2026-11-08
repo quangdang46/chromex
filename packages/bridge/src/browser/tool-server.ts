@@ -304,6 +304,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.webSocket": "page-text",
   // history entries are personal browsing data — same egress gate.
   "browser.history.search": "page-text",
+  // bookmark titles/URLs are personal profile data — same egress gate.
+  "browser.bookmarks": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -318,6 +320,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.windows.create",
   "browser.windows.update",
   "browser.history.search",
+  "browser.bookmarks",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -428,6 +431,9 @@ export function buildActionContext(
           storageOp: typeof args.action === "string" ? args.action : (req.tool === "browser.page.indexedDB" ? "listDbs" : "list"),
           storageValues: args.action === "get" || args.includeValues === true,
         }
+      : {}),
+    ...(req.tool === "browser.bookmarks"
+      ? { bookmarkOp: typeof args.action === "string" ? args.action : "list" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

@@ -72,6 +72,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.localStorage",
   "browser.page.indexedDB",
   "browser.history.search",
+  "browser.bookmarks",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -226,6 +227,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  pages THIS task created/navigated (honest scope, documented in
    *  the tool description). Capped per task. */
   readonly #visitLogs = new Map<string, Array<{ url: string; title: string; ts: number }>>();
+  /** Per-task bookmark jar — isolated contexts have no browser profile,
+   *  so bookmarks live and die with the task (scope:"task" honestly). */
+  readonly #bookmarkJars = new Map<
+    string,
+    { nodes: Array<{ id: string; parentId: string; title: string; url?: string; dateAdded: number }>; nextId: number }
+  >();
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
@@ -415,6 +422,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#idb(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
+      case "browser.bookmarks":
+        return this.#bookmarks(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -2078,6 +2087,138 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return { visits, count: visits.length, scope: "task" };
   }
 
+  // ---- bookmarks ----
+
+  /** Per-task bookmark jar — same fixed-shape contract as the
+   *  chrome.bookmarks backend. There is no browser profile in an
+   *  isolated context, so results carry scope:"task" honestly. */
+  async #bookmarks(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    let jar = this.#bookmarkJars.get(taskId);
+    if (!jar) {
+      jar = { nodes: [], nextId: 1 };
+      this.#bookmarkJars.set(taskId, jar);
+    }
+    const action = typeof args.action === "string" ? args.action : "list";
+    const VALID = ["list", "search", "get", "create", "update", "remove"];
+    if (!VALID.includes(action)) {
+      throw protocolError("proto.invalid", `browser.bookmarks args.action must be ${VALID.join("|")}`);
+    }
+    const id = typeof args.id === "string" && args.id ? args.id : undefined;
+    const parentId = typeof args.parentId === "string" && args.parentId ? args.parentId : "0";
+    const query = typeof args.query === "string" && args.query ? args.query.toLowerCase() : undefined;
+    const title = typeof args.title === "string" ? args.title : undefined;
+    const url = typeof args.url === "string" && args.url ? args.url : undefined;
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+        : 100;
+    if (["get", "update", "remove"].includes(action) && !id) {
+      throw protocolError("proto.invalid", `browser.bookmarks ${action} requires args.id`);
+    }
+    if (action === "search" && !query) {
+      throw protocolError("proto.invalid", "browser.bookmarks search requires args.query");
+    }
+    if ((action === "create" || action === "update") && title === undefined && url === undefined) {
+      throw protocolError("proto.invalid", `browser.bookmarks ${action} requires args.title and/or args.url`);
+    }
+    const norm = (n: (typeof jar.nodes)[number]) => ({
+      id: n.id,
+      parentId: n.parentId,
+      title: n.title,
+      ...(n.url ? { url: n.url } : {}),
+      dateAdded: n.dateAdded,
+    });
+    const nodeById = (nid: string) => jar!.nodes.find((n) => n.id === nid);
+    switch (action) {
+      case "list": {
+        if (parentId !== "0" && !nodeById(parentId)) {
+          throw protocolError("proto.invalid", `browser.bookmarks list parentId '${parentId}' not found`);
+        }
+        const children = jar.nodes.filter((n) => n.parentId === parentId);
+        return {
+          nodes: children.slice(0, limit).map(norm),
+          count: Math.min(children.length, limit),
+          truncated: children.length > limit,
+          scope: "task",
+        };
+      }
+      case "search": {
+        const hits = jar.nodes.filter(
+          (n) => n.title.toLowerCase().includes(query!) || (n.url ?? "").toLowerCase().includes(query!),
+        );
+        return {
+          nodes: hits.slice(0, limit).map(norm),
+          count: Math.min(hits.length, limit),
+          truncated: hits.length > limit,
+          scope: "task",
+        };
+      }
+      case "get": {
+        const n = nodeById(id!);
+        return { node: n ? norm(n) : null, scope: "task" };
+      }
+      case "create": {
+        if (parentId !== "0" && !nodeById(parentId)) {
+          throw protocolError("proto.invalid", `browser.bookmarks create parentId '${parentId}' not found`);
+        }
+        if (url !== undefined) {
+          try {
+            const u = new URL(url);
+            if (u.protocol !== "http:" && u.protocol !== "https:") {
+              throw new Error("bad protocol");
+            }
+          } catch {
+            throw protocolError("proto.invalid", "browser.bookmarks create args.url must be http(s)");
+          }
+        }
+        const node = {
+          id: `bm${jar.nextId++}`,
+          parentId,
+          title: title ?? "",
+          ...(url !== undefined ? { url } : {}),
+          dateAdded: Date.now(),
+        };
+        jar.nodes.push(node);
+        return { node: norm(node), scope: "task" };
+      }
+      case "update": {
+        const n = nodeById(id!);
+        if (!n) throw protocolError("proto.invalid", `browser.bookmarks update id '${id}' not found`);
+        if (title !== undefined) n.title = title;
+        if (url !== undefined) {
+          try {
+            const u = new URL(url);
+            if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("bad protocol");
+          } catch {
+            throw protocolError("proto.invalid", "browser.bookmarks update args.url must be http(s)");
+          }
+          n.url = url;
+        }
+        return { node: norm(n), scope: "task" };
+      }
+      case "remove": {
+        if (!nodeById(id!)) {
+          throw protocolError("proto.invalid", `browser.bookmarks remove id '${id}' not found`);
+        }
+        // Folder removal deletes descendants — chrome.bookmarks parity.
+        const doomed = new Set<string>([id!]);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const n of jar.nodes) {
+            if (!doomed.has(n.id) && doomed.has(n.parentId)) {
+              doomed.add(n.id);
+              grew = true;
+            }
+          }
+        }
+        const before = jar.nodes.length;
+        jar.nodes = jar.nodes.filter((n) => !doomed.has(n.id));
+        return { removed: id, removedCount: before - jar.nodes.length, scope: "task" };
+      }
+    }
+  }
+
   // ---- cookies ----
 
   /** Same contract as the extension backend's CDP implementation:
@@ -2781,6 +2922,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#contexts.delete(taskId);
     this.#activePages.delete(taskId);
     this.#visitLogs.delete(taskId);
+    this.#bookmarkJars.delete(taskId);
     for (const p of ctx?.pages() ?? []) this.#forgetPage(p);
     await ctx?.close().catch(() => {});
   }
@@ -2796,6 +2938,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       this.#pendingDialogs,
     ]) map.clear();
     this.#visitLogs.clear();
+    this.#bookmarkJars.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;
   }

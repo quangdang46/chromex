@@ -55,6 +55,9 @@ export interface ActionContext {
   storageOp?: string;
   /** storage list/get returns values — page data egress */
   storageValues?: boolean;
+  /** browser.bookmarks sub-action — reads are profile-data egress,
+   *  create/update/remove mutate the user's bookmark tree. */
+  bookmarkOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -471,6 +474,23 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "indexedDB metadata/key list" });
+    }
+
+    case "browser.bookmarks": {
+      const op = ctx.bookmarkOp ?? "list";
+      if (op === "create" || op === "update" || op === "remove") {
+        // Bookmark tree mutation alters the user's profile permanently —
+        // never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "bookmark mutation changes profile data",
+        });
+      }
+      // Reads fall through to the agentEgress dimension above —
+      // bookmark titles/URLs are personal data (page-text class).
+      return verdict("read", { reason: "bookmark read" });
     }
 
     case "browser.windows.update":
