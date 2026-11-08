@@ -2179,12 +2179,21 @@ await runScenario(
             } else {
               pj.waitOk = pj.waitElapsedOk = pj.waitTimeoutOk = pj.waitPairOk = false;
             }
+            // element screenshot of a closed-root node — clip resolves
+            // via DOM.getBoxModel on the owning CDP session
+            const pshot = await runner.browserToolCall(
+              taskId, "browser.page.screenshot", { tabId: pjTab, ref: btn.ref }, token, 60_000,
+            ).catch(() => null);
+            const pshotRes = pshot?.result ?? pshot ?? {};
+            pj.shotOk = pshot?.status === "completed"
+              && typeof pshotRes.dataBase64 === "string" && pshotRes.dataBase64.length > 100
+              && typeof pshotRes.artifactRef === "string";
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
             pj.filterOk = ((filt?.result ?? filt ?? {}).elements ?? []).length >= 1;
           } else {
-            pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+            pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
             pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2192,7 +2201,7 @@ await runScenario(
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
-          pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+          pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
           pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2206,6 +2215,7 @@ await runScenario(
         ok: pj.createOk === true && pj.rootsOk === true && pj.btnOk === true &&
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
           pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
+          pj.shotOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
           pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
           pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&

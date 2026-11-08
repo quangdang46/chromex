@@ -902,6 +902,46 @@ async function captureElementScreenshot(
   args: Record<string, unknown>,
   frameId: number,
 ): Promise<{ mimeType: string; dataBase64: string }> {
+  const refStr = str(args.ref);
+  // pz refs resolve through CDP on the session that owns the node —
+  // closed roots have no content-script path. Clip coords come from
+  // DOM.getBoxModel on that session: root-viewport pixels for tab-scope
+  // refs (incl. same-process iframe content), frame-local for OOPIF
+  // refs captured on the frame target.
+  if (refStr !== undefined && PIERCE_REF_RE.test(refStr)) {
+    if (frameId !== 0 || str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "pierce refs carry their own frame — drop args.frameId and selector/label");
+    }
+    const hit = pierceHit(tabId, refStr);
+    const { session, release } = await pierceAcquire(deps, hit);
+    try {
+      await session.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: hit.backendNodeId }).catch(() => {});
+      const rect = await pierceBoxRect(session, hit.backendNodeId, refStr);
+      if (rect.width <= 0 || rect.height <= 0) {
+        throw toolError("browser.element_not_found", "element has no layout box to capture");
+      }
+      const clip = {
+        x: Math.max(0, rect.x - rect.width / 2),
+        y: Math.max(0, rect.y - rect.height / 2),
+        width: rect.width,
+        height: rect.height,
+        scale: 1,
+      };
+      return await shotWithinArtifactCap(async (quality) => {
+        const res = await session.send<{ data?: string }>("Page.captureScreenshot", {
+          format: "jpeg",
+          ...(quality !== undefined ? { quality } : {}),
+          clip,
+        });
+        if (typeof res?.data !== "string" || res.data.length === 0) {
+          throw toolError("browser.action_failed", "Page.captureScreenshot returned no image data");
+        }
+        return { mimeType: "image/jpeg", dataBase64: res.data };
+      });
+    } finally {
+      await release();
+    }
+  }
   const target = {
     ref: str(args.ref),
     selector: str(args.selector),
@@ -5616,6 +5656,18 @@ async function pierceBoxCenter(
   backendNodeId: number,
   ref: string,
 ): Promise<{ x: number; y: number }> {
+  const r = await pierceBoxRect(session, backendNodeId, ref);
+  return { x: r.x, y: r.y };
+}
+
+/** Same quad read as pierceBoxCenter but returns center + extents —
+ *  the shape cdpLocateElement/frameAbsolutePoint produce, so callers
+ *  (element screenshot clip) can share downstream math. */
+async function pierceBoxRect(
+  session: CdpSession,
+  backendNodeId: number,
+  ref: string,
+): Promise<{ x: number; y: number; width: number; height: number }> {
   let bm: { model?: { content?: number[] } };
   try {
     bm = (await session.send("DOM.getBoxModel", { backendNodeId })) as {
@@ -5630,9 +5682,15 @@ async function pierceBoxCenter(
   }
   const xs = [q[0]!, q[2]!, q[4]!, q[6]!];
   const ys = [q[1]!, q[3]!, q[5]!, q[7]!];
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+  const y0 = Math.min(...ys);
+  const y1 = Math.max(...ys);
   return {
-    x: (Math.min(...xs) + Math.max(...xs)) / 2,
-    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+    x: (x0 + x1) / 2,
+    y: (y0 + y1) / 2,
+    width: x1 - x0,
+    height: y1 - y0,
   };
 }
 

@@ -4318,6 +4318,64 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       .rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("page.screenshot accepts pz refs — element clip via the owning CDP session", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "BUTTON", backendNodeId: 42,
+                attributes: ["id", "shot-btn"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "button" }, name: { value: "shot" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [10, 20, 110, 20, 110, 60, 10, 60] } }),
+      "Page.captureScreenshot": () => ({ data: "QUJD" }),
+    });
+    const uploads: unknown[] = [];
+    const h = createToolHostHandler(cdpDeps(522, cdp, {
+      uploadArtifact: vi.fn(async (input: unknown) => {
+        uploads.push(input);
+        return { artifactRef: "artifact:ps", sha256: "x", bytes: 3 };
+      }),
+    }));
+    const pz = (await h(req("browser.page.pierce", { tabId: 522 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    const ref = pz.elements[0]!.ref;
+    const res = (await h(req("browser.page.screenshot", { tabId: 522, ref }))) as {
+      artifactRef: string; dataBase64: string;
+    };
+    expect(res.artifactRef).toBe("artifact:ps");
+    expect(res.dataBase64).toBe("QUJD");
+    // scrollIntoView + box read + clipped capture all hit the tab CDP session
+    const methods = cdp.sent.map((s) => s.method);
+    expect(methods).toContain("DOM.scrollIntoViewIfNeeded");
+    const cap = cdp.sent.find((s) => s.method === "Page.captureScreenshot");
+    expect(cap?.params).toMatchObject({
+      format: "jpeg",
+      clip: { x: 10, y: 20, width: 100, height: 40, scale: 1 },
+    });
+    // pz ref + frameId/selector combos refused before dispatch
+    const before = cdp.sent.length;
+    await expect(h(req("browser.page.screenshot", { tabId: 522, ref, frameId: 3 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screenshot", { tabId: 522, ref, selector: "#x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    expect(cdp.sent.length).toBe(before);
+  });
+
   test("pz ref type/fill/press route through DOM.focus + trusted keys", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({
