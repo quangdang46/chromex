@@ -256,6 +256,7 @@ const SUPPORTED = new Set([
   "browser.page.drag",
   "browser.page.find",
   "browser.page.history",
+  "browser.page.cookies",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -1272,6 +1273,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         await deps.navigateHistory(tabId, action);
         return { navigated: action, resolvedTabId: tabId };
+      }
+      case "browser.page.cookies": {
+        cdpRequired(deps);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.cookies is tab-scoped; args.frameId is not supported");
+        }
+        return await pageCookies(deps, tabId, args);
       }
       case "browser.downloads.list": {
         // Not tab-scoped: lists the profile's downloads via chrome.downloads.
@@ -3882,4 +3891,151 @@ async function pageWebSocket(
     capturingSince: tap.since,
     resolvedTabId: tabId,
   };
+}
+
+// ---- browser.page.cookies (CDP Network cookie storage) -----------------
+// Cookie storage is browser-level and includes HttpOnly cookies — the
+// thing document.cookie can never see. list defaults to metadata only;
+// values require the classifier's per-call approval (credential-grade).
+
+interface CdpCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires?: number;
+  size?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  session?: boolean;
+  sameSite?: string;
+}
+
+function cookieScopeUrl(tab: chrome.tabs.Tab, args: Record<string, unknown>): string {
+  const explicit = str(args.url);
+  if (explicit) return explicit;
+  const pageUrl = typeof tab.url === "string" && tab.url ? tab.url : tab.pendingUrl;
+  if (typeof pageUrl === "string" && /^https?:/.test(pageUrl)) return pageUrl;
+  throw toolError("proto.invalid", "browser.page.cookies requires args.url (page URL is not http(s))");
+}
+
+function toPublicCookie(c: CdpCookie, includeValues: boolean): Record<string, unknown> {
+  return {
+    name: c.name,
+    domain: c.domain,
+    path: c.path,
+    ...(typeof c.expires === "number" && c.expires > 0 ? { expires: c.expires } : { session: true }),
+    ...(c.httpOnly ? { httpOnly: true } : {}),
+    ...(c.secure ? { secure: true } : {}),
+    ...(c.sameSite ? { sameSite: c.sameSite } : {}),
+    ...(includeValues ? { value: c.value } : {}),
+  };
+}
+
+async function pageCookies(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const tab = await deps.getTab(tabId);
+  if (!tab) throw toolError("browser.no_tab", `tab ${tabId} not found`);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const action = str(args.action) ?? "list";
+    if (!["list", "set", "delete", "clear"].includes(action)) {
+      throw toolError("proto.invalid", "browser.page.cookies args.action must be list|set|delete|clear");
+    }
+    const domain = str(args.domain);
+    const path = str(args.path);
+    const name = str(args.name);
+
+    if (action === "list") {
+      const url = cookieScopeUrl(tab, args);
+      const res = (await session.send("Network.getCookies", { urls: [url] })) as {
+        cookies?: CdpCookie[];
+      };
+      const includeValues = args.includeValues === true;
+      return {
+        url,
+        cookies: (res.cookies ?? []).map((c) => toPublicCookie(c, includeValues)),
+        ...(includeValues ? {} : { valuesWithheld: true }),
+        resolvedTabId: tabId,
+      };
+    }
+
+    if (action === "set") {
+      if (!name || typeof args.value !== "string") {
+        throw toolError("proto.invalid", "browser.page.cookies set requires args.name and args.value");
+      }
+      const url = str(args.url) ?? (domain ? undefined : cookieScopeUrl(tab, args));
+      if (!url && !domain) {
+        throw toolError("proto.invalid", "browser.page.cookies set requires args.url or args.domain");
+      }
+      const sameSite = str(args.sameSite);
+      if (sameSite && !["Strict", "Lax", "None"].includes(sameSite)) {
+        throw toolError("proto.invalid", "browser.page.cookies args.sameSite must be Strict|Lax|None");
+      }
+      const expires = typeof args.expires === "number" && Number.isFinite(args.expires) && args.expires > 0
+        ? args.expires
+        : undefined;
+      const res = (await session.send("Network.setCookie", {
+        name,
+        value: args.value,
+        ...(url ? { url } : {}),
+        ...(domain ? { domain } : {}),
+        ...(path ? { path } : {}),
+        ...(args.secure === true ? { secure: true } : {}),
+        ...(args.httpOnly === true ? { httpOnly: true } : {}),
+        ...(sameSite ? { sameSite } : {}),
+        ...(expires !== undefined ? { expires } : {}),
+      })) as { success?: boolean };
+      if (res.success !== true) {
+        throw toolError("browser.action_failed", "Network.setCookie reported failure");
+      }
+      return { set: true, name, resolvedTabId: tabId };
+    }
+
+    if (action === "delete") {
+      if (!name) {
+        throw toolError("proto.invalid", "browser.page.cookies delete requires args.name");
+      }
+      const url = str(args.url);
+      if (!url && !domain) {
+        throw toolError("proto.invalid", "browser.page.cookies delete requires args.url or args.domain");
+      }
+      await session.send("Network.deleteCookies", {
+        name,
+        ...(url ? { url } : {}),
+        ...(domain ? { domain } : {}),
+        ...(path ? { path } : {}),
+      });
+      return { deleted: name, resolvedTabId: tabId };
+    }
+
+    // clear — requires an explicit scope; never wipes the whole jar.
+    if (!str(args.url) && !domain) {
+      throw toolError("proto.invalid", "browser.page.cookies clear requires args.url or args.domain");
+    }
+    const scopeUrl = str(args.url);
+    const listUrl = scopeUrl ?? (domain ? `https://${domain.replace(/^\./, "")}/` : undefined);
+    if (!listUrl) {
+      throw toolError("proto.invalid", "browser.page.cookies clear requires args.url or args.domain");
+    }
+    const res = (await session.send("Network.getCookies", { urls: [listUrl] })) as {
+      cookies?: CdpCookie[];
+    };
+    const targets = (res.cookies ?? []).filter(
+      (c) => !domain || c.domain.replace(/^\./, "").endsWith(domain.replace(/^\./, "")),
+    );
+    for (const c of targets) {
+      await session.send("Network.deleteCookies", {
+        name: c.name,
+        domain: c.domain,
+        path: c.path,
+      });
+    }
+    return { cleared: targets.length, resolvedTabId: tabId };
+  } finally {
+    await release();
+  }
 }

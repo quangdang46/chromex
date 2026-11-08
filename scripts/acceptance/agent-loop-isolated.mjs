@@ -453,6 +453,44 @@ try {
     "console capture works on agent-opened popup tab",
   );
 
+  // ── Loop 13: page.cookies — set/list/delete/clear on the real jar ──
+  const ckTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const ckId = ckTab?.tabId ?? ckTab?.id;
+  await call("browser.page.cookies", { tabId: ckId, action: "set", name: "agentck", value: "v1" });
+  // the cookie must ride real requests — server-side echo is the proof
+  const echo1 = await call("browser.page.evaluate", {
+    tabId: ckId,
+    expression: "fetch('/api/cookie-echo').then(r=>r.json()).then(j=>j.cookie)",
+  });
+  // evaluate returns a promise — playwright awaits it; assert on value
+  const echoVal = String(echo1?.value ?? echo1?.result?.value ?? "");
+  assert(echoVal.includes("agentck=v1"), `tool-set cookie reached the server (got ${echoVal})`);
+  // metadata list withholds values
+  const ckList = await call("browser.page.cookies", { tabId: ckId, action: "list" });
+  const ckRow = (ckList?.cookies ?? []).find((c) => c.name === "agentck");
+  assert(ckRow && ckRow.value === undefined, "list returns metadata without values");
+  // httpOnly cookie: invisible to document.cookie, visible to the tool
+  await call("browser.page.cookies", {
+    tabId: ckId, action: "set", name: "httponlyck", value: "hv", httpOnly: true,
+  });
+  const docCk = await call("browser.page.evaluate", {
+    tabId: ckId,
+    expression: "document.cookie",
+  });
+  assert(
+    !String(docCk?.value ?? docCk?.result?.value ?? "").includes("httponlyck"),
+    "httpOnly cookie correctly invisible to document.cookie",
+  );
+  const ckList2 = await call("browser.page.cookies", { tabId: ckId, action: "list" });
+  const hoRow = (ckList2?.cookies ?? []).find((c) => c.name === "httponlyck");
+  assert(hoRow?.httpOnly === true, "list exposes the httpOnly flag");
+  // delete + clear
+  await call("browser.page.cookies", { tabId: ckId, action: "delete", name: "agentck", url: fixture.url("/") });
+  await call("browser.page.cookies", { tabId: ckId, action: "clear", domain: new URL(fixture.url("/")).hostname });
+  const ckList3 = await call("browser.page.cookies", { tabId: ckId, action: "list" });
+  assert((ckList3?.cookies ?? []).length === 0, "clear emptied the jar");
+  await expectReject("browser.page.cookies", { tabId: ckId, action: "clear" }, "url or args.domain", "clear without scope refused");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

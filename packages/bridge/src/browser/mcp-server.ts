@@ -676,6 +676,26 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["action"],
     ),
   },
+  "browser.page.cookies": {
+    description:
+      "Read and manage the tab's cookies — including HttpOnly ones invisible to document.cookie. action=list (default) returns cookie metadata for args.url (default: the page URL): name, domain, path, expires, httpOnly, secure, sameSite, session — values are withheld unless includeValues:true. action=set writes a cookie (name+value required; url defaults to the page URL, domain/path/secure/httpOnly/sameSite/expires optional). action=delete removes one cookie by name (+url or domain/path). action=clear removes all cookies matching args.url or args.domain — one of them is required. List-metadata is read-only; includeValues, set, delete and clear always require approval (cookie values are credential-grade; mutations change session state). Both backends support it (chrome-extension via CDP Network cookies, playwright-isolated via browser-context cookie storage).",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        action: { type: "string", enum: ["list", "set", "delete", "clear"], description: "Cookie operation (default list)." },
+        url: { type: "string", description: "Scope URL for list/set/delete (default: the task tab's current URL); domain for clear." },
+        domain: { type: "string", description: "Cookie domain for set/delete/clear (alternative to url)." },
+        path: { type: "string", description: "Cookie path (default /)." },
+        name: { type: "string", description: "Cookie name — required for set and delete." },
+        value: { type: "string", description: "Cookie value — required for set." },
+        includeValues: { type: "boolean", description: "list only: include cookie values (always requires approval)." },
+        secure: { type: "boolean", description: "set only: Secure flag." },
+        httpOnly: { type: "boolean", description: "set only: HttpOnly flag." },
+        sameSite: { type: "string", enum: ["Strict", "Lax", "None"], description: "set only: SameSite attribute." },
+        expires: { type: "number", description: "set only: expiry as epoch seconds." },
+      },
+    ),
+  },
   "browser.downloads.list": {
     description:
       "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",

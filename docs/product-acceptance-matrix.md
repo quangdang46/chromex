@@ -100,7 +100,7 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   dialog listener holds JS dialogs open (real browser semantics —
   playwright auto-dismisses only with no listener), accept/dismiss +
   promptText + no_dialog honest result — confirm accept, alert
-  dismiss, no_dialog verified in Loop 10c; **webSocket e2e**: RFC6455 fixture echo → sent/recv frames captured (Loop 10d); **tab.update parity**: zoomFactor → CDP Emulation.setPageScaleFactor, pinned/muted refused proto.unsupported — verified Loop 8b. playwright-isolated now serves 41/45 tools; only tab.discard + windows.* remain chrome-extension-only (no playwright equivalent)
+  dismiss, no_dialog verified in Loop 10c; **webSocket e2e**: RFC6455 fixture echo → sent/recv frames captured (Loop 10d); **tab.update parity**: zoomFactor → CDP Emulation.setPageScaleFactor, pinned/muted refused proto.unsupported — verified Loop 8b; **page.cookies parity**: CDP Network.getCookies/setCookie/deleteCookies vs context.cookies/addCookies/clearCookies — HttpOnly visible to the tool but not document.cookie, values withheld unless includeValues (per-call approval), mutations approval-gated — verified Loop 13 + cdp-headless cookies leg. playwright-isolated now serves 42/46 tools; only tab.discard + windows.* remain chrome-extension-only (no playwright equivalent)
   `gateway-mcp-isolated` PASS — the full provider path without user
   Chrome: real in-process Gateway + spawned mcp-stdio.js child +
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC

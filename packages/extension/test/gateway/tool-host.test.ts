@@ -2116,4 +2116,48 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(cdp.sent.length).toBe(before);
   });
+
+  test("page.cookies list withholds values; set/delete/clear hit Network domain", async () => {
+    const jar = [
+      { name: "sid", value: "tok", domain: ".x.example", path: "/", httpOnly: true, secure: true, sameSite: "Lax", expires: -1, session: true },
+    ];
+    const cdp = fakeCdp({
+      "Network.getCookies": () => ({ cookies: jar }),
+      "Network.setCookie": (p) => {
+        jar.push({ name: p?.name, value: p?.value, domain: ".x.example", path: "/", expires: -1, session: true });
+        return { success: true };
+      },
+      "Network.deleteCookies": (p) => {
+        for (let i = jar.length - 1; i >= 0; i--) {
+          if (jar[i]!.name === p?.name) jar.splice(i, 1);
+        }
+        return {};
+      },
+    });
+    const h = createToolHostHandler(cdpDeps(526, cdp));
+    const list = (await h(req("browser.page.cookies", { tabId: 526, action: "list" }))) as {
+      cookies: Array<Record<string, unknown>>; valuesWithheld?: boolean;
+    };
+    expect(list.cookies).toHaveLength(1);
+    expect(list.cookies[0]).toMatchObject({ name: "sid", httpOnly: true });
+    expect(list.cookies[0]!.value).toBeUndefined();
+    expect(list.valuesWithheld).toBe(true);
+
+    await h(req("browser.page.cookies", { tabId: 526, action: "set", name: "n2", value: "v2" }));
+    expect(jar.some((c) => c.name === "n2")).toBe(true);
+    const setCall = cdp.sent.find((s) => s.method === "Network.setCookie");
+    expect(setCall?.params?.name).toBe("n2");
+
+    await h(req("browser.page.cookies", { tabId: 526, action: "delete", name: "sid", url: "https://x.example/" }));
+    expect(jar.some((c) => c.name === "sid")).toBe(false);
+
+    // clear without scope → proto.invalid before any CDP traffic
+    const before = cdp.sent.length;
+    await expect(h(req("browser.page.cookies", { tabId: 526, action: "clear" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(cdp.sent.length).toBe(before);
+
+    const clr = (await h(req("browser.page.cookies", { tabId: 526, action: "clear", url: "https://x.example/" }))) as { cleared: number };
+    expect(clr.cleared).toBe(1);
+    expect(jar).toHaveLength(0);
+  });
 });

@@ -53,7 +53,6 @@ const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
  *  Residual caveat: an approved expression can still trigger in-page
  *  side effects (fetch etc.) that no tool-level gate observes. */
 export const HARD_BLOCKED_TOOLS: ReadonlySet<string> = new Set([
-  "browser.page.cookies",
   "browser.page.localStorage",
   "browser.page.download",
 ]);
@@ -416,6 +415,12 @@ export function buildActionContext(
       ? { dataEgress: "network-form" as const }
       : {}),
     ...(agentEgress ? { agentEgress } : {}),
+    ...(req.tool === "browser.page.cookies"
+      ? {
+          cookieOp: typeof args.action === "string" ? args.action : "list",
+          cookieValues: args.includeValues === true,
+        }
+      : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit
     // target — the key itself is the resolved input. hover still needs a

@@ -44,6 +44,12 @@ export interface ActionContext {
     isDestructive?: boolean;
   };
   dataEgress?: "none" | "page-local" | "network-form" | "download";
+  /** browser.page.cookies sub-action — the same tool name spans read
+   *  (list metadata), credential egress (list values) and session
+   *  mutation (set/delete/clear), so the classifier needs the op. */
+  cookieOp?: string;
+  /** list was asked to include cookie values — credential-grade egress */
+  cookieValues?: boolean;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -386,6 +392,31 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // discard unloads the page (state loss possible) but only on
       // task-owned tabs, same blast radius as tab.close/reload.
       return verdict("low", { reason: "scoped tab lifecycle op" });
+
+    case "browser.page.cookies": {
+      const op = ctx.cookieOp ?? "list";
+      if (op === "set" || op === "delete" || op === "clear") {
+        // Session-state mutation: injecting or removing cookies can
+        // hijack or destroy the user's login — never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "cookie mutation changes session state",
+        });
+      }
+      if (ctx.cookieValues === true) {
+        // Values are session tokens / credentials leaving the browser —
+        // per-call approval regardless of destination.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "agent_egress",
+          allowTaskEligible: false,
+          reason: "cookie values are credential-grade — per-call approval",
+        });
+      }
+      return verdict("read", { reason: "cookie metadata list (values withheld)" });
+    }
 
     case "browser.windows.update":
       // Focus/state changes are reversible window chrome ops — no page

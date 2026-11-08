@@ -684,3 +684,80 @@ describe("PlaywrightIsolatedBackend popup tracking", () => {
     await backend.close();
   });
 });
+
+describe("PlaywrightIsolatedBackend page.cookies", () => {
+  function cookieContext() {
+    const jar: Array<Record<string, unknown>> = [
+      { name: "sid", value: "secret-token", domain: "x.example", path: "/", httpOnly: true, secure: true, sameSite: "Lax", expires: -1 },
+    ];
+    const added: unknown[] = [];
+    const cleared: unknown[] = [];
+    const page = { url: () => "https://x.example/" };
+    const context = {
+      pages: () => [page],
+      newPage: async () => page,
+      cookies: async (urls?: string[]) =>
+        jar.filter((c) => !urls || urls.some((u) => String(c.domain).includes(new URL(u).hostname.replace(/^www\./, "")))),
+      addCookies: async (cs: unknown[]) => {
+        added.push(...cs);
+        for (const c of cs as Array<Record<string, unknown>>) {
+          jar.push({
+            path: "/",
+            expires: -1,
+            ...(typeof c.url === "string" ? { domain: new URL(c.url).hostname } : {}),
+            ...c,
+          });
+        }
+      },
+      clearCookies: async (f?: Record<string, unknown>) => {
+        cleared.push(f);
+        for (let i = jar.length - 1; i >= 0; i--) {
+          const c = jar[i]!;
+          if (f?.name !== undefined && c.name !== f.name) continue;
+          if (f?.domain !== undefined && c.domain !== f.domain) continue;
+          if (f?.path !== undefined && c.path !== f.path) continue;
+          jar.splice(i, 1);
+        }
+      },
+      close: async () => {},
+    };
+    const browser = { isConnected: () => true, newContext: async () => context, close: async () => {} };
+    return { jar, added, cleared, backend: new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => ({ chromium: { launch: async () => browser } }) as never,
+    }) };
+  }
+
+  test("list withholds values; set/delete/clear mutate the jar", async () => {
+    const { jar, added, backend } = cookieContext();
+    const list = (await backend.execute("t1", "browser.page.cookies", {})) as {
+      cookies: Array<Record<string, unknown>>;
+      valuesWithheld?: boolean;
+    };
+    expect(list.cookies).toHaveLength(1);
+    expect(list.cookies[0]).toMatchObject({ name: "sid", httpOnly: true, secure: true });
+    expect(list.cookies[0]!.value).toBeUndefined();
+    expect(list.valuesWithheld).toBe(true);
+
+    await backend.execute("t1", "browser.page.cookies", {
+      action: "set", name: "pref", value: "dark",
+    });
+    expect(added).toHaveLength(1);
+    expect(jar.some((c) => c.name === "pref" && c.value === "dark")).toBe(true);
+
+    const del = (await backend.execute("t1", "browser.page.cookies", {
+      action: "delete", name: "sid", url: "https://x.example/",
+    })) as { removed: number };
+    expect(del.removed).toBe(1);
+    expect(jar.some((c) => c.name === "sid")).toBe(false);
+
+    await expect(
+      backend.execute("t1", "browser.page.cookies", { action: "clear" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    const clr = (await backend.execute("t1", "browser.page.cookies", {
+      action: "clear", domain: "x.example",
+    })) as { cleared: number };
+    expect(clr.cleared).toBe(1);
+    expect(jar).toHaveLength(0);
+    await backend.close();
+  });
+});

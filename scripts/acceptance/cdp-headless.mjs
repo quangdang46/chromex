@@ -648,6 +648,73 @@ await runScenario(
       };
       void fileRef;
 
+      // --- cookies: CDP Network cookie storage incl. HttpOnly ---
+      // set → server echo proves the cookie rides real requests; list
+      // withholds values; httpOnly is invisible to document.cookie but
+      // visible to the tool; includeValues/set/delete/clear are
+      // approval-gated (auto-answered "allow" by the runner).
+      let ck = {};
+      try {
+        const ckSet = await runner.browserToolCall(
+          taskId, "browser.page.cookies",
+          { action: "set", name: "cdpack", value: "cv1" }, token, 60_000,
+        );
+        const ckEcho = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: "fetch('/api/cookie-echo').then(r=>r.json()).then(j=>j.cookie)" },
+          token, 60_000,
+        );
+        const echoVal = String(ckEcho?.result?.value ?? ckEcho?.value ?? "");
+        ck.setOk = ckSet?.status === "completed" && echoVal.includes("cdpack=cv1");
+        ck.echo = echoVal.slice(0, 120);
+
+        const ckList = await runner.browserToolCall(
+          taskId, "browser.page.cookies", { action: "list" }, token, 60_000,
+        );
+        const ckCookies = ckList?.result?.cookies ?? ckList?.cookies ?? [];
+        const ckRow = ckCookies.find((c) => c.name === "cdpack");
+        ck.listOk = !!ckRow && ckRow.value === undefined;
+
+        await runner.browserToolCall(
+          taskId, "browser.page.cookies",
+          { action: "set", name: "cdpho", value: "hv", httpOnly: true }, token, 60_000,
+        );
+        const docCk = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: "document.cookie" }, token, 60_000,
+        );
+        const docVal = String(docCk?.result?.value ?? docCk?.value ?? "");
+        const ckList2 = await runner.browserToolCall(
+          taskId, "browser.page.cookies", { action: "list" }, token, 60_000,
+        );
+        const hoRow = (ckList2?.result?.cookies ?? ckList2?.cookies ?? []).find((c) => c.name === "cdpho");
+        ck.httpOnlyOk = !docVal.includes("cdpho") && hoRow?.httpOnly === true;
+
+        const ckVals = await runner.browserToolCall(
+          taskId, "browser.page.cookies",
+          { action: "list", includeValues: true }, token, 60_000,
+        );
+        const valRow = (ckVals?.result?.cookies ?? ckVals?.cookies ?? []).find((c) => c.name === "cdpack");
+        ck.valuesOk = valRow?.value === "cv1";
+
+        await runner.browserToolCall(
+          taskId, "browser.page.cookies",
+          { action: "clear", url: fixture.url("/") }, token, 60_000,
+        );
+        const ckList3 = await runner.browserToolCall(
+          taskId, "browser.page.cookies", { action: "list" }, token, 60_000,
+        );
+        ck.clearOk = (ckList3?.result?.cookies ?? ckList3?.cookies ?? []).length === 0;
+      } catch (e) {
+        ck.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`cookies → ${JSON.stringify(ck).slice(0, 300)}`);
+      results.cookies = {
+        ok: ck.setOk === true && ck.listOk === true && ck.httpOnlyOk === true &&
+          ck.valuesOk === true && ck.clearOk === true,
+        ...ck,
+      };
+
       const pass = Object.values(results).every((r) => r.ok === true);
       return {
         status: pass ? "PASS" : "FAIL",

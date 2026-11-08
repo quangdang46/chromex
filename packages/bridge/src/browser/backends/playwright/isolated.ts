@@ -68,6 +68,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.upload",
   "browser.page.find",
   "browser.page.history",
+  "browser.page.cookies",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -397,6 +398,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#dialog(taskId, args);
       case "browser.page.history":
         return this.#history(taskId, args);
+      case "browser.page.cookies":
+        return this.#cookies(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -2006,6 +2009,112 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
     }
     return { navigated: action, ...(moved !== null ? { moved } : {}), url: stripQuery(page.url()) };
+  }
+
+  // ---- cookies ----
+
+  /** Same contract as the extension backend's CDP implementation:
+   *  list returns metadata only unless includeValues, set/delete/clear
+   *  mutate the task context's cookie jar (playwright cookies()
+   *  includes HttpOnly — parity with Network.getCookies). */
+  async #cookies(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const context = await this.#contextFor(taskId);
+    const action = typeof args.action === "string" ? args.action : "list";
+    if (!["list", "set", "delete", "clear"].includes(action)) {
+      throw protocolError("proto.invalid", "browser.page.cookies args.action must be list|set|delete|clear");
+    }
+    const domain = typeof args.domain === "string" && args.domain ? args.domain : undefined;
+    const cookiePath = typeof args.path === "string" && args.path ? args.path : undefined;
+    const name = typeof args.name === "string" && args.name ? args.name : undefined;
+    const explicitUrl = typeof args.url === "string" && args.url ? args.url : undefined;
+    const scopeUrl = explicitUrl ?? (/^https?:/.test(page.url()) ? page.url() : undefined);
+
+    if (action === "list") {
+      if (!scopeUrl) {
+        throw protocolError("proto.invalid", "browser.page.cookies requires args.url (page URL is not http(s))");
+      }
+      const cookies = await context.cookies([scopeUrl]);
+      const includeValues = args.includeValues === true;
+      return {
+        url: scopeUrl,
+        cookies: cookies.map((c) => ({
+          name: c.name,
+          domain: c.domain,
+          path: c.path,
+          ...(typeof c.expires === "number" && c.expires > 0 ? { expires: c.expires } : { session: true }),
+          ...(c.httpOnly ? { httpOnly: true } : {}),
+          ...(c.secure ? { secure: true } : {}),
+          ...(c.sameSite ? { sameSite: c.sameSite } : {}),
+          ...(includeValues ? { value: c.value } : {}),
+        })),
+        ...(includeValues ? {} : { valuesWithheld: true }),
+      };
+    }
+
+    if (action === "set") {
+      const value = typeof args.value === "string" ? args.value : undefined;
+      if (!name || value === undefined) {
+        throw protocolError("proto.invalid", "browser.page.cookies set requires args.name and args.value");
+      }
+      const sameSite = typeof args.sameSite === "string" ? args.sameSite : undefined;
+      if (sameSite && !["Strict", "Lax", "None"].includes(sameSite)) {
+        throw protocolError("proto.invalid", "browser.page.cookies args.sameSite must be Strict|Lax|None");
+      }
+      const expires = typeof args.expires === "number" && Number.isFinite(args.expires) && args.expires > 0
+        ? args.expires
+        : undefined;
+      const cookie: Record<string, unknown> = {
+        name,
+        value,
+        ...(scopeUrl && !domain ? { url: scopeUrl } : {}),
+        ...(domain ? { domain, path: cookiePath ?? "/" } : cookiePath ? { path: cookiePath } : {}),
+        ...(args.secure === true ? { secure: true } : {}),
+        ...(args.httpOnly === true ? { httpOnly: true } : {}),
+        ...(sameSite ? { sameSite } : {}),
+        ...(expires !== undefined ? { expires } : {}),
+      };
+      if (!cookie.url && !(cookie.domain && cookie.path)) {
+        throw protocolError("proto.invalid", "browser.page.cookies set requires args.url or args.domain+args.path");
+      }
+      await context.addCookies([cookie as never]);
+      return { set: true, name };
+    }
+
+    if (action === "delete") {
+      if (!name) {
+        throw protocolError("proto.invalid", "browser.page.cookies delete requires args.name");
+      }
+      if (!explicitUrl && !domain) {
+        throw protocolError("proto.invalid", "browser.page.cookies delete requires args.url or args.domain");
+      }
+      // playwright clearCookies filters by name/domain/path — resolve the
+      // url scope to the matching stored cookies first.
+      const stored = explicitUrl ? await context.cookies([explicitUrl]) : await context.cookies();
+      const matched = stored.filter(
+        (c) =>
+          c.name === name &&
+          (!domain || String(c.domain ?? "").replace(/^\./, "").endsWith(domain.replace(/^\./, ""))) &&
+          (!cookiePath || c.path === cookiePath),
+      );
+      for (const c of matched) {
+        await context.clearCookies({ name: c.name, domain: c.domain, path: c.path });
+      }
+      return { deleted: name, removed: matched.length };
+    }
+
+    // clear — explicit scope required, same as the extension backend.
+    if (!explicitUrl && !domain) {
+      throw protocolError("proto.invalid", "browser.page.cookies clear requires args.url or args.domain");
+    }
+    const stored = explicitUrl ? await context.cookies([explicitUrl]) : await context.cookies();
+    const matched = stored.filter(
+      (c) => !domain || String(c.domain ?? "").replace(/^\./, "").endsWith(domain.replace(/^\./, "")),
+    );
+    for (const c of matched) {
+      await context.clearCookies({ name: c.name, domain: c.domain, path: c.path });
+    }
+    return { cleared: matched.length };
   }
 
   // ---- downloads ----

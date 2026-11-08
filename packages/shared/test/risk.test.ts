@@ -171,6 +171,33 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(fin.risk).toBe("financial");
   });
 
+  test("browser.page.cookies: metadata read; values/mutations always approval", () => {
+    // list without values → read (values withheld by the backend)
+    const meta = classifyActionRisk(ctx({ action: "browser.page.cookies", cookieOp: "list" }));
+    expect(meta.risk).toBe("read");
+    expect(meta.needsApproval).toBe(false);
+    // includeValues → credential-grade egress, per-call approval
+    const vals = classifyActionRisk(
+      ctx({ action: "browser.page.cookies", cookieOp: "list", cookieValues: true }),
+    );
+    expect(vals).toMatchObject({
+      risk: "external_mutation",
+      needsApproval: true,
+      kind: "agent_egress",
+      allowTaskEligible: false,
+    });
+    // set/delete/clear → session mutation, never task-eligible
+    for (const op of ["set", "delete", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.cookies", cookieOp: op }));
+      expect(v).toMatchObject({
+        risk: "external_mutation",
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+      });
+    }
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

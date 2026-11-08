@@ -333,6 +333,12 @@ export async function startFixtureServer() {
       res.end(JSON.stringify({ v: "ok" }));
       return;
     }
+    // cookie echo — proves tool-set cookies actually ride requests
+    if (url.pathname === "/api/cookie-echo") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ cookie: req.headers.cookie ?? "" }));
+      return;
+    }
     // route-modify target — a rewrite of /api/ping lands here
     if (url.pathname === "/api/pong2") {
       requests.push({ method: "GET", path: "/api/pong2", at: Date.now() });
