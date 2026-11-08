@@ -1784,6 +1784,66 @@ await runScenario(
         ...wc,
       };
 
+      // --- tabsWait: async popup barrier (OAuth/target=_blank flow) ---
+      // Start the wait BEFORE the trusted click — the popup arrives
+      // asynchronously, which is exactly what post-action openedTabs[]
+      // cannot cover. Baseline-diff: the already-open popup can't
+      // re-match a second wait.
+      let tw = {};
+      try {
+        const twCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create",
+          { url: fixture.url("/popup-link"), active: true }, token, 60_000,
+        );
+        const twTab = (twCreate?.result ?? twCreate ?? {}).openedTabId ??
+          (twCreate?.result ?? twCreate ?? {}).tabId;
+        tw.createOk = typeof twTab === "number";
+        if (tw.createOk) {
+          await sleep(800);
+          const waitP = runner.browserToolCall(
+            taskId, "browser.tabs.wait", { urlContains: "popup-done", timeoutMs: 8000 }, token, 60_000,
+          );
+          await runner.browserToolCall(
+            taskId, "browser.page.click", { tabId: twTab, selector: "#go", trusted: true }, token, 60_000,
+          ).catch(() => null);
+          const twRes = await waitP;
+          const twBody = twRes?.result ?? twRes ?? {};
+          const popupId = twBody.newTabId ?? twBody.tab?.tabId ?? twBody.tab?.id;
+          tw.matchedOk = twBody.matched === "newTab";
+          tw.tabOk = typeof popupId === "number";
+          tw.urlOk = String(twBody.tab?.url ?? "").includes("popup-done");
+          // scope harvest: newTabId must let the task operate the popup
+          const pg = popupId !== undefined
+            ? await runner.browserToolCall(taskId, "browser.page.get", { tabId: popupId }, token, 60_000).catch(() => null)
+            : null;
+          tw.scopeOk = pg?.status === "completed";
+          // stale baseline: popup already open → second wait times out
+          const twNo = await runner.browserToolCall(
+            taskId, "browser.tabs.wait", { urlContains: "popup-done", timeoutMs: 500 }, token, 60_000,
+          ).catch(() => null);
+          tw.staleOk = (twNo?.error?.code ?? "") === "browser.timeout";
+          const twBad = await runner.browserToolCall(
+            taskId, "browser.tabs.wait", {}, token, 60_000,
+          ).catch(() => null);
+          tw.badArgOk = (twBad?.error?.code ?? "") === "proto.invalid";
+          // cleanup launcher + popup
+          await runner.browserToolCall(taskId, "browser.tab.close", { tabId: twTab }, token, 60_000).catch(() => null);
+          if (typeof popupId === "number") {
+            await runner.browserToolCall(taskId, "browser.tab.close", { tabId: popupId }, token, 60_000).catch(() => null);
+          }
+        } else {
+          tw.matchedOk = tw.tabOk = tw.urlOk = tw.scopeOk = tw.staleOk = tw.badArgOk = false;
+        }
+      } catch (e) {
+        tw.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`tabsWait → ${JSON.stringify(tw).slice(0, 300)}`);
+      results.tabsWait = {
+        ok: tw.createOk === true && tw.matchedOk === true && tw.tabOk === true &&
+          tw.urlOk === true && tw.scopeOk === true && tw.staleOk === true && tw.badArgOk === true,
+        ...tw,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

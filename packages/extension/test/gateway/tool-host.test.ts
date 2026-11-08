@@ -746,6 +746,40 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "browser.timeout" });
   });
 
+  test("tabs.wait matches a NEW tab by urlContains; stale tabs never match", async () => {
+    let calls = 0;
+    const d = deps({
+      queryTabs: vi.fn(async () => {
+        calls += 1;
+        // baseline call sees only the existing tab; later polls see new
+        // tabs appear — only ids absent from the baseline may match
+        return calls === 1
+          ? [{ id: 7, url: "https://x/", title: "X", active: true, windowId: 1 }]
+          : [
+              { id: 7, url: "https://x/", title: "X", active: true, windowId: 1 },
+              { id: 50, url: "https://x/already-here", title: "old", active: false, windowId: 1 },
+              { id: 99, url: "https://idp.example.com/oauth/callback?code=secret", title: "OAuth", active: false, windowId: 1 },
+            ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.tabs.wait", { urlContains: "oauth/callback", timeoutMs: 3000 }),
+    )) as { ok: boolean; matched: string; tab: { id: number; url: string } };
+    expect(res.matched).toBe("newTab");
+    expect(res.tab.id).toBe(99);
+    // sanitized: query string stripped
+    expect(res.tab.url).toBe("https://idp.example.com/oauth/callback");
+    // no new tab → browser.timeout
+    const d2 = deps({ queryTabs: vi.fn(async () => [{ id: 7, url: "https://x/", title: "X", active: true, windowId: 1 }]) });
+    const h2 = createToolHostHandler(d2);
+    await expect(
+      h2(req("browser.tabs.wait", { urlContains: "never", timeoutMs: 80 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+    // missing urlContains → proto.invalid
+    await expect(h2(req("browser.tabs.wait", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.wait consoleText validation: level requires text, bad level, missing dep", async () => {
     const h = createToolHostHandler(deps({
       runInMainWorld: vi.fn(async () => ({ installed: true, entries: [] })),

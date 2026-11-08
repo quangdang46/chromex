@@ -502,6 +502,7 @@ const FRAME_SCOPED_TOOLS = new Set([
 
 const SUPPORTED = new Set([
   "browser.tabs.list",
+  "browser.tabs.wait",
   "browser.tab.activate",
   "browser.tab.highlight",
   "browser.tab.close",
@@ -1074,6 +1075,74 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               ...(typeof t.highlighted === "boolean" ? { highlighted: t.highlighted } : {}),
             };
           }),
+        };
+      }
+      case "browser.tabs.wait": {
+        // Wait for a NEW tab matching urlContains — the async-popup
+        // barrier (OAuth/SSO redirects, window.open, target=_blank
+        // flows) that post-action openedTabs[] cannot cover because
+        // the popup arrives seconds after the click returns.
+        // Baseline-diff semantics: tabs present at call time never
+        // match, so a pre-existing tab with the same URL can't
+        // false-positive. Same visibility filter as tabs.list.
+        const urlContains = str(args.urlContains);
+        if (urlContains === undefined || urlContains.length === 0 || urlContains.length > 512) {
+          throw toolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars)");
+        }
+        const waitTimeoutMs = Math.min(
+          Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
+          30_000,
+        );
+        const INTERNAL = /^(chrome|chrome-extension|edge|about|devtools|view-source):/i;
+        const foreign = new Set(tabScope?.foreignTabIds ?? []);
+        const visible = (tabs: chrome.tabs.Tab[]) =>
+          tabs.filter((t) => {
+            const u = t.url ?? "";
+            return u !== "" && !INTERNAL.test(u) && !(typeof t.id === "number" && foreign.has(t.id));
+          });
+        const sanitize = (raw: string) => {
+          try {
+            const u = new URL(raw);
+            return `${u.origin}${u.pathname}`;
+          } catch {
+            return "";
+          }
+        };
+        const baseline = new Set(
+          visible(await deps.queryTabs())
+            .map((t) => t.id)
+            .filter((id): id is number => typeof id === "number"),
+        );
+        const deadline = Date.now() + waitTimeoutMs;
+        let hit: chrome.tabs.Tab | undefined;
+        while (Date.now() < deadline) {
+          hit = visible(await deps.queryTabs()).find(
+            (t) => typeof t.id === "number" && !baseline.has(t.id) && sanitize(t.url ?? "").includes(urlContains),
+          );
+          if (hit) break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        if (!hit || typeof hit.id !== "number") {
+          throw toolError(
+            "browser.timeout",
+            `no new tab matching "${urlContains}" within ${waitTimeoutMs}ms`,
+          );
+        }
+        return {
+          ok: true,
+          matched: "newTab",
+          // tabId is a harvest key — the bridge acquires the popup into
+          // this task's scope so follow-up tools don't hit
+          // browser.not_in_scope. id mirrors the tabs.list shape.
+          newTabId: hit.id,
+          tab: {
+            tabId: hit.id,
+            id: hit.id,
+            title: hit.title ?? "",
+            url: sanitize(hit.url ?? ""),
+            windowId: hit.windowId,
+            status: hit.status ?? "complete",
+          },
         };
       }
       case "browser.tab.activate": {

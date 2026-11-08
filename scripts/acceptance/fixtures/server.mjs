@@ -214,6 +214,14 @@ addEventListener("wheel", (e) => {
 <button id="ok" onclick="console.log('probe-log-marker')">log</button>
 </body></html>`,
 
+  // popup launcher: target=_blank link — a trusted click opens a real
+  // new tab asynchronously, the scenario for browser.tabs.wait.
+  "/popup-link": `<!doctype html><html><body>
+<h1>Popup Launcher</h1>
+<a id="go" href="/popup-done" target="_blank">open popup</a>
+</body></html>`,
+  "/popup-done": `<!doctype html><html><body><h1>Popup Done</h1><p>popup landed</p></body></html>`,
+
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.
   "/drag": `<!doctype html><html><body>

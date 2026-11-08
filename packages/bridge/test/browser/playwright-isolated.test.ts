@@ -141,6 +141,50 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("tabs.wait baseline-diffs for a new page by urlContains", async () => {
+    const p1 = { url: () => "https://a.example/", title: async () => "A" };
+    const p2 = { url: () => "https://idp.example.com/oauth/callback?code=x", title: async () => "OAuth" };
+    const live = [p1];
+    const context = {
+      pages: () => live,
+      newPage: async () => {
+        throw new Error("unexpected newPage in test");
+      },
+      close: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () =>
+        ({
+          chromium: {
+            launch: async () => ({
+              isConnected: () => true,
+              newContext: async () => context,
+              close: async () => {},
+            }),
+          },
+        }) as never,
+    });
+    // popup arrives asynchronously — push it mid-wait
+    setTimeout(() => live.push(p2), 60);
+    const res = (await backend.execute("t1", "browser.tabs.wait", {
+      urlContains: "oauth/callback",
+      timeoutMs: 3000,
+    })) as { matched: string; tab: { tabId: number; url: string } };
+    expect(res.matched).toBe("newTab");
+    expect(res.tab.tabId).toBe(1);
+    expect(res.tab.url).toBe("https://idp.example.com/oauth/callback"); // query stripped
+    // nothing new → browser.timeout; missing urlContains → proto.invalid
+    const backend2 = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([p1]) as never,
+    });
+    await expect(
+      backend2.execute("t1", "browser.tabs.wait", { urlContains: "never", timeoutMs: 80 }),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+    await expect(backend2.execute("t1", "browser.tabs.wait", {})).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+  });
+
   test("press without selector uses page.keyboard with modifier chord (chromex-cly)", async () => {
     const presses: string[] = [];
     const page = {

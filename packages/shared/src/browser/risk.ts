@@ -151,6 +151,7 @@ const READ_TOOLS = new Set([
   "browser.page.snapshot",
   "browser.page.get",
   "browser.tabs.list",
+  "browser.tabs.wait",
   "browser.page.extract",
   "browser.page.wait",
   "browser.page.console",

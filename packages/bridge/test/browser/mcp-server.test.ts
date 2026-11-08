@@ -296,6 +296,7 @@ function schemaValid(schema: Schema, value: unknown): boolean {
  *  extension tool-host and playwright backend actually read. */
 const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.tabs.list": {},
+  "browser.tabs.wait": { urlContains: "/oauth/callback", timeoutMs: 15000 },
   "browser.tab.activate": { tabId: 3 },
   "browser.tab.highlight": { tabId: 3 },
   "browser.tab.close": { tabId: 3 },

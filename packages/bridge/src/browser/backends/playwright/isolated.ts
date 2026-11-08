@@ -40,6 +40,7 @@ const MODULE_REQUIRE = createRequire(
  *  must advertise exactly what execute() will serve. */
 export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.tabs.list",
+  "browser.tabs.wait",
   "browser.tab.activate",
   "browser.tab.close",
   "browser.tab.create",
@@ -430,6 +431,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     switch (tool) {
       case "browser.tabs.list":
         return this.#tabsList(taskId);
+      case "browser.tabs.wait":
+        return this.#tabsWait(taskId, args);
       case "browser.tab.activate":
         return this.#tabActivate(taskId, args);
       case "browser.tab.close":
@@ -552,6 +555,46 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         active: p === active,
       })),
     };
+  }
+
+  /** browser.tabs.wait — baseline-diff wait for a NEW page whose URL
+   *  contains urlContains (async popups/OAuth/target=_blank). Pages
+   *  present at call time never match. Same contract as the extension
+   *  host's chrome.tabs poll. */
+  async #tabsWait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const urlContains = typeof args.urlContains === "string" ? args.urlContains : "";
+    if (urlContains === "" || urlContains.length > 512) {
+      throw protocolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars)");
+    }
+    const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000;
+    const deadline = Date.now() + Math.min(timeout, 30_000);
+    const context = await this.#contextFor(taskId);
+    const baseline = new Set(context.pages());
+    const matchUrl = (p: PwPage) => {
+      const u = p.url();
+      return u !== "" && u !== "about:blank" && stripQuery(u).includes(urlContains);
+    };
+    for (;;) {
+      const pages = context.pages();
+      const idx = pages.findIndex((p) => !baseline.has(p) && matchUrl(p));
+      if (idx >= 0) {
+        const p = pages[idx]!;
+        return {
+          ok: true,
+          matched: "newTab",
+          newTabId: idx,
+          tab: {
+            tabId: idx,
+            url: stripQuery(p.url()),
+            title: typeof p.title === "function" ? await p.title().catch(() => "") : "",
+          },
+        };
+      }
+      if (Date.now() >= deadline) {
+        throw protocolError("browser.timeout", `no new tab matching "${urlContains}" before timeout`);
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   async #tabActivate(taskId: string, args: Record<string, unknown>): Promise<unknown> {

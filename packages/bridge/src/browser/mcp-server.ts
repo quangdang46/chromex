@@ -229,6 +229,14 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       "List tabs this task may see (internal pages and other tasks' tabs excluded; URLs stripped of query/hash). Check scope here when a call fails with browser.not_in_scope or browser.ambiguous_target.",
     inputSchema: objectSchema({}),
   },
+  "browser.tabs.wait": {
+    description:
+      "Wait for a NEW tab whose sanitized URL (origin+path) contains urlContains — the async-popup barrier for OAuth/SSO redirects, window.open and target=_blank flows that arrive seconds after the triggering action returns (post-action openedTabs[] only covers synchronous popups). Baseline-diff: tabs already open at call time never match, so a stale tab with the same URL can't false-positive. Same visibility filter as browser.tabs.list (internal pages + other tasks' tabs excluded). Returns the new tab's id/url/title/windowId/status; timeoutMs ≤30000 (default 10s) then browser.timeout. Read-only observation; low-risk.",
+    inputSchema: objectSchema({
+      urlContains: { type: "string", description: "Substring to match against the new tab's sanitized origin+path URL (required, ≤512 chars)." },
+      timeoutMs: { type: "number", description: "Max wait (clamped ≤30000, default 10000)." },
+    }),
+  },
   "browser.tab.activate": {
     description:
       "Bring a tab to the front. tabId optional — defaults to the task's bound tab, then the active tab; out-of-scope tabs are refused, never silently redirected.",

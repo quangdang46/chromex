@@ -7,6 +7,7 @@ import type { BrowserBackendCapabilities } from "./backend.js";
  */
 export type BrowserToolName =
   | "browser.tabs.list"
+  | "browser.tabs.wait"
   | "browser.tab.activate"
   | "browser.tab.highlight"
   | "browser.tab.close"
@@ -89,6 +90,7 @@ export type BrowserToolName =
 
 export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tabs.list",
+  "browser.tabs.wait",
   "browser.tab.activate",
   "browser.tab.highlight",
   "browser.tab.close",

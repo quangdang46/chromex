@@ -235,6 +235,31 @@ try {
   );
   await call("browser.tab.close", { tabId: wcTab }).catch(() => null);
 
+  // ── Loop 4f: tabs.wait — async popup barrier. target=_blank click
+  // opens a new page mid-wait; baseline-diff means the already-open
+  // popup can't re-match a second wait.
+  const pwCreated = await call("browser.tab.create", { url: fixture.url("/popup-link"), active: true });
+  const pwTab = pwCreated?.tabId ?? pwCreated?.id;
+  await new Promise((r) => setTimeout(r, 800));
+  const twPromise = call("browser.tabs.wait", { urlContains: "popup-done", timeoutMs: 8000 });
+  await call("browser.page.click", { tabId: pwTab, selector: "#go" }).catch(() => null);
+  const twRes = await twPromise;
+  assert(twRes?.matched === "newTab", `tabs.wait matched new tab (got ${JSON.stringify(twRes).slice(0, 120)})`);
+  const popupTab = twRes?.newTabId ?? twRes?.tab?.tabId;
+  assert(typeof popupTab === "number", `tabs.wait returned popup tabId (got ${popupTab})`);
+  assert(String(twRes?.tab?.url ?? "").includes("popup-done"), "popup url sanitized contains popup-done");
+  // scope harvest: the new page is operable without not_in_scope
+  const pgRes = await call("browser.page.get", { tabId: popupTab }).catch(() => null);
+  assert(pgRes && pgRes.status !== "failed", `popup operable after harvest (got ${pgRes?.status})`);
+  await expectReject(
+    "browser.tabs.wait",
+    { urlContains: "popup-done", timeoutMs: 400 },
+    "timeout",
+    "stale popup cannot re-match",
+  );
+  await call("browser.tab.close", { tabId: pwTab }).catch(() => null);
+  await call("browser.tab.close", { tabId: popupTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;
