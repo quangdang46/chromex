@@ -1001,6 +1001,96 @@ const toolHostHandler = createToolHostHandler({
         return { reset: true };
       },
     },
+    system: {
+      // chrome.system.memory/cpu — separate optional permissions per
+      // op, checked per call. Stats only; no page or profile data.
+      memory: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["system.memory"] });
+        if (!granted) return "permission";
+        const api = chrome.system?.memory as unknown as {
+          getInfo(): Promise<{ capacity: number; availableCapacity: number }>;
+        } | undefined;
+        if (!api?.getInfo) return null;
+        const info = await api.getInfo();
+        const capacity = typeof info?.capacity === "number" ? info.capacity : 0;
+        const available = typeof info?.availableCapacity === "number" ? info.availableCapacity : 0;
+        return {
+          capacity,
+          availableCapacity: available,
+          percentUsed: capacity > 0 ? Math.round((1 - available / capacity) * 1000) / 10 : null,
+        };
+      },
+      cpu: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["system.cpu"] });
+        if (!granted) return "permission";
+        const api = chrome.system?.cpu as unknown as {
+          getInfo(): Promise<Record<string, unknown>>;
+        } | undefined;
+        if (!api?.getInfo) return null;
+        const info = (await api.getInfo()) as {
+          numOfProcessors?: number;
+          archName?: string;
+          modelName?: string;
+          features?: string[];
+          temperatures?: number[];
+          processors?: Array<{ usage?: Record<string, number> }>;
+        };
+        return {
+          numOfProcessors: info?.numOfProcessors ?? null,
+          archName: info?.archName ?? null,
+          modelName: info?.modelName ?? null,
+          features: Array.isArray(info?.features) ? info.features.slice(0, 32) : [],
+          temperatures: Array.isArray(info?.temperatures) ? info.temperatures.slice(0, 32) : [],
+          processors: (Array.isArray(info?.processors) ? info.processors : [])
+            .slice(0, 32)
+            .map((p) => ({
+              user: p?.usage?.user ?? null,
+              kernel: p?.usage?.kernel ?? null,
+              idle: p?.usage?.idle ?? null,
+              total: p?.usage?.total ?? null,
+            })),
+        };
+      },
+      permissions: async () => ({
+        memory: await chrome.permissions.contains({ permissions: ["system.memory"] }),
+        cpu: await chrome.permissions.contains({ permissions: ["system.cpu"] }),
+      }),
+    },
+    processes: {
+      // chrome.processes — optional "processes" permission checked per
+      // call. chrome.processes is untyped in @types/chrome; cast like
+      // the other optional APIs. Results sanitized: tab titles/urls
+      // bounded, workers included.
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["processes"] });
+        if (!granted) return "permission";
+        return "granted";
+      },
+      list: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["processes"] });
+        if (!granted) return "permission";
+        const api = (chrome as unknown as {
+          processes?: {
+            getProcessInfo(ids?: number[], includeWorkers?: boolean): Promise<Array<Record<string, unknown>>>;
+          };
+        }).processes;
+        if (!api?.getProcessInfo) return null;
+        const procs = await api.getProcessInfo(undefined, true);
+        return (Array.isArray(procs) ? procs : []).slice(0, 200).map((p) => ({
+          id: typeof p.id === "number" ? p.id : null,
+          type: typeof p.type === "string" ? p.type.slice(0, 40) : "unknown",
+          ...(typeof p.osProcessId === "number" ? { osProcessId: p.osProcessId } : {}),
+          ...(typeof p.cpu === "number" ? { cpu: p.cpu } : {}),
+          tabs: (Array.isArray(p.tabs) ? (p.tabs as Array<Record<string, unknown>>) : [])
+            .slice(0, 50)
+            .map((t) => ({
+              tabId: typeof t.tabId === "number" ? t.tabId : null,
+              title: typeof t.title === "string" ? t.title.slice(0, 200) : "",
+              url: typeof t.url === "string" ? t.url.slice(0, 2048) : "",
+            })),
+        }));
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

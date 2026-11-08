@@ -42,7 +42,10 @@
     "management",
     "notifications",
     "declarativeNetRequest",
-    "userScripts"
+    "userScripts",
+    "system.memory",
+    "system.cpu",
+    "processes"
   ],
   "background": {
     "service_worker": "background.js",

@@ -905,6 +905,8 @@ try {
   await expectReject("browser.notifications", { action: "send", title: "t", message: "m" }, "does not support", "notifications refused on isolated (no OS channel)");
   await expectReject("browser.dnr", { action: "list" }, "does not support", "dnr refused on isolated (no browser-wide rule engine)");
   await expectReject("browser.userScripts", { action: "list" }, "does not support", "userScripts refused on isolated (no persistent injection API)");
+  await expectReject("browser.system", { action: "memory" }, "does not support", "system refused on isolated (no host hardware API)");
+  await expectReject("browser.processes", { action: "list" }, "does not support", "processes refused on isolated (no process table)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

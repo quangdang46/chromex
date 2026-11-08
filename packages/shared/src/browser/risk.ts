@@ -682,6 +682,17 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       });
     }
 
+    case "browser.system":
+      // Machine-level stats (memory capacity/usage, CPU topology +
+      // per-processor usage) — pure observation, no page or profile
+      // data, every op is a read.
+      return verdict("read", { reason: "system resource stats read" });
+
+    case "browser.processes":
+      // Process inventory — tab titles/urls ride inside each Process,
+      // so the egress classifier treats this like tabs.list (page-text).
+      return verdict("read", { reason: "browser process inventory read" });
+
     case "browser.page.caches": {
       const op = ctx.cacheOp ?? "listCaches";
       if (op === "put" || op === "delete" || op === "clear") {

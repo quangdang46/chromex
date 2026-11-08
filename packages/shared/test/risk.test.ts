@@ -435,6 +435,14 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.userScripts" })).risk).toBe("read");
   });
 
+  test("browser.system + browser.processes: pure reads (machine stats / process inventory)", () => {
+    for (const action of ["browser.system", "browser.processes"] as const) {
+      const v = classifyActionRisk(ctx({ action }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

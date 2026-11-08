@@ -255,6 +255,21 @@ export interface ToolHostDeps {
     configureWorld(properties: Record<string, unknown>): Promise<unknown | "permission" | null>;
     resetWorld(worldId?: string): Promise<unknown | "permission" | null>;
   } | undefined;
+  /** chrome.system (browser.system) — machine resource stats.
+   *  "permission" → the op's optional system.* permission not granted;
+   *  null → API unavailable → proto.unsupported. */
+  system?: {
+    memory(): Promise<unknown | "permission" | null>;
+    cpu(): Promise<unknown | "permission" | null>;
+    permissions(): Promise<Record<string, boolean> | null>;
+  } | undefined;
+  /** chrome.processes (browser.processes) — process inventory.
+   *  "permission" → optional processes permission not granted; null →
+   *  API unavailable → proto.unsupported. */
+  processes?: {
+    permission(): Promise<string | "permission" | null>;
+    list(): Promise<unknown[] | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -431,6 +446,8 @@ const SUPPORTED = new Set([
   "browser.notifications",
   "browser.dnr",
   "browser.userScripts",
+  "browser.system",
+  "browser.processes",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -3111,6 +3128,82 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               "proto.invalid",
               "browser.userScripts args.action must be list|worlds|register|update|unregister|execute|configureWorld|resetWorld|permission",
             );
+        }
+      }
+      case "browser.system": {
+        // chrome.system memory/cpu — machine stats, each op gated by
+        // its own optional permission ("permission" sentinel →
+        // proto.unsupported naming the specific permission).
+        if (!deps.system) {
+          throw toolError("proto.unsupported", "system stats are not available on this host");
+        }
+        const api = deps.system;
+        const action = str(args.action) ?? "memory";
+        const sysSentinel = async <T>(v: Promise<T | "permission" | null>, perm: string): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", `${perm} permission is not granted`);
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.system is not available on this Chrome build");
+          }
+          return r as T;
+        };
+        switch (action) {
+          case "memory": {
+            const info = await sysSentinel(api.memory(), "system.memory");
+            return info;
+          }
+          case "cpu": {
+            const info = await sysSentinel(api.cpu(), "system.cpu");
+            return info;
+          }
+          case "permission": {
+            const perms = await api.permissions();
+            if (perms === null) {
+              throw toolError("proto.unsupported", "chrome.permissions is not available on this Chrome build");
+            }
+            return { memory: perms.memory === true, cpu: perms.cpu === true };
+          }
+          default:
+            throw toolError("proto.invalid", "browser.system args.action must be memory|cpu|permission");
+        }
+      }
+      case "browser.processes": {
+        // chrome.processes — task-manager inventory. Optional
+        // "processes" permission checked per call in index.ts.
+        if (!deps.processes) {
+          throw toolError("proto.unsupported", "process inventory is not available on this host");
+        }
+        const api = deps.processes;
+        const action = str(args.action) ?? "list";
+        const procSentinel = async <T>(v: Promise<T | "permission" | null>): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", "processes permission is not granted");
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.processes is not available on this Chrome build");
+          }
+          return r as T;
+        };
+        switch (action) {
+          case "list": {
+            const procs = await procSentinel(api.list());
+            return { processes: procs, count: procs.length };
+          }
+          case "permission": {
+            const p = await api.permission();
+            if (p === "permission") {
+              return { permission: "not_granted", granted: false };
+            }
+            if (p === null) {
+              throw toolError("proto.unsupported", "chrome.processes is not available on this Chrome build");
+            }
+            return { permission: p, granted: p === "granted" };
+          }
+          default:
+            throw toolError("proto.invalid", "browser.processes args.action must be list|permission");
         }
       }
       case "browser.windows.list": {

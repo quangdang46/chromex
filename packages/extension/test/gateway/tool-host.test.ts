@@ -2100,6 +2100,84 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.system marshals memory/cpu/permission with per-op permission sentinels", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const sys = {
+      memory: vi.fn(async () => {
+        calls.push({ op: "memory", args: [] });
+        return { capacity: 16_000, availableCapacity: 8_000, percentUsed: 50 };
+      }),
+      cpu: vi.fn(async () => {
+        calls.push({ op: "cpu", args: [] });
+        return { numOfProcessors: 8, archName: "arm64", modelName: "Apple M4", processors: [{ user: 1 }] };
+      }),
+      permissions: vi.fn(async () => ({ memory: true, cpu: false })),
+    };
+    const h = createToolHostHandler(deps({ system: sys }));
+    // memory is the default action
+    const memRes = (await h(req("browser.system", {}))) as { percentUsed: number };
+    expect(memRes.percentUsed).toBe(50);
+    expect(calls[0]).toEqual({ op: "memory", args: [] });
+    const cpuRes = (await h(req("browser.system", { action: "cpu" }))) as { numOfProcessors: number };
+    expect(cpuRes.numOfProcessors).toBe(8);
+    const permRes = (await h(req("browser.system", { action: "permission" }))) as { memory: boolean; cpu: boolean };
+    expect(permRes).toEqual({ memory: true, cpu: false });
+    await expect(h(req("browser.system", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // per-op permission sentinel names the specific permission
+    const dPerm = deps({
+      system: {
+        memory: vi.fn(async () => "permission" as const),
+        cpu: vi.fn(async () => "permission" as const),
+        permissions: vi.fn(async () => ({ memory: false, cpu: false })),
+      },
+    });
+    const hPerm = createToolHostHandler(dPerm);
+    await expect(hPerm(req("browser.system", { action: "memory" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("system.memory permission") });
+    await expect(hPerm(req("browser.system", { action: "cpu" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("system.cpu permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.system", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("browser.processes marshals list/permission + validates action", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const procs = {
+      permission: vi.fn(async () => {
+        calls.push({ op: "permission", args: [] });
+        return "granted";
+      }),
+      list: vi.fn(async () => {
+        calls.push({ op: "list", args: [] });
+        return [
+          { id: 101, type: "browser", osProcessId: 42, tabs: [{ tabId: 7, title: "X", url: "https://x" }] },
+          { id: 102, type: "renderer", cpu: 12.5, tabs: [{ tabId: 8, title: "Y", url: "https://y" }] },
+        ];
+      }),
+    };
+    const h = createToolHostHandler(deps({ processes: procs }));
+    // list is the default action
+    const listRes = (await h(req("browser.processes", {}))) as { count: number; processes: unknown[] };
+    expect(listRes.count).toBe(2);
+    expect(calls[0]).toEqual({ op: "list", args: [] });
+    const permRes = (await h(req("browser.processes", { action: "permission" }))) as { granted: boolean };
+    expect(permRes.granted).toBe(true);
+    await expect(h(req("browser.processes", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      processes: {
+        permission: vi.fn(async () => "permission" as const),
+        list: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.processes", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("processes permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.processes", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

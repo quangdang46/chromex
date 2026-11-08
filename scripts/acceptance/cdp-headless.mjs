@@ -1370,6 +1370,25 @@ await runScenario(
         ...us,
       };
 
+      // --- system/processes: optional permissions — ungranted → honest unsupported ---
+      let sys = {};
+      const sysRes = await runner.browserToolCall(
+        taskId, "browser.system", { action: "memory" }, token, 60_000,
+      );
+      const sysErr = sysRes?.error ?? {};
+      sys.memoryUnsupportedOk = sysRes?.status === "failed" && sysErr.code === "proto.unsupported";
+      sys.msg = String(sysErr.message ?? "").slice(0, 160);
+      const procRes = await runner.browserToolCall(
+        taskId, "browser.processes", { action: "list" }, token, 60_000,
+      );
+      const procErr = procRes?.error ?? {};
+      sys.processesUnsupportedOk = procRes?.status === "failed" && procErr.code === "proto.unsupported";
+      evidence.note(`system/processes → ${JSON.stringify(sys).slice(0, 300)}`);
+      results.systemProcesses = {
+        ok: sys.memoryUnsupportedOk === true && sys.processesUnsupportedOk === true,
+        ...sys,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

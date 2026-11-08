@@ -322,6 +322,9 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.dnr": "page-text",
   // execute returns arbitrary page-world values — same egress class.
   "browser.userScripts": "page-text",
+  // process inventory embeds tab titles/urls — same egress class as
+  // tabs.list. browser.system stays unlisted: machine stats only.
+  "browser.processes": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -348,6 +351,8 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.notifications",
   "browser.dnr",
   "browser.userScripts",
+  "browser.system",
+  "browser.processes",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"

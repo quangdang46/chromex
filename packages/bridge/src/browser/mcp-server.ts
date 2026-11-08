@@ -996,6 +996,20 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       messaging: { type: "boolean", description: "configureWorld: expose messaging APIs in the world." },
     }),
   },
+  "browser.system": {
+    description:
+      "Machine-level resource stats for the browser's host (chrome.system) — observability for deciding when to discard tabs, warn about memory pressure, or explain slowdowns. args.action: 'memory' (default) returns {capacity, availableCapacity, percentUsed} via chrome.system.memory; 'cpu' returns {numOfProcessors, archName, modelName, features, temperatures, processors:[{usage}]} via chrome.system.cpu (per-processor user/kernel/idle/total cumulative times — compute deltas across calls for utilization); 'permission' returns {memory, cpu} granted booleans. Each op needs its own optional permission ('system.memory' / 'system.cpu') — ungranted → proto.unsupported with 'system.memory permission is not granted' / 'system.cpu permission is not granted'. Read-only, no page data. On playwright-isolated → proto.unsupported (no host hardware API).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["memory", "cpu", "permission"], description: "Operation (default memory)." },
+    }),
+  },
+  "browser.processes": {
+    description:
+      "Browser process inventory (chrome.processes) — the task-manager surface: every browser process (browser/renderer/gpu/utility/extension/service_worker/worker/...) with its type, osProcessId, cumulative cpu, and the tabs it hosts. Use it to find runaway renderers or map a hung tab to its process before acting (tab.discard/reload). args.action: 'list' (default) returns sanitized processes [{id, type, osProcessId?, cpu?, tabs:[{tabId, title, url}]}] — workers included, capped at 200 processes / 50 tabs per process; 'permission' returns the granted state. Requires the optional 'processes' permission — ungranted → proto.unsupported. Results carry tab titles/urls (page-text egress, same class as tabs.list). On playwright-isolated → proto.unsupported (no process table).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["list", "permission"], description: "Operation (default list)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
