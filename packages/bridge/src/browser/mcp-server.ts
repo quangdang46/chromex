@@ -911,6 +911,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
     }),
   },
+  "browser.privacy": {
+    description:
+      "Read and control Chrome's privacy settings (chrome.privacy) — the profile-wide privacy posture. args.setting names a setting as 'section.key': sections services|network|websites; keys include services.safeBrowsingEnabled, services.safeBrowsingExtendedReportingEnabled, services.autofillAddressEnabled, services.autofillCreditCardEnabled, services.passwordSavingEnabled, services.searchSuggestEnabled, services.spellingServiceEnabled, services.translationServiceEnabled, services.alternateErrorPagesEnabled, network.networkPredictionEnabled, network.webRTCIPHandlingPolicy (value: default|default_public_and_private_interfaces|default_public_interface_only|disable_non_proxied_udp), websites.doNotTrackEnabled, websites.referrersEnabled, websites.hyperlinkAuditingEnabled, websites.thirdPartyCookiesAllowed, websites.protectedContentEnabled, websites.adMeasurementEnabled, websites.fledgeEnabled, websites.relatedWebsiteSetsEnabled, websites.topicsEnabled. args.action: 'get' (default) — with args.setting returns {value, levelOfControl}, without it returns ALL settings; 'set' requires args.setting + args.value (boolean, or the IPHandlingPolicy enum for network.webRTCIPHandlingPolicy; the adMeasurement/fledge/relatedWebsiteSets/topics settings accept only false — Chrome cannot re-enable them); 'clear' resets args.setting (or every setting when omitted) to its default. args.scope optionally regular|incognito_session_only|off_the_record|span_incognito|regular_only. 'set'/'clear' ALWAYS require approval and are never task-eligible — they change privacy posture for every origin (e.g. weakening Safe Browsing or re-allowing third-party cookies). On chrome-extension requires the optional 'privacy' permission — ungranted → proto.unsupported; unknown/unavailable setting → proto.unsupported. On playwright-isolated → proto.unsupported (privacy settings are browser-global).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["get", "set", "clear"], description: "Operation (default get)." },
+      setting: { type: "string", description: "Setting key 'section.key' — e.g. 'services.safeBrowsingEnabled', 'websites.doNotTrackEnabled', 'network.webRTCIPHandlingPolicy'. Required for set; optional for get/clear (omitted = all settings)." },
+      value: { description: "set: boolean, or the IPHandlingPolicy enum string for network.webRTCIPHandlingPolicy." },
+      scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

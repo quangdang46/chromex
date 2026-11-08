@@ -357,6 +357,20 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.proxy" })).risk).toBe("read");
   });
 
+  test("browser.privacy: get is read, set/clear always approval", () => {
+    const get = classifyActionRisk(ctx({ action: "browser.privacy", privacyOp: "get" }));
+    expect(get.risk).toBe("read");
+    expect(get.needsApproval).toBe(false);
+    for (const op of ["set", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.privacy", privacyOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.privacy" })).risk).toBe("read");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

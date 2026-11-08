@@ -77,6 +77,9 @@ export interface ActionContext {
   /** browser.proxy sub-action — get reads the effective proxy config,
    *  set/clear reroute ALL browser traffic (external mutation). */
   proxyOp?: string;
+  /** browser.privacy sub-action — get reads privacy settings, set/clear
+   *  change the profile-wide privacy posture (external mutation). */
+  privacyOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -566,6 +569,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "proxy config read" });
+    }
+
+    case "browser.privacy": {
+      const op = ctx.privacyOp ?? "get";
+      if (op === "set" || op === "clear") {
+        // Privacy settings change the profile-wide posture for every
+        // origin — including weakening Safe Browsing or re-enabling
+        // third-party cookies. Always approval, never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "privacy setting change affects the whole profile",
+        });
+      }
+      return verdict("read", { reason: "privacy settings read" });
     }
 
     case "browser.page.caches": {

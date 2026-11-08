@@ -653,6 +653,97 @@ const toolHostHandler = createToolHostHandler({
         return { cleared: true };
       },
     },
+    privacy: {
+      // chrome.privacy.services|network|websites — optional "privacy"
+      // permission checked per call (runtime grant works without SW
+      // restart); Chrome hides the namespace while ungranted.
+      get: async (setting, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["privacy"] });
+        if (!granted) return "permission";
+        const privacy = chrome.privacy as unknown as Record<string, Record<string, unknown>> | undefined;
+        if (!privacy) return null;
+        const readOne = async (key: string) => {
+          const s = privacy[key.split(".")[0] ?? ""]?.[key.split(".")[1] ?? ""] as
+            | { get(d?: { scope?: string }): Promise<{ value?: unknown; levelOfControl?: string }> }
+            | undefined;
+          if (!s?.get) return null;
+          const r = await s.get({ ...(scope ? { scope } : {}) });
+          return { value: r?.value ?? null, ...(typeof r?.levelOfControl === "string" ? { levelOfControl: r.levelOfControl } : {}) };
+        };
+        if (setting !== undefined) {
+          const res = await readOne(setting);
+          return res === null ? null : { settings: { [setting]: res } };
+        }
+        const settings: Record<string, unknown> = {};
+        const errors: Record<string, string> = {};
+        const keys: string[] = [];
+        for (const [section, entries] of Object.entries(privacy)) {
+          if (typeof entries !== "object" || entries === null) continue;
+          for (const key of Object.keys(entries)) {
+            const candidate = entries[key] as { get?: unknown };
+            if (typeof candidate?.get === "function") keys.push(`${section}.${key}`);
+          }
+        }
+        await Promise.all(
+          keys.map(async (key) => {
+            try {
+              const res = await readOne(key);
+              if (res !== null) settings[key] = res;
+            } catch (e) {
+              errors[key] = e instanceof Error ? e.message : String(e);
+            }
+          }),
+        );
+        return { settings, ...(Object.keys(errors).length > 0 ? { errors } : {}) };
+      },
+      set: async (setting, value, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["privacy"] });
+        if (!granted) return "permission";
+        const [section, key] = setting.split(".");
+        const s = (chrome.privacy as unknown as Record<string, Record<string, unknown>> | undefined)?.[section ?? ""]?.[key ?? ""] as
+          | { set(d: { value: unknown; scope?: string }): Promise<void> }
+          | undefined;
+        if (!s?.set) return null;
+        await s.set({ value, ...(scope ? { scope } : {}) });
+        return { applied: true };
+      },
+      clear: async (setting, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["privacy"] });
+        if (!granted) return "permission";
+        const privacy = chrome.privacy as unknown as Record<string, Record<string, unknown>> | undefined;
+        if (!privacy) return null;
+        const clearOne = async (key: string) => {
+          const [section, name] = key.split(".");
+          const s = privacy[section ?? ""]?.[name ?? ""] as
+            | { clear(d?: { scope?: string }): Promise<void> }
+            | undefined;
+          if (!s?.clear) return false;
+          await s.clear({ ...(scope ? { scope } : {}) });
+          return true;
+        };
+        if (setting !== undefined) {
+          return (await clearOne(setting)) ? { cleared: true } : null;
+        }
+        const keys: string[] = [];
+        for (const [section, entries] of Object.entries(privacy)) {
+          if (typeof entries !== "object" || entries === null) continue;
+          for (const key of Object.keys(entries)) {
+            const candidate = entries[key] as { clear?: unknown };
+            if (typeof candidate?.clear === "function") keys.push(`${section}.${key}`);
+          }
+        }
+        let cleared = 0;
+        for (const key of keys) {
+          try {
+            if (await clearOne(key)) cleared += 1;
+          } catch {
+            // Per-setting failures (e.g. disable-only settings rejecting
+            // clear semantics) don't abort the rest — count honestly.
+          }
+        }
+        return { cleared: true, clearedCount: cleared, totalCount: keys.length };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

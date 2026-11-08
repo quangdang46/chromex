@@ -1534,6 +1534,93 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.privacy marshals get/set/clear + validates", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      privacy: {
+        get: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "get", args });
+          return { settings: { "websites.doNotTrackEnabled": { value: true, levelOfControl: "controlled_by_this_extension" } } };
+        }),
+        set: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "set", args });
+          return { applied: true };
+        }),
+        clear: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "clear", args });
+          return { cleared: true };
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    const getRes = (await h(req("browser.privacy", { setting: "websites.doNotTrackEnabled" }))) as {
+      settings: Record<string, { value: boolean }>;
+    };
+    expect(getRes.settings["websites.doNotTrackEnabled"].value).toBe(true);
+    expect(calls[0]).toEqual({ op: "get", args: ["websites.doNotTrackEnabled", undefined] });
+    // get-all passes undefined setting
+    await h(req("browser.privacy", {}));
+    expect(calls[1]).toEqual({ op: "get", args: [undefined, undefined] });
+    // set boolean
+    const setRes = (await h(req("browser.privacy", {
+      action: "set", setting: "websites.doNotTrackEnabled", value: false, scope: "regular",
+    }))) as { setting: string; applied: boolean };
+    expect(setRes.applied).toBe(true);
+    expect(calls[2]).toEqual({ op: "set", args: ["websites.doNotTrackEnabled", false, "regular"] });
+    // set webrtc enum
+    await h(req("browser.privacy", {
+      action: "set", setting: "network.webRTCIPHandlingPolicy", value: "disable_non_proxied_udp",
+    }));
+    expect(calls[3]).toEqual({ op: "set", args: ["network.webRTCIPHandlingPolicy", "disable_non_proxied_udp", undefined] });
+    // clear with and without setting
+    await h(req("browser.privacy", { action: "clear", setting: "services.safeBrowsingEnabled" }));
+    expect(calls[4]).toEqual({ op: "clear", args: ["services.safeBrowsingEnabled", undefined] });
+    await h(req("browser.privacy", { action: "clear" }));
+    expect(calls[5]).toEqual({ op: "clear", args: [undefined, undefined] });
+    // validation
+    await expect(h(req("browser.privacy", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { setting: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { setting: "websites.doNotTrackEnabled.extra" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { scope: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { action: "set" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { action: "set", setting: "websites.doNotTrackEnabled" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { action: "set", setting: "websites.doNotTrackEnabled", value: "yes" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { action: "set", setting: "network.webRTCIPHandlingPolicy", value: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.privacy", { action: "set", setting: "websites.adMeasurementEnabled", value: true })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      privacy: {
+        get: vi.fn(async () => "permission" as const),
+        set: vi.fn(async () => "permission" as const),
+        clear: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.privacy", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("privacy permission") });
+    // unknown setting → proto.unsupported
+    const dNull = deps({
+      privacy: {
+        get: vi.fn(async () => null),
+        set: vi.fn(async () => null),
+        clear: vi.fn(async () => null),
+      },
+    });
+    await expect(createToolHostHandler(dNull)(req("browser.privacy", { setting: "websites.nope" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("websites.nope") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.privacy", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

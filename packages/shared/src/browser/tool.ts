@@ -60,6 +60,7 @@ export type BrowserToolName =
   | "browser.siteSettings"
   | "browser.sessions"
   | "browser.proxy"
+  | "browser.privacy"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -119,6 +120,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.siteSettings",
   "browser.sessions",
   "browser.proxy",
+  "browser.privacy",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",

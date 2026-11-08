@@ -196,6 +196,14 @@ export interface ToolHostDeps {
     set(value: Record<string, unknown>, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
     clear(scope?: string): Promise<Record<string, unknown> | "permission" | null>;
   } | undefined;
+  /** chrome.privacy (browser.privacy) — profile-wide privacy settings.
+   *  "permission" → optional privacy permission not granted;
+   *  null → setting/API unavailable → proto.unsupported. */
+  privacy?: {
+    get(setting?: string, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
+    set(setting: string, value: unknown, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
+    clear(setting?: string, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -364,6 +372,7 @@ const SUPPORTED = new Set([
   "browser.siteSettings",
   "browser.sessions",
   "browser.proxy",
+  "browser.privacy",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2351,6 +2360,82 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "proxy control is not available on this host");
         }
         return { mode, value, ...(scope ? { scope } : {}), applied: true };
+      }
+      case "browser.privacy": {
+        // Not tab-scoped: chrome.privacy — profile-wide privacy posture.
+        // Optional "privacy" permission — ungranted → unsupported.
+        if (!deps.privacy) {
+          throw toolError("proto.unsupported", "privacy settings are not available on this host");
+        }
+        const action = str(args.action) ?? "get";
+        if (!["get", "set", "clear"].includes(action)) {
+          throw toolError("proto.invalid", "browser.privacy args.action must be get|set|clear");
+        }
+        const SCOPES = new Set(["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"]);
+        const scope = str(args.scope);
+        if (scope !== undefined && !SCOPES.has(scope)) {
+          throw toolError("proto.invalid", `browser.privacy args.scope must be one of ${[...SCOPES].join("|")}`);
+        }
+        const setting = str(args.setting);
+        if (setting !== undefined && !/^(services|network|websites)\.[A-Za-z][A-Za-z0-9]{0,63}$/.test(setting)) {
+          throw toolError("proto.invalid", "browser.privacy args.setting must be 'section.key' with section services|network|websites");
+        }
+        const sentinel = (res: unknown, what: string): never | Record<string, unknown> => {
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "privacy permission is not granted");
+          }
+          if (res === null) {
+            throw toolError(
+              "proto.unsupported",
+              setting !== undefined
+                ? `privacy setting '${setting}' is not available in this Chrome version`
+                : `${what} is not available on this host`,
+            );
+          }
+          return res as Record<string, unknown>;
+        };
+        if (action === "get") {
+          const res = sentinel(await deps.privacy.get(setting, scope), "privacy settings");
+          return { ...res, ...(scope ? { scope } : {}) };
+        }
+        if (action === "clear") {
+          const res = sentinel(await deps.privacy.clear(setting, scope), "privacy settings");
+          return { ...res, ...(setting ? { setting } : {}), ...(scope ? { scope } : {}) };
+        }
+        // set — value is boolean for every setting except
+        // network.webRTCIPHandlingPolicy (enum string).
+        if (setting === undefined) {
+          throw toolError("proto.invalid", "browser.privacy set requires args.setting");
+        }
+        const value = args.value;
+        if (setting === "network.webRTCIPHandlingPolicy") {
+          const WEBRTC = new Set([
+            "default",
+            "default_public_and_private_interfaces",
+            "default_public_interface_only",
+            "disable_non_proxied_udp",
+          ]);
+          if (typeof value !== "string" || !WEBRTC.has(value)) {
+            throw toolError(
+              "proto.invalid",
+              "browser.privacy network.webRTCIPHandlingPolicy value must be default|default_public_and_private_interfaces|default_public_interface_only|disable_non_proxied_udp",
+            );
+          }
+        } else if (typeof value !== "boolean") {
+          throw toolError("proto.invalid", "browser.privacy args.value must be boolean");
+        }
+        // Chrome documents these as disable-only — re-enabling throws.
+        const DISABLE_ONLY = new Set([
+          "websites.adMeasurementEnabled",
+          "websites.fledgeEnabled",
+          "websites.relatedWebsiteSetsEnabled",
+          "websites.topicsEnabled",
+        ]);
+        if (DISABLE_ONLY.has(setting) && value === true) {
+          throw toolError("proto.invalid", `browser.privacy ${setting} can only be disabled (value:false)`);
+        }
+        const res = sentinel(await deps.privacy.set(setting, value, scope), "privacy settings");
+        return { setting, value, ...res, ...(scope ? { scope } : {}) };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

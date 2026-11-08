@@ -335,6 +335,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.siteSettings",
   "browser.sessions",
   "browser.proxy",
+  "browser.privacy",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -466,6 +467,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.proxy"
       ? { proxyOp: typeof args.action === "string" ? args.action : "get" }
+      : {}),
+    ...(req.tool === "browser.privacy"
+      ? { privacyOp: typeof args.action === "string" ? args.action : "get" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

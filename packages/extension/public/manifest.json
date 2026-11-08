@@ -37,7 +37,8 @@
     "browsingData",
     "contentSettings",
     "sessions",
-    "proxy"
+    "proxy",
+    "privacy"
   ],
   "background": {
     "service_worker": "background.js",

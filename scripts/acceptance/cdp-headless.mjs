@@ -1157,6 +1157,26 @@ await runScenario(
         ...px,
       };
 
+      // --- privacy: optional "privacy" permission — ungranted → honest unsupported ---
+      let pv = {};
+      const pvRes = await runner.browserToolCall(
+        taskId, "browser.privacy", { action: "get" }, token, 60_000,
+      );
+      const pvErr = pvRes?.error ?? {};
+      pv.getUnsupportedOk = pvRes?.status === "failed" && pvErr.code === "proto.unsupported";
+      pv.msg = String(pvErr.message ?? "").slice(0, 160);
+      const pvSet = await runner.browserToolCall(
+        taskId, "browser.privacy",
+        { action: "set", setting: "websites.doNotTrackEnabled", value: true }, token, 60_000,
+      );
+      const pvSetErr = pvSet?.error ?? {};
+      pv.setUnsupportedOk = pvSet?.status === "failed" && pvSetErr.code === "proto.unsupported";
+      evidence.note(`privacy → ${JSON.stringify(pv).slice(0, 300)}`);
+      results.privacy = {
+        ok: pv.getUnsupportedOk === true && pv.setUnsupportedOk === true,
+        ...pv,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.
