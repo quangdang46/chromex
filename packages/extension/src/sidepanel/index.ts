@@ -23,6 +23,14 @@ import {
 } from "@codex-sidepanel/shared";
 
 import { shouldInterceptComposerDropdownOnEnter, shouldSubmitComposerOnKeydown } from "./composer-submit.js";
+import {
+  dequeueQueuedComposerMessage,
+  enqueueQueuedComposerMessage,
+  queuedComposerMessagesFor,
+  requeueQueuedComposerMessage,
+  removeQueuedComposerMessage,
+  type QueuedComposerMessage,
+} from "./composer-message-queue.js";
 import { createSubmittedComposerFileAttachmentState } from "./composer-attachment-submit.js";
 import { createPendingComposerDraftState, createRestoredComposerDraftState } from "./composer-draft.js";
 import { getDroppedFiles, hasComposerDropPayload } from "./composer-drop.js";
@@ -784,13 +792,6 @@ const conferenceModesByConversationId = new Map<string, ConversationConferenceMo
 const promptActivitiesByConversationId = new Map<string, PromptActivityState>();
 const activePromptUserMessageIdsByConversationId = new Map<string, string>();
 const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
-interface QueuedComposerMessage {
-  id: string;
-  text: string;
-  fileAttachments: UserFileAttachment[];
-  profileId: string | undefined;
-}
-const queuedComposerMessagesByConversationId = new Map<string, QueuedComposerMessage[]>();
 const queuedComposerFlushInFlight = new Set<string>();
 const streamingAssistantMessageIdsByConversationId = new Map<string, Set<string>>();
 const contextCompactionNoticeIdsByKey = new Map<string, string>();
@@ -14123,7 +14124,7 @@ function bindEvents(): void {
     button.addEventListener("click", () => {
       const id = button.dataset.queueRemove;
       if (id) {
-        removeQueuedComposerMessage(id);
+        removeQueuedComposerMessageForCurrentConversation(id);
       }
     });
   });
@@ -15303,21 +15304,13 @@ function renderQueuedComposerMessages(strings: ReturnType<typeof stringsForState
 }
 
 function queuedComposerMessagesForCurrentConversation(): QueuedComposerMessage[] {
-  if (!state.currentConversationId) return [];
-  return queuedComposerMessagesByConversationId.get(state.currentConversationId) ?? [];
+  return queuedComposerMessagesFor(state.currentConversationId);
 }
 
-function removeQueuedComposerMessage(id: string): void {
+function removeQueuedComposerMessageForCurrentConversation(id: string): void {
   const conversationId = state.currentConversationId;
   if (!conversationId) return;
-  const queue = queuedComposerMessagesByConversationId.get(conversationId);
-  if (!queue) return;
-  const next = queue.filter((item) => item.id !== id);
-  if (next.length > 0) {
-    queuedComposerMessagesByConversationId.set(conversationId, next);
-  } else {
-    queuedComposerMessagesByConversationId.delete(conversationId);
-  }
+  removeQueuedComposerMessage(conversationId, id);
   render();
 }
 
@@ -15327,11 +15320,7 @@ function removeQueuedComposerMessage(id: string): void {
 async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || state.activeTurn) return;
-  const queue = queuedComposerMessagesByConversationId.get(conversationId);
-  const next = queue?.shift();
-  if (!queue || queue.length === 0) {
-    queuedComposerMessagesByConversationId.delete(conversationId);
-  }
+  const next = dequeueQueuedComposerMessage(conversationId);
   if (!next) {
     render();
     return;
@@ -15339,8 +15328,7 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   queuedComposerFlushInFlight.add(conversationId);
   try {
     if (state.activeTurn) {
-      queue?.unshift(next);
-      if (queue) queuedComposerMessagesByConversationId.set(conversationId, queue);
+      requeueQueuedComposerMessage(conversationId, next);
       return;
     }
     state.fileAttachments = [...next.fileAttachments];
@@ -15455,14 +15443,12 @@ async function sendPrompt(
     // the queue delivers each message as its own prompt when the turn
     // completes (flushQueuedComposerMessage on turn.completed/failed).
     if (sendAsTurnSteer && isDirectComposerTextSend && conversationIdAtStart) {
-      const queue = queuedComposerMessagesByConversationId.get(conversationIdAtStart) ?? [];
-      queue.push({
+      enqueueQueuedComposerMessage(conversationIdAtStart, {
         id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         text: message,
         fileAttachments: [...state.fileAttachments],
         profileId: activeProfileId,
       });
-      queuedComposerMessagesByConversationId.set(conversationIdAtStart, queue);
       state.composerDraft = "";
       state.fileAttachments = [];
       clearTransientComposerCommandPill();
