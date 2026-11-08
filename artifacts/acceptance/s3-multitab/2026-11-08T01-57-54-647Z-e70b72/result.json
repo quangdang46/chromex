@@ -1,0 +1,35 @@
+{
+  "scenario": "s3-multitab",
+  "runId": "2026-11-08T01-57-54-647Z-e70b72",
+  "status": "PASS",
+  "summary": "two tasks held isolated tab scopes; cross-task tab access refused",
+  "durationMs": 5251,
+  "details": {
+    "tabA": 746804293,
+    "tabB": 746804294,
+    "ownOk": true,
+    "crossDenied": true,
+    "sawB": false,
+    "cross": {
+      "toolCallId": "rpc-mw76nfz1-kv5szm",
+      "tool": "browser.page.get",
+      "status": "failed",
+      "error": {
+        "code": "browser.not_in_scope",
+        "message": "tab 746804294 is outside this task's tab scope"
+      }
+    },
+    "getA": "completed",
+    "getB": "completed"
+  },
+  "notes": [
+    "[2026-11-08T01:57:58.237Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T01:57:58.244Z] taskA=01M6WE0VB00PQRW8B0S63AC0Y6 taskB=01M6WE0VB3EBB597EMHBV9S8J1",
+    "[2026-11-08T01:57:58.257Z] taskA tab.create → {\"toolCallId\":\"rpc-mw76nexw-yorsgn\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":746804293,\"tabId\":746804293,\"resolvedTabId\":746804293,\"id\":746804293,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+    "[2026-11-08T01:57:58.265Z] taskB tab.create → {\"toolCallId\":\"rpc-mw76ney9-fes7xs\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":746804294,\"tabId\":746804294,\"resolvedTabId\":746804294,\"id\":746804294,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+    "[2026-11-08T01:57:58.266Z] tabA=746804293 tabB=746804294",
+    "[2026-11-08T01:57:59.581Z] A sees: {\"id\":746804293,\"tabId\":746804293,\"url\":\"http://127.0.0.1:61290/\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":746804293,\"windowId\":746804291,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":720,\"doc",
+    "[2026-11-08T01:57:59.581Z] B sees: {\"id\":746804294,\"tabId\":746804294,\"url\":\"http://127.0.0.1:61290/form\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":746804294,\"windowId\":746804291,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":720,",
+    "[2026-11-08T01:57:59.582Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw76nfz1-kv5szm\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.not_in_scope\",\"message\":\"tab 746804294 is outside this task's tab scope\"}}"
+  ]
+}

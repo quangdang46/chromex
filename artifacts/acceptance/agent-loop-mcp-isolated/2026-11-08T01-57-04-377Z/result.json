@@ -1,0 +1,11 @@
+{
+  "scenario": "agent-loop-mcp-isolated",
+  "status": "PASS",
+  "asserts": 16,
+  "approvals": [
+    {
+      "tool": "browser.tab.create",
+      "risk": "financial"
+    }
+  ]
+}
