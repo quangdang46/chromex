@@ -5297,6 +5297,49 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.unroute", { tabId: 523, routeId: "nope" }))).resolves.toMatchObject({ removed: 0 });
   });
 
+  test("page.route intercepts OOPIF frame-target requests", async () => {
+    const tabCdp = fakeCdp();
+    const frameCdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(525, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 9, url: "https://ads.example.com/widget", parentFrameId: 0 },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "tab-525", type: "page", url: "https://x/" },
+        { id: "tgt-oopif", type: "iframe", url: "https://ads.example.com/widget" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    await h(req("browser.page.route", {
+      tabId: 525, match: "/api/charge", action: "abort",
+    }));
+    // Fetch.enable must land on BOTH the tab session and the OOPIF target
+    expect(tabCdp.sent.some((s) => s.method === "Fetch.enable")).toBe(true);
+    expect(frameCdp.sent.some((s) => s.method === "Fetch.enable")).toBe(true);
+    // paused request inside the OOPIF → failRequest answered on the FRAME session
+    frameCdp.fire("Fetch.requestPaused", {
+      requestId: "fr1", request: { url: "https://ads.example.com/api/charge" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(frameCdp.sent.some(
+      (s) => s.method === "Fetch.failRequest" && s.params?.requestId === "fr1",
+    )).toBe(true);
+    expect(tabCdp.sent.some((s) => s.method === "Fetch.failRequest")).toBe(false);
+    // non-matching OOPIF request → continueRequest on the frame session
+    frameCdp.fire("Fetch.requestPaused", {
+      requestId: "fr2", request: { url: "https://ads.example.com/other.js" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(frameCdp.sent.some(
+      (s) => s.method === "Fetch.continueRequest" && s.params?.requestId === "fr2",
+    )).toBe(true);
+    // unroute-all releases the frame tap too
+    await h(req("browser.page.unroute", { tabId: 525 }));
+    expect(frameCdp.sent.some((s) => s.method === "Fetch.disable")).toBe(true);
+  });
+
   test("page.webSocket captures connections and frames via the tap", async () => {
     const cdp = fakeCdp({
       "Network.getResponseBody": () => ({ body: "e30=", base64Encoded: true }),

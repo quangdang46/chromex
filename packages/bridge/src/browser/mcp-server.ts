@@ -656,7 +656,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.route": {
     description:
-      "Register a network interception rule on the task's tab: requests whose URL contains args.match are fulfilled with the supplied status/headers/body instead of hitting the network — API mocking, edge-case injection, offline testing. Only requests made AFTER registration are intercepted; rules are tab-scoped, first match wins, max 50 per tab, and do NOT survive a service-worker restart (on playwright-isolated they die with the page/context). Non-matching requests pass through untouched. Always requires approval: fulfilled content is injected into the page. body is a UTF-8 string (≤256KiB).",
+      "Register a network interception rule on the task's tab: requests whose URL contains args.match are fulfilled with the supplied status/headers/body instead of hitting the network — API mocking, edge-case injection, offline testing. Rules apply to out-of-process iframe traffic too (each OOPIF target gets its own Fetch tap). Only requests made AFTER registration are intercepted; rules are tab-scoped, first match wins, max 50 per tab, and do NOT survive a service-worker restart (on playwright-isolated they die with the page/context). Non-matching requests pass through untouched. Always requires approval: fulfilled content is injected into the page. body is a UTF-8 string (≤256KiB).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,

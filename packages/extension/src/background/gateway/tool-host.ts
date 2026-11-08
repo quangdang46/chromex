@@ -1030,6 +1030,12 @@ export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
     routeHolds.delete(tabId);
     for (const un of hold.unsubs) un();
     await hold.session.send("Fetch.disable").catch(() => {});
+    for (const f of hold.frames.values()) {
+      for (const un of f.unsubs) un();
+      await f.session.send("Fetch.disable").catch(() => {});
+      await f.release?.().catch(() => {});
+    }
+    hold.frames.clear();
     await hold.release().catch(() => {});
   }
 }
@@ -7922,6 +7928,12 @@ interface RouteRule {
   requestBodyBase64?: string;
 }
 
+interface RouteFrameTap {
+  session: CdpSession;
+  unsubs: Array<() => void>;
+  release: (() => Promise<void>) | undefined;
+}
+
 interface RouteHold {
   session: CdpSession;
   release: () => Promise<void>;
@@ -7929,6 +7941,10 @@ interface RouteHold {
   /** session.on unsubscribe fns — chrome.debugger.onEvent listeners
    *  outlive the hold otherwise and stale rules keep firing. */
   unsubs: Array<() => void>;
+  /** OOPIF frame-target Fetch taps — the tab session's Fetch domain
+   *  cannot intercept out-of-process iframe requests (same blindness
+   *  the Network tap had; verified on CfT). */
+  frames: Map<string, RouteFrameTap>;
 }
 const routeHolds = new Map<number, RouteHold>();
 
@@ -7945,19 +7961,12 @@ function utf8ToBase64(text: string): string {
   return btoa(bin);
 }
 
-async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> {
-  const existing = routeHolds.get(tabId);
-  if (existing) return existing;
-  const { session, release } = await cdpAcquire(deps, tabId);
-  const hold: RouteHold = { session, release, rules: new Map(), unsubs: [] };
-  routeHolds.set(tabId, hold);
-  // Pause every request at Request stage; non-matching requests are
-  // continued untouched. Response-stage interception is not supported —
-  // fulfill replaces the whole response.
-  await session.send("Fetch.enable", {
-    patterns: [{ urlPattern: "*", requestStage: "Request" }],
-  });
-  hold.unsubs.push(session.on("Fetch.requestPaused", (p) => {
+/** Wire Fetch.requestPaused/authRequired on ONE session — the tab
+ *  session or an OOPIF frame target. Responses must go back through the
+ *  same session that paused the request. */
+function wireRouteFetch(hold: RouteHold, sess: CdpSession): Array<() => void> {
+  const unsubs: Array<() => void> = [];
+  unsubs.push(sess.on("Fetch.requestPaused", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const url = typeof (p.request as { url?: string } | undefined)?.url === "string"
       ? (p.request as { url: string }).url
@@ -7967,11 +7976,11 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
       : undefined;
     if (!requestId) return;
     if (!rule) {
-      void session.send("Fetch.continueRequest", { requestId }).catch(() => {});
+      void sess.send("Fetch.continueRequest", { requestId }).catch(() => {});
       return;
     }
     if (rule.action === "abort") {
-      void session
+      void sess
         .send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" })
         .catch(() => {});
       return;
@@ -7985,7 +7994,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
           rewritten = undefined;
         }
       }
-      void session
+      void sess
         .send("Fetch.continueRequest", {
           requestId,
           ...(rewritten ? { url: rewritten } : {}),
@@ -7998,7 +8007,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
       return;
     }
     const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
-    void session
+    void sess
       .send("Fetch.fulfillRequest", {
         requestId,
         responseCode: rule.status,
@@ -8007,17 +8016,79 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
       })
       .catch(() => {});
   }));
-  hold.unsubs.push(session.on("Fetch.authRequired", (p) => {
+  unsubs.push(sess.on("Fetch.authRequired", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (!requestId) return;
-    void session
+    void sess
       .send("Fetch.continueWithAuth", {
         requestId,
         authChallengeResponse: { response: "Default" },
       })
       .catch(() => {});
   }));
+  return unsubs;
+}
+
+async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> {
+  const existing = routeHolds.get(tabId);
+  if (existing) {
+    await syncOopifRouteTargets(deps, tabId, existing);
+    return existing;
+  }
+  const { session, release } = await cdpAcquire(deps, tabId);
+  const hold: RouteHold = { session, release, rules: new Map(), unsubs: [], frames: new Map() };
+  routeHolds.set(tabId, hold);
+  // Pause every request at Request stage; non-matching requests are
+  // continued untouched. Response-stage interception is not supported —
+  // fulfill replaces the whole response.
+  await session.send("Fetch.enable", {
+    patterns: [{ urlPattern: "*", requestStage: "Request" }],
+  });
+  hold.unsubs.push(...wireRouteFetch(hold, session));
+  await syncOopifRouteTargets(deps, tabId, hold);
   return hold;
+}
+
+/** Attach Fetch taps to this tab's out-of-process iframe targets so
+ *  route rules apply to their requests too. Same discovery/prune
+ *  lifecycle as the network tap; degrades to tab-only coverage when
+ *  frame-target deps are missing. */
+async function syncOopifRouteTargets(
+  deps: ToolHostDeps,
+  tabId: number,
+  hold: RouteHold,
+): Promise<void> {
+  if (!deps.acquireCdpTarget) return;
+  const matches = await matchOopifFrameTargets(deps, tabId);
+  if (!matches) return;
+  const liveTargetIds = new Set<string>();
+  for (const { target } of matches) {
+    liveTargetIds.add(target.id);
+    if (hold.frames.has(target.id)) continue;
+    try {
+      const fs = await deps.acquireCdpTarget(target.id);
+      await fs.send("Fetch.enable", {
+        patterns: [{ urlPattern: "*", requestStage: "Request" }],
+      });
+      const fUnsubs = wireRouteFetch(hold, fs);
+      hold.frames.set(target.id, {
+        session: fs,
+        unsubs: fUnsubs,
+        release: deps.releaseCdpTarget
+          ? () => deps.releaseCdpTarget!(target.id)
+          : undefined,
+      });
+    } catch {
+      // frame target raced away — skip; next sync retries
+    }
+  }
+  for (const [targetId, f] of hold.frames) {
+    if (liveTargetIds.has(targetId)) continue;
+    for (const un of f.unsubs) un();
+    await f.session.send("Fetch.disable").catch(() => {});
+    await f.release?.().catch(() => {});
+    hold.frames.delete(targetId);
+  }
 }
 
 async function releaseRouteHold(tabId: number): Promise<void> {
@@ -8026,6 +8097,12 @@ async function releaseRouteHold(tabId: number): Promise<void> {
   routeHolds.delete(tabId);
   for (const un of hold.unsubs) un();
   await hold.session.send("Fetch.disable").catch(() => {});
+  for (const f of hold.frames.values()) {
+    for (const un of f.unsubs) un();
+    await f.session.send("Fetch.disable").catch(() => {});
+    await f.release?.().catch(() => {});
+  }
+  hold.frames.clear();
   await hold.release().catch(() => {});
 }
 
@@ -8117,6 +8194,7 @@ async function removePageRoutes(
 ): Promise<Record<string, unknown>> {
   const hold = routeHolds.get(tabId);
   const routeId = str(args.routeId);
+  if (hold) await syncOopifRouteTargets(deps, tabId, hold);
   if (!hold || hold.rules.size === 0) {
     return { removed: 0, remaining: 0, resolvedTabId: tabId };
   }
@@ -8525,9 +8603,33 @@ async function ensureNetworkTap(
   return tap;
 }
 
+/** Match subframes to their OOPIF debugger targets by URL — the same
+ *  association rule as cdpAcquireForFrame (webNavigation frame URL ===
+ *  debugger target URL, type iframe/other). Returns null when
+ *  frame/target listing is unavailable or fails — callers must NOT
+ *  treat null as "no OOPIFs" (that would prune live taps). */
+async function matchOopifFrameTargets(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<Array<{ frame: { frameId?: number; parentFrameId?: number; url?: string }; target: { id: string; type?: string; url?: string } }> | null> {
+  if (!deps.listFrames || !deps.listCdpTargets) return null;
+  const frames = await deps.listFrames(tabId).catch(() => null);
+  const targets = await deps.listCdpTargets().catch(() => null);
+  if (!frames || !targets) return null;
+  const out: Array<{ frame: { frameId?: number; parentFrameId?: number; url?: string }; target: { id: string; type?: string; url?: string } }> = [];
+  for (const frame of frames) {
+    // main frame has no parentFrameId — subframes only
+    if (frame.parentFrameId === undefined) continue;
+    if (!frame.url) continue;
+    const target = targets.find(
+      (t) => (t.type === "iframe" || t.type === "other") && t.url === frame.url,
+    );
+    if (target) out.push({ frame, target });
+  }
+  return out;
+}
+
 /** Attach Network taps to this tab's out-of-process iframe targets.
- *  Frame→target association uses the same rule as cdpAcquireForFrame:
- *  webNavigation frame URL === debugger target URL (type iframe/other).
  *  Same-process subframes share the tab session and need no extra tap.
  *  Called on tap creation and on every responseBody/webSocket read so
  *  late-mounting OOPIFs get covered. Missing frame-target deps degrade
@@ -8537,21 +8639,11 @@ async function syncOopifNetTaps(
   tabId: number,
   tap: NetworkTap,
 ): Promise<void> {
-  if (!deps.listFrames || !deps.listCdpTargets || !deps.acquireCdpTarget) return;
-  // null on failure (not []) — an empty target list must never be
-  // mistaken for "all OOPIFs gone" and prune live frame taps.
-  const frames = await deps.listFrames(tabId).catch(() => null);
-  const targets = await deps.listCdpTargets().catch(() => null);
-  if (!frames || !targets) return;
+  if (!deps.acquireCdpTarget) return;
+  const matches = await matchOopifFrameTargets(deps, tabId);
+  if (!matches) return;
   const liveTargetIds = new Set<string>();
-  for (const frame of frames) {
-    // main frame has no parentFrameId — subframes only
-    if (frame.parentFrameId === undefined) continue;
-    if (!frame.url) continue;
-    const target = targets.find(
-      (t) => (t.type === "iframe" || t.type === "other") && t.url === frame.url,
-    );
-    if (!target) continue;
+  for (const { target } of matches) {
     liveTargetIds.add(target.id);
     if (tap.frames.has(target.id)) continue;
     try {

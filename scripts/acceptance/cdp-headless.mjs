@@ -1154,6 +1154,39 @@ await runScenario(
         ).catch(() => null);
         const tapReqs = (rbRes?.result ?? rbRes ?? {}).requests ?? [];
         cdp.oopifTapOk = tapReqs.some((r) => String(r.url).includes("localhost"));
+        // OOPIF route interception: an abort rule must reach requests
+        // fired INSIDE the cross-origin frame — the tab session's Fetch
+        // domain is blind to them, so the frame target needs its own
+        // Fetch.enable. Fresh pierce ref → evaluate fires the fetch in
+        // the frame's own context (awaitPromise resolves 'blocked' only
+        // when Fetch.failRequest actually kills it).
+        await runner.browserToolCall(
+          taskId, "browser.page.route",
+          { tabId: cdpFrameTabId, match: "oopif-route-probe", action: "abort" },
+          token, 60_000,
+        ).catch(() => null);
+        const pierceRef2 = await runner.browserToolCall(
+          taskId, "browser.page.pierce",
+          { tabId: cdpFrameTabId, frameId: cdpCross.frameId }, token, 60_000,
+        ).catch(() => null);
+        const cfb2 = (pierceRef2?.result ?? pierceRef2 ?? {}).elements ?? [];
+        const probeRef = cfb2.find((e) => e.id === "cfb")?.ref;
+        if (probeRef) {
+          const pev2 = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            {
+              tabId: cdpFrameTabId, ref: probeRef,
+              expression: "fetch('/api/oopif-route-probe').then(()=>'reached').catch(()=>'blocked')",
+            },
+            token, 60_000,
+          ).catch(() => null);
+          cdp.oopifRouteOk = String(pev2?.result?.value ?? pev2?.value ?? "") === "blocked";
+        } else {
+          cdp.oopifRouteOk = false;
+        }
+        await runner.browserToolCall(
+          taskId, "browser.page.unroute", { tabId: cdpFrameTabId }, token, 60_000,
+        ).catch(() => null);
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1165,7 +1198,7 @@ await runScenario(
         ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true &&
           cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
           cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
-          cdp.oopifNetOk === true && cdp.oopifTapOk === true,
+          cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true,
         ...cdp,
       };
 

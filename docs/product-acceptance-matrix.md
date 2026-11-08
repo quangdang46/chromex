@@ -56,7 +56,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   verified headless (`cdp-headless`: aria AX snapshot, trusted click,
   JS dialog accept, setInputFiles by path, responseBody tap+get
   (per-OOPIF-target Network taps — `cdp-headless` `oopifNetOk` +
-  `oopifTapOk` PASS), webSocket frame capture, route/unroute fulfill+abort+modify+restore; see
+  `oopifTapOk` PASS), webSocket frame capture, route/unroute
+  fulfill+abort+modify+restore (per-OOPIF-target Fetch taps —
+  `cdp-headless` `oopifRouteOk` PASS: abort rule kills a fetch fired
+  inside the cross-origin iframe); see
   docs/adr/debugger-tier.md). Trusted paths now cover click, press,
   type, fill, hover and drag — including inside same-origin and
   cross-origin iframes via the content-script geometry chain.
