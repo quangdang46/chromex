@@ -340,6 +340,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ...ELEMENT_TARGET_WITH_TAB,
       text: { type: "string", description: "Text to type (value is accepted as an alias)." },
       value: { type: "string", description: "Alias for text." },
+      trusted: { type: "boolean", description: "Dispatch per-character via CDP Input.dispatchKeyEvent so the page sees isTrusted=true (chrome-extension debugger tier, top frame only; ASCII printable + newline only — other characters fail proto.invalid). Default false = untrusted DOM typing." },
     }),
     expectable: true,
   },

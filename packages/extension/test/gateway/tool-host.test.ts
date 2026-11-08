@@ -1574,4 +1574,25 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.press", { tabId: 512, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.press", { tabId: 512, key: "Enter", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
+
+  test("type trusted dispatches per-char key events; rejects non-ASCII before dispatch", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(513, cdp));
+    const res = (await h(req("browser.page.type", {
+      tabId: 513, selector: "#k", text: "Hi!", trusted: true,
+    }))) as { ok: boolean; step?: { trusted?: boolean; chars?: number } };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    expect(res.step?.chars).toBe(3);
+    const downs = cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent" && s.params?.type === "keyDown");
+    // H→Shift+h, i→i, !→Shift+1 — three chars, six events total
+    expect(downs.map((s) => s.params?.key)).toEqual(["H", "i", "!"]);
+    expect(cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent")).toHaveLength(6);
+    // non-ASCII fails BEFORE any dispatch — no partial input
+    const before = cdp.sent.length;
+    await expect(h(req("browser.page.type", {
+      tabId: 513, selector: "#k", text: "oké", trusted: true,
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(cdp.sent.length).toBe(before);
+  });
 });

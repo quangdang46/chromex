@@ -1329,12 +1329,21 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           return await trustedPress(deps, tabId, args, expectCond);
         }
+        if (tool === "browser.page.type" && args.trusted === true) {
+          if (frameId !== 0) {
+            throw toolError(
+              "proto.unsupported",
+              "trusted type is only supported in the top frame (CDP Input is viewport-level)",
+            );
+          }
+          return await trustedType(deps, tabId, args, expectCond);
+        }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.
         if (args.trusted === true) {
           throw toolError(
             "proto.unsupported",
-            `args.trusted is not supported for ${tool} (trusted input exists only for click and press)`,
+            `args.trusted is not supported for ${tool} (trusted input exists only for click, press and type)`,
           );
         }
         const step = domStepFor(tool, args);
@@ -1953,11 +1962,56 @@ function cdpKeyDef(rawKey: string, modifierMask: number): { def: CdpKeyDef; modi
   };
 }
 
+/** Focus an element target through the content script before trusted
+ *  keyboard/mouse dispatch — focus() is not gesture-gated; the trusted
+ *  part is the CDP Input event itself. No target → currently focused
+ *  element/page. */
+async function cdpFocusTarget(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+  if (!hasTarget) return;
+  const loc = await cdpLocateElement(deps, tabId, args);
+  const focusRes = (await deps.sendToTab(tabId, {
+    type: "page.dom.perform",
+    steps: [{ action: "focus", selector: loc.selector, reason: "trusted input focus" }],
+  })) as BrowserDomActionResult;
+  const focusStep = focusRes?.results?.[0];
+  if (focusRes?.ok === false || focusStep?.ok === false) {
+    throw toolError(
+      typeof focusStep?.code === "string" && focusStep.code.startsWith("browser.")
+        ? focusStep.code
+        : "browser.action_failed",
+      focusStep?.message ?? focusRes?.summary ?? "could not focus the target element",
+    );
+  }
+}
+
+async function cdpDispatchKey(
+  session: CdpSession,
+  def: CdpKeyDef,
+  modifiers: number,
+): Promise<void> {
+  const params: Record<string, unknown> = { key: def.key, modifiers };
+  if (def.code !== undefined) params.code = def.code;
+  if (def.vk !== undefined) params.windowsVirtualKeyCode = def.vk;
+  if (def.text !== undefined) params.text = def.text;
+  await session.send("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+  await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
+}
+
+function cdpModifiersMask(args: Record<string, unknown>): number {
+  const modifiers = Array.isArray(args.modifiers)
+    ? args.modifiers.filter((m): m is string => typeof m === "string")
+    : [];
+  return modifiers.reduce((mask, m) => mask | (CDP_MODIFIERS[m] ?? 0), 0);
+}
+
 /** browser.page.press args.trusted — Input.dispatchKeyEvent produces
- *  isTrusted=true key events. With an element target the element is
- *  focused first (focus() is not gesture-gated; the trusted part is the
- *  key event itself). No target → the currently focused element/page.
- *  Top frame only, same constraint as trustedClick. */
+ *  isTrusted=true key events. Top frame only, same constraint as
+ *  trustedClick. */
 async function trustedPress(
   deps: ToolHostDeps,
   tabId: number,
@@ -1966,11 +2020,7 @@ async function trustedPress(
 ): Promise<Record<string, unknown>> {
   const key = str(args.key);
   if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");
-  const modifiers = Array.isArray(args.modifiers)
-    ? args.modifiers.filter((m): m is string => typeof m === "string")
-    : [];
-  const modifierMask = modifiers.reduce((mask, m) => mask | (CDP_MODIFIERS[m] ?? 0), 0);
-  const resolved = cdpKeyDef(key, modifierMask);
+  const resolved = cdpKeyDef(key, cdpModifiersMask(args));
   if (!resolved) {
     throw toolError(
       "proto.invalid",
@@ -1978,36 +2028,11 @@ async function trustedPress(
     );
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
-
-  const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
-  if (hasTarget) {
-    const loc = await cdpLocateElement(deps, tabId, args);
-    const focusRes = (await deps.sendToTab(tabId, {
-      type: "page.dom.perform",
-      steps: [{ action: "focus", selector: loc.selector, reason: "trusted press focus" }],
-    })) as BrowserDomActionResult;
-    const focusStep = focusRes?.results?.[0];
-    if (focusRes?.ok === false || focusStep?.ok === false) {
-      throw toolError(
-        typeof focusStep?.code === "string" && focusStep.code.startsWith("browser.")
-          ? focusStep.code
-          : "browser.action_failed",
-        focusStep?.message ?? focusRes?.summary ?? "could not focus the press target element",
-      );
-    }
-  }
+  await cdpFocusTarget(deps, tabId, args);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
-    const params: Record<string, unknown> = {
-      key: resolved.def.key,
-      modifiers: resolved.modifiers,
-    };
-    if (resolved.def.code !== undefined) params.code = resolved.def.code;
-    if (resolved.def.vk !== undefined) params.windowsVirtualKeyCode = resolved.def.vk;
-    if (resolved.def.text !== undefined) params.text = resolved.def.text;
-    await session.send("Input.dispatchKeyEvent", { type: "keyDown", ...params });
-    await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
+    await cdpDispatchKey(session, resolved.def, resolved.modifiers);
   } finally {
     await release();
   }
@@ -2023,6 +2048,65 @@ async function trustedPress(
     ok: true,
     summary: `trusted press ${resolved.def.key}`,
     step: { action: "press", trusted: true, key: resolved.def.key, ok: true },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+/** browser.page.type args.trusted — per-character dispatchKeyEvent, the
+ *  trusted equivalent of pressSequentially. Every character is resolved
+ *  BEFORE any dispatch so an unsupported char fails without partial
+ *  input. ASCII printable + \n only; anything else is proto.invalid —
+ *  never a silent downgrade to untrusted events. */
+async function trustedType(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+): Promise<Record<string, unknown>> {
+  const text = str(args.text) ?? str(args.value);
+  if (text === undefined || text.length === 0) {
+    throw toolError("proto.invalid", "browser.page.type requires args.text");
+  }
+  const enter = CDP_NAMED_KEYS["enter"];
+  if (!enter) throw toolError("proto.invalid", "internal: Enter key definition missing");
+  const keys: Array<{ def: CdpKeyDef; modifiers: number }> = [];
+  for (const ch of text) {
+    const resolved = ch === "\n"
+      ? { def: enter, modifiers: 0 }
+      : cdpKeyDef(ch, 0);
+    if (!resolved) {
+      throw toolError(
+        "proto.invalid",
+        `browser.page.type trusted text contains '${ch}' which is outside the US-layout key table (ASCII printable + newline)`,
+      );
+    }
+    keys.push(resolved);
+  }
+  cdpRequired(deps);
+  await cdpFocusTarget(deps, tabId, args);
+
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    for (const k of keys) {
+      await cdpDispatchKey(session, k.def, k.modifiers);
+    }
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted type ${text.length} chars`,
+    step: { action: "type", trusted: true, chars: text.length, ok: true },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

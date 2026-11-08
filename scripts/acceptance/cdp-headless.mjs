@@ -6,7 +6,7 @@
 // (docs/adr/debugger-tier.md):
 //   - snapshot mode:"aria"  → Accessibility.getFullAXTree
 //   - click args.trusted     → Input.dispatchMouseEvent (isTrusted=true)
-//   - press args.trusted     → Input.dispatchKeyEvent (isTrusted=true)
+//   - press/type args.trusted → Input.dispatchKeyEvent (isTrusted=true)
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
@@ -163,6 +163,21 @@ await runScenario(
         trusted: outTrusted,
       };
 
+      // trusted type: per-char CDP key events insert real text
+      const typeRes = await runner.browserToolCall(
+        taskId, "browser.page.type",
+        { selector: "#k", text: "Hi!", trusted: true }, token, 60_000,
+      );
+      const typedValue = await page.locator("#k").inputValue();
+      const outAfterType = await page.locator("#out").textContent();
+      evidence.note(`trusted type → status=${typeRes?.status} value=${JSON.stringify(typedValue)} out=${outAfterType}`);
+      results.trustedType = {
+        ok: typeRes?.status === "completed" && typedValue === "Hi!" && /trusted:true/.test(outAfterType ?? ""),
+        status: typeRes?.status,
+        value: typedValue,
+        out: outAfterType,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
@@ -220,7 +235,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press (isTrusted=true vs false controls), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type (isTrusted=true vs false controls), JS dialog accept, setInputFiles by path, responseBody tap+get"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };
