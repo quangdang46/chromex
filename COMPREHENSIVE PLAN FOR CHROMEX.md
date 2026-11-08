@@ -1325,7 +1325,8 @@ export interface ActionContext {
 | `click` trên submit/send/post/publish/delete/confirm/pay, **hoặc** button thuộc form `method != GET`, **hoặc** `contextResolved=false` | `external_mutation` (**approval**) |
 | Origin thanh toán/auth **hoặc** `target.isPayment` | `financial` (**approval + config + không auto**) |
 | Ngoài tab scope / khác profile | **deny** |
-| `evaluate`, đọc cookie/localStorage, tải binary | **hard block** |
+| `evaluate` | ~~hard block~~ → **đã mở sau CDP tier**: mọi call = `external_mutation` approval (expression preview trong argsPreview), result = page-text egress; residual: JS đã duyệt vẫn có thể gây side-effect trong page (fetch…) ngoài tầm tool gate — chấp nhận có chủ đích, xem `docs/adr/debugger-tier.md` + `tool-server.ts` |
+| đọc cookie/localStorage (tool riêng), tải binary | **hard block** (evaluate đã cover cookie/localStorage dưới approval) |
 
 **Ba quy tắc bắt buộc (fail-closed):**
 
@@ -2431,7 +2432,7 @@ Mỗi PR: build/test/typecheck xanh; flag; test mới; `gatewayMode=off` không 
 3. Claude mechanism/version floor (P3-00).
 4. MCP tool naming (dotted vs snake) + stdio vs HTTP.
 5. Tool loop thay legacy planner hoàn toàn hay giữ deterministic cho một số flow.
-6. Playwright isolated scope (chỉ opt-in; có `upload`/`evaluate` không — mặc định không).
+6. Playwright isolated scope (chỉ opt-in; `upload`/`evaluate`/`emulate`(subset) đã có — evaluate luôn approval-gated).
 7. Retention defaults + event size caps.
 8. `profileId` multi-Chrome-profile UX (adopt task).
 9. Background turns/subagents (P2+).
@@ -2446,7 +2447,7 @@ Mỗi PR: build/test/typecheck xanh; flag; test mới; `gatewayMode=off` không 
 - Không xoá Playwright runtime/RPC/skill/UI/smoke khi chưa có ADR + test thay thế.
 - Không để model đổi backend hoặc tự chuyển profile/tab.
 - Không provider chạm Chrome API.
-- Không `browser.page.evaluate` cho agent MVP.
+- ~~Không `browser.page.evaluate` cho agent MVP.~~ → **superseded**: evaluate đã triển khai (MAIN world, `args.frameId` tới OOPIF), luôn cần approval — quyết định ghi trong `tool-server.ts`/`risk.ts`/`docs/product-acceptance-matrix.md`.
 - Không replay side effect; crash → `unknown`.
 - Không dùng `tabId` làm durable identity.
 - Không dùng `hostInstanceId` làm affinity key (phải dùng `browserInstanceId`).
