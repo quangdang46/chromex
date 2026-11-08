@@ -1,3 +1,5 @@
+import { collectOpenShadowRoots } from "./refs.js";
+
 const MAX_BODY_TEXT_LENGTH = 240_000;
 const MIN_USEFUL_TEXT_LENGTH = 24;
 
@@ -273,18 +275,6 @@ function querySelectorAllSafe(root: ParentNode, selector: string): Element[] {
   } catch {
     return [];
   }
-}
-
-function collectOpenShadowRoots(root: ParentNode): ShadowRoot[] {
-  const elements = Array.from(root.querySelectorAll("*"));
-  const shadowRoots: ShadowRoot[] = [];
-  for (const element of elements) {
-    if (!element.shadowRoot) {
-      continue;
-    }
-    shadowRoots.push(element.shadowRoot, ...collectOpenShadowRoots(element.shadowRoot));
-  }
-  return shadowRoots;
 }
 
 function visibleViewportArea(rect: DOMRect, windowRef: Window): number {

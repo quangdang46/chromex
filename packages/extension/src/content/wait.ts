@@ -8,6 +8,7 @@
  */
 
 import { isPointerReachableElement } from "./actions.js";
+import { querySelectorAllDeep } from "./refs.js";
 
 export interface PageWaitConditions {
   /** substring that must appear in the page's visible text */
@@ -48,7 +49,7 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
   if (conds.selector) {
     let found = false;
     try {
-      found = document.querySelector(conds.selector) !== null;
+      found = querySelectorAllDeep(conds.selector).length > 0;
     } catch {
       found = false; // invalid selector can never be satisfied
     }
@@ -57,7 +58,7 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
   if (conds.selectorGone) {
     let present = true;
     try {
-      present = document.querySelector(conds.selectorGone) !== null;
+      present = querySelectorAllDeep(conds.selectorGone).length > 0;
     } catch {
       // invalid selector: fail closed — the "gone" claim is unproven,
       // same as an unsatisfiable `selector` condition.
@@ -69,8 +70,9 @@ function conditionsMet(conds: Required<PageWaitConditions>): boolean {
   if (conds.visibleSelector) {
     let satisfied = false;
     try {
-      const el = document.querySelector(conds.visibleSelector);
-      satisfied = el instanceof HTMLElement && isPointerReachableElement(el);
+      satisfied = querySelectorAllDeep(conds.visibleSelector).some(
+        (el) => el instanceof HTMLElement && isPointerReachableElement(el),
+      );
     } catch {
       satisfied = false; // invalid selector can never be satisfied
     }

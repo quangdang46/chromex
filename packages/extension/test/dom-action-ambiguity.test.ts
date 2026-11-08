@@ -15,7 +15,7 @@ describe("DOM action target ambiguity (chromex-ykj)", () => {
     expect(refsSource).toContain("resolveDomActionTargetDetailed");
     expect(refsSource).toContain('"ambiguous"');
     // selector and label paths must count ALL matches, not first-match
-    expect(refsSource).toContain("querySelectorAll(step.selector)");
+    expect(refsSource).toContain("querySelectorAllDeep(step.selector)");
     expect(refsSource).toContain("collectInteractiveElements().filter");
   });
 

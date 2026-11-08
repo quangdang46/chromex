@@ -1528,12 +1528,24 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
   });
 
   test("page.setInputFiles sets files via DOM.setFileInputFiles", async () => {
+    // The content script marks the resolved element; the pierced DOM
+    // tree is searched for that marker (works across shadow boundaries).
+    let marker: string | undefined;
     const cdp = fakeCdp({
-      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
-      "DOM.querySelector": () => ({ nodeId: 42 }),
+      "DOM.getDocument": () => ({
+        root: { nodeId: 42, attributes: ["data-chromex-ftp", marker ?? ""] },
+      }),
       "DOM.setFileInputFiles": () => ({}),
     });
-    const h = createToolHostHandler(cdpDeps(507, cdp));
+    const h = createToolHostHandler(cdpDeps(507, cdp, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.mark") {
+          if (typeof message.value === "string") marker = message.value;
+          return { found: true };
+        }
+        return { ok: true };
+      }),
+    }));
     const res = (await h(req("browser.page.setInputFiles", {
       tabId: 507,
       selector: "input[type=file]",
@@ -1608,12 +1620,14 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
   });
 
   test("page.setInputFiles falls back to the OOPIF frame target", async () => {
+    let marker: string | undefined;
     const tabCdp = fakeCdp({
       "DOM.getDocument": () => ({ root: { nodeId: 1 } }), // pierced tree: no marker
     });
     const frameCdp = fakeCdp({
-      "DOM.getDocument": () => ({ root: { nodeId: 7 } }),
-      "DOM.querySelector": () => ({ nodeId: 77 }),
+      "DOM.getDocument": () => ({
+        root: { nodeId: 7, attributes: ["data-chromex-ftp", marker ?? ""] },
+      }),
       "DOM.setFileInputFiles": () => ({}),
     });
     const h = createToolHostHandler(cdpDeps(511, tabCdp, {
@@ -1628,7 +1642,10 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
       releaseCdpTarget: vi.fn(async () => {}),
       sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
-        if (message.type === "page.dom.mark") return { found: true };
+        if (message.type === "page.dom.mark") {
+          if (typeof message.value === "string") marker = message.value;
+          return { found: true };
+        }
         if (message.type === "page.dom.locate") {
           return { found: true, x: 1, y: 2, width: 3, height: 4, selector: "input[type=file]", tagName: "input", visible: true };
         }
@@ -1643,7 +1660,7 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     }))) as { ok: boolean };
     expect(res.ok).toBe(true);
     const set = frameCdp.sent.find((s) => s.method === "DOM.setFileInputFiles");
-    expect(set?.params).toMatchObject({ nodeId: 77, files: ["/tmp/up.png"] });
+    expect(set?.params).toMatchObject({ nodeId: 7, files: ["/tmp/up.png"] });
     // the tab session must NOT get a second setFileInputFiles
     expect(tabCdp.sent.filter((s) => s.method === "DOM.setFileInputFiles")).toHaveLength(0);
   });

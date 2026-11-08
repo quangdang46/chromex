@@ -23,6 +23,8 @@ import {
   getElementLabel,
   isDomActionElementVisible,
   isTextEntryCandidate,
+  querySelectorAllDeep,
+  querySelectorDeep,
   resolveDomActionTargetDetailed,
   safeRemoveElement,
   setNativeTextControlValue,
@@ -201,7 +203,7 @@ function chromexRuntimeMessageListener(
     let el: Element | null = null;
     if (selector) {
       try {
-        el = document.querySelector(selector);
+        el = querySelectorDeep(selector);
       } catch {
         sendResponse({ text: "", truncated: false, url: window.location.href, title: document.title, error: "invalid selector" });
         return false;
@@ -811,9 +813,9 @@ async function collectPageProbe() {
       images,
       adapterPayload,
       privacyFlags: {
-        containsSensitiveFormData: Boolean(
-          document.querySelector('input[type="password"], input[autocomplete="cc-number"], textarea'),
-        ),
+        containsSensitiveFormData: querySelectorAllDeep(
+          'input[type="password"], input[autocomplete="cc-number"], textarea',
+        ).length > 0,
         userConsentedToHistory: false,
       },
     },

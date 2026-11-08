@@ -291,6 +291,94 @@ try {
   );
   await sub.page.close();
 
+  // ── Loop 10: open shadow DOM — snapshot/click/fill/find/wait must
+  //  pierce open roots (incl. nested); closed roots stay honestly
+  //  unreachable. ────────────────────────────────────────────────
+  const sh = await openWithContent("/shadow");
+  const shSnap = await sh.send({ type: "page.dom.snapshot" });
+  const shSnapText = JSON.stringify(shSnap ?? {});
+  assert(shSnapText.includes("Shadow Button"), "snapshot surfaces open-shadow button");
+  assert(shSnapText.includes("Nested Shadow Button"), "snapshot surfaces nested-shadow button");
+
+  const shClick = await sh.send(
+    perform([{ action: "click", label: "Shadow Button", reason: "e2e" }]),
+  );
+  assert(shClick?.ok === true, `click by label reaches open-shadow button (${shClick?.summary})`);
+  const shOut1 = await sh.send({ type: "page.extract", selector: "#out" });
+  assert(
+    String(shOut1?.text ?? "").includes("shadow-clicked"),
+    `shadow click fired the page handler (got "${shOut1?.text}")`,
+  );
+
+  const shNested = await sh.send(
+    perform([{ action: "click", label: "Nested Shadow Button", reason: "e2e" }]),
+  );
+  assert(shNested?.ok === true, `click reaches nested-shadow button (${shNested?.summary})`);
+  const shOut2 = await sh.send({ type: "page.extract", selector: "#out" });
+  assert(
+    String(shOut2?.text ?? "").includes("nested-clicked"),
+    `nested shadow click fired the page handler (got "${shOut2?.text}")`,
+  );
+
+  const shFill = await sh.send(
+    perform([{ action: "fill", selector: "#sin", value: "shadow-typed", reason: "e2e" }]),
+  );
+  assert(shFill?.ok === true, `fill reaches open-shadow input (${shFill?.summary})`);
+  const shVal = await sh.page.evaluate(() =>
+    document.getElementById("host")?.shadowRoot?.getElementById("sin")?.value,
+  );
+  assert(shVal === "shadow-typed", `shadow input holds the typed value (got "${shVal}")`);
+
+  const shExtract = await sh.send({ type: "page.extract", selector: "#stext" });
+  assert(
+    String(shExtract?.text ?? "").includes("shadow-secret-text"),
+    `extract reads open-shadow content (got "${shExtract?.text}")`,
+  );
+
+  const shFind = await sh.send({ type: "page.dom.find", text: "shadow-secret-text" });
+  assert(
+    Array.isArray(shFind?.matches) && shFind.matches.length > 0,
+    `page.dom.find scans open shadow trees (${shFind?.matches?.length} matches)`,
+  );
+
+  const shWaitGone = await sh.page.evaluate(() => {
+    document.getElementById("host")?.shadowRoot?.getElementById("stext")?.remove();
+  });
+  void shWaitGone;
+  const shGone = await sh.send({ type: "page.dom.wait", selectorGone: "#stext", timeoutMs: 5000 });
+  assert(shGone?.ok === true, "selectorGone sees open-shadow removal");
+  const shVis = await sh.send({ type: "page.dom.wait", visibleSelector: "#sin", timeoutMs: 3000 });
+  assert(shVis?.ok === true, "visibleSelector sees open-shadow input");
+
+  const shDesc = await sh.send({ type: "page.dom.describe", selector: "#sbtn" });
+  assert(
+    shDesc?.found === true && shDesc?.label === "Shadow Button",
+    `page.dom.describe resolves shadow target facts (got "${shDesc?.label}")`,
+  );
+  const { found: _shFound, ...shFacts } = shDesc ?? {};
+  const shBound = await sh.send(
+    perform([{ action: "click", selector: "#sbtn", expectedTarget: shFacts, reason: "e2e" }]),
+  );
+  assert(shBound?.ok === true, `expectedTarget binding works on shadow elements (${shBound?.summary})`);
+
+  const shClosed = await sh.send(
+    perform([{ action: "click", label: "Closed Shadow Button", reason: "e2e" }]),
+  );
+  const shClosedStep = (shClosed?.results ?? [])[0];
+  assert(
+    shClosed?.ok === false &&
+      (String(shClosedStep?.code ?? "").includes("not_found") ||
+        String(shClosedStep?.message ?? "").includes("not_found") ||
+        String(shClosedStep?.code ?? "").includes("element_not_found")),
+    `closed-shadow target fails honestly (got ${JSON.stringify(shClosedStep)})`,
+  );
+  const shOut3 = await sh.send({ type: "page.extract", selector: "#out" });
+  assert(
+    !String(shOut3?.text ?? "").includes("closed-fired"),
+    "closed-shadow click never reached the page handler",
+  );
+  await sh.page.close();
+
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(
     join(ARTIFACT_DIR, "result.json"),

@@ -36,6 +36,53 @@ export function waitForDomActionTick(): Promise<void> {
   });
 }
 
+/** Open shadow roots under `root`, depth-first (nested shadow roots
+ *  included). Closed shadow roots are unreachable by design — agents
+ *  get an honest "not found" there. */
+export function collectOpenShadowRoots(root: ParentNode = document): ShadowRoot[] {
+  const roots: ShadowRoot[] = [];
+  const walk = (scope: ParentNode) => {
+    // A scoped root can itself be a shadow host — querySelectorAll("*")
+    // only yields descendants, so check the scope element explicitly.
+    if (scope instanceof Element && scope.shadowRoot) {
+      roots.push(scope.shadowRoot);
+      walk(scope.shadowRoot);
+    }
+    for (const el of Array.from(scope.querySelectorAll("*"))) {
+      const sr = (el as HTMLElement).shadowRoot;
+      if (sr) {
+        roots.push(sr);
+        walk(sr);
+      }
+    }
+  };
+  walk(root);
+  return roots;
+}
+
+/** querySelectorAll across `root` AND every open shadow root beneath
+ *  it. Shadow-DOM apps (YouTube, Google surfaces, Lit/web-component
+ *  UIs) are invisible to plain querySelectorAll — snapshot, actions
+ *  and waits all resolve through this so the agent sees the same DOM
+ *  a user does. Selector syntax errors propagate like the native API. */
+export function querySelectorAllDeep<E extends Element = Element>(
+  selector: string,
+  root: ParentNode = document,
+): E[] {
+  const out: E[] = Array.from(root.querySelectorAll<E>(selector));
+  for (const sr of collectOpenShadowRoots(root)) {
+    out.push(...Array.from(sr.querySelectorAll<E>(selector)));
+  }
+  return out;
+}
+
+export function querySelectorDeep<E extends Element = Element>(
+  selector: string,
+  root: ParentNode = document,
+): E | null {
+  return querySelectorAllDeep<E>(selector, root)[0] ?? null;
+}
+
 
 export function collectInteractiveElements(): HTMLElement[] {
   const selectors = [
@@ -68,7 +115,7 @@ export function collectInteractiveElements(): HTMLElement[] {
     "[tabindex]",
   ];
 
-  return Array.from(document.querySelectorAll<HTMLElement>(selectors.join(",")))
+  return querySelectorAllDeep<HTMLElement>(selectors.join(","))
     .filter((element) => isDomActionElementVisible(element) && !isDomActionElementDisabled(element))
     .sort((left, right) => {
       const leftRect = left.getBoundingClientRect();
@@ -95,7 +142,7 @@ export function resolveDomActionTargetDetailed(step: BrowserDomActionStep): DomA
     return element ? { status: "resolved", element } : { status: "none" };
   }
   if (step.selector) {
-    const matches = Array.from(document.querySelectorAll(step.selector)).filter(
+    const matches = querySelectorAllDeep(step.selector).filter(
       (el): el is HTMLElement => el instanceof HTMLElement,
     );
     if (matches.length > 1) {
@@ -126,8 +173,10 @@ export function resolveDirectEditableTarget(element: HTMLElement): HTMLElement |
   if (isTextEntryCandidate(element)) {
     return element;
   }
-  const descendant = Array.from(element.querySelectorAll<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(EDITOR_LIKE_SELECTOR))
-    .find((candidate) => isTextEntryCandidate(candidate) && isDomActionElementVisible(candidate));
+  const descendant = querySelectorAllDeep<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(
+    EDITOR_LIKE_SELECTOR,
+    element,
+  ).find((candidate) => isTextEntryCandidate(candidate) && isDomActionElementVisible(candidate));
   return descendant ?? null;
 }
 
@@ -174,7 +223,7 @@ export function findNewEditableTarget(
 
 
 export function collectVisibleEditableTargets(): Array<HTMLElement | HTMLInputElement | HTMLTextAreaElement> {
-  return Array.from(document.querySelectorAll<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(EDITOR_LIKE_SELECTOR))
+  return querySelectorAllDeep<HTMLElement | HTMLInputElement | HTMLTextAreaElement>(EDITOR_LIKE_SELECTOR)
     .filter((candidate) => isTextEntryCandidate(candidate) && isDomActionElementVisible(candidate));
 }
 

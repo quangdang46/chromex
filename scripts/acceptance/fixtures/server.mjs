@@ -114,6 +114,37 @@ const PAGES = {
 <h1>Popup Target</h1>
 </body></html>`,
 
+  // open shadow DOM: an open root with a button/input/text plus a nested
+  // open root, and a closed root whose control must stay unreachable —
+  // honest element_not_found, never a silent light-DOM fallback.
+  "/shadow": `<!doctype html><html><body>
+<h1>Shadow Host Page</h1>
+<div id="host"></div>
+<div id="closed-host"></div>
+<p id="out">idle</p>
+<script>
+(function(){
+  var out = function(v){ document.getElementById('out').textContent = v; };
+  var host = document.getElementById('host');
+  var root = host.attachShadow({mode:'open'});
+  root.innerHTML =
+    '<button id="sbtn">Shadow Button</button>' +
+    '<input id="sin" placeholder="shadow-input">' +
+    '<p id="stext">shadow-secret-text</p>' +
+    '<div id="inner-host"></div>';
+  root.getElementById('sbtn').addEventListener('click', function(){ out('shadow-clicked'); });
+  var inner = root.getElementById('inner-host');
+  var innerRoot = inner.attachShadow({mode:'open'});
+  innerRoot.innerHTML = '<button id="nested-btn">Nested Shadow Button</button>';
+  innerRoot.getElementById('nested-btn').addEventListener('click', function(){ out('nested-clicked'); });
+  var closed = document.getElementById('closed-host');
+  var croot = closed.attachShadow({mode:'closed'});
+  croot.innerHTML = '<button id="cbtn">Closed Shadow Button</button>';
+  croot.getElementById('cbtn').addEventListener('click', function(){ out('closed-fired'); });
+})();
+</script>
+</body></html>`,
+
   // S2/S6: deliberate bug — the "Fix" button throws and never updates status;
   // a broken inline handler references a missing function.
   "/buggy": `<!doctype html><html><head><title>Buggy Page</title></head><body>

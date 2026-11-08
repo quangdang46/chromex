@@ -9,6 +9,7 @@
 
 import {
   buildElementSelector,
+  collectOpenShadowRoots,
   normalizeDomActionText,
   registerDomActionElementRef,
 } from "./refs.js";
@@ -92,7 +93,12 @@ export function findInPage(opts: PageFindOptions): PageFindResult {
   }
   const limit = Math.min(Math.max(Math.floor(opts.limit ?? 50), 1), 200);
   const scope = resolveScope(opts.scopeSelector);
-  const candidates = scope.querySelectorAll("*");
+  // querySelectorAll does not cross shadow boundaries — scan every open
+  // shadow root under the scope too, or shadow-DOM apps look empty.
+  const candidates = [
+    ...Array.from(scope.querySelectorAll("*")),
+    ...collectOpenShadowRoots(scope).flatMap((sr) => Array.from(sr.querySelectorAll("*"))),
+  ];
   const scanned = Math.min(candidates.length, MAX_SCAN_ELEMENTS);
   const truncated = candidates.length > MAX_SCAN_ELEMENTS;
   const matches: PageFindMatch[] = [];

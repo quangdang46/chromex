@@ -1017,14 +1017,43 @@ export function isPointerReachableElement(element: HTMLElement): boolean {
  *  Returns true when the hit test cannot prove occlusion — off-viewport,
  *  zero-size, or no hit — so the gate only fires on a definitive
  *  "something else is on top". */
+/** elementFromPoint retargets shadow content to its host — descend
+ *  through open shadow roots so hit-testing sees the innermost element,
+ *  matching what a real pointer would hit. */
+function hitTestAtPoint(x: number, y: number): HTMLElement | null {
+  let hit = document.elementFromPoint(x, y) as HTMLElement | null;
+  for (let depth = 0; hit?.shadowRoot && depth < 16; depth++) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y) as HTMLElement | null;
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  return hit;
+}
+
+/** True when `ancestor` contains `node` in the composed tree — crosses
+ *  shadow boundaries via getRootNode().host, which Node.contains
+ *  deliberately does not. */
+function composedContains(ancestor: Element, node: Element | null): boolean {
+  for (
+    let cur: Element | null = node;
+    cur !== null;
+    cur = cur.parentElement ??
+      ((cur.getRootNode() as ShadowRoot).host as Element | undefined) ??
+      null
+  ) {
+    if (cur === ancestor) return true;
+  }
+  return false;
+}
+
 export function isPointerHitTarget(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
   if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return true;
-  const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+  const hit = hitTestAtPoint(x, y);
   if (!hit) return true;
-  return hit === element || element.contains(hit);
+  return hit === element || composedContains(element, hit);
 }
 
 /**
