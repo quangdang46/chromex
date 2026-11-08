@@ -734,7 +734,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             ? Math.min(Math.max(args.timeoutMs, 100), 15_000)
             : 10_000;
         let timer: ReturnType<typeof setTimeout> | undefined;
-        const res = (await Promise.race([
+        let res = (await Promise.race([
           deps.runInMainWorld!(tabId, chromexEvaluate as (...fnArgs: unknown[]) => unknown, [expression], [frameId]),
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(toolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs);
@@ -742,6 +742,43 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         ]).finally(() => clearTimeout(timer))) as
           | { ok?: boolean; value?: unknown; error?: string; truncated?: boolean }
           | undefined;
+        // Trusted Types fallback: sites like YouTube block string→script
+        // compilation in the page, so chrome.scripting's AsyncFunction
+        // constructor throws before the expression runs (no side effects
+        // — safe to retry). CDP Runtime.evaluate compiles in the
+        // inspector context, bypassing the page policy. Top frame only:
+        // Runtime.evaluate has no per-frame context without extra
+        // Page.createIsolatedWorld plumbing.
+        if (
+          res?.ok !== true &&
+          frameId === 0 &&
+          typeof res?.error === "string" &&
+          /trusted ?types?/i.test(res.error) &&
+          deps.acquireCdp &&
+          deps.releaseCdp
+        ) {
+          const { session, release } = await cdpAcquire(deps, tabId);
+          try {
+            const cdpRes = await session.send<{
+              result?: { value?: unknown };
+              exceptionDetails?: { text?: string; exception?: { description?: string } };
+            }>("Runtime.evaluate", {
+              expression: `(async()=>{ "use strict"; return (\n${expression}\n); })()`,
+              awaitPromise: true,
+              returnByValue: true,
+            });
+            const exc = cdpRes?.exceptionDetails;
+            if (exc) {
+              throw toolError(
+                "browser.action_failed",
+                `page evaluation failed: ${exc.exception?.description ?? exc.text ?? "page threw"}`,
+              );
+            }
+            res = { ok: true, value: cdpRes?.result?.value ?? null };
+          } finally {
+            await release().catch(() => {});
+          }
+        }
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `page evaluation failed: ${res?.error ?? "no result"}`);
         }
