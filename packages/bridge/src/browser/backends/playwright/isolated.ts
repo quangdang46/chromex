@@ -3094,6 +3094,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  per-page CDPSession cache (#emulationSession is just a cached
    *  session — the name predates this use). */
   async #cdp(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    if (args.targetId !== undefined && args.targetId !== null) {
+      throw protocolError(
+        "proto.unsupported",
+        "args.targetId is chrome-extension only — playwright-isolated has no worker debugger targets",
+      );
+    }
     const page = await this.#pageFor(taskId, args);
     const method = typeof args.method === "string" ? args.method : "";
     if (

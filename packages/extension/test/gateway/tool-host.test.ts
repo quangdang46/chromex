@@ -3744,6 +3744,78 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.cdp targetId reaches an owned service-worker target", async () => {
+    const tabCdp = fakeCdp({});
+    const swCdp = fakeCdp({
+      "Runtime.evaluate": () => ({ result: { type: "string", value: "ServiceWorkerGlobalScope" } }),
+    });
+    const acquireCdpTarget = vi.fn(async () => swCdp.session as never);
+    const h = createToolHostHandler(cdpDeps(520, tabCdp, {
+      listFrames: vi.fn(async () => [{ frameId: 0, url: "https://x/" }]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-page", type: "page", url: "https://x/" },
+        { id: "t-sw", type: "worker", url: "https://x/sw.js" },
+        { id: "t-foreign", type: "worker", url: "https://evil.test/sw.js" },
+      ]),
+      acquireCdpTarget,
+      releaseCdpTarget: vi.fn(async () => {}),
+      runInMainWorld: vi.fn(async () => ({
+        ok: true,
+        result: {
+          registrations: [{ scriptURL: "https://x/sw.js", scope: "https://x/" }],
+          controllerScriptURL: "https://x/sw.js",
+        },
+      })),
+    }));
+    const res = (await h(req("browser.page.cdp", {
+      tabId: 520, method: "Runtime.evaluate", targetId: "t-sw",
+      params: { expression: "self.constructor.name", returnByValue: true },
+    }))) as { ok: boolean; resolvedTargetId?: string; result?: { result?: { value?: string } } };
+    expect(res.ok).toBe(true);
+    expect(res.resolvedTargetId).toBe("t-sw");
+    expect(res.result?.result?.value).toBe("ServiceWorkerGlobalScope");
+    expect(acquireCdpTarget).toHaveBeenCalledWith("t-sw");
+    expect(swCdp.sent.map((s) => s.method)).toEqual(["Runtime.evaluate"]);
+    expect(tabCdp.sent).toHaveLength(0);
+    // page targets and foreign workers are refused
+    await expect(h(req("browser.page.cdp", { tabId: 520, method: "Page.x", targetId: "t-page" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.cdp", { tabId: 520, method: "Page.x", targetId: "t-foreign" })))
+      .rejects.toMatchObject({ code: "browser.not_in_scope" });
+    await expect(h(req("browser.page.cdp", { tabId: 520, method: "Page.x", targetId: "nope" })))
+      .rejects.toMatchObject({ code: "browser.not_found" });
+    await expect(h(req("browser.page.cdp", { tabId: 520, method: "Page.x", targetId: "t-sw", frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("page.cdp targetId → proto.unsupported without debugger deps", async () => {
+    const h = createToolHostHandler(cdpDeps(521, fakeCdp({})));
+    await expect(h(req("browser.page.cdp", { tabId: 521, method: "Page.x", targetId: "t1" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.serviceWorker list annotates targetId for attachable workers", async () => {
+    const d = deps({
+      runInMainWorld: vi.fn(async () => ({
+        ok: true,
+        result: {
+          registrations: [{ scope: "https://x/", scriptURL: "https://x/sw.js", state: "active", activeState: "activated" }],
+          count: 1,
+          controlled: true,
+          controllerScriptURL: "https://x/sw.js",
+        },
+      })),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-sw", type: "worker", url: "https://x/sw.js" },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.serviceWorker", { action: "list" }))) as {
+      registrations: Array<{ scriptURL?: string; targetId?: string }>;
+    };
+    expect(res.registrations[0]?.targetId).toBe("t-sw");
+  });
+
   test("page.coverage holds a Profiler session across start/stop", async () => {
     const cdp = fakeCdp({
       "Profiler.takePreciseCoverage": () => ({

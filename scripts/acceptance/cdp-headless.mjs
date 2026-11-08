@@ -978,6 +978,27 @@ await runScenario(
         sw.listOk = String(swReg?.scriptURL ?? "").endsWith("/sw.js") &&
           String(swReg?.scope ?? "").startsWith(fixture.url("/"));
         sw.stateOk = ["active", "waiting", "installing"].includes(swReg?.state);
+        // targetId discovery + CDP inside the worker: an ACTIVE service
+        // worker is its own debugger target — page.cdp {targetId} must
+        // reach it and Runtime.evaluate must see the SW global scope.
+        // (waiting/installing workers may not be live targets — the
+        // annotation is honestly absent then.)
+        if (typeof swReg?.targetId === "string" && swReg.targetId) {
+          const swCdp = await runner.browserToolCall(
+            taskId, "browser.page.cdp",
+            {
+              tabId: swTabId, targetId: swReg.targetId, method: "Runtime.evaluate",
+              params: { expression: "self.constructor.name", returnByValue: true },
+            },
+            token, 60_000,
+          ).catch(() => null);
+          const swCdpVal = (swCdp?.result ?? swCdp ?? {}).result?.result?.value;
+          sw.targetCdpOk = (swCdp?.result ?? swCdp ?? {}).ok === true &&
+            String(swCdpVal).includes("Worker");
+          sw.targetId = swReg.targetId;
+        } else {
+          sw.targetCdpOk = false;
+        }
         const swUpd = await runner.browserToolCall(
           taskId, "browser.page.serviceWorker",
           { tabId: swTabId, action: "update" }, token, 60_000,
@@ -1000,7 +1021,7 @@ await runScenario(
       }
       evidence.note(`serviceWorker → ${JSON.stringify(sw).slice(0, 300)}`);
       results.serviceWorker = {
-        ok: sw.listOk === true && sw.stateOk === true && sw.updOk === true && sw.unregOk === true && sw.emptyOk === true,
+        ok: sw.listOk === true && sw.stateOk === true && sw.updOk === true && sw.unregOk === true && sw.emptyOk === true && sw.targetCdpOk === true,
         ...sw,
       };
 

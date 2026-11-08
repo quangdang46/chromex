@@ -2683,7 +2683,28 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `serviceWorker op failed: ${res?.error ?? "no result"}`);
         }
-        return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+        const result = res.result as Record<string, unknown>;
+        // Annotate each registration with its debugger targetId when the
+        // worker is actually attachable — the discovery half of
+        // page.cdp {targetId} (service workers are separate CDP targets,
+        // not frames). Absent dep or no match → field omitted honestly.
+        if (action === "list" && deps.listCdpTargets) {
+          try {
+            const targets = await deps.listCdpTargets();
+            const byUrl = new Map(targets.map((t) => [t.url, t.id]));
+            const regs = Array.isArray(result.registrations) ? result.registrations : [];
+            for (const r of regs) {
+              const scriptURL = (r as { scriptURL?: unknown }).scriptURL;
+              if (typeof scriptURL === "string" && scriptURL.length > 0) {
+                const tid = byUrl.get(scriptURL);
+                if (tid) (r as Record<string, unknown>).targetId = tid;
+              }
+            }
+          } catch {
+            // target enumeration failed — list stays usable without ids
+          }
+        }
+        return { ...result, resolvedTabId: tabId };
       }
       case "browser.page.cdp": {
         // Raw CDP passthrough — the deepest protocol surface. One-shot
@@ -2718,9 +2739,50 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             throw toolError("proto.invalid", "browser.page.cdp args.params must be JSON-serializable ≤64KiB");
           }
         }
-        const acquired = frameId === 0
-          ? await cdpAcquire(deps, tabId)
-          : await cdpAcquireForFrame(deps, tabId, frameId);
+        // args.targetId reaches a NON-frame debugger target owned by
+        // this tab — service workers today (they are separate CDP
+        // targets, not frames). Ownership is proven by URL: the target
+        // must be a webNavigation frame of this tab or a service-worker
+        // scriptURL registered by it — page/background_page targets
+        // (other tabs, extension pages) are refused outright so a guessed
+        // id cannot escape tab scope.
+        const cdpTargetId = str(args.targetId);
+        let acquired: { session: CdpSession; release: () => Promise<void> };
+        let resolvedTargetId: string | undefined;
+        if (cdpTargetId !== undefined) {
+          if (frameId !== 0) {
+            throw toolError("proto.invalid", "browser.page.cdp args.targetId cannot combine with args.frameId");
+          }
+          if (cdpTargetId.length === 0 || cdpTargetId.length > 128) {
+            throw toolError("proto.invalid", "browser.page.cdp args.targetId must be 1-128 chars");
+          }
+          if (!deps.listCdpTargets || !deps.acquireCdpTarget || !deps.releaseCdpTarget) {
+            throw toolError("proto.unsupported", "cdp target access requires the debugger tier");
+          }
+          const targets = await deps.listCdpTargets();
+          const target = targets.find((t) => t.id === cdpTargetId);
+          if (!target) {
+            throw toolError("browser.not_found", `no debugger target ${cdpTargetId}`);
+          }
+          if (target.type === "page" || target.type === "background_page") {
+            throw toolError(
+              "proto.invalid",
+              "browser.page.cdp args.targetId must name a frame/worker sub-target, not a page target",
+            );
+          }
+          if (!(await cdpTargetOwnedByTab(deps, tabId, target.url))) {
+            throw toolError(
+              "browser.not_in_scope",
+              `debugger target ${cdpTargetId} does not belong to this tab`,
+            );
+          }
+          acquired = await cdpTargetAcquire(deps, cdpTargetId);
+          resolvedTargetId = cdpTargetId;
+        } else {
+          acquired = frameId === 0
+            ? await cdpAcquire(deps, tabId)
+            : await cdpAcquireForFrame(deps, tabId, frameId);
+        }
         const { session, release } = acquired;
         try {
           const result = await session.send(method, params);
@@ -2731,12 +2793,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               method, ok: true, result: null, omitted: true,
               resultBytes: bytes, resolvedTabId: tabId,
               ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
+              ...(resolvedTargetId ? { resolvedTargetId } : {}),
             };
           }
           return {
             method, ok: true, result: result ?? null,
             resultBytes: bytes, resolvedTabId: tabId,
             ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
+            ...(resolvedTargetId ? { resolvedTargetId } : {}),
           };
         } catch (e) {
           // CDP protocol errors are data, not transport failure — an
@@ -2746,6 +2810,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             error: { code: "cdp_error", message: String((e as Error)?.message ?? e).slice(0, 500) },
             resolvedTabId: tabId,
             ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
+            ...(resolvedTargetId ? { resolvedTargetId } : {}),
           };
         } finally {
           await release().catch(() => {});
@@ -8402,6 +8467,53 @@ async function cdpTargetAcquire(
     throw toolError("proto.unsupported", `debugger attach to frame target failed`);
   }
   return { session, release: () => deps.releaseCdpTarget!(targetId) };
+}
+
+/** Ownership proof for page.cdp {targetId}: the target's URL must be a
+ *  webNavigation frame of this tab (iframe/other targets) OR a
+ *  service-worker scriptURL registered by any of its frames. Anything
+ *  else — another tab's page, an extension target, an unrelated
+ *  worker — is out of scope. Missing deps degrade to "not owned"
+ *  (refusal), never to allowed. */
+async function cdpTargetOwnedByTab(
+  deps: ToolHostDeps,
+  tabId: number,
+  url: string,
+): Promise<boolean> {
+  if (!url) return false;
+  if (deps.listFrames) {
+    try {
+      const frames = await deps.listFrames(tabId);
+      if (frames.some((f) => f.url === url)) return true;
+    } catch {
+      // frame enumeration failed — fall through to SW check
+    }
+  }
+  if (deps.runInMainWorld) {
+    const fids = (await consoleFrameIds(deps, tabId)) ?? [0];
+    for (const fid of fids.slice(0, CONSOLE_MERGE_FRAME_CAP)) {
+      try {
+        const res = (await deps.runInMainWorld(
+          tabId,
+          chromexSwOp as (...fnArgs: unknown[]) => unknown,
+          ["list", ""],
+          [fid],
+        )) as {
+          result?: {
+            registrations?: Array<{ scriptURL?: unknown }>;
+            controllerScriptURL?: unknown;
+          };
+        } | undefined;
+        const urls = (res?.result?.registrations ?? [])
+          .map((r) => r.scriptURL)
+          .concat([res?.result?.controllerScriptURL]);
+        if (urls.includes(url)) return true;
+      } catch {
+        // frame gone or injection refused — try the next frame
+      }
+    }
+  }
+  return false;
 }
 
 async function setInputFiles(
