@@ -252,6 +252,9 @@ sr.innerHTML = \`
   <button id="inner" style="width:140px;height:44px">closed action</button>
   <input id="field" placeholder="closed-input" style="width:200px;height:30px">
   <input id="upload" type="file" style="width:200px;height:30px">
+  <select id="choice" style="width:200px;height:30px"><option value="a">A</option><option value="b">B</option></select>
+  <div id="dsrc" role="button" aria-label="drag-src" style="width:60px;height:30px;background:#cdf;margin-top:8px">src</div>
+  <div id="ddst" role="button" aria-label="drag-dst" style="width:60px;height:30px;background:#fcd">dst</div>
 \`;
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
@@ -261,6 +264,12 @@ sr.getElementById('field').addEventListener('input', (e) => {
 });
 sr.getElementById('upload').addEventListener('change', (e) => {
   window.__pierceFiles = Array.from(e.target.files || []).map((f) => f.name).join(',');
+});
+sr.getElementById('choice').addEventListener('change', (e) => {
+  window.__pierceSelect = e.target.value;
+});
+sr.getElementById('ddst').addEventListener('mouseup', (e) => {
+  window.__pierceDrag = Math.round(e.clientX) + ',' + Math.round(e.clientY);
 });
 </script>
 </body></html>`,

@@ -4319,6 +4319,71 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     ).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("pz ref select + drag route node-scoped / coordinate CDP", async () => {
+    const kids = [
+      { nodeType: 1, nodeName: "SELECT", backendNodeId: 43, attributes: ["id", "choice"] },
+      { nodeType: 1, nodeName: "DIV", backendNodeId: 44, attributes: ["id", "dsrc"] },
+      { nodeType: 1, nodeName: "DIV", backendNodeId: 45, attributes: ["id", "ddst"] },
+    ];
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: kids,
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [43, 44, 45].map((bid) => ({ backendDOMNodeId: bid, role: { value: "button" } })),
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [10, 10, 110, 10, 110, 50, 10, 50] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-sel" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: "selected" } }),
+    });
+    const h = createToolHostHandler(cdpDeps(526, cdp));
+    const res = (await h(req("browser.page.pierce", { tabId: 526 }))) as {
+      elements: Array<{ ref: string; id?: string; tagName: string }>;
+    };
+    const byId = (id: string) => res.elements.find((e) => e.id === id)!;
+    // select — callFunctionOn on the select node
+    const sel = (await h(req("browser.page.select", {
+      tabId: 526, ref: byId("choice").ref, value: "b",
+    }))) as { ok: boolean; pierced?: boolean };
+    expect(sel.ok).toBe(true);
+    expect(sel.pierced).toBe(true);
+    const cfo = cdp.sent.find((s) => s.method === "Runtime.callFunctionOn");
+    expect(String(cfo?.params?.functionDeclaration)).toContain("SELECT");
+    // drag pz→pz — auto-routes to trusted mouse path at box centers
+    const drg = (await h(req("browser.page.drag", {
+      tabId: 526, ref: byId("dsrc").ref, toRef: byId("ddst").ref,
+    }))) as { ok: boolean; pierced?: boolean };
+    expect(drg.ok).toBe(true);
+    expect(drg.pierced).toBe(true);
+    const mouseTypes = cdp.sent
+      .filter((s) => s.method === "Input.dispatchMouseEvent")
+      .map((s) => s.params?.type);
+    expect(mouseTypes).toContain("mousePressed");
+    expect(mouseTypes).toContain("mouseReleased");
+    // pz ref + selector on the SAME target → proto.invalid (mixed
+    // pz source + selector drop target is allowed — different fields)
+    await expect(
+      h(req("browser.page.drag", {
+        tabId: 526, ref: byId("dsrc").ref, selector: "#x", toRef: byId("ddst").ref,
+      })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // select on non-pz path untouched — pz ref + frameId → proto.invalid
+    await expect(
+      h(req("browser.page.select", { tabId: 526, ref: byId("choice").ref, value: "a", frameId: 1 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("pz ref evaluate scopes `this` to the closed-root element", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({

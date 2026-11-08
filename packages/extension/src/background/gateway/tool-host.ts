@@ -4723,7 +4723,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (tool === "browser.page.hover" && args.trusted === true) {
           return await trustedHover(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
-        if (tool === "browser.page.drag" && args.trusted === true) {
+        const pierceDragRef =
+          tool === "browser.page.drag" &&
+          (pierceRefTarget ||
+            (typeof args.toRef === "string" && PIERCE_REF_RE.test(args.toRef)));
+        if (tool === "browser.page.drag" && (args.trusted === true || pierceDragRef)) {
           const startedAt = Date.now();
           const res = await trustedDrag(deps, tabId, args, expectCond, frameId, expectedTarget);
           const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
@@ -4741,6 +4745,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             "proto.unsupported",
             `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type, fill, hover, drag and scroll)`,
           );
+        }
+        // pz refs can't reach the content-script select path — route to
+        // the CDP node-scoped equivalent instead.
+        if (tool === "browser.page.select" && pierceRefTarget) {
+          return await pierceSelect(deps, tabId, args, expectCond, frameId);
         }
         const step = domStepFor(tool, args);
         if (expectedTarget) step.expectedTarget = expectedTarget;
@@ -6292,6 +6301,95 @@ async function trustedHover(
   };
 }
 
+/** browser.page.select on a pz ref — the content-script select path
+ *  can't reach closed roots, so the value is applied node-scoped via
+ *  Runtime.callFunctionOn: native value setter + selected flags, then
+ *  composed input/change events (composed:true is what lets them cross
+ *  the shadow boundary to document listeners — same event contract the
+ *  content-script path produces, still isTrusted=false either way). */
+async function pierceSelect(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+  frameId: number,
+): Promise<Record<string, unknown>> {
+  const ref = str(args.ref);
+  if (ref === undefined || !PIERCE_REF_RE.test(ref)) {
+    throw toolError("proto.invalid", "browser.page.select pz path requires args.ref");
+  }
+  if (frameId !== 0) {
+    throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+  }
+  if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+    throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+  }
+  const values = Array.isArray(args.values)
+    ? args.values.filter((v): v is string => typeof v === "string" && v.length > 0)
+    : undefined;
+  if (values && values.length === 0) {
+    throw toolError("proto.invalid", "browser.page.select args.values must contain at least one string");
+  }
+  if (values && values.length > 0 && str(args.value) !== undefined) {
+    throw toolError("proto.invalid", "browser.page.select accepts value or values, not both");
+  }
+  const single = typeof args.value === "string" ? args.value : values?.[0];
+  if (single === undefined && !values) {
+    throw toolError("proto.invalid", "browser.page.select requires args.value or args.values");
+  }
+  const backendNodeId = pierceBackendNodeId(tabId, ref);
+  cdpRequired(deps);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const node = (await session.send("DOM.resolveNode", { backendNodeId })) as {
+      object?: { objectId?: string };
+    };
+    const objectId = node?.object?.objectId;
+    if (!objectId) {
+      throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+    }
+    const wanted = values ?? [single!];
+    const res = (await session.send("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration:
+        "function(wanted){if(this.tagName!=='SELECT')return 'not-select';" +
+        "var set={};wanted.forEach(function(v){set[v]=true});" +
+        "for(var i=0;i<this.options.length;i++){var o=this.options[i];o.selected=set[o.value]===true}" +
+        "if(!this.multiple){var fv=this.options.length?this.options[0].value:'';for(var j=0;j<this.options.length;j++){if(this.options[j].selected){fv=this.options[j].value;break}}this.value=fv}" +
+        "this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));" +
+        "this.dispatchEvent(new Event('change',{bubbles:true,composed:true}));" +
+        "return 'selected'}",
+      arguments: [{ value: wanted }],
+      returnByValue: true,
+    })) as { result?: { value?: unknown } };
+    if (res?.result?.value !== "selected") {
+      throw toolError(
+        "browser.action_failed",
+        "pierce select target is not a <select> element",
+      );
+    }
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `pierce select ${JSON.stringify(values ?? single)}`,
+    step: { action: "select", value: single ?? values, ok: true },
+    pierced: true,
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
 /** browser.page.drag args.trusted — CDP mouse press → interpolated
  *  moves → release, all isTrusted=true. Covers mouse-driven drag
  *  surfaces (sliders, custom mouse DnD); HTML5 drag events follow the
@@ -6309,6 +6407,7 @@ async function trustedDrag(
   const coordCount = coordFields.filter((v) => v !== undefined && v !== null).length;
   let from: { x: number; y: number };
   let to: { x: number; y: number };
+  let pierceDrag = false;
   if (coordCount > 0) {
     if (coordCount !== 4) {
       throw toolError("proto.invalid", "browser.page.drag coordinate drag requires x, y, dropX and dropY together");
@@ -6329,7 +6428,27 @@ async function trustedDrag(
     const dstTarget = {
       ref: str(args.toRef), selector: str(args.toSelector), label: str(args.toLabel),
     };
-    if (frameId !== 0) {
+    const isPz = (t: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined }) =>
+      typeof t.ref === "string" && PIERCE_REF_RE.test(t.ref);
+    const pierceSrc = isPz(srcTarget);
+    const pierceDst = isPz(dstTarget);
+    if (pierceSrc || pierceDst) {
+      pierceDrag = true;
+      if (frameId !== 0) {
+        throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+      }
+      for (const [t, name] of [[srcTarget, "source"], [dstTarget, "drop"]] as const) {
+        if (isPz(t) && (t.selector !== undefined || t.label !== undefined)) {
+          throw toolError("proto.invalid", `a pierce ${name} ref cannot be combined with selector/label`);
+        }
+      }
+      from = pierceSrc
+        ? await pierceTargetPoint(deps, tabId, srcTarget.ref!)
+        : await cdpLocatePoint(deps, tabId, srcTarget, 0, false, expectedTarget);
+      to = pierceDst
+        ? await pierceTargetPoint(deps, tabId, dstTarget.ref!)
+        : await cdpLocatePoint(deps, tabId, dstTarget);
+    } else if (frameId !== 0) {
       from = await frameAbsolutePoint(deps, tabId, srcTarget, frameId, false, expectedTarget);
       to = await frameAbsolutePoint(deps, tabId, dstTarget, frameId);
     } else {
@@ -6377,6 +6496,7 @@ async function trustedDrag(
     ok: true,
     summary: `trusted drag ${Math.round(from.x)},${Math.round(from.y)} → ${Math.round(to.x)},${Math.round(to.y)}`,
     step: { action: "drag", trusted: true, x: from.x, y: from.y, dropX: to.x, dropY: to.y, ok: true, frameId },
+    ...(pierceDrag ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

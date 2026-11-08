@@ -2051,12 +2051,48 @@ await runScenario(
                   { tabId: pjTab, expression: "window.__pierceFiles||''" }, token, 60_000,
                 ).catch(() => null);
                 pj.filesOk = String(ev3?.result?.value ?? ev3?.value ?? "") === "pierce-upload.txt";
+                // select + drag inside the closed root
+                const sel = elements.find((e) => e.id === "choice");
+                const ds = elements.find((e) => e.id === "dsrc");
+                const dd = elements.find((e) => e.id === "ddst");
+                pj.selOk = typeof sel?.ref === "string";
+                pj.dragOk = typeof ds?.ref === "string" && typeof dd?.ref === "string";
+                if (pj.selOk) {
+                  const sRes = await runner.browserToolCall(
+                    taskId, "browser.page.select",
+                    { tabId: pjTab, ref: sel.ref, value: "b" }, token, 60_000,
+                  ).catch(() => null);
+                  pj.selectOk = (sRes?.result ?? sRes ?? {}).pierced === true;
+                  const ev4 = await runner.browserToolCall(
+                    taskId, "browser.page.evaluate",
+                    { tabId: pjTab, expression: "window.__pierceSelect||''" }, token, 60_000,
+                  ).catch(() => null);
+                  pj.selectValOk = String(ev4?.result?.value ?? ev4?.value ?? "") === "b";
+                } else {
+                  pj.selectOk = pj.selectValOk = false;
+                }
+                if (pj.dragOk) {
+                  const dRes = await runner.browserToolCall(
+                    taskId, "browser.page.drag",
+                    { tabId: pjTab, ref: ds.ref, toRef: dd.ref }, token, 60_000,
+                  ).catch(() => null);
+                  pj.dragCallOk = (dRes?.result ?? dRes ?? {}).pierced === true;
+                  const ev5 = await runner.browserToolCall(
+                    taskId, "browser.page.evaluate",
+                    { tabId: pjTab, expression: "window.__pierceDrag||''" }, token, 60_000,
+                  ).catch(() => null);
+                  pj.dragValOk = String(ev5?.result?.value ?? ev5?.value ?? "").includes(",");
+                } else {
+                  pj.dragCallOk = pj.dragValOk = false;
+                }
               } else {
-                pj.uploadOk = pj.filesOk = false;
+                pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
+                pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
               }
             } else {
               pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
-              pj.upOk = pj.uploadOk = pj.filesOk = false;
+              pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
+              pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
             }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
@@ -2065,13 +2101,15 @@ await runScenario(
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
-            pj.upOk = pj.uploadOk = pj.filesOk = false;
+            pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
+            pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
-          pj.upOk = pj.uploadOk = pj.filesOk = false;
+          pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
+          pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
         }
       } catch (e) {
         pj.error = String(e?.message ?? e).slice(0, 200);
@@ -2082,7 +2120,9 @@ await runScenario(
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
           pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
-          pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true,
+          pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
+          pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&
+          pj.dragOk === true && pj.dragCallOk === true && pj.dragValOk === true,
         ...pj,
       };
 
