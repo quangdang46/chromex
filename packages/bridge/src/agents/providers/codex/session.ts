@@ -271,11 +271,19 @@ export class CodexAgentSession implements AgentSession {
         threadId: this.threadId,
         turnId: turn.providerTurnId ?? turn.gatewayTurnId,
       });
-    } finally {
+    } catch (err) {
       this.activeTurn = null;
       this.mapper.unbindTurn();
+      throw err;
     }
+    // Keep the turn↔provider binding until the terminal notification is
+    // observed: the app-server answers turn/interrupt first and emits
+    // turn/completed{interrupted} afterwards — unbinding early would
+    // buffer that terminal event under a null gatewayTurnId and the
+    // gateway would record interrupt_no_terminal for a clean stop.
     await terminal;
+    this.activeTurn = null;
+    this.mapper.unbindTurn();
   }
 
   canStopRuntime(): boolean {

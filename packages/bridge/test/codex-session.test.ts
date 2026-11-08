@@ -258,6 +258,37 @@ describe("CodexAgentSession", () => {
     await session.close();
   });
 
+  test("interrupt keeps turn bound until a delayed terminal notification", async () => {
+    const { session, client } = makeSession();
+    client.autoComplete = false;
+    await session.startTurn(INPUT);
+    const events: AgentEvent[] = [];
+    session.subscribe((e) => events.push(e));
+
+    // The real app-server answers turn/interrupt immediately and emits
+    // turn/completed{interrupted} only after the abort finishes — simulate
+    // that gap by suppressing the fake's auto-emit and sending it late.
+    const origRequest = client.request.bind(client);
+    client.request = (method: string, params: Record<string, unknown> = {}) => {
+      if (method === "turn/interrupt") {
+        client.calls.push({ method, params });
+        return Promise.resolve({});
+      }
+      return origRequest(method, params);
+    };
+
+    const interruptPromise = session.interrupt();
+    await new Promise((r) => setTimeout(r, 20));
+    client.emit({
+      method: "turn/completed",
+      params: { turn: { id: "pt-1", status: "interrupted" } },
+    });
+    await interruptPromise;
+
+    expect(events.some((e) => e.type === "turn.cancelled" && e.turnId === "gt-1")).toBe(true);
+    await session.close();
+  });
+
   test("resumeSession uses thread/resume with persistence ref", async () => {
     const provider = new CodexAgentProvider({ client: new FakeCodexClient() as never });
     const session = await provider.resumeSession(
