@@ -513,6 +513,26 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         };
       },
       requestApproval: async (tctx) => {
+        // Operator opt-in full-auto (gateway.json browser.policy.
+        // approvalMode="auto"): every verdict reaching this gate was
+        // already classified needsApproval; deny/hard_block are
+        // filtered upstream in the tool server and never arrive.
+        // Each auto approval is still written to the task event log.
+        if (liveConfig.browser.policy.approvalMode === "auto") {
+          const autoId = `appr-auto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+          (
+            store as { appendTaskEvent?: (id: string, e: unknown) => unknown }
+          ).appendTaskEvent?.(tctx.taskId, {
+            type: "permission.auto_approved",
+            ...(tctx.turnId ? { turnId: tctx.turnId } : {}),
+            requestId: autoId,
+            tool: tctx.tool,
+            risk: tctx.risk,
+            kind: tctx.kind,
+            reason: tctx.reason,
+          });
+          return { verdict: "approved" as const, optionId: "auto" };
+        }
         const approvalId = `appr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const approvalStartedAt = Date.now();
         diagnostics.recordApprovalRequested();

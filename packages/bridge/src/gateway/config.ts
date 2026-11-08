@@ -67,6 +67,12 @@ export interface GatewayConfig {
       allowEvaluate: boolean;
       allowUpload: boolean;
       requireApprovalForDataEntryOnAutosave: boolean;
+      /** "ask" = §4.8 human gate on every needsApproval verdict;
+       *  "auto" = the operator pre-approves the whole class — every
+       *  verdict that reaches requestApproval resolves approved
+       *  immediately (deny/hard_block never reach it). Each auto
+       *  approval is still written to the task event log. */
+      approvalMode: "ask" | "auto";
     };
   };
   tasks: {
@@ -132,6 +138,7 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
       allowEvaluate: false,
       allowUpload: false,
       requireApprovalForDataEntryOnAutosave: true,
+      approvalMode: "ask",
     },
   },
   tasks: {
@@ -310,6 +317,7 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
           pol.requireApprovalForDataEntryOnAutosave,
           true,
         ),
+        approvalMode: pol.approvalMode === "auto" ? "auto" : "ask",
       },
     },
     tasks: {

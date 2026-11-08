@@ -150,6 +150,18 @@ describe("gateway config (§5.8)", () => {
     const cfg = resolveGatewayConfig({ gateway: { maxEnvelopeBytes: 5 * 1024 * 1024 } });
     expect(cfg.gateway.maxEnvelopeBytes).toBeLessThanOrEqual(768 * 1024);
   });
+
+  test("browser.policy.approvalMode parses ask/auto, defaults ask", () => {
+    expect(DEFAULT_GATEWAY_CONFIG.browser.policy.approvalMode).toBe("ask");
+    expect(
+      resolveGatewayConfig({ browser: { policy: { approvalMode: "auto" } } }).browser.policy
+        .approvalMode,
+    ).toBe("auto");
+    expect(
+      resolveGatewayConfig({ browser: { policy: { approvalMode: "bogus" } } }).browser.policy
+        .approvalMode,
+    ).toBe("ask");
+  });
 });
 
 describe("gateway IPC + hello", () => {
