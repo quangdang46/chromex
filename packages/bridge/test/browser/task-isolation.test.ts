@@ -444,3 +444,23 @@ describe("S3: two concurrent tasks on different tabs (chromex-7k3)", () => {
     expect(replayA.events.some((e) => e.type === "permission.requested")).toBe(true);
   });
 });
+
+describe("TaskTabScope.bind on an already-scoped task", () => {
+  it("acquires a second tab (tab.create) instead of reporting not_in_scope", async () => {
+    const { TaskTabScope } = await import("../../src/browser/task-tab-scope.js");
+    const scope = new TaskTabScope();
+    const ns = "p chrome-ext bi-1";
+    // task already bound tab 7, then creates tab 11
+    expect(scope.bind("task-a", 7, ns)).toBe(true);
+    expect(scope.bind("task-a", 11, ns)).toBe(true);
+    expect(scope.payloadFor("task-a", ns).allowedTabIds.sort((a,b)=>a-b)).toEqual([7, 11]);
+    // bound default stays the first tab
+    expect(scope.payloadFor("task-a", ns).boundTabId).toBe(7);
+    // a tab owned by another task still rejects
+    expect(scope.bind("task-b", 9, ns)).toBe(true);
+    expect(scope.bind("task-a", 9, ns)).toBe(false);
+    // and pre-dispatch targeting stays strict: scoped task cannot aim
+    // args.tabId at an unowned tab
+    expect(scope.permits("task-a", 42, ns)).toBe(false);
+  });
+});

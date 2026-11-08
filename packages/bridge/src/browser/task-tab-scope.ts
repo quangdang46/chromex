@@ -81,19 +81,25 @@ export class TaskTabScope {
     return o === undefined || o.taskId === taskId;
   }
 
-  /** Record a bind/acquisition. Returns false when the tab belongs to
-   *  another task in the same namespace — callers treat that as
-   *  not_in_scope. */
+  /** Record a bind/acquisition from a host-reported resolved tab. The
+   *  host already enforced scope before acting, so the only rejection
+   *  is foreign ownership in this namespace. A task that already holds
+   *  tabs still acquires the new one here — `permits()`' first-bind
+   *  rule is for pre-dispatch targeting, not post-success recording
+   *  (chromex: tab.create on a scoped task was reported not_in_scope
+   *  even though the tab entered scope via acquire). */
   bind(taskId: string, tabId: number, ns: string): boolean {
-    if (!this.permits(taskId, tabId, ns)) return false;
+    this.#ensureNamespace(taskId, ns);
+    const key = this.#ownerKey(ns, tabId);
+    const o = this.owner.get(key);
+    if (o !== undefined && o.taskId !== taskId) return false;
     let scope = this.tabs.get(taskId);
     if (!scope) {
       scope = new Set();
       this.tabs.set(taskId, scope);
     }
     scope.add(tabId);
-    const key = this.#ownerKey(ns, tabId);
-    if (!this.owner.has(key)) this.owner.set(key, { taskId, ns, tabId });
+    if (o === undefined) this.owner.set(key, { taskId, ns, tabId });
     if (!this.bound.has(taskId)) this.bound.set(taskId, tabId);
     return true;
   }

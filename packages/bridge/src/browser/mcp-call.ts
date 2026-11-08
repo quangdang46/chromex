@@ -115,10 +115,26 @@ async function main(): Promise<void> {
   if (argv.includes("--list") || tool === "list_tools") {
     const list = await request("tools/list", {});
     child.kill();
-    const tools = ((list.result as { tools?: Array<{ name: string; description?: string }> })?.tools) ?? [];
+    const tools =
+      ((list.result as {
+        tools?: Array<{
+          name: string;
+          description?: string;
+          inputSchema?: {
+            required?: string[];
+            properties?: Record<string, { description?: string }>;
+          };
+        }>;
+      })?.tools) ?? [];
     for (const t of tools) {
-      const desc = (t.description ?? "").split("\n")[0]?.slice(0, 120) ?? "";
-      process.stdout.write(`${t.name} — ${desc}\n`);
+      const desc = (t.description ?? "").split("\n")[0]?.slice(0, 100) ?? "";
+      const schema = t.inputSchema;
+      const args = schema?.properties
+        ? Object.keys(schema.properties)
+            .map((k) => (schema.required?.includes(k) ? `${k}*` : k))
+            .join(",")
+        : "";
+      process.stdout.write(`${t.name} — ${desc}${args ? ` [args: ${args}]` : ""}\n`);
     }
     return;
   }
