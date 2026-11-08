@@ -363,6 +363,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.page.press",
           "browser.page.upload",
           "browser.page.setInputFiles",
+          "browser.page.route",
           "browser.page.history",
           "browser.downloads.save",
           "browser.downloads.cancel",

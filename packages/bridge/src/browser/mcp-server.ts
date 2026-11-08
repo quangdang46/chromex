@@ -877,6 +877,15 @@ export class BrowserMcpServer {
         });
       case "tools/call":
         return await this.#toolCall(msg);
+      // Codex's MCP client enumerates resources/prompts on connect;
+      // -32601 here aborts the whole agent turn. The browser server
+      // owns no resources or prompts — answer with honest empty lists.
+      case "resources/list":
+        return this.#ok(msg.id ?? null, { resources: [] });
+      case "resources/templates/list":
+        return this.#ok(msg.id ?? null, { resourceTemplates: [] });
+      case "prompts/list":
+        return this.#ok(msg.id ?? null, { prompts: [] });
       default:
         return isNotification ? null : this.#err(msg.id ?? null, -32601, `method not found: ${msg.method}`);
     }
