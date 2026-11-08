@@ -119,6 +119,12 @@ type PwResponse = import("playwright-core").Response;
 type PwRoute = import("playwright-core").Route;
 type PwWebSocket = import("playwright-core").WebSocket;
 type PwDialog = import("playwright-core").Dialog;
+type PwFrame = import("playwright-core").Frame;
+/** Element-scoped target — a Page or one of its Frames. Frame shares
+ *  the locator/evaluate/wait API surface used by the handlers below;
+ *  page-level APIs (mouse/keyboard/screenshot/pdf) stay Page-only and
+ *  those arg shapes refuse honestly when args.frameId is set. */
+type PwTarget = PwPage | PwFrame;
 
 /** One observed network request — mirrors browser.page.network entries
  *  on chrome-extension (metadata only, bodies never captured). */
@@ -325,6 +331,27 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return this.#trackPage(await context.newPage());
   }
 
+  /** Resolve the element-scoped action target: the Page itself, or the
+   *  Frame at args.frameId (index into page.frames() — 0/absent = main
+   *  frame). Out-of-range ids fail proto.invalid rather than silently
+   *  falling back to the top document. Callers that need Page-only APIs
+   *  (mouse/keyboard/screenshot) must keep using #pageFor and refuse
+   *  frameId themselves. */
+  async #frameTarget(taskId: string, args: Record<string, unknown>): Promise<PwTarget> {
+    const page = await this.#pageFor(taskId, args);
+    const frameId = typeof args.frameId === "number" ? args.frameId : 0;
+    if (frameId === 0) return page;
+    const frames = typeof page.frames === "function" ? page.frames() : [];
+    const frame = frames[frameId];
+    if (!frame) {
+      throw protocolError(
+        "proto.invalid",
+        `args.frameId ${frameId} out of range — browser.page.get frames[] lists valid frameIds`,
+      );
+    }
+    return frame;
+  }
+
   /** Execute a browser tool on the isolated backend. Throws
    *  ProtocolError-coded failures; returns the tool result payload.
    *  opts.expectedTarget carries the §4.8 facts the risk classifier
@@ -348,14 +375,20 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // chromex-0fza: a malformed args.expect must fail BEFORE the action
     // dispatches — #withExpect re-parses after the fact for the poll.
     if (EXPECTABLE_TOOLS.has(tool)) parseExpectCondition(args.expect);
-    // args.frameId targets a subframe — playwright locators do not pierce
-    // frame boundaries, so silently ignoring it would act on the TOP
-    // document while the caller believes it targeted the iframe. Refuse
-    // honestly until frameLocator support lands.
-    if (typeof args.frameId === "number" && args.frameId !== 0) {
+    // args.frameId targets a subframe. Playwright auto-attaches
+    // out-of-process iframes, so page.frames()[frameId] reaches them —
+    // frameId is the INDEX into that list (0 = main frame), surfaced
+    // via browser.page.get frames[]. Tools outside FRAME_CAPABLE_TOOLS
+    // (or page-level arg shapes inside it: coordinate mouse ops,
+    // selector-less keyboard press, drag) still refuse honestly.
+    if (
+      typeof args.frameId === "number" &&
+      args.frameId !== 0 &&
+      !FRAME_CAPABLE_TOOLS.has(tool)
+    ) {
       throw protocolError(
         "proto.unsupported",
-        "args.frameId is not supported on playwright-isolated (frame locators unimplemented)",
+        "args.frameId is not supported on playwright-isolated for this tool",
       );
     }
     // CDP-tier args (docs/adr/debugger-tier.md): playwright has no
@@ -661,16 +694,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #snapshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     // aria snapshot per spike-B4; bounded text fallback
     try {
-      const aria = await page.locator("body").ariaSnapshot();
+      const aria = await target.locator("body").ariaSnapshot();
       const b = boundText(aria ?? "", MAX_EXTRACT_CHARS);
-      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
+      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(target.url()) };
     } catch {
-      const text = await page.locator("body").evaluate(deepInnerText).catch(() => "");
+      const text = await target.locator("body").evaluate(deepInnerText).catch(() => "");
       const b = boundText(text, MAX_EXTRACT_CHARS);
-      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
+      return { snapshot: b.text, truncated: b.truncated, url: stripQuery(target.url()) };
     }
   }
 
@@ -713,9 +746,24 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         }
       : undefined;
     const context = await this.#contextFor(taskId);
+    // frameId discovery — index into page.frames() (0 = main frame),
+    // the same ids args.frameId accepts on FRAME_CAPABLE tools. OOPIFs
+    // appear automatically; parentFrameId is the parent's index (-1
+    // for the main frame).
+    // fake pages in unit tests may lack frames()
+    const frames = typeof page.frames === "function" ? page.frames() : [];
+    const framesList = frames.map((f, i) => {
+      const parent = f.parentFrame();
+      return {
+        frameId: i,
+        url: stripQuery(f.url()),
+        parentFrameId: parent ? frames.indexOf(parent) : -1,
+      };
+    });
     const base = {
       tabId: context.pages().indexOf(page),
       url: stripQuery(page.url()),
+      frames: framesList,
       ...(scroll ? { scroll } : {}),
       ...(pageState ? { page: pageState } : {}),
       ...(pageState ? { status: pageState.readyState === "loading" ? "loading" : "complete" } : {}),
@@ -730,20 +778,20 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #extract(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const selector = typeof args.selector === "string" && args.selector ? args.selector : "body";
     const maxChars = typeof args.maxChars === "number" ? args.maxChars : MAX_EXTRACT_CHARS;
     const format = args.format === undefined ? "text" : args.format === "html" ? "html" : null;
     if (format === null) {
       throw protocolError("proto.invalid", "browser.page.extract args.format must be text|html");
     }
-    const locator = page.locator(selector).first();
+    const locator = target.locator(selector).first();
     const raw =
       format === "html"
         ? await locator.evaluate((el) => (el as Element).outerHTML).catch(() => "")
         : await locator.evaluate(deepInnerText).catch(() => "");
     const bounded = boundText(raw, Math.min(maxChars, MAX_EXTRACT_CHARS));
-    return { text: bounded.text, truncated: bounded.truncated, url: stripQuery(page.url()) };
+    return { text: bounded.text, truncated: bounded.truncated, url: stripQuery(target.url()) };
   }
 
   /** Lazily attach console/pageerror capture to a page; buffer lives on
@@ -810,8 +858,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Body text including open shadow-root content — innerText alone
    *  never crosses shadow boundaries, so wait/text conditions would be
    *  blind to web-component UIs. */
-  async #deepBodyText(page: PwPage): Promise<string> {
-    const body = page.locator("body");
+  async #deepBodyText(target: PwTarget): Promise<string> {
+    const body = target.locator("body");
     const deep =
       typeof body.evaluate === "function"
         ? await body.evaluate(deepInnerText).catch(() => null)
@@ -833,7 +881,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #evaluate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const expression = typeof args.expression === "string" ? args.expression.trim() : "";
     if (expression.length === 0 || expression.length > 65536) {
       throw protocolError("proto.invalid", "browser.page.evaluate requires args.expression (≤64KiB)");
@@ -847,7 +895,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     let value: unknown;
     try {
       value = await Promise.race([
-        page.evaluate(expression),
+        target.evaluate(expression),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(protocolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs),
         ),
@@ -1568,7 +1616,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  input type, form method/action, page origin). Targetless calls
    *  (e.g. page.press) describe document.activeElement. */
   async #describeTarget(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const sel =
       typeof args.selector === "string" && args.selector
         ? args.selector
@@ -1706,16 +1754,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #domAction(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
+    const frameScoped = (typeof args.frameId === "number" ? args.frameId : 0) !== 0;
     // press may target the focused element/page with no selector —
-    // page.keyboard.press is the honest equivalent.
+    // page.keyboard.press is the honest equivalent (Page-only API).
     if (tool === "browser.page.press") {
       const key = typeof args.key === "string" ? args.key : "";
       if (!key) throw protocolError("proto.invalid", "browser.page.press requires args.key");
       const chord = pressChord(key, args.modifiers);
       const sel = args.selector ?? args.ref;
       if (typeof sel === "string" && sel.length > 0) {
-        await page.locator(sel).first().press(chord, { timeout: DEFAULT_NAV_TIMEOUT_MS });
+        await target.locator(sel).first().press(chord, { timeout: DEFAULT_NAV_TIMEOUT_MS });
       } else {
+        if (frameScoped) {
+          throw protocolError("proto.unsupported", "selector-less browser.page.press needs page keyboard focus — args.frameId unsupported for this arg shape");
+        }
         await page.keyboard.press(chord);
       }
       return { pressed: key };
@@ -1736,6 +1789,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         }
         if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
           throw protocolError("proto.invalid", "browser.page.click accepts coordinates or an element target, not both");
+        }
+        if (frameScoped) {
+          throw protocolError("proto.unsupported", "coordinate browser.page.click needs page-level mouse — args.frameId unsupported for this arg shape");
         }
         const button = typeof args.button === "string" ? args.button : "left";
         if (!["left", "right", "middle"].includes(button)) {
@@ -1782,14 +1838,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
           throw protocolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
         }
+        if (frameScoped) {
+          throw protocolError("proto.unsupported", "coordinate browser.page.hover needs page-level mouse — args.frameId unsupported for this arg shape");
+        }
         await page.mouse.move(x, y);
         return { hovered: true, x, y };
       }
     }
     // Drag resolves its own targets — coordinate form has no selector,
     // element form needs source + drop selectors (not the single-target
-    // #requireSelector path).
+    // #requireSelector path). Mouse is Page-only — frame-scoped drag
+    // would need viewport-translation, refused honestly for now.
     if (tool === "browser.page.drag") {
+      if (frameScoped) {
+        throw protocolError("proto.unsupported", "browser.page.drag is page-level (mouse) — args.frameId unsupported");
+      }
       return this.#drag(page, args);
     }
     // Page-level scroll needs no selector — window scroll is a valid
@@ -1819,13 +1882,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         }
       };
       if (typeof sel === "string" && sel.length > 0) {
-        await page
+        await target
           .locator(sel)
           .first()
           .evaluate(scrollEl, scrollOpts)
           .catch(() => null);
       } else {
-        await page
+        await target
           .evaluate((o) => {
             const de = document.documentElement;
             if (o.d === "top") de.scrollTo({ top: 0 });
@@ -1841,7 +1904,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       return { scrolled: dir };
     }
     const selector = await this.#requireSelector(args);
-    const locator = page.locator(selector).first();
+    const locator = target.locator(selector).first();
     switch (tool) {
       case "browser.page.click": {
         const button = typeof args.button === "string" ? args.button : "left";
@@ -1990,10 +2053,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   ): Promise<unknown> {
     const cond = parseExpectCondition(args.expect);
     if (!cond || !result || typeof result !== "object") return result;
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const started = Date.now();
     const timeoutMs = Math.min(Math.max(cond.timeoutMs ?? EXPECT_DEFAULT_TIMEOUT_MS, 0), EXPECT_MAX_TIMEOUT_MS);
-    const met = await this.#pollExpect(page, cond, timeoutMs);
+    const met = await this.#pollExpect(target, cond, timeoutMs);
     return {
       ...(result as Record<string, unknown>),
       verified: met === true ? true : met === false ? false : "unknown",
@@ -2004,7 +2067,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Poll until every expect condition holds or the deadline passes.
    *  "unknown" only when the page itself became unreachable mid-poll. */
   async #pollExpect(
-    page: PwPage,
+    page: PwTarget,
     cond: BrowserExpectCondition,
     timeoutMs: number,
   ): Promise<boolean | "unknown"> {
@@ -2020,7 +2083,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
   }
 
-  async #expectConditionsMet(page: PwPage, cond: BrowserExpectCondition): Promise<boolean> {
+  async #expectConditionsMet(page: PwTarget, cond: BrowserExpectCondition): Promise<boolean> {
     // -1 marks an unresolvable selector — fail closed for both
     // `selector` (needs >0) and `goneSelector` (needs exactly 0).
     const count = async (sel: string): Promise<number> => {
@@ -2049,7 +2112,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #wait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const started = Date.now();
     const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : typeof args.ms === "number" ? args.ms : 10_000;
     const deadline = started + Math.min(timeout, 30_000);
@@ -3534,7 +3597,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  map exists on this backend, so matches carry selectors + text only
    *  (the "bounded text matches with selectors" fallback). */
   async #find(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const text = typeof args.text === "string" ? args.text : null;
     const regex = typeof args.regex === "string" ? args.regex : null;
     if (!text && !regex) {
@@ -3551,7 +3614,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
       : 50;
     const scopeSelector = typeof args.scopeSelector === "string" ? args.scopeSelector : null;
-    const matches = (await page.evaluate(
+    const matches = (await target.evaluate(
       ({ text, regex, caseSensitive, limit, scopeSelector }) => {
         const flags = caseSensitive ? "" : "i";
         let matcher: (haystack: string) => boolean;
@@ -3622,7 +3685,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // playwright path = setInputFiles — file bytes via {name,mimeType,
     // buffer} or local paths. NOT the user's native picker (capability
     // filePicker:false already reflects this).
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const selector = await this.#requireSelector(args);
     const raw = Array.isArray(args.files) ? args.files : [];
     if (raw.length === 0) {
@@ -3644,7 +3707,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       throw protocolError("proto.invalid", "upload file entries require {name, mimeType, base64}");
     });
-    const loc = page.locator(selector).first();
+    const loc = target.locator(selector).first();
     try {
       await loc.setInputFiles(files as never);
       return { uploaded: files.length };
@@ -3688,7 +3751,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  matching the extension's DOM.setFileInputFiles contract). Paths
    *  must be absolute and exist; approval gating lives upstream. */
   async #setInputFiles(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const target = await this.#frameTarget(taskId, args);
     const raw = Array.isArray(args.files) ? args.files : [];
     if (raw.length === 0 || raw.length > 10) {
       throw protocolError("proto.invalid", "browser.page.setInputFiles requires args.files[] (1–10 absolute paths)");
@@ -3703,7 +3766,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       return f;
     });
     const selector = await this.#requireSelector(args);
-    await page.locator(selector).first().setInputFiles(paths);
+    await target.locator(selector).first().setInputFiles(paths);
     return { ok: true, files: paths.length };
   }
 
@@ -3809,6 +3872,30 @@ const EXPECTABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.press",
   "browser.page.drag",
   "browser.page.upload",
+]);
+
+/** Tools whose handlers resolve args.frameId to a playwright Frame —
+ *  element-scoped ops only. Page-level arg shapes inside these tools
+ *  (coordinate mouse click/hover, selector-less press, drag) re-check
+ *  frameId===0 and refuse proto.unsupported rather than silently act
+ *  on the top document. */
+const FRAME_CAPABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
+  "browser.page.evaluate",
+  "browser.page.snapshot",
+  "browser.page.extract",
+  "browser.page.find",
+  "browser.page.wait",
+  "browser.page.click",
+  "browser.page.focus",
+  "browser.page.type",
+  "browser.page.fill",
+  "browser.page.select",
+  "browser.page.submit",
+  "browser.page.scroll",
+  "browser.page.hover",
+  "browser.page.press",
+  "browser.page.upload",
+  "browser.page.setInputFiles",
 ]);
 
 /** Parse args.expect (chromex-0fza). null when absent/empty; throws

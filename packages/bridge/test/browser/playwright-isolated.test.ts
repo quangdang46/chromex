@@ -32,16 +32,16 @@ describe("PlaywrightIsolatedBackend", () => {
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
-  test("args.frameId > 0 → proto.unsupported (locators don't pierce frames)", async () => {
+  test("args.frameId on non-frame-capable tools → proto.unsupported", async () => {
     const backend = new PlaywrightIsolatedBackend({
       loadPlaywright: async () => ({ chromium: { launch: async () => { throw new Error("no launch in test"); } } }) as never,
     });
-    // frameId guard runs before any page resolution — no launch needed
+    // screenshot/pdf/navigate are page-level — frameId refuses before launch
     await expect(
-      backend.execute("t1", "browser.page.click", { selector: "button", frameId: 2 }),
+      backend.execute("t1", "browser.page.screenshot", { frameId: 2 }),
     ).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(
-      backend.execute("t1", "browser.page.snapshot", { frameId: 7 }),
+      backend.execute("t1", "browser.page.pdf", { frameId: 7 }),
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 

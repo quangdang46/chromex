@@ -941,7 +941,7 @@ try {
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);
   await expectReject("browser.page.evaluate", {}, "invalid", "evaluate without expression refused");
-  await expectReject("browser.page.click", { selector: "#x", frameId: 3 }, "unsupported", "frameId refused on isolated backend");
+  await expectReject("browser.page.screenshot", { frameId: 3 }, "not supported", "frameId refused on page-level tool (screenshot)");
   await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");
   await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");
   await expectReject("browser.downloads.save", { url: fixture.url("/dl"), filename: "../escape.txt" }, "relative path", "traversal filename refused");
@@ -964,6 +964,38 @@ try {
   await expectReject("browser.permissions", { action: "getAll" }, "does not support", "permissions refused on isolated (no chrome.permissions)");
   await expectReject("browser.downloads.open", { downloadId: 1 }, "does not support", "downloads.open refused on isolated (no OS-handler channel)");
   await expectReject("browser.windows.get", { lastFocused: true }, "does not support", "windows.get refused on isolated (no window manager)");
+
+  // ── frameId parity: page.get frames[] discovery → evaluate/fill/click
+  // inside the cross-origin iframe child (playwright auto-attaches
+  // subframes; frameId = index into page.frames()) ──
+  const frTab = await call("browser.tab.create", { url: fixture.url("/iframe-parent"), active: false });
+  const frTabId = frTab?.tabId ?? frTab?.openedTabId;
+  assert(typeof frTabId === "number", `iframe tab created (got ${JSON.stringify(frTab).slice(0, 120)})`);
+  let frFrames = [];
+  for (let i = 0; i < 40; i++) {
+    const g = await call("browser.page.get", { tabId: frTabId });
+    frFrames = g?.frames ?? [];
+    if (frFrames.filter((f) => String(f.url).includes("iframe-child")).length >= 2) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const frCross = frFrames.find((f) => String(f.url).includes("localhost") && String(f.url).includes("iframe-child"));
+  const frSame = frFrames.find((f) => String(f.url).includes("127.0.0.1") && String(f.url).includes("iframe-child"));
+  assert(frCross && frSame, `page.get frames[] lists both iframe children (got ${JSON.stringify(frFrames.map((f) => f.url)).slice(0, 200)})`);
+  const frEval = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.title + '|' + location.origin" });
+  assert(String(frEval?.value).includes("Frame Child") && String(frEval?.value).includes("localhost"), `evaluate runs inside the cross-origin frame (got ${JSON.stringify(frEval).slice(0, 160)})`);
+  await call("browser.page.fill", { tabId: frTabId, frameId: frCross.frameId, selector: "#fin", text: "frame-typed" });
+  const frVal = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.getElementById('fin').value" });
+  assert(frVal?.value === "frame-typed", `fill reached inside the cross-origin frame (got ${JSON.stringify(frVal).slice(0, 120)})`);
+  await call("browser.page.click", { tabId: frTabId, frameId: frCross.frameId, selector: "#fb" });
+  await new Promise((r) => setTimeout(r, 400));
+  const frOut = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.getElementById('fout').textContent" });
+  assert(frOut?.value === "frame-hit", `click inside frame fired its handler (got ${JSON.stringify(frOut).slice(0, 120)})`);
+  const frSnap = await call("browser.page.snapshot", { tabId: frTabId, frameId: frSame.frameId });
+  assert(String(frSnap?.snapshot ?? "").includes("Frame Child"), "snapshot scoped to the same-origin frame");
+  await expectReject("browser.page.evaluate", { tabId: frTabId, frameId: 99, expression: "1" }, "out of range", "frameId out of range refused");
+  await expectReject("browser.page.click", { tabId: frTabId, frameId: frCross.frameId, x: 10, y: 10 }, "coordinate", "coordinate click + frameId refused (page-level mouse)");
+  await expectReject("browser.page.screenshot", { tabId: frTabId, frameId: frCross.frameId }, "not supported", "screenshot + frameId refused (page-level capture)");
+  await call("browser.tab.close", { tabId: frTabId });
 
   // ── sessions parity: tab.close legs above populated the task's
   // recently-closed log — list must surface them, restore must reopen ──

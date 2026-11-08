@@ -405,7 +405,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
     expect(snap.description).toContain("aria text tree");
     expect(snap.description).not.toContain("mints the refs");
     expect(snap.description).not.toContain("refs are per-frame");
-    expect(snap.description).toContain("frameId is refused");
+    expect(snap.description).toContain("args.frameId is the frame's index");
     const click = toolListEntry("browser.page.click", "playwright-isolated");
     expect(click.description).toContain("CSS selector");
     expect(click.description).not.toContain("Snapshot before acting");
