@@ -785,6 +785,76 @@ const toolHostHandler = createToolHostHandler({
       },
     },
     selfExtensionId: chrome.runtime.id,
+    notifications: {
+      // chrome.notifications — optional "notifications" permission
+      // checked per call. iconUrl defaults to the bundled extension
+      // icon (chrome.notifications requires one; Chrome only accepts
+      // data: URLs or extension resources, never http(s)).
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["notifications"] });
+        if (!granted) return "permission";
+        const api = chrome.notifications as unknown as { getPermissionLevel(): Promise<string> } | undefined;
+        if (!api?.getPermissionLevel) return null;
+        return api.getPermissionLevel();
+      },
+      send: async (options) => {
+        const granted = await chrome.permissions.contains({ permissions: ["notifications"] });
+        if (!granted) return "permission";
+        const api = chrome.notifications as unknown as {
+          create(o: Record<string, unknown>): Promise<string>;
+          create(i: string, o: Record<string, unknown>): Promise<string>;
+        } | undefined;
+        if (!api?.create) return null;
+        // notificationId (when supplied) is create()'s first arg — it
+        // replaces an existing notification, it is NOT an option field.
+        const { notificationId, ...rest } = options;
+        const full = { iconUrl: chrome.runtime.getURL("icons/codex-128.png"), ...rest };
+        const id = typeof notificationId === "string" && notificationId.length > 0
+          ? await api.create(notificationId, full)
+          : await api.create(full);
+        return { id };
+      },
+      update: async (id, options) => {
+        const granted = await chrome.permissions.contains({ permissions: ["notifications"] });
+        if (!granted) return "permission";
+        const api = chrome.notifications as unknown as { update(i: string, o: Record<string, unknown>): Promise<boolean> } | undefined;
+        if (!api?.update) return null;
+        const updated = await api.update(id, options);
+        return { updated };
+      },
+      clear: async (id) => {
+        const granted = await chrome.permissions.contains({ permissions: ["notifications"] });
+        if (!granted) return "permission";
+        const api = chrome.notifications as unknown as {
+          clear(i: string): Promise<boolean>;
+          getAll(): Promise<Record<string, true>>;
+        } | undefined;
+        if (!api?.clear || !api?.getAll) return null;
+        if (id !== undefined) {
+          const cleared = await api.clear(id);
+          return { cleared, ...(cleared ? {} : { reason: "notification not found" }) };
+        }
+        const all = await api.getAll();
+        const ids = Object.keys(all ?? {});
+        let clearedCount = 0;
+        for (const nid of ids) {
+          try {
+            if (await api.clear(nid)) clearedCount += 1;
+          } catch {
+            // per-id failures don't abort the sweep — count honestly
+          }
+        }
+        return { cleared: true, clearedCount, totalCount: ids.length };
+      },
+      list: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["notifications"] });
+        if (!granted) return "permission";
+        const api = chrome.notifications as unknown as { getAll(): Promise<Record<string, true>> } | undefined;
+        if (!api?.getAll) return null;
+        const all = await api.getAll();
+        return { ids: Object.keys(all ?? {}).sort() };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

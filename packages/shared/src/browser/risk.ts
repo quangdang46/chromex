@@ -83,6 +83,9 @@ export interface ActionContext {
   /** browser.management sub-action — list/get read the installed
    *  extension inventory, setEnabled/uninstall mutate it. */
   managementOp?: string;
+  /** browser.notifications sub-action — list/permission read state,
+   *  send/update/clear post or remove OS notifications. */
+  notifyOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -610,6 +613,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "extension inventory read" });
+    }
+
+    case "browser.notifications": {
+      const op = ctx.notifyOp ?? "list";
+      if (op === "send" || op === "update" || op === "clear") {
+        // OS notification is a user-facing side effect outside the
+        // page — approval per call, but task-grantable: "may notify me
+        // during this task" is a meaningful standing permission.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: true,
+          reason: "desktop notification reaches the OS",
+        });
+      }
+      return verdict("read", { reason: "notification state read" });
     }
 
     case "browser.page.caches": {

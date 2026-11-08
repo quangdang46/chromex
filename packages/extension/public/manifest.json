@@ -39,7 +39,8 @@
     "sessions",
     "proxy",
     "privacy",
-    "management"
+    "management",
+    "notifications"
   ],
   "background": {
     "service_worker": "background.js",

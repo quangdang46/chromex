@@ -874,6 +874,7 @@ try {
   await expectReject("browser.proxy", { action: "get" }, "does not support", "proxy refused on isolated (fixed at launch)");
   await expectReject("browser.privacy", { action: "get" }, "does not support", "privacy refused on isolated (browser-global settings)");
   await expectReject("browser.management", { action: "list" }, "does not support", "management refused on isolated (no extension inventory)");
+  await expectReject("browser.notifications", { action: "send", title: "t", message: "m" }, "does not support", "notifications refused on isolated (no OS channel)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

@@ -77,7 +77,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.proxy");
     expect(tools).not.toContain("browser.privacy");
     expect(tools).not.toContain("browser.management");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 9);
+    expect(tools).not.toContain("browser.notifications");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 10);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

@@ -216,6 +216,16 @@ export interface ToolHostDeps {
   /** This extension's own id — browser.management refuses to disable or
    *  uninstall it (would kill the agent's host). */
   selfExtensionId?: string;
+  /** chrome.notifications (browser.notifications) — OS desktop
+   *  notifications. "permission" → optional notifications permission
+   *  not granted; null → API unavailable → proto.unsupported. */
+  notifications?: {
+    permission(): Promise<string | "permission" | null>;
+    send(options: Record<string, unknown>): Promise<Record<string, unknown> | "permission" | null>;
+    update(id: string, options: Record<string, unknown>): Promise<Record<string, unknown> | "permission" | null>;
+    clear(id?: string): Promise<Record<string, unknown> | "permission" | null>;
+    list(): Promise<Record<string, unknown> | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -388,6 +398,7 @@ const SUPPORTED = new Set([
   "browser.proxy",
   "browser.privacy",
   "browser.management",
+  "browser.notifications",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2550,6 +2561,164 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
         const res = sentinel(await deps.management.uninstall(id), "extension");
         return { id, ...res };
+      }
+      case "browser.notifications": {
+        // Not tab-scoped: chrome.notifications — OS desktop alerts, the
+        // agent's channel to reach the human. Optional "notifications"
+        // permission — ungranted → unsupported.
+        if (!deps.notifications) {
+          throw toolError("proto.unsupported", "desktop notifications are not available on this host");
+        }
+        const action = str(args.action) ?? "list";
+        if (!["send", "update", "clear", "list", "permission"].includes(action)) {
+          throw toolError("proto.invalid", "browser.notifications args.action must be send|update|clear|list|permission");
+        }
+        const sentinel = (res: unknown): never | Record<string, unknown> => {
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "notifications permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", "desktop notifications are not available on this host");
+          }
+          return res as Record<string, unknown>;
+        };
+        if (action === "permission") {
+          const res = await deps.notifications.permission();
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "notifications permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", "desktop notifications are not available on this host");
+          }
+          return { permission: res };
+        }
+        if (action === "list") {
+          return sentinel(await deps.notifications.list());
+        }
+        if (action === "clear") {
+          // Raw-arg check: "" must NOT silently widen to clear-all.
+          const rawNid = args.notificationId;
+          if (rawNid !== undefined && (typeof rawNid !== "string" || rawNid.length === 0 || rawNid.length > 500)) {
+            throw toolError("proto.invalid", "browser.notifications args.notificationId must be a string 1-500 chars");
+          }
+          return sentinel(await deps.notifications.clear(rawNid as string | undefined));
+        }
+        // send|update — build the chrome NotificationOptions subset.
+        const rawSendNid = args.notificationId;
+        if (rawSendNid !== undefined && (typeof rawSendNid !== "string" || rawSendNid.length === 0 || rawSendNid.length > 500)) {
+          throw toolError("proto.invalid", "browser.notifications args.notificationId must be a string 1-500 chars");
+        }
+        const notificationId = rawSendNid as string | undefined;
+        if (action === "update" && notificationId === undefined) {
+          throw toolError("proto.invalid", "browser.notifications update requires args.notificationId");
+        }
+        const requireContent = action === "send";
+        const options: Record<string, unknown> = {};
+        const title = str(args.title);
+        const message = str(args.message);
+        if (requireContent) {
+          if (title === undefined || title.length === 0 || title.length > 200) {
+            throw toolError("proto.invalid", "browser.notifications send requires args.title (1-200 chars)");
+          }
+          if (message === undefined || message.length === 0 || message.length > 4000) {
+            throw toolError("proto.invalid", "browser.notifications send requires args.message (1-4000 chars)");
+          }
+        }
+        if (title !== undefined) {
+          if (title.length === 0 || title.length > 200) {
+            throw toolError("proto.invalid", "browser.notifications args.title must be 1-200 chars");
+          }
+          options.title = title;
+        }
+        if (message !== undefined) {
+          if (message.length === 0 || message.length > 4000) {
+            throw toolError("proto.invalid", "browser.notifications args.message must be 1-4000 chars");
+          }
+          options.message = message;
+        }
+        const type = str(args.type);
+        if (type !== undefined) {
+          if (!["basic", "list", "progress"].includes(type)) {
+            throw toolError("proto.invalid", "browser.notifications args.type must be basic|list|progress");
+          }
+          options.type = type;
+        } else if (requireContent) {
+          options.type = "basic";
+        }
+        const iconUrl = str(args.iconUrl);
+        if (iconUrl !== undefined) {
+          // chrome.notifications accepts data: URLs or extension
+          // resources only — http(s) icon URLs are rejected by Chrome.
+          if (!/^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/.test(iconUrl) || iconUrl.length > 128 * 1024) {
+            throw toolError("proto.invalid", "browser.notifications args.iconUrl must be a data:image/* URL ≤128KiB");
+          }
+          options.iconUrl = iconUrl;
+        }
+        const priority = args.priority;
+        if (priority !== undefined) {
+          if (typeof priority !== "number" || !Number.isInteger(priority) || priority < -2 || priority > 2) {
+            throw toolError("proto.invalid", "browser.notifications args.priority must be an integer -2..2");
+          }
+          options.priority = priority;
+        }
+        for (const flag of ["requireInteraction", "silent"] as const) {
+          const v = args[flag];
+          if (v !== undefined) {
+            if (typeof v !== "boolean") {
+              throw toolError("proto.invalid", `browser.notifications args.${flag} must be boolean`);
+            }
+            options[flag] = v;
+          }
+        }
+        const eventTime = args.eventTime;
+        if (eventTime !== undefined) {
+          if (typeof eventTime !== "number" || !Number.isFinite(eventTime)) {
+            throw toolError("proto.invalid", "browser.notifications args.eventTime must be a number (epoch ms)");
+          }
+          options.eventTime = eventTime;
+        }
+        const items = args.items;
+        if (items !== undefined) {
+          if (!Array.isArray(items) || items.length === 0 || items.length > 10) {
+            throw toolError("proto.invalid", "browser.notifications args.items must be 1-10 {title,message} entries");
+          }
+          const clean = items.map((it) => {
+            const o = it as Record<string, unknown>;
+            const t = str(o?.title);
+            const m = str(o?.message);
+            if (t === undefined || t.length === 0 || t.length > 200 || m === undefined || m.length === 0 || m.length > 1000) {
+              throw toolError("proto.invalid", "browser.notifications args.items entries need {title ≤200, message ≤1000}");
+            }
+            return { title: t, message: m };
+          });
+          options.items = clean;
+        }
+        const progress = args.progress;
+        if (progress !== undefined) {
+          if (typeof progress !== "number" || !Number.isInteger(progress) || progress < 0 || progress > 100) {
+            throw toolError("proto.invalid", "browser.notifications args.progress must be an integer 0-100");
+          }
+          options.progress = progress;
+        }
+        const buttons = args.buttons;
+        if (buttons !== undefined) {
+          if (!Array.isArray(buttons) || buttons.length === 0 || buttons.length > 2) {
+            throw toolError("proto.invalid", "browser.notifications args.buttons must be 1-2 {title} entries");
+          }
+          options.buttons = buttons.map((b) => {
+            const t = str((b as Record<string, unknown>)?.title);
+            if (t === undefined || t.length === 0 || t.length > 64) {
+              throw toolError("proto.invalid", "browser.notifications args.buttons entries need {title ≤64}");
+            }
+            return { title: t };
+          });
+        }
+        if (notificationId !== undefined) options.notificationId = notificationId;
+        if (action === "update") {
+          const { notificationId: nid, ...rest } = options;
+          return sentinel(await deps.notifications.update(nid as string, rest));
+        }
+        return sentinel(await deps.notifications.send(options));
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

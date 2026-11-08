@@ -387,6 +387,22 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.management" })).risk).toBe("read");
   });
 
+  test("browser.notifications: list/permission read, send/update/clear approval but task-grantable", () => {
+    for (const op of ["list", "permission"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.notifications", notifyOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["send", "update", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.notifications", notifyOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(true);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.notifications" })).risk).toBe("read");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

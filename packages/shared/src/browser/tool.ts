@@ -63,6 +63,7 @@ export type BrowserToolName =
   | "browser.proxy"
   | "browser.privacy"
   | "browser.management"
+  | "browser.notifications"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -125,6 +126,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.proxy",
   "browser.privacy",
   "browser.management",
+  "browser.notifications",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",

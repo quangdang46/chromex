@@ -1214,6 +1214,26 @@ await runScenario(
         ...mg,
       };
 
+      // --- notifications: optional "notifications" permission — ungranted → honest unsupported ---
+      let nt = {};
+      const ntRes = await runner.browserToolCall(
+        taskId, "browser.notifications", { action: "list" }, token, 60_000,
+      );
+      const ntErr = ntRes?.error ?? {};
+      nt.listUnsupportedOk = ntRes?.status === "failed" && ntErr.code === "proto.unsupported";
+      nt.msg = String(ntErr.message ?? "").slice(0, 160);
+      const ntSend = await runner.browserToolCall(
+        taskId, "browser.notifications",
+        { action: "send", title: "t", message: "m" }, token, 60_000,
+      );
+      const ntSendErr = ntSend?.error ?? {};
+      nt.sendUnsupportedOk = ntSend?.status === "failed" && ntSendErr.code === "proto.unsupported";
+      evidence.note(`notifications → ${JSON.stringify(nt).slice(0, 300)}`);
+      results.notifications = {
+        ok: nt.listUnsupportedOk === true && nt.sendUnsupportedOk === true,
+        ...nt,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

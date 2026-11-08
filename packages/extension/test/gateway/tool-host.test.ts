@@ -1697,6 +1697,99 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.notifications marshals send/update/clear/list/permission + validates", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      notifications: {
+        permission: vi.fn(async () => {
+          calls.push({ op: "permission", args: [] });
+          return "granted";
+        }),
+        send: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "send", args });
+          return { id: "notif-1" };
+        }),
+        update: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "update", args });
+          return { updated: true };
+        }),
+        clear: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "clear", args });
+          return { cleared: true, clearedCount: 1, totalCount: 1 };
+        }),
+        list: vi.fn(async () => {
+          calls.push({ op: "list", args: [] });
+          return { ids: ["notif-1"] };
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    // send builds chrome NotificationOptions
+    const sendRes = (await h(req("browser.notifications", {
+      action: "send", title: "Done", message: "Task finished",
+      type: "progress", progress: 50, priority: 1, silent: true,
+    }))) as { id: string };
+    expect(sendRes.id).toBe("notif-1");
+    expect(calls[0]).toEqual({
+      op: "send",
+      args: [{ title: "Done", message: "Task finished", type: "progress", progress: 50, priority: 1, silent: true }],
+    });
+    // send with notificationId → passed through for create() first arg
+    await h(req("browser.notifications", { action: "send", title: "T", message: "M", notificationId: "n-9" }));
+    expect((calls[1].args[0] as Record<string, unknown>).notificationId).toBe("n-9");
+    // update strips notificationId into the id arg
+    await h(req("browser.notifications", { action: "update", notificationId: "n-9", message: "new" }));
+    expect(calls[2]).toEqual({ op: "update", args: ["n-9", { message: "new" }] });
+    // clear with and without id; list; permission
+    await h(req("browser.notifications", { action: "clear", notificationId: "n-9" }));
+    expect(calls[3]).toEqual({ op: "clear", args: ["n-9"] });
+    await h(req("browser.notifications", { action: "clear" }));
+    expect(calls[4]).toEqual({ op: "clear", args: [undefined] });
+    await h(req("browser.notifications", { action: "list" }));
+    expect(calls[5]).toEqual({ op: "list", args: [] });
+    const permRes = (await h(req("browser.notifications", { action: "permission" }))) as { permission: string };
+    expect(permRes.permission).toBe("granted");
+    // default action is list
+    await h(req("browser.notifications", {}));
+    expect(calls[7]).toEqual({ op: "list", args: [] });
+    // validation
+    await expect(h(req("browser.notifications", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T", message: "M", type: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T", message: "M", iconUrl: "https://x/i.png" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T", message: "M", priority: 5 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T", message: "M", progress: 101 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "send", title: "T", message: "M", buttons: [{}, {}, {}] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "update", message: "x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.notifications", { action: "clear", notificationId: "" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      notifications: {
+        permission: vi.fn(async () => "permission" as const),
+        send: vi.fn(async () => "permission" as const),
+        update: vi.fn(async () => "permission" as const),
+        clear: vi.fn(async () => "permission" as const),
+        list: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.notifications", { action: "list" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("notifications permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.notifications", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

@@ -936,6 +936,24 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       maxResults: { type: "integer", description: "list: max entries (1–200, default 100)." },
     }),
   },
+  "browser.notifications": {
+    description:
+      "OS-level desktop notifications from the Chromex extension (chrome.notifications) — the agent's channel to reach the human when the sidepanel is closed: task done, deliverable ready, long-running work finished. args.action: 'send' posts a notification {title required ≤200 chars, message required ≤4000 chars, type basic|list|progress, iconUrl optional data:image/* URL ≤128KiB — defaults to the extension icon, priority -2..2, requireInteraction, silent, notificationId ≤500 chars to replace/update a specific one, items for list type, progress 0-100 + buttons ≤2 {title} for progress/list}; 'update' changes an existing notificationId with the same option fields; 'clear' dismisses args.notificationId or ALL of this extension's notifications when omitted; 'list' returns the ids of this extension's live notifications; 'permission' returns granted|denied. 'send'/'update'/'clear' require approval — task-grantable (the user may allow notifications for the whole task). On chrome-extension requires the optional 'notifications' permission — ungranted → proto.unsupported. On playwright-isolated → proto.unsupported (no OS notification channel).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["send", "update", "clear", "list", "permission"], description: "Operation." },
+      title: { type: "string", description: "send: notification title (required, ≤200 chars)." },
+      message: { type: "string", description: "send: notification body (required, ≤4000 chars)." },
+      type: { type: "string", enum: ["basic", "list", "progress"], description: "send: template type (default basic)." },
+      notificationId: { type: "string", description: "update/clear: target id from a previous send/list; clear without it clears ALL." },
+      iconUrl: { type: "string", description: "send: data:image/* URL ≤128KiB (default: extension icon)." },
+      priority: { type: "integer", description: "send: -2..2 (default 0)." },
+      requireInteraction: { type: "boolean", description: "send: stay visible until user acts (default false)." },
+      silent: { type: "boolean", description: "send: no sound/vibration (default false)." },
+      items: { type: "array", description: "send type=list: [{title, message}] ≤10 items." },
+      progress: { type: "integer", description: "send type=progress: 0-100." },
+      buttons: { type: "array", description: "send: up to 2 {title} action buttons." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
