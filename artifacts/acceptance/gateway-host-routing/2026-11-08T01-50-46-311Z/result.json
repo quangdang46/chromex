@@ -1,0 +1,13 @@
+{
+  "scenario": "gateway-host-routing",
+  "status": "FAIL",
+  "error": "Error: mcp rpc tools/list timeout; stderr=it (node:events:509:20)\n    at addChunk (node:internal/streams/readable:568:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:519:3)\n    at Readable.push (node:internal/streams/readable:399:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)\n\nNode.js v26.3.0\n\n    at Timeout._onTimeout (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/mcp-stdio-client.mjs:38:31)\n    at listOnTimeout (node:internal/timers:605:17)\n    at process.processTimers (node:internal/timers:541:7)",
+  "asserts": [
+    "ok — fake host registered via hello (hostInstanceId + browserInstanceId)",
+    "ok — task.create → 01M6WDKNJ2BSRAVARYY9J4Z9JP",
+    "ok — second task.create → 01M6WDKNJ315DPMC8DXKXZ4QFN",
+    "ok — browser.mcp.spawn returned descriptor",
+    "ok — scope file written",
+    "ok — mcp-stdio initialize handshake"
+  ]
+}
