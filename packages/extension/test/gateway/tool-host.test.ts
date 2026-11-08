@@ -1710,4 +1710,49 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     }))) as { ok: boolean };
     expect(coord.ok).toBe(true);
   });
+
+  test("screenshot with element target captures a CDP clip", async () => {
+    const cdp = fakeCdp({
+      "Page.captureScreenshot": () => ({ data: "aGk=" }),
+    });
+    const uploads: unknown[] = [];
+    const h = createToolHostHandler(cdpDeps(517, cdp, {
+      uploadArtifact: vi.fn(async (input: unknown) => {
+        uploads.push(input);
+        return { artifactRef: "artifact:clip-1", sha256: "s", bytes: 2 };
+      }),
+    }));
+    const res = (await h(req("browser.page.screenshot", {
+      tabId: 517, selector: "#el",
+    }))) as { artifactRef: string; dataBase64: string };
+    expect(res.artifactRef).toBe("artifact:clip-1");
+    expect(res.dataBase64).toBe("aGk=");
+    const cap = cdp.sent.find((s) => s.method === "Page.captureScreenshot");
+    // locate mock: center 10,20 w=30 h=40 → left=-5 clamps to 0
+    expect(cap?.params?.clip).toMatchObject({
+      x: 0, y: 0, width: 30, height: 40, scale: 1,
+    });
+    expect((uploads[0] as { dataBase64?: string })?.dataBase64).toBe("aGk=");
+    // subframe element clip goes through page.geom.absolute
+    const cdp2 = fakeCdp({
+      "Page.captureScreenshot": () => ({ data: "aGk=" }),
+    });
+    const sentToTab: string[] = [];
+    const h2 = createToolHostHandler(cdpDeps(517, cdp2, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        sentToTab.push(String(message.type));
+        if (message.type === "page.geom.absolute") {
+          return { found: true, x: 100, y: 100, width: 50, height: 20 };
+        }
+        return { ok: true };
+      }),
+      uploadArtifact: vi.fn(async () => ({ artifactRef: "a", sha256: "s", bytes: 1 })),
+    }));
+    await h2(req("browser.page.screenshot", {
+      tabId: 517, selector: "#el", frameId: 4,
+    }));
+    expect(sentToTab).toContain("page.geom.absolute");
+    const cap2 = cdp2.sent.find((s) => s.method === "Page.captureScreenshot");
+    expect(cap2?.params?.clip).toMatchObject({ x: 75, y: 90, width: 50, height: 20 });
+  });
 });

@@ -168,8 +168,10 @@ function toolError(code: string, message: string): Error {
 }
 
 /** Tools whose work happens inside one frame's DOM — these accept
- *  args.frameId. Tab-level tools (tabs.*, page.get/screenshot/history,
- *  downloads) reject it. */
+ *  args.frameId. Tab-level tools (tabs.*, page.get/history,
+ *  downloads) reject it. page.screenshot accepts it only together
+ *  with an element target (element clip); whole-tab capture rejects
+ *  frameId in the case body. */
 const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.snapshot",
   "browser.page.extract",
@@ -190,6 +192,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.find",
   "browser.page.network",
   "browser.page.setInputFiles",
+  "browser.page.screenshot",
 ]);
 
 const SUPPORTED = new Set([
@@ -366,6 +369,53 @@ async function captureScreenshotWithinArtifactCap(
     );
   }
   return shot;
+}
+
+/** Element-targeted screenshot via CDP Page.captureScreenshot clip.
+ *  The element is scrolled into view, located (frame-relative or
+ *  absolute via the geometry chain for subframes), then clipped in
+ *  viewport CSS pixels. Requires the debugger tier — callers on other
+ *  backends get proto.unsupported from cdpRequired/cdpAcquire. */
+async function captureElementScreenshot(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  frameId: number,
+): Promise<{ mimeType: string; dataBase64: string }> {
+  const target = {
+    ref: str(args.ref),
+    selector: str(args.selector),
+    label: str(args.label),
+  };
+  const rect = frameId !== 0
+    ? await frameAbsolutePoint(deps, tabId, target, frameId, true)
+    : await cdpLocateElement(deps, tabId, args, 0, true);
+  const w = rect.width;
+  const h = rect.height;
+  if (typeof w !== "number" || typeof h !== "number" || w <= 0 || h <= 0) {
+    throw toolError("browser.element_not_found", "element has no layout box to capture");
+  }
+  const clip = {
+    x: Math.max(0, rect.x - w / 2),
+    y: Math.max(0, rect.y - h / 2),
+    width: w,
+    height: h,
+    scale: 1,
+  };
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const res = await session.send<{ data?: string }>("Page.captureScreenshot", {
+      format: "jpeg",
+      quality: 80,
+      clip,
+    });
+    if (typeof res?.data !== "string" || res.data.length === 0) {
+      throw toolError("browser.action_failed", "Page.captureScreenshot returned no image data");
+    }
+    return { mimeType: "image/jpeg", dataBase64: res.data };
+  } finally {
+    await release();
+  }
 }
 
 export function createToolHostHandler(deps: ToolHostDeps) {
@@ -1197,21 +1247,36 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         };
       }
       case "browser.page.screenshot": {
-        if (!deps.captureVisibleTab) {
-          throw toolError("proto.unsupported", "screenshot capture is not available on this host");
-        }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        const tab = await deps.getTab(tabId);
-        if (typeof tab?.windowId !== "number") {
-          throw toolError("browser.no_tab", `tab ${tabId} has no window`);
+        const hasElementTarget =
+          str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+        let shot: { mimeType: string; dataBase64: string };
+        if (hasElementTarget) {
+          // Element clip via CDP Page.captureScreenshot — works on
+          // chrome-extension only; subframe targets resolve through the
+          // geometry chain. Element is scrolled into view first.
+          shot = await captureElementScreenshot(deps, tabId, args, frameIdArg(args));
+        } else {
+          if (frameIdArg(args) !== 0) {
+            // whole-tab capture is frame-agnostic — refuse rather than
+            // silently ignore the scope the caller asked for
+            throw toolError("proto.invalid", "args.frameId requires an element target (ref/selector/label) on browser.page.screenshot");
+          }
+          if (!deps.captureVisibleTab) {
+            throw toolError("proto.unsupported", "screenshot capture is not available on this host");
+          }
+          const tab = await deps.getTab(tabId);
+          if (typeof tab?.windowId !== "number") {
+            throw toolError("browser.no_tab", `tab ${tabId} has no window`);
+          }
+          // chromex-22wi: the artifact store caps uploads at 512KiB decoded
+          // (gateway artifact.upload). Retry at lower jpeg quality until
+          // the capture fits — the same bytes are returned inline as
+          // dataBase64 so the provider receives image input, not just a
+          // reference it cannot resolve. Bounded egress: the tool is
+          // already classified agentEgress "screenshot" upstream.
+          shot = await captureScreenshotWithinArtifactCap(deps.captureVisibleTab, tab.windowId);
         }
-        // chromex-22wi: the artifact store caps uploads at 512KiB decoded
-        // (gateway artifact.upload). Retry at lower jpeg quality until
-        // the capture fits — the same bytes are returned inline as
-        // dataBase64 so the provider receives image input, not just a
-        // reference it cannot resolve. Bounded egress: the tool is
-        // already classified agentEgress "screenshot" upstream.
-        const shot = await captureScreenshotWithinArtifactCap(deps.captureVisibleTab, tab.windowId);
         if (!deps.uploadArtifact) {
           // no artifact channel → the durable artifactRef cannot be
           // minted; the bounded inline payload alone is not enough —
@@ -1747,20 +1812,31 @@ async function cdpLocatePoint(
   tabId: number,
   target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
   frameId = 0,
-): Promise<{ x: number; y: number; selector: string }> {
+  scrollIntoView = false,
+): Promise<{ x: number; y: number; width?: number; height?: number; selector: string }> {
   const loc = (await deps.sendToTab(tabId, {
     type: "page.dom.locate",
     ...(target.ref ? { targetRef: target.ref } : {}),
     ...(target.selector ? { selector: target.selector } : {}),
     ...(target.label ? { label: target.label } : {}),
-  }, { frameId })) as { found?: boolean; reason?: string; count?: number; x?: number; y?: number; selector?: string };
+    ...(scrollIntoView ? { scrollIntoView: true } : {}),
+  }, { frameId })) as {
+    found?: boolean; reason?: string; count?: number;
+    x?: number; y?: number; width?: number; height?: number; selector?: string;
+  };
   if (loc?.found !== true || typeof loc.x !== "number" || typeof loc.y !== "number" || typeof loc.selector !== "string") {
     if (loc?.reason === "ambiguous") {
       throw toolError("browser.ambiguous_target", `target matches ${loc.count ?? "multiple"} elements`);
     }
     throw toolError("browser.element_not_found", "no element matched ref/selector/label");
   }
-  return { x: loc.x, y: loc.y, selector: loc.selector };
+  return {
+    x: loc.x,
+    y: loc.y,
+    ...(typeof loc.width === "number" ? { width: loc.width } : {}),
+    ...(typeof loc.height === "number" ? { height: loc.height } : {}),
+    selector: loc.selector,
+  };
 }
 
 async function cdpLocateElement(
@@ -1768,12 +1844,13 @@ async function cdpLocateElement(
   tabId: number,
   args: Record<string, unknown>,
   frameId = 0,
-): Promise<{ x: number; y: number; selector: string }> {
+  scrollIntoView = false,
+): Promise<{ x: number; y: number; width?: number; height?: number; selector: string }> {
   return cdpLocatePoint(deps, tabId, {
     ref: str(args.ref),
     selector: str(args.selector),
     label: str(args.label),
-  }, frameId);
+  }, frameId, scrollIntoView);
 }
 
 /** Element target inside a subframe → top-viewport coordinates via the
@@ -1785,14 +1862,17 @@ async function frameAbsolutePoint(
   tabId: number,
   target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
   frameId: number,
-): Promise<{ x: number; y: number }> {
+  scrollIntoView = false,
+): Promise<{ x: number; y: number; width?: number; height?: number; selector?: string }> {
   const res = (await deps.sendToTab(tabId, {
     type: "page.geom.absolute",
     ...(target.ref ? { targetRef: target.ref } : {}),
     ...(target.selector ? { selector: target.selector } : {}),
     ...(target.label ? { label: target.label } : {}),
+    ...(scrollIntoView ? { scrollIntoView: true } : {}),
   }, { frameId })) as {
-    found?: boolean; reason?: string; count?: number; x?: number; y?: number;
+    found?: boolean; reason?: string; count?: number;
+    x?: number; y?: number; width?: number; height?: number; selector?: string;
   };
   if (res?.found !== true || typeof res.x !== "number" || typeof res.y !== "number") {
     if (res?.reason === "ambiguous") {
@@ -1803,7 +1883,13 @@ async function frameAbsolutePoint(
     }
     throw toolError("browser.element_not_found", "no element matched ref/selector/label");
   }
-  return { x: res.x, y: res.y };
+  return {
+    x: res.x,
+    y: res.y,
+    ...(typeof res.width === "number" ? { width: res.width } : {}),
+    ...(typeof res.height === "number" ? { height: res.height } : {}),
+    ...(typeof res.selector === "string" ? { selector: res.selector } : {}),
+  };
 }
 
 const CDP_MOUSE_BUTTONS = new Set(["left", "right", "middle"]);

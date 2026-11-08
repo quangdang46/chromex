@@ -558,6 +558,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    // Element clips are a chrome-extension CDP capability — refuse
+    // rather than silently returning a full-page capture.
+    if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
+      throw protocolError(
+        "proto.unsupported",
+        "element-targeted screenshots are not supported on playwright-isolated",
+      );
+    }
     const page = await this.#pageFor(taskId, args);
     // chromex-22wi: the result IS the provider's image input — there is
     // no artifact.upload channel on this backend, so the payload must be

@@ -106,6 +106,12 @@ for Testing:
   verified inside a same-origin iframe (`cdp-headless`). Out-of-process
   iframes are invisible to the tab's DOM agent and fail
   `browser.element_not_found` honestly.
+  `browser.page.screenshot` also accepts an element target
+  (ref/selector/label, optional `args.frameId`): the element is
+  scrolled into view, located through the same geometry path, and
+  clipped via `Page.captureScreenshot` — verified inside an iframe in
+  `cdp-headless`. Whole-tab capture stays on `captureVisibleTab`;
+  `playwright-isolated` rejects element clips `proto.unsupported`.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,
   `browser.page.responseBody`) exist only on the chrome-extension
   backend; `playwright-isolated` rejects them `proto.unsupported` —

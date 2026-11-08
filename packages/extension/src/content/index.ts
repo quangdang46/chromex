@@ -325,6 +325,41 @@ function chromexRuntimeMessageListener(
   if (message.type === "page.dom.locate") {
     // CDP-tier support: resolve a ref/selector/label to viewport
     // geometry + a querySelector-able selector for DOM.* commands.
+    const scrollIntoView = message.scrollIntoView === true;
+    if (scrollIntoView) {
+      void (async () => {
+        const resolved = resolveDomActionTargetDetailed({
+          action: "click",
+          ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
+          ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+          ...(typeof message.label === "string" ? { label: message.label } : {}),
+          reason: "locate",
+        });
+        if (resolved.status !== "resolved") {
+          sendResponse({
+            found: false,
+            reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
+            ...(resolved.status === "ambiguous" ? { count: resolved.count } : {}),
+          });
+          return;
+        }
+        resolved.element.scrollIntoView({ block: "center", inline: "center" });
+        await new Promise((r) => setTimeout(r, 80));
+        const el = resolved.element;
+        const rect = el.getBoundingClientRect();
+        sendResponse({
+          found: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          width: rect.width,
+          height: rect.height,
+          selector: buildElementSelector(el),
+          tagName: el.tagName.toLowerCase(),
+          visible: isDomActionElementVisible(el),
+        });
+      })();
+      return true;
+    }
     const resolved = resolveDomActionTargetDetailed({
       action: "click",
       ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
@@ -409,6 +444,10 @@ function chromexRuntimeMessageListener(
         });
         return;
       }
+      if (message.scrollIntoView === true) {
+        resolved.element.scrollIntoView({ block: "center", inline: "center" });
+        await new Promise((r) => setTimeout(r, 80));
+      }
       const rect = resolved.element.getBoundingClientRect();
       const offset = await askFrameOffset();
       if (offset === null) {
@@ -419,6 +458,8 @@ function chromexRuntimeMessageListener(
         found: true,
         x: rect.left + rect.width / 2 + offset.left,
         y: rect.top + rect.height / 2 + offset.top,
+        width: rect.width,
+        height: rect.height,
         selector: buildElementSelector(resolved.element),
       });
     })();

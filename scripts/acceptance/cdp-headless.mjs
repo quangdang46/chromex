@@ -322,6 +322,24 @@ await runScenario(
         fout2,
       };
 
+      // element screenshot inside the iframe: geometry chain resolves
+      // the clip rect, CDP Page.captureScreenshot returns the bytes.
+      let frameShot = null;
+      if (childFrame?.frameId) {
+        frameShot = await runner.browserToolCall(
+          taskId, "browser.page.screenshot",
+          { selector: "#pb", frameId: childFrame.frameId },
+          token, 60_000,
+        );
+      }
+      const shotResult = frameShot?.result ?? frameShot ?? {};
+      evidence.note(`frame screenshot → status=${frameShot?.status} bytes=${shotResult?.bytes}`);
+      results.frameElementScreenshot = {
+        ok: frameShot?.status === "completed" && typeof shotResult?.dataBase64 === "string" && shotResult.dataBase64.length > 100,
+        status: frameShot?.status,
+        bytes: shotResult?.bytes,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
