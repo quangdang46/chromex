@@ -1186,6 +1186,15 @@ await runScenario(
           taskId, "browser.tab.update", { tabId: second.id, index: -5 }, token, 60_000,
         );
         mv.badIndexOk = (mvBad?.error?.code ?? "") === "proto.invalid";
+        // autoDiscardable:false protects the tab — verify it lands in
+        // tabs.list (chrome.tabs.update real field, not an echo)
+        await runner.browserToolCall(
+          taskId, "browser.tab.update", { tabId: second.id, autoDiscardable: false }, token, 60_000,
+        );
+        const adList = await runner.browserToolCall(taskId, "browser.tabs.list", {}, token, 60_000);
+        const adTabs = (adList?.result ?? adList ?? {}).tabs ?? [];
+        const adTab = adTabs.find((t) => (t.id ?? t.tabId) === second.id);
+        mv.autoDiscardableOk = adTab?.autoDiscardable === false;
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: mvAId }, token, 60_000,
         );
@@ -1197,7 +1206,7 @@ await runScenario(
       }
       evidence.note(`tabMove → ${JSON.stringify(mv).slice(0, 300)}`);
       results.tabMove = {
-        ok: mv.listOk === true && mv.moveOk === true && mv.badIndexOk === true,
+        ok: mv.listOk === true && mv.moveOk === true && mv.badIndexOk === true && mv.autoDiscardableOk === true,
         ...mv,
       };
 

@@ -48,9 +48,9 @@ export interface ToolHostDeps {
    *  quality when the first capture exceeds the artifact byte cap. */
   captureVisibleTab?(windowId: number, opts?: { quality?: number }): Promise<string>;
   /** chrome.tabs.create — open a new tab (browser.tab.create, chromex-he2) */
-  createTab?(opts: { url?: string; active?: boolean; windowId?: number; pinned?: boolean; muted?: boolean }): Promise<chrome.tabs.Tab>;
+  createTab?(opts: { url?: string; active?: boolean; windowId?: number; pinned?: boolean; muted?: boolean; autoDiscardable?: boolean }): Promise<chrome.tabs.Tab>;
   /** chrome.tabs.update — tab.update tool (pinned/muted). */
-  updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean }): Promise<unknown>;
+  updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean; autoDiscardable?: boolean }): Promise<unknown>;
   /** chrome.tabs.discard — tab.discard tool (memory hygiene). */
   discardTab?(tabId: number): Promise<unknown>;
   /** chrome.tabs.move — tab.update index (strip reorder). */
@@ -878,6 +878,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               // tab.update index moves (chrome.tabs.move counts every
               // tab in the window, including foreign ones).
               ...(typeof t.index === "number" ? { index: t.index } : {}),
+              // discard state — the agent sees which tabs Chrome already
+              // unloaded and which are protected from auto-discard.
+              ...(typeof t.discarded === "boolean" ? { discarded: t.discarded } : {}),
+              ...(typeof t.autoDiscardable === "boolean" ? { autoDiscardable: t.autoDiscardable } : {}),
             };
           }),
         };
@@ -896,6 +900,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
         const muted = typeof args.muted === "boolean" ? args.muted : undefined;
+        const autoDiscardable = typeof args.autoDiscardable === "boolean" ? args.autoDiscardable : undefined;
         const zoomFactor =
           typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
             ? args.zoomFactor
@@ -910,10 +915,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (args.index !== undefined && index === undefined) {
           throw toolError("proto.invalid", "browser.tab.update args.index must be an integer >= -1 (-1 = end of strip)");
         }
-        if (pinned === undefined && muted === undefined && zoomFactor === undefined && index === undefined) {
-          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.zoomFactor and/or args.index");
+        if (pinned === undefined && muted === undefined && autoDiscardable === undefined && zoomFactor === undefined && index === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.autoDiscardable, args.zoomFactor and/or args.index");
         }
-        if ((pinned !== undefined || muted !== undefined) && !deps.updateTab) {
+        if ((pinned !== undefined || muted !== undefined || autoDiscardable !== undefined) && !deps.updateTab) {
           throw toolError("proto.unsupported", "tab update is not available on this host");
         }
         if (zoomFactor !== undefined && !deps.setTabZoom) {
@@ -922,10 +927,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (index !== undefined && !deps.moveTab) {
           throw toolError("proto.unsupported", "tab reorder is not available on this host");
         }
-        if (pinned !== undefined || muted !== undefined) {
+        if (pinned !== undefined || muted !== undefined || autoDiscardable !== undefined) {
           await deps.updateTab!(tabId, {
             ...(pinned !== undefined ? { pinned } : {}),
             ...(muted !== undefined ? { muted } : {}),
+            ...(autoDiscardable !== undefined ? { autoDiscardable } : {}),
           });
         }
         if (zoomFactor !== undefined) {
@@ -939,6 +945,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           resolvedTabId: tabId,
           ...(pinned !== undefined ? { pinned } : {}),
           ...(muted !== undefined ? { muted } : {}),
+          ...(autoDiscardable !== undefined ? { autoDiscardable } : {}),
           ...(zoomFactor !== undefined ? { zoomFactor } : {}),
           ...(index !== undefined ? { index } : {}),
         };
@@ -977,6 +984,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const active = typeof args.active === "boolean" ? args.active : true;
         const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
         const muted = typeof args.muted === "boolean" ? args.muted : undefined;
+        const autoDiscardable = typeof args.autoDiscardable === "boolean" ? args.autoDiscardable : undefined;
         // windowId targets a specific browser window — must be a real
         // window or chrome.tabs.create throws; validate as non-negative
         // int and let the API surface unknown-window errors honestly.
@@ -993,6 +1001,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(windowId !== undefined ? { windowId } : {}),
           ...(pinned !== undefined ? { pinned } : {}),
           ...(muted !== undefined ? { muted } : {}),
+          ...(autoDiscardable !== undefined ? { autoDiscardable } : {}),
         });
         if (typeof tab.id !== "number") {
           throw toolError("browser.action_failed", "chrome.tabs.create returned no tab id");

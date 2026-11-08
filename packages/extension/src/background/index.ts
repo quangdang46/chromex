@@ -258,18 +258,20 @@ const toolHostHandler = createToolHostHandler({
     closeTab: async (tabId) => {
       await chrome.tabs.remove(tabId);
     },
-    createTab: async ({ url, active, windowId, pinned, muted }) =>
+    createTab: async ({ url, active, windowId, pinned, muted, autoDiscardable }) =>
       chrome.tabs.create({
         ...(url ? { url } : {}),
         ...(active !== undefined ? { active } : {}),
         ...(windowId !== undefined ? { windowId } : {}),
         ...(pinned !== undefined ? { pinned } : {}),
         ...(muted !== undefined ? { muted } : {}),
+        ...(autoDiscardable !== undefined ? { autoDiscardable } : {}),
       }),
     updateTab: async (tabId, opts) =>
       chrome.tabs.update(tabId, {
         ...(opts.pinned !== undefined ? { pinned: opts.pinned } : {}),
         ...(opts.muted !== undefined ? { muted: opts.muted } : {}),
+        ...(opts.autoDiscardable !== undefined ? { autoDiscardable: opts.autoDiscardable } : {}),
       }),
     discardTab: async (tabId) => chrome.tabs.discard(tabId),
     moveTab: async (tabId, index) => chrome.tabs.move(tabId, { index }),

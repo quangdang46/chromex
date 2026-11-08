@@ -517,8 +517,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
     // pin/mute are chrome tab-strip state with no playwright equivalent —
     // silently dropping them would lie about the created tab's state.
-    if (args.pinned !== undefined || args.muted !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot pin or mute tabs; args.pinned/args.muted are chrome-extension only");
+    if (args.pinned !== undefined || args.muted !== undefined || args.autoDiscardable !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, or set autoDiscardable; args.pinned/args.muted/args.autoDiscardable are chrome-extension only");
     }
     const page = this.#trackPage(await context.newPage());
     this.#activePages.set(taskId, page);
@@ -565,8 +565,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  dropped. */
   async #tabUpdate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    if (args.pinned !== undefined || args.muted !== undefined || args.index !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, or reorder tabs; args.pinned/args.muted/args.index are chrome-extension only");
+    if (args.pinned !== undefined || args.muted !== undefined || args.index !== undefined || args.autoDiscardable !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, reorder, or set autoDiscardable; args.pinned/args.muted/args.index/args.autoDiscardable are chrome-extension only");
     }
     const zoomFactor =
       typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)

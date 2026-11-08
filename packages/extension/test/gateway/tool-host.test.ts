@@ -162,6 +162,10 @@ describe("tool host (P1-09)", () => {
       ({ toolCallId: "tc1", taskId: "t1", tool, args, tabScope: scope });
     await h(sreq("browser.tab.update", { pinned: true, muted: true }));
     expect(updCalls).toEqual([[7, { pinned: true, muted: true }]]);
+    // autoDiscardable rides the same updateTab dep
+    const res = (await h(sreq("browser.tab.update", { autoDiscardable: false }))) as { autoDiscardable: boolean };
+    expect(updCalls[1]).toEqual([7, { autoDiscardable: false }]);
+    expect(res.autoDiscardable).toBe(false);
     await h(sreq("browser.tab.discard"));
     expect(discarded).toEqual([7]);
     await expect(h(sreq("browser.tab.update"))).rejects.toMatchObject({ code: "proto.invalid" });

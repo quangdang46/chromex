@@ -290,6 +290,8 @@ try {
   assert(zoomBad !== null, "tab.update refused muted on isolated backend");
   const idxBad = await call("browser.tab.update", { tabId: dupId, index: 0 }).then(() => null).catch((e) => e);
   assert(idxBad !== null, "tab.update refused index on isolated backend");
+  const adBad = await call("browser.tab.update", { tabId: dupId, autoDiscardable: false }).then(() => null).catch((e) => e);
+  assert(adBad !== null, "tab.update refused autoDiscardable on isolated backend");
 
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {

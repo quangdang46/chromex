@@ -248,6 +248,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       windowId: { type: "integer", description: "Optional window to open the tab in (from browser.windows.list or browser.tabs.list windowId)." },
       pinned: { type: "boolean", description: "Pin the new tab." },
       muted: { type: "boolean", description: "Mute the new tab's audio." },
+      autoDiscardable: { type: "boolean", description: "Prevent (false) Chrome auto-discarding this tab under memory pressure." },
     }),
   },
   "browser.tab.duplicate": {
@@ -257,11 +258,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.update": {
     description:
-      "Update a scoped tab's chrome state — pinned, muted, zoomFactor (0.25–5), and/or index (strip position, integer >= -1 where -1 moves to the end). tabId optional (defaults like other tab tools). Low-risk reversible op. playwright-isolated supports zoomFactor only (via CDP page scale); pinned/muted/index are chrome-extension only.",
+      "Update a scoped tab's chrome state — pinned, muted, autoDiscardable (protect from/prevent Chrome memory-management discard), zoomFactor (0.25–5), and/or index (strip position, integer >= -1 where -1 moves to the end). tabId optional (defaults like other tab tools). Low-risk reversible op. playwright-isolated supports zoomFactor only (via CDP page scale); pinned/muted/index/autoDiscardable are chrome-extension only.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       pinned: { type: "boolean", description: "Pin or unpin the tab." },
       muted: { type: "boolean", description: "Mute or unmute the tab's audio." },
+      autoDiscardable: { type: "boolean", description: "Allow (true, Chrome default) or prevent (false) Chrome auto-discarding this tab under memory pressure — protect long-running task tabs." },
       zoomFactor: { type: "number", description: "Page zoom factor 0.25–5 (chrome.tabs.setZoom)." },
       index: { type: "integer", description: "New strip position (chrome.tabs.move); -1 moves to the end." },
     }),
