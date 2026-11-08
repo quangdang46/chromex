@@ -668,6 +668,43 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.wait responseUrl matches completed response with evidence", async () => {
+    const d = deps({
+      listNetworkRequests: vi.fn(() => [
+        { method: "POST", url: "http://x/api/submit", status: 200, ts: Date.now() },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.wait", { responseUrl: "/api/submit", timeoutMs: 5000, tabId: 7 }),
+    )) as { ok: boolean; matched: string; response: { status: number; url: string } };
+    expect(res).toMatchObject({ ok: true, matched: "response" });
+    expect(res.response.status).toBe(200);
+    expect(res.response.url).toContain("/api/submit");
+    // stale entry outside the lookback window → browser.timeout
+    const stale = deps({
+      listNetworkRequests: vi.fn(() => [
+        { method: "GET", url: "http://x/api/old", status: 200, ts: Date.now() - 60_000 },
+      ]),
+    });
+    const hStale = createToolHostHandler(stale);
+    await expect(
+      hStale(req("browser.page.wait", { responseUrl: "/api/old", timeoutMs: 60, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+  });
+
+  test("page.wait responseUrl validation: frameId refused, missing dep unsupported", async () => {
+    const d = deps({ listNetworkRequests: vi.fn(() => []) });
+    const h = createToolHostHandler(d);
+    await expect(
+      h(req("browser.page.wait", { responseUrl: "/x", frameId: 1, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    const hNoDep = createToolHostHandler(deps());
+    await expect(
+      hNoDep(req("browser.page.wait", { responseUrl: "/x", tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.find forwards text/regex/scope to page.dom.find and returns matches", async () => {
     const sentMsgs: Array<Record<string, unknown>> = [];
     const d = deps({

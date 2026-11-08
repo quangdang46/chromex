@@ -1636,6 +1636,52 @@ await runScenario(
       // (same destructive class as window teardown). The crashed:true
       // probe in page.get is unit-tested; verify on headed Chrome.
 
+      // --- wait responseUrl: completed-response condition over the
+      // persistent webRequest log — the "did my submit land" primitive.
+      // /cache-probe's document response lands in the log; the wait
+      // must match it with status+ts evidence, time out honestly on a
+      // nonexistent path, and refuse frameId. ---
+      const wr = {};
+      try {
+        const wrCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/cache-probe"), active: false }, token, 60_000,
+        );
+        const wrTab = (wrCreate?.result ?? wrCreate ?? {}).openedTabId ??
+          (wrCreate?.result ?? wrCreate ?? {}).tabId;
+        wr.createOk = typeof wrTab === "number";
+        if (wr.createOk) {
+          await sleep(700);
+          const wrRes = await runner.browserToolCall(
+            taskId, "browser.page.wait", { tabId: wrTab, responseUrl: "cache-probe", timeoutMs: 5000 }, token, 60_000,
+          );
+          const wrBody = wrRes?.result ?? wrRes ?? {};
+          wr.matchedOk = wrBody.matched === "response";
+          wr.statusOk = wrBody.response?.status === 200;
+          wr.evidenceOk = typeof wrBody.response?.ts === "number" && typeof wrBody.response?.url === "string";
+          const wrNo = await runner.browserToolCall(
+            taskId, "browser.page.wait", { tabId: wrTab, responseUrl: "/definitely-not-here", timeoutMs: 300 }, token, 60_000,
+          ).catch(() => null);
+          wr.timeoutOk = (wrNo?.error?.code ?? "") === "browser.timeout";
+          const wrBad = await runner.browserToolCall(
+            taskId, "browser.page.wait", { tabId: wrTab, responseUrl: "x", frameId: 1 }, token, 60_000,
+          ).catch(() => null);
+          wr.frameOk = (wrBad?.error?.code ?? "") === "proto.invalid";
+          await runner.browserToolCall(
+            taskId, "browser.tab.close", { tabId: wrTab }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          wr.matchedOk = wr.statusOk = wr.evidenceOk = wr.timeoutOk = wr.frameOk = false;
+        }
+      } catch (e) {
+        wr.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`waitResponse → ${JSON.stringify(wr).slice(0, 300)}`);
+      results.waitResponse = {
+        ok: wr.createOk === true && wr.matchedOk === true && wr.statusOk === true &&
+          wr.evidenceOk === true && wr.timeoutOk === true && wr.frameOk === true,
+        ...wr,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

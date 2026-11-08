@@ -1751,8 +1751,26 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.wait": {
         // Conditional wait (text/textGone/selector/urlContains) polls in
         // the content script; bare `ms` stays a bounded host-side sleep.
+        // responseUrl is a host-side condition over the persistent
+        // webRequest log — approval latency can exceed a fast local
+        // response, so matching looks BACK within the wait window
+        // (documented; the matched entry's ts/status is returned as
+        // evidence so staleness is visible to the agent).
         const networkIdle = args.networkIdle === true;
-        const hasCondition =
+        const responseUrl = str(args.responseUrl);
+        if (responseUrl !== undefined && (responseUrl.length === 0 || responseUrl.length > 512)) {
+          throw toolError("proto.invalid", "browser.page.wait args.responseUrl must be a non-empty string ≤512 chars");
+        }
+        if (responseUrl !== undefined && args.frameId !== undefined && args.frameId !== null) {
+          // response matching is tab-level (webRequest frameId filter
+          // is not wired here) — refuse rather than silently ignore.
+          throw toolError("proto.invalid", "args.frameId is not supported with args.responseUrl");
+        }
+        if (responseUrl !== undefined && typeof deps.listNetworkRequests !== "function") {
+          throw toolError("proto.unsupported", "response wait requires the webRequest permission");
+        }
+        const hasResponseCondition = responseUrl !== undefined;
+        const hasContentCondition =
           str(args.text) !== undefined ||
           str(args.textGone) !== undefined ||
           str(args.selector) !== undefined ||
@@ -1760,6 +1778,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.urlContains) !== undefined ||
           str(args.readyState) !== undefined ||
           str(args.visibleSelector) !== undefined;
+        const hasCondition = hasContentCondition || hasResponseCondition;
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
@@ -1785,6 +1804,49 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           30_000,
         );
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (hasResponseCondition) {
+          // Newest matching finished entry within [callStart-lookback,
+          // now]. lookback = the wait window itself: a response that
+          // completed during approval/tool latency still counts, and
+          // its ts is returned so the agent can judge freshness.
+          const since = Date.now() - waitTimeoutMs;
+          const deadline = Date.now() + waitTimeoutMs;
+          let matchedEntry: Record<string, unknown> | undefined;
+          while (Date.now() < deadline) {
+            const entries = deps.listNetworkRequests!(tabId, {
+              limit: 200,
+              urlContains: responseUrl,
+            });
+            const hit = (Array.isArray(entries) ? entries : []).find(
+              (e) => typeof e.ts === "number" && e.ts >= since,
+            );
+            if (hit) {
+              matchedEntry = hit as Record<string, unknown>;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          if (!matchedEntry) {
+            throw toolError(
+              "browser.timeout",
+              `no completed response matching "${responseUrl}" within ${waitTimeoutMs}ms`,
+            );
+          }
+          if (!hasContentCondition && !networkIdle) {
+            return {
+              ok: true,
+              matched: "response",
+              response: {
+                method: matchedEntry.method ?? "",
+                url: matchedEntry.url ?? "",
+                ...(typeof matchedEntry.status === "number" ? { status: matchedEntry.status } : {}),
+                ...(matchedEntry.error ? { error: matchedEntry.error } : {}),
+                ts: matchedEntry.ts ?? 0,
+              },
+              resolvedTabId: tabId,
+            };
+          }
+        }
         if (networkIdle) {
           const deadline = Date.now() + waitTimeoutMs;
           while (deps.networkInflightCount!(tabId) > 0) {

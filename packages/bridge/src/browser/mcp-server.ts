@@ -479,7 +479,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.wait": {
     description:
-      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, selectorGone, urlContains, visibleSelector, readyState, networkIdle — waits until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout. networkIdle waits for in-flight requests to drain (SPA data loads).",
+      "Wait without busy-polling. Bare ms sleeps (0–30000). With a condition — text, textGone, selector, selectorGone, urlContains, visibleSelector, readyState, networkIdle, responseUrl — waits until all hold or timeoutMs (≤30000, default 10s) expires, then fails with browser.timeout. networkIdle waits for in-flight requests to drain (SPA data loads). responseUrl waits until an HTTP response whose URL contains the substring completes or fails — matched against the tab's network log with a lookback equal to the wait window (approval latency can exceed a fast local response); the result returns the matched entry's url/status/ts as evidence. URLs are matched sanitized (origin+path, query stripped); args.frameId is refused with responseUrl.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       frameId: FRAME_ID,
@@ -500,6 +500,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         type: "boolean",
         description: "Condition: wait until no network requests are in flight for the tab (SPA data-load barrier).",
       },
+      responseUrl: { type: "string", description: "Condition: wait until an HTTP response whose URL contains this substring completes or fails (matched on the sanitized origin+path URL; lookback = the wait window). Returns the matched entry's url/status/ts as evidence. Cannot combine with args.frameId." },
     }),
   },
   "browser.page.hover": {

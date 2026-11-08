@@ -196,6 +196,24 @@ try {
   assert(typeof liveGet?.page?.readyState === "string", `reloaded tab liveness probe back (got ${liveGet?.page?.readyState})`);
   await call("browser.tab.close", { tabId: liveTab }).catch(() => null);
 
+  // ── Loop 4d: wait responseUrl — completed-response condition over
+  // the persistent network buffer; /cache-probe's document response
+  // must match with status evidence; frameId refused.
+  const wrCreated = await call("browser.tab.create", { url: fixture.url("/cache-probe"), active: false });
+  const wrTab = wrCreated?.tabId ?? wrCreated?.id;
+  await new Promise((r) => setTimeout(r, 700));
+  const wrRes = await call("browser.page.wait", { tabId: wrTab, responseUrl: "cache-probe", timeoutMs: 5000 });
+  assert(wrRes?.matched === "response", `responseUrl wait matched (got ${JSON.stringify(wrRes).slice(0, 120)})`);
+  assert(wrRes?.response?.status === 200, `matched response status 200 (got ${wrRes?.response?.status})`);
+  assert(typeof wrRes?.response?.ts === "number", "matched response carries ts evidence");
+  await expectReject(
+    "browser.page.wait",
+    { tabId: wrTab, responseUrl: "x", frameId: 1 },
+    "frameId",
+    "responseUrl+frameId refused",
+  );
+  await call("browser.tab.close", { tabId: wrTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

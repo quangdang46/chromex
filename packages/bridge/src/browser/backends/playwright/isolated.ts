@@ -2173,9 +2173,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const readyState = typeof args.readyState === "string" ? args.readyState : null;
     const visibleSelector = typeof args.visibleSelector === "string" ? args.visibleSelector : null;
     const networkIdle = args.networkIdle === true;
+    const responseUrl = typeof args.responseUrl === "string" ? args.responseUrl : null;
+    if (args.responseUrl !== undefined && args.responseUrl !== null &&
+        (typeof args.responseUrl !== "string" || args.responseUrl === "" || args.responseUrl.length > 512)) {
+      throw protocolError("proto.invalid", "browser.page.wait args.responseUrl must be a non-empty string ≤512 chars");
+    }
+    if (responseUrl !== null && typeof args.frameId === "number" && args.frameId !== 0) {
+      throw protocolError("proto.invalid", "args.frameId is not supported with args.responseUrl");
+    }
     const hasCondition =
       selector !== null || selectorGone !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
-      visibleSelector !== null || networkIdle;
+      visibleSelector !== null || networkIdle || responseUrl !== null;
     if (selector !== null && selector === selectorGone) {
       throw protocolError("proto.invalid", "browser.page.wait args.selector and args.selectorGone must differ");
     }
@@ -2183,6 +2191,46 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
       return { ok: true, waitedMs: Math.min(timeout, 30_000) };
+    }
+    if (responseUrl !== null) {
+      // Same contract as the extension host: match completed/failed
+      // responses in the persistent network buffer within a lookback
+      // window equal to the wait timeout — approval latency can exceed
+      // a fast local response, and the matched entry's ts is evidence.
+      const netPage = await this.#pageFor(taskId, args);
+      const buf = this.#ensureNetworkCapture(netPage);
+      const since = started - Math.min(timeout, 30_000);
+      const respDeadline = deadline;
+      let hit: NetworkLogEntry | undefined;
+      for (;;) {
+        hit = [...buf].reverse().find(
+          (e) =>
+            e.url.includes(responseUrl) &&
+            e.ts >= since &&
+            (e.status !== undefined || e.error !== undefined),
+        );
+        if (hit || Date.now() >= respDeadline) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!hit) {
+        throw protocolError("browser.timeout", `no completed response matching "${responseUrl}" before timeout`);
+      }
+      const onlyResponse =
+        selector === null && selectorGone === null && urlContains === null && text === null &&
+        textGone === null && readyState === null && visibleSelector === null && !networkIdle;
+      if (onlyResponse) {
+        return {
+          ok: true,
+          matched: "response",
+          response: {
+            method: hit.method ?? "",
+            url: hit.url ?? "",
+            ...(typeof hit.status === "number" ? { status: hit.status } : {}),
+            ...(hit.error ? { error: hit.error } : {}),
+            ts: hit.ts ?? 0,
+          },
+        };
+      }
     }
     if (readyState !== null) {
       // document.readyState → playwright load state: interactive ≈
