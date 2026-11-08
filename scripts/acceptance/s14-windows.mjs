@@ -73,8 +73,14 @@ await runScenario(
         return { status: "FAIL", summary: "tab.create with windowId failed", details: { tab2 } };
       }
       openedTabIds.push(tab2Id);
-      const tabsNow = result(await call("browser.tabs.list"));
-      const tab2Row = (tabsNow.tabs ?? []).find((t) => t.id === tab2Id);
+      // tab.create returns before the new tab is observable in tabs.list —
+      // poll briefly rather than racing the registration.
+      let tab2Row;
+      for (let i = 0; i < 10 && !tab2Row; i++) {
+        const tabsNow = result(await call("browser.tabs.list"));
+        tab2Row = (tabsNow.tabs ?? []).find((t) => t.id === tab2Id);
+        if (!tab2Row) await sleep(500);
+      }
       evidence.note(`tabs.list row for tab2 → ${JSON.stringify(tab2Row).slice(0, 200)}`);
       if (tab2Row?.windowId !== windowId) {
         return {
