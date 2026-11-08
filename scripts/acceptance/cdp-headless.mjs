@@ -1034,6 +1034,34 @@ await runScenario(
         ...tg,
       };
 
+      // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
+      // Same pattern as bookmarks/history: the acceptance profile never
+      // grants it → proto.unsupported, approval gate fires first for
+      // mutations (get is a read and passes straight through).
+      let ss = {};
+      const ssRes = await runner.browserToolCall(
+        taskId, "browser.siteSettings",
+        { action: "set", contentType: "notifications", origin: new URL(fixture.url("/")).origin, setting: "allow" },
+        token, 60_000,
+      );
+      const ssErr = ssRes?.error ?? {};
+      ss.setStatus = ssRes?.status;
+      ss.setCode = ssErr.code;
+      ss.setUnsupportedOk = ssRes?.status === "failed" && ssErr.code === "proto.unsupported";
+      ss.setMsg = String(ssErr.message ?? "").slice(0, 160);
+      const ssGetRes = await runner.browserToolCall(
+        taskId, "browser.siteSettings",
+        { contentType: "notifications", origin: new URL(fixture.url("/")).origin },
+        token, 60_000,
+      );
+      const ssGetErr = ssGetRes?.error ?? {};
+      ss.getUnsupportedOk = ssGetRes?.status === "failed" && ssGetErr.code === "proto.unsupported";
+      evidence.note(`siteSettings → ${JSON.stringify(ss).slice(0, 300)}`);
+      results.siteSettings = {
+        ok: ss.setUnsupportedOk === true && ss.getUnsupportedOk === true,
+        ...ss,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

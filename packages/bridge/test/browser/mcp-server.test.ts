@@ -346,6 +346,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.bookmarks": { action: "list" },
   "browser.browsingData.clear": { dataTypes: ["cookies", "history"] },
   "browser.tabGroups": { action: "list" },
+  "browser.siteSettings": { contentType: "notifications", origin: "https://example.com" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
   "browser.downloads.cancel": { downloadId: 42 },
@@ -422,6 +423,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.windows.update",
           "browser.page.cdp",
           "browser.browsingData.clear",
+          "browser.siteSettings",
         ].includes(internal)
           ? false
           : true,

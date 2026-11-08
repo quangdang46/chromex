@@ -1298,6 +1298,84 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.siteSettings marshals get/set/clear + validates", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      siteSettings: {
+        get: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "get", args });
+          return { setting: "ask" };
+        }),
+        set: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "set", args });
+          return {};
+        }),
+        clear: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "clear", args });
+          return {};
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.siteSettings", {
+      action: "get", contentType: "notifications", origin: "https://x.example:8443/path",
+    }))) as { setting: string; origin: string; pattern: string };
+    expect(res.setting).toBe("ask");
+    // origin normalized; match pattern strips port (chrome patterns have none)
+    expect(res.origin).toBe("https://x.example:8443");
+    expect(res.pattern).toBe("https://x.example/*");
+    expect(calls[0]).toEqual({ op: "get", args: ["notifications", "https://x.example/*", undefined] });
+    // set + clear marshal
+    await h(req("browser.siteSettings", {
+      action: "set", contentType: "camera", origin: "https://x.example", setting: "allow", scope: "regular",
+    }));
+    expect(calls[1]).toEqual({ op: "set", args: ["camera", "https://x.example/*", "allow", "regular"] });
+    await h(req("browser.siteSettings", { action: "clear", contentType: "camera", origin: "https://x.example" }));
+    expect(calls[2]).toEqual({ op: "clear", args: ["camera", "https://x.example/*"] });
+    // default action is get
+    await h(req("browser.siteSettings", { contentType: "popups", origin: "https://x.example" }));
+    expect(calls[3]!.op).toBe("get");
+    // validation
+    await expect(h(req("browser.siteSettings", {})))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.siteSettings", { contentType: "Bad-Type", origin: "https://x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.siteSettings", { contentType: "notifications", origin: "file:///etc" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.siteSettings", { contentType: "notifications", origin: "https://x", action: "set" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.siteSettings", { contentType: "notifications", origin: "https://x", action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.siteSettings", { contentType: "notifications", origin: "https://x", scope: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // unknown content type (dep returns null) → proto.unsupported
+    const dNull = deps({
+      siteSettings: {
+        get: vi.fn(async () => null),
+        set: vi.fn(async () => null),
+        clear: vi.fn(async () => null),
+      },
+    });
+    await expect(createToolHostHandler(dNull)(req("browser.siteSettings", {
+      contentType: "bogus_type", origin: "https://x",
+    }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    // permission sentinel → distinct proto.unsupported message
+    const dPerm = deps({
+      siteSettings: {
+        get: vi.fn(async () => "permission" as const),
+        set: vi.fn(async () => "permission" as const),
+        clear: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.siteSettings", {
+      contentType: "notifications", origin: "https://x",
+    }))).rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("contentSettings permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.siteSettings", {
+      contentType: "notifications", origin: "https://x",
+    }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

@@ -301,6 +301,20 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.kind).toBe("browser_action");
   });
 
+  test("browser.siteSettings: get is read, set/clear always approval", () => {
+    const get = classifyActionRisk(ctx({ action: "browser.siteSettings", siteSettingsOp: "get" }));
+    expect(get.risk).toBe("read");
+    expect(get.needsApproval).toBe(false);
+    for (const op of ["set", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.siteSettings", siteSettingsOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.siteSettings" })).risk).toBe("read");
+  });
+
   test("browser.tabGroups: list is read, mutations always approval", () => {
     const list = classifyActionRisk(ctx({ action: "browser.tabGroups", tabGroupOp: "list" }));
     expect(list.risk).toBe("read");

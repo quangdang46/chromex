@@ -862,6 +862,17 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       collapsed: { type: "boolean", description: "update: collapse/expand the group." },
     }),
   },
+  "browser.siteSettings": {
+    description:
+      "Read/write per-origin site settings (chrome.contentSettings) — the permission state sites request through BROWSER-NATIVE prompts the agent cannot click (notifications, camera, microphone, geolocation/location, clipboard, midi, popups, javascript, cookies, images, storage_access, payment_handler, sensors, font_access, window_placement, pointer_lock, protected_media_identifier, display_capturing, direct_sockets, handler, idle_detection, mixed_script, password_protect, site_engagement, fullscreen, mouselock, automatic_downloads, ads, auto_picture_in_picture, plugins, unsandboxed_plugins, serial_chooser_dialog, usb_chooser_dialog, vr, wallpaper, xr_select_devices, sound, top_level_storage_access, bluetooth_guard, insecure_private_network — availability varies by Chrome version). args.action: 'get' (default) returns the current setting; 'set' applies args.setting; 'clear' resets to default. args.contentType is a snake_case type name (validated at runtime — unknown types → proto.unsupported), args.origin is an http(s) origin, args.setting is the content-setting value (allow|block|ask|session_only|remember|… — valid values vary per type, Chrome rejects invalid ones honestly), args.scope optionally regular|incognito_session_only|off_the_record|span_incognito|regular_only. 'set'/'clear' ALWAYS require approval and are never task-eligible — they change what the origin may do profile-wide. On playwright-isolated only the grantPermissions-mappable subset works: set 'allow' grants via context.grantPermissions, 'clear' clears ALL context permission overrides (reported scope:'context'), get/block/other settings → proto.unsupported.",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["get", "set", "clear"], description: "Operation (default get)." },
+      contentType: { type: "string", pattern: "^[a-z][a-z0-9_]{0,63}$", description: "Content setting type, e.g. notifications, camera, microphone, location, clipboard, popups, javascript, cookies." },
+      origin: { type: "string", description: "http(s) origin the setting applies to (e.g. https://example.com)." },
+      setting: { type: "string", description: "set: the content-setting value (allow|block|ask|session_only|… varies per type)." },
+      scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
+    }, ["contentType", "origin"]),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

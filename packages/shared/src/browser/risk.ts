@@ -68,6 +68,9 @@ export interface ActionContext {
   /** browser.tabGroups sub-action — list is a read (group titles are
    *  user data), create/update/ungroup mutate browser chrome. */
   tabGroupOp?: string;
+  /** browser.siteSettings sub-action — get is a read, set/clear change
+   *  what an origin is allowed to do across the whole profile. */
+  siteSettingsOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -548,6 +551,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "cache metadata/key list" });
+    }
+
+    case "browser.siteSettings": {
+      const op = ctx.siteSettingsOp ?? "get";
+      if (op === "set" || op === "clear") {
+        // Content settings decide what an origin may do (camera, mic,
+        // notifications, cookies, JS…) profile-wide — never
+        // task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "site settings mutation changes origin permissions",
+        });
+      }
+      return verdict("read", { reason: "site settings read" });
     }
 
     case "browser.tabGroups": {

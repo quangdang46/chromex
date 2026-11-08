@@ -34,7 +34,8 @@
   "optional_permissions": [
     "history",
     "bookmarks",
-    "browsingData"
+    "browsingData",
+    "contentSettings"
   ],
   "background": {
     "service_worker": "background.js",

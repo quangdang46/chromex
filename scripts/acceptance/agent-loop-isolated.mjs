@@ -816,6 +816,44 @@ try {
   await expectReject("browser.browsingData.clear", { dataTypes: ["cookies"], since: "nope" }, "since", "bad since refused");
   await call("browser.tab.close", { tabId: bdId });
 
+  // ── Loop 22: siteSettings — grantPermissions subset on isolated ─────
+  const ssOrigin = new URL(fixture.url("/")).origin;
+  const ssSet = await call("browser.siteSettings", {
+    action: "set", contentType: "notifications", origin: ssOrigin, setting: "allow",
+  });
+  assert(
+    ssSet?.setting === "allow" && Array.isArray(ssSet?.granted) && ssSet.granted.includes("notifications"),
+    `siteSettings set granted notifications (got ${JSON.stringify(ssSet).slice(0, 140)})`,
+  );
+  // verify in-page: the permission is REALLY granted for that origin
+  const ssTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const ssId = ssTab?.tabId ?? ssTab?.id;
+  const ssQuery = await call("browser.page.evaluate", {
+    tabId: ssId,
+    expression: `(async()=>{const p=await navigator.permissions.query({name:'notifications'});return p.state})()`,
+  });
+  const ssState = ssQuery?.value ?? ssQuery?.result?.value;
+  assert(ssState === "granted", `in-page permissions.query reports granted (got ${ssState})`);
+  // honest boundaries: get/block/unmapped all refuse
+  await expectReject("browser.siteSettings", { contentType: "notifications", origin: ssOrigin }, "cannot read", "siteSettings get refused on isolated");
+  await expectReject("browser.siteSettings", { action: "set", contentType: "notifications", origin: ssOrigin, setting: "block" }, "only grant", "siteSettings block refused on isolated");
+  await expectReject("browser.siteSettings", { action: "set", contentType: "popups", origin: ssOrigin, setting: "allow" }, "no grantPermissions mapping", "unmapped content type refused");
+  // clear wipes context overrides → permission back to prompt
+  const ssClear = await call("browser.siteSettings", {
+    action: "clear", contentType: "notifications", origin: ssOrigin,
+  });
+  assert(ssClear?.cleared === true && ssClear?.scope === "context",
+    `siteSettings clear reports context-wide scope (got ${JSON.stringify(ssClear).slice(0, 120)})`);
+  const ssQuery2 = await call("browser.page.evaluate", {
+    tabId: ssId,
+    expression: `(async()=>{const p=await navigator.permissions.query({name:'notifications'});return p.state})()`,
+  });
+  const ssState2 = ssQuery2?.value ?? ssQuery2?.result?.value;
+  assert(ssState2 === "prompt", `permission back to prompt after clear (got ${ssState2})`);
+  await expectReject("browser.siteSettings", { contentType: "notifications" }, "args.origin", "siteSettings without origin refused");
+  await expectReject("browser.siteSettings", { contentType: "Bad Type", origin: ssOrigin }, "contentType", "bad contentType refused");
+  await call("browser.tab.close", { tabId: ssId });
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

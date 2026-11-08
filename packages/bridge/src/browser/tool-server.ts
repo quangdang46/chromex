@@ -330,6 +330,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.bookmarks",
   "browser.browsingData.clear",
   "browser.tabGroups",
+  "browser.siteSettings",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -452,6 +453,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.tabGroups"
       ? { tabGroupOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
+    ...(req.tool === "browser.siteSettings"
+      ? { siteSettingsOp: typeof args.action === "string" ? args.action : "get" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

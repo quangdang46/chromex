@@ -78,6 +78,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.history.delete",
   "browser.bookmarks",
   "browser.browsingData.clear",
+  "browser.siteSettings",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -439,6 +440,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#bookmarks(taskId, args);
       case "browser.browsingData.clear":
         return this.#browsingDataClear(taskId, args);
+      case "browser.siteSettings":
+        return this.#siteSettings(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -2228,6 +2231,79 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ...(sinceMs !== undefined && sinceMs > 0 ? { since: sinceMs } : {}),
       scope: "task",
     };
+  }
+
+  /** browser.siteSettings — honest subset on isolated: only the
+   *  grantPermissions-mappable content types work, and only 'allow'
+   *  (playwright has no deny/ask tri-state and cannot read effective
+   *  settings). clear wipes ALL context permission overrides — reported
+   *  scope:"context" honestly. */
+  async #siteSettings(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const action = typeof args.action === "string" ? args.action : "get";
+    if (!["get", "set", "clear"].includes(action)) {
+      throw protocolError("proto.invalid", "browser.siteSettings args.action must be get|set|clear");
+    }
+    const contentType = typeof args.contentType === "string" ? args.contentType : "";
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(contentType)) {
+      throw protocolError("proto.invalid", "browser.siteSettings requires args.contentType (snake_case, e.g. notifications)");
+    }
+    const rawOrigin = typeof args.origin === "string" ? args.origin : "";
+    let originUrl: URL;
+    try {
+      originUrl = new URL(rawOrigin);
+    } catch {
+      throw protocolError("proto.invalid", "browser.siteSettings args.origin is not a valid URL");
+    }
+    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") {
+      throw protocolError("proto.invalid", "browser.siteSettings args.origin must be http(s)");
+    }
+    const origin = originUrl.origin;
+    const context = await this.#contextFor(taskId);
+    // contentType → playwright permission names (documented subset)
+    const PERMISSION_MAP: Record<string, string[]> = {
+      notifications: ["notifications"],
+      camera: ["camera"],
+      microphone: ["microphone"],
+      location: ["geolocation"],
+      geolocation: ["geolocation"],
+      clipboard: ["clipboard-read", "clipboard-write"],
+      midi: ["midi", "midi-sysex"],
+      payment_handler: ["payment-handler"],
+      storage_access: ["storage-access"],
+      font_access: ["local-fonts"],
+    };
+    if (action === "get") {
+      throw protocolError(
+        "proto.unsupported",
+        "playwright-isolated cannot read effective content settings — use page.evaluate navigator.permissions.query instead",
+      );
+    }
+    if (action === "clear") {
+      // playwright clearPermissions is context-wide (no per-origin or
+      // per-type granularity in this API version) — say so honestly.
+      await context.clearPermissions();
+      return { contentType, origin, cleared: true, scope: "context" };
+    }
+    // set
+    const setting = typeof args.setting === "string" ? args.setting : "";
+    if (!setting || setting.length > 64) {
+      throw protocolError("proto.invalid", "browser.siteSettings set requires args.setting (≤64 chars)");
+    }
+    const mapped = PERMISSION_MAP[contentType];
+    if (!mapped) {
+      throw protocolError(
+        "proto.unsupported",
+        `playwright-isolated has no grantPermissions mapping for content type '${contentType}'`,
+      );
+    }
+    if (setting !== "allow") {
+      throw protocolError(
+        "proto.unsupported",
+        `playwright-isolated can only grant permissions (setting 'allow'); '${setting}' has no deny/ask equivalent`,
+      );
+    }
+    await context.grantPermissions(mapped, { origin });
+    return { contentType, origin, setting: "allow", granted: mapped };
   }
 
   // ---- caches (Cache API) ----

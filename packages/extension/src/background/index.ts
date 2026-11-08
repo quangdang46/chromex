@@ -510,6 +510,50 @@ const toolHostHandler = createToolHostHandler({
           },
         }
       : {}),
+    siteSettings: {
+      // chrome.contentSettings is a bag of per-type APIs — resolve
+      // dynamically so every Chrome-version type works; unknown types
+      // return null → proto.unsupported. The "contentSettings"
+      // permission is OPTIONAL (install warning) — checked per call so
+      // a runtime grant works without a service-worker restart; Chrome
+      // also hides the namespace entirely while ungranted.
+      get: async (type, primaryPattern, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["contentSettings"] });
+        if (!granted) return "permission";
+        const api = (chrome.contentSettings as unknown as Record<string, {
+          get(d: { primaryPattern: string; scope?: string }): Promise<{ setting?: string; scope?: string }>;
+        } | undefined>)[type];
+        if (!api) return null;
+        return api.get({
+          primaryPattern,
+          ...(scope ? { scope } : {}),
+        });
+      },
+      set: async (type, primaryPattern, setting, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["contentSettings"] });
+        if (!granted) return "permission";
+        const api = (chrome.contentSettings as unknown as Record<string, {
+          set(d: { primaryPattern: string; setting: string; scope?: string }): Promise<void>;
+        } | undefined>)[type];
+        if (!api) return null;
+        await api.set({
+          primaryPattern,
+          setting,
+          ...(scope ? { scope } : {}),
+        });
+        return {};
+      },
+      clear: async (type, primaryPattern) => {
+        const granted = await chrome.permissions.contains({ permissions: ["contentSettings"] });
+        if (!granted) return "permission";
+        const api = (chrome.contentSettings as unknown as Record<string, {
+          clear(d: { primaryPattern: string }): Promise<void>;
+        } | undefined>)[type];
+        if (!api) return null;
+        await api.clear({ primaryPattern });
+        return {};
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

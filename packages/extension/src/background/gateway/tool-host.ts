@@ -163,6 +163,24 @@ export interface ToolHostDeps {
       opts: { title?: string; color?: string; collapsed?: boolean },
     ): Promise<unknown>;
   };
+  /** chrome.contentSettings (browser.siteSettings) — per-origin
+   *  permission state for types like notifications/camera/microphone.
+   *  null → content type unavailable → proto.unsupported;
+   *  "permission" → optional contentSettings permission not granted. */
+  siteSettings?: {
+    get(
+      contentType: string,
+      primaryPattern: string,
+      scope?: string,
+    ): Promise<{ setting?: string | undefined; scope?: string | undefined } | "permission" | null>;
+    set(
+      contentType: string,
+      primaryPattern: string,
+      setting: string,
+      scope?: string,
+    ): Promise<unknown | "permission" | null>;
+    clear(contentType: string, primaryPattern: string): Promise<unknown | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -327,6 +345,7 @@ const SUPPORTED = new Set([
   "browser.bookmarks",
   "browser.browsingData.clear",
   "browser.tabGroups",
+  "browser.siteSettings",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2059,6 +2078,88 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           return { ungrouped: tabIds };
         }
         throw toolError("proto.invalid", "browser.tabGroups args.action must be list|create|update|ungroup");
+      }
+      case "browser.siteSettings": {
+        // Per-origin content settings via chrome.contentSettings —
+        // the permission state behind browser-native prompts
+        // (notifications, camera, mic…) the agent cannot click.
+        if (!deps.siteSettings) {
+          throw toolError("proto.unsupported", "site settings are not available on this host");
+        }
+        const api = deps.siteSettings;
+        const action = str(args.action) ?? "get";
+        if (!["get", "set", "clear"].includes(action)) {
+          throw toolError("proto.invalid", "browser.siteSettings args.action must be get|set|clear");
+        }
+        const contentType = str(args.contentType);
+        if (contentType === undefined || !/^[a-z][a-z0-9_]{0,63}$/.test(contentType)) {
+          throw toolError("proto.invalid", "browser.siteSettings requires args.contentType (snake_case, e.g. notifications)");
+        }
+        const rawOrigin = str(args.origin);
+        if (rawOrigin === undefined) {
+          throw toolError("proto.invalid", "browser.siteSettings requires args.origin (http(s) origin)");
+        }
+        let originUrl: URL;
+        try {
+          originUrl = new URL(rawOrigin);
+        } catch {
+          throw toolError("proto.invalid", "browser.siteSettings args.origin is not a valid URL");
+        }
+        if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") {
+          throw toolError("proto.invalid", "browser.siteSettings args.origin must be http(s)");
+        }
+        // chrome match patterns cannot express ports — the pattern is
+        // scheme://host/* (site settings are host-scoped in Chrome).
+        const primaryPattern = `${originUrl.protocol}//${originUrl.hostname}/*`;
+        const SCOPES = new Set(["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"]);
+        const scope = str(args.scope);
+        if (scope !== undefined && !SCOPES.has(scope)) {
+          throw toolError("proto.invalid", `browser.siteSettings args.scope must be one of ${[...SCOPES].join("|")}`);
+        }
+        if (action === "get") {
+          const res = await api.get(contentType, primaryPattern, scope);
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "contentSettings permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", `content type '${contentType}' is not available in this Chrome version`);
+          }
+          return {
+            contentType,
+            origin: originUrl.origin,
+            pattern: primaryPattern,
+            setting: res.setting ?? "default",
+            ...(typeof res.scope === "string" ? { scope: res.scope } : {}),
+          };
+        }
+        if (action === "set") {
+          const setting = str(args.setting);
+          if (setting === undefined || setting.length === 0 || setting.length > 64) {
+            throw toolError("proto.invalid", "browser.siteSettings set requires args.setting (≤64 chars)");
+          }
+          const res = await api.set(contentType, primaryPattern, setting, scope);
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "contentSettings permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", `content type '${contentType}' is not available in this Chrome version`);
+          }
+          return {
+            contentType,
+            origin: originUrl.origin,
+            pattern: primaryPattern,
+            setting,
+            ...(scope ? { scope } : {}),
+          };
+        }
+        const res = await api.clear(contentType, primaryPattern);
+        if (res === "permission") {
+          throw toolError("proto.unsupported", "contentSettings permission is not granted");
+        }
+        if (res === null) {
+          throw toolError("proto.unsupported", `content type '${contentType}' is not available in this Chrome version`);
+        }
+        return { contentType, origin: originUrl.origin, pattern: primaryPattern, cleared: true };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.
