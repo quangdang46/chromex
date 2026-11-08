@@ -1769,6 +1769,29 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (responseUrl !== undefined && typeof deps.listNetworkRequests !== "function") {
           throw toolError("proto.unsupported", "response wait requires the webRequest permission");
         }
+        // consoleText waits on the in-page MAIN-world console buffer
+        // (same source as browser.page.console). Coverage begins when
+        // the capture hook installs — first collect call, or earlier
+        // if the agent already called page.console — so lookback can
+        // only match entries recorded while the hook was live. Entries
+        // carry page-side ts; freshness stays visible like responseUrl.
+        const consoleText = str(args.consoleText);
+        if (consoleText !== undefined && (consoleText.length === 0 || consoleText.length > 512)) {
+          throw toolError("proto.invalid", "browser.page.wait args.consoleText must be a non-empty string ≤512 chars");
+        }
+        const consoleLevel = str(args.consoleLevel);
+        if (consoleLevel !== undefined) {
+          if (consoleText === undefined) {
+            throw toolError("proto.invalid", "args.consoleLevel requires args.consoleText");
+          }
+          if (!["log", "info", "warn", "error", "debug"].includes(consoleLevel)) {
+            throw toolError("proto.invalid", "args.consoleLevel must be log|info|warn|error|debug");
+          }
+        }
+        if (consoleText !== undefined && typeof deps.runInMainWorld !== "function") {
+          throw toolError("proto.unsupported", "console wait requires the scripting permission");
+        }
+        const hasConsoleCondition = consoleText !== undefined;
         const hasResponseCondition = responseUrl !== undefined;
         const hasContentCondition =
           str(args.text) !== undefined ||
@@ -1778,7 +1801,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.urlContains) !== undefined ||
           str(args.readyState) !== undefined ||
           str(args.visibleSelector) !== undefined;
-        const hasCondition = hasContentCondition || hasResponseCondition;
+        const hasCondition = hasContentCondition || hasResponseCondition || hasConsoleCondition;
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
@@ -1832,7 +1855,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               `no completed response matching "${responseUrl}" within ${waitTimeoutMs}ms`,
             );
           }
-          if (!hasContentCondition && !networkIdle) {
+          if (!hasContentCondition && !networkIdle && !hasConsoleCondition) {
             return {
               ok: true,
               matched: "response",
@@ -1842,6 +1865,59 @@ export function createToolHostHandler(deps: ToolHostDeps) {
                 ...(typeof matchedEntry.status === "number" ? { status: matchedEntry.status } : {}),
                 ...(matchedEntry.error ? { error: matchedEntry.error } : {}),
                 ts: matchedEntry.ts ?? 0,
+              },
+              resolvedTabId: tabId,
+            };
+          }
+        }
+        if (hasConsoleCondition) {
+          // Same lookback semantics as responseUrl: entries carry
+          // page-side ts, so messages logged during approval/tool
+          // latency still match IF the capture hook was already live.
+          // The first collect call installs the hook — coverage before
+          // that is honestly absent (documented in the tool description).
+          const since = Date.now() - waitTimeoutMs;
+          const deadline = Date.now() + waitTimeoutMs;
+          const consoleFrameId = frameIdArg(args);
+          try {
+            await deps.runInMainWorld!(tabId, chromexConsoleCollect, [200, consoleLevel ?? null], [consoleFrameId]);
+          } catch {
+            // install failure surfaces on the poll below as timeout
+          }
+          let consoleHit: { level?: unknown; text?: unknown; ts?: unknown } | undefined;
+          while (Date.now() < deadline) {
+            const cres = (await deps
+              .runInMainWorld!(tabId, chromexConsoleCollect, [200, null], [consoleFrameId])
+              .catch(() => undefined)) as { entries?: unknown } | undefined;
+            const entries = Array.isArray(cres?.entries) ? cres.entries : [];
+            const hit = entries.find((e) => {
+              const en = e as { level?: unknown; text?: unknown; ts?: unknown };
+              return (
+                typeof en.ts === "number" && en.ts >= since &&
+                typeof en.text === "string" && en.text.includes(consoleText!) &&
+                (consoleLevel === undefined || en.level === consoleLevel)
+              );
+            }) as { level?: unknown; text?: unknown; ts?: unknown } | undefined;
+            if (hit) {
+              consoleHit = hit;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          if (!consoleHit) {
+            throw toolError(
+              "browser.timeout",
+              `no console message matching "${consoleText}" within ${waitTimeoutMs}ms`,
+            );
+          }
+          if (!hasContentCondition && !networkIdle) {
+            return {
+              ok: true,
+              matched: "console",
+              console: {
+                level: consoleHit.level ?? "",
+                text: consoleHit.text ?? "",
+                ts: consoleHit.ts ?? 0,
               },
               resolvedTabId: tabId,
             };
@@ -1858,9 +1934,15 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             }
             await new Promise((r) => setTimeout(r, 150));
           }
-          if (!hasCondition) {
+          if (!hasContentCondition && !hasResponseCondition && !hasConsoleCondition) {
             return { ok: true, matched: "networkIdle", resolvedTabId: tabId };
           }
+        }
+        if (!hasContentCondition) {
+          // Only host-side conditions were requested (response/console/
+          // networkIdle combos) — all matched above; a content-script
+          // wait with zero conditions would be meaningless.
+          return { ok: true, matched: "conditions", resolvedTabId: tabId };
         }
         const frameId = frameIdArg(args);
         const res = (await deps.sendToTab(tabId, {

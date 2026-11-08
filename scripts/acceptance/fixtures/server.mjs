@@ -205,6 +205,15 @@ addEventListener("wheel", (e) => {
 <p id="r">count:0 trusted:none delta:0</p>
 </body></html>`,
 
+  // console probe: buttons emit marker console messages at distinct
+  // levels — proof for page.wait consoleText/consoleLevel.
+  "/console-probe": `<!doctype html><html><body>
+<h1>Console Probe</h1>
+<button id="err" onclick="console.error('probe-error-marker')">err</button>
+<button id="warn" onclick="console.warn('probe-warn-marker')">warn</button>
+<button id="ok" onclick="console.log('probe-log-marker')">log</button>
+</body></html>`,
+
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.
   "/drag": `<!doctype html><html><body>

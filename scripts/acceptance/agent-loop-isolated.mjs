@@ -214,6 +214,27 @@ try {
   );
   await call("browser.tab.close", { tabId: wrTab }).catch(() => null);
 
+  // ── Loop 4e: wait consoleText — console buffer attaches at page
+  // birth on isolated, so the post-click marker is inside the wait's
+  // lookback window without any priming call.
+  const wcCreated = await call("browser.tab.create", { url: fixture.url("/console-probe"), active: false });
+  const wcTab = wcCreated?.tabId ?? wcCreated?.id;
+  await new Promise((r) => setTimeout(r, 700));
+  await call("browser.page.click", { tabId: wcTab, selector: "#err" }).catch(() => null);
+  const wcRes = await call("browser.page.wait", {
+    tabId: wcTab, consoleText: "probe-error-marker", consoleLevel: "error", timeoutMs: 5000,
+  });
+  assert(wcRes?.matched === "console", `consoleText wait matched (got ${JSON.stringify(wcRes).slice(0, 120)})`);
+  assert(wcRes?.console?.level === "error", `matched console level error (got ${wcRes?.console?.level})`);
+  assert(typeof wcRes?.console?.ts === "number", "matched console carries ts evidence");
+  await expectReject(
+    "browser.page.wait",
+    { tabId: wcTab, consoleLevel: "error" },
+    "consoleLevel",
+    "consoleLevel without consoleText refused",
+  );
+  await call("browser.tab.close", { tabId: wcTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

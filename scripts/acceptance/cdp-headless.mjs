@@ -1723,6 +1723,67 @@ await runScenario(
         ...wr,
       };
 
+      // --- waitConsole: consoleText/consoleLevel over the MAIN-world buffer ---
+      // Prime browser.page.console first — the capture hook only records
+      // from install time, so the pre-click prime is what makes the
+      // post-click message visible to the wait's lookback window.
+      let wc = {};
+      try {
+        const wcCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create",
+          { url: fixture.url("/console-probe"), active: false }, token, 60_000,
+        );
+        const wcTab = (wcCreate?.result ?? wcCreate ?? {}).openedTabId ??
+          (wcCreate?.result ?? wcCreate ?? {}).tabId;
+        wc.createOk = typeof wcTab === "number";
+        if (wc.createOk) {
+          await sleep(700);
+          const prime = await runner.browserToolCall(
+            taskId, "browser.page.console", { tabId: wcTab }, token, 60_000,
+          );
+          wc.primeOk = prime?.status === "completed";
+          await runner.browserToolCall(
+            taskId, "browser.page.click", { tabId: wcTab, selector: "#err" }, token, 60_000,
+          ).catch(() => null);
+          const wcRes = await runner.browserToolCall(
+            taskId, "browser.page.wait",
+            { tabId: wcTab, consoleText: "probe-error-marker", consoleLevel: "error", timeoutMs: 5000 }, token, 60_000,
+          );
+          const wcBody = wcRes?.result ?? wcRes ?? {};
+          wc.matchedOk = wcBody.matched === "console";
+          wc.levelOk = wcBody.console?.level === "error";
+          wc.evidenceOk = typeof wcBody.console?.ts === "number" && typeof wcBody.console?.text === "string";
+          // wrong level filter → honest timeout
+          await runner.browserToolCall(
+            taskId, "browser.page.click", { tabId: wcTab, selector: "#warn" }, token, 60_000,
+          ).catch(() => null);
+          const wcNo = await runner.browserToolCall(
+            taskId, "browser.page.wait",
+            { tabId: wcTab, consoleText: "probe-warn-marker", consoleLevel: "error", timeoutMs: 400 }, token, 60_000,
+          ).catch(() => null);
+          wc.levelTimeoutOk = (wcNo?.error?.code ?? "") === "browser.timeout";
+          const wcBad = await runner.browserToolCall(
+            taskId, "browser.page.wait",
+            { tabId: wcTab, consoleLevel: "error" }, token, 60_000,
+          ).catch(() => null);
+          wc.badArgOk = (wcBad?.error?.code ?? "") === "proto.invalid";
+          await runner.browserToolCall(
+            taskId, "browser.tab.close", { tabId: wcTab }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          wc.matchedOk = wc.levelOk = wc.evidenceOk = wc.levelTimeoutOk = wc.badArgOk = false;
+        }
+      } catch (e) {
+        wc.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`waitConsole → ${JSON.stringify(wc).slice(0, 300)}`);
+      results.waitConsole = {
+        ok: wc.createOk === true && wc.primeOk === true && wc.matchedOk === true &&
+          wc.levelOk === true && wc.evidenceOk === true && wc.levelTimeoutOk === true &&
+          wc.badArgOk === true,
+        ...wc,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

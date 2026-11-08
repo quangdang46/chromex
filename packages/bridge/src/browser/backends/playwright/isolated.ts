@@ -2181,9 +2181,25 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (responseUrl !== null && typeof args.frameId === "number" && args.frameId !== 0) {
       throw protocolError("proto.invalid", "args.frameId is not supported with args.responseUrl");
     }
+    // consoleText waits on the per-page console buffer attached at page
+    // birth — full lookback coverage, same contract as responseUrl.
+    const consoleText = typeof args.consoleText === "string" ? args.consoleText : null;
+    if (args.consoleText !== undefined && args.consoleText !== null &&
+        (typeof args.consoleText !== "string" || args.consoleText === "" || args.consoleText.length > 512)) {
+      throw protocolError("proto.invalid", "browser.page.wait args.consoleText must be a non-empty string ≤512 chars");
+    }
+    const consoleLevel = typeof args.consoleLevel === "string" ? args.consoleLevel : null;
+    if (consoleLevel !== null) {
+      if (consoleText === null) {
+        throw protocolError("proto.invalid", "args.consoleLevel requires args.consoleText");
+      }
+      if (!["log", "info", "warn", "error", "debug"].includes(consoleLevel)) {
+        throw protocolError("proto.invalid", "args.consoleLevel must be log|info|warn|error|debug");
+      }
+    }
     const hasCondition =
       selector !== null || selectorGone !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
-      visibleSelector !== null || networkIdle || responseUrl !== null;
+      visibleSelector !== null || networkIdle || responseUrl !== null || consoleText !== null;
     if (selector !== null && selector === selectorGone) {
       throw protocolError("proto.invalid", "browser.page.wait args.selector and args.selectorGone must differ");
     }
@@ -2217,7 +2233,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       const onlyResponse =
         selector === null && selectorGone === null && urlContains === null && text === null &&
-        textGone === null && readyState === null && visibleSelector === null && !networkIdle;
+        textGone === null && readyState === null && visibleSelector === null && !networkIdle &&
+        consoleText === null;
       if (onlyResponse) {
         return {
           ok: true,
@@ -2229,6 +2246,38 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
             ...(hit.error ? { error: hit.error } : {}),
             ts: hit.ts ?? 0,
           },
+        };
+      }
+    }
+    if (consoleText !== null) {
+      // Console buffer attaches at page birth — lookback covers the
+      // whole wait window like responseUrl. Match is substring on the
+      // serialized entry text plus optional exact level.
+      const cbuf = this.#ensureConsoleCapture(await this.#pageFor(taskId, args));
+      const since = started - Math.min(timeout, 30_000);
+      let chit: { level: string; text: string; ts: number } | undefined;
+      for (;;) {
+        chit = [...cbuf].reverse().find(
+          (e) =>
+            e.ts >= since &&
+            e.text.includes(consoleText) &&
+            (consoleLevel === null || e.level === consoleLevel),
+        );
+        if (chit || Date.now() >= deadline) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!chit) {
+        throw protocolError("browser.timeout", `no console message matching "${consoleText}" before timeout`);
+      }
+      const onlyConsole =
+        selector === null && selectorGone === null && urlContains === null && text === null &&
+        textGone === null && readyState === null && visibleSelector === null && !networkIdle &&
+        responseUrl === null;
+      if (onlyConsole) {
+        return {
+          ok: true,
+          matched: "console",
+          console: { level: chit.level, text: chit.text, ts: chit.ts },
         };
       }
     }

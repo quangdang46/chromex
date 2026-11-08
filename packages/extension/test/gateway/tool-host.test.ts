@@ -705,6 +705,63 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.wait consoleText matches buffered entry with evidence", async () => {
+    const d = deps({
+      runInMainWorld: vi.fn(async () => ({
+        installed: true,
+        entries: [
+          { level: "log", text: "noise", ts: Date.now() },
+          { level: "error", text: "save failed: quota", ts: Date.now() },
+        ],
+      })),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.page.wait", { consoleText: "save failed", consoleLevel: "error", timeoutMs: 5000, tabId: 7 }),
+    )) as { ok: boolean; matched: string; console: { level: string; text: string } };
+    expect(res).toMatchObject({ ok: true, matched: "console" });
+    expect(res.console.level).toBe("error");
+    expect(res.console.text).toContain("save failed");
+    // level filter excludes the match → timeout
+    const d2 = deps({
+      runInMainWorld: vi.fn(async () => ({
+        installed: true,
+        entries: [{ level: "error", text: "save failed", ts: Date.now() }],
+      })),
+    });
+    const h2 = createToolHostHandler(d2);
+    await expect(
+      h2(req("browser.page.wait", { consoleText: "save failed", consoleLevel: "warn", timeoutMs: 80, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+    // stale entry outside lookback → timeout
+    const d3 = deps({
+      runInMainWorld: vi.fn(async () => ({
+        installed: true,
+        entries: [{ level: "error", text: "old boom", ts: Date.now() - 60_000 }],
+      })),
+    });
+    const h3 = createToolHostHandler(d3);
+    await expect(
+      h3(req("browser.page.wait", { consoleText: "old boom", timeoutMs: 80, tabId: 7 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+  });
+
+  test("page.wait consoleText validation: level requires text, bad level, missing dep", async () => {
+    const h = createToolHostHandler(deps({
+      runInMainWorld: vi.fn(async () => ({ installed: true, entries: [] })),
+    }));
+    await expect(
+      h(req("browser.page.wait", { consoleLevel: "error", tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.wait", { consoleText: "x", consoleLevel: "fatal", tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    const hNoDep = createToolHostHandler(deps());
+    await expect(
+      hNoDep(req("browser.page.wait", { consoleText: "x", tabId: 7 })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.find forwards text/regex/scope to page.dom.find and returns matches", async () => {
     const sentMsgs: Array<Record<string, unknown>> = [];
     const d = deps({
