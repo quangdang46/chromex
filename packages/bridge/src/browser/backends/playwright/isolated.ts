@@ -84,6 +84,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.bookmarks",
   "browser.browsingData.clear",
   "browser.siteSettings",
+  "browser.sessions",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -244,6 +245,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  pages THIS task created/navigated (honest scope, documented in
    *  the tool description). Capped per task. */
   readonly #visitLogs = new Map<string, Array<{ url: string; title: string; ts: number }>>();
+  /** Per-task recently-closed log backing browser.sessions —
+   *  playwright has no chrome.sessions equivalent, so tab.close
+   *  records {url,title} here and restore reopens it in-context
+   *  (scope:"task" honestly — dies with the task). */
+  readonly #sessionLogs = new Map<string, Array<{ sessionId: string; lastModified: number; url: string; title: string }>>();
+  #sessionSeq = 0;
   /** Per-task bookmark jar — isolated contexts have no browser profile,
    *  so bookmarks live and die with the task (scope:"task" honestly). */
   readonly #bookmarkJars = new Map<
@@ -459,6 +466,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#browsingDataClear(taskId, args);
       case "browser.siteSettings":
         return this.#siteSettings(taskId, args);
+      case "browser.sessions":
+        return this.#sessions(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -498,6 +507,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #tabClose(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
+    // Record into the task's recently-closed log BEFORE close so
+    // browser.sessions can list/restore it (chrome.sessions parity —
+    // scope:"task" honestly, entries die with the task).
+    const url = page.url();
+    if (url && url !== "about:blank") {
+      const log = this.#sessionLogs.get(taskId) ?? [];
+      this.#sessionLogs.set(taskId, log);
+      log.unshift({
+        sessionId: `sess-${++this.#sessionSeq}`,
+        lastModified: Date.now(),
+        url: stripQuery(url),
+        title: typeof page.title === "function" ? await page.title().catch(() => "") : "",
+      });
+      if (log.length > 25) log.length = 25;
+    }
     await page.close();
     return { closed: true };
   }
@@ -2241,6 +2265,65 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     };
   }
 
+  /** browser.sessions over the task's recently-closed log — the honest
+   *  isolated equivalent of chrome.sessions (no browser profile here).
+   *  list returns entries most-recent first; restore reopens the URL in
+   *  a new in-context page and removes the entry (chrome.sessions
+   *  consumes restored entries the same way). */
+  async #sessions(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const action = typeof args.action === "string" ? args.action : "list";
+    if (action !== "list" && action !== "restore") {
+      throw protocolError("proto.invalid", "browser.sessions args.action must be list|restore");
+    }
+    const log = this.#sessionLogs.get(taskId) ?? [];
+    if (action === "list") {
+      let maxResults = 25;
+      if (args.maxResults !== undefined && args.maxResults !== null) {
+        const n = args.maxResults;
+        if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > 25) {
+          throw protocolError("proto.invalid", "browser.sessions args.maxResults must be an integer 1-25");
+        }
+        maxResults = n;
+      }
+      const entries = log.slice(0, maxResults).map((e) => ({
+        kind: "tab",
+        sessionId: e.sessionId,
+        lastModified: e.lastModified,
+        url: e.url,
+        title: e.title,
+      }));
+      return { entries, count: entries.length, scope: "task" };
+    }
+    // restore
+    let sessionId: string | undefined;
+    if (args.sessionId !== undefined && args.sessionId !== null) {
+      if (typeof args.sessionId !== "string" || args.sessionId.length < 1 || args.sessionId.length > 256) {
+        throw protocolError("proto.invalid", "browser.sessions args.sessionId must be 1-256 chars");
+      }
+      sessionId = args.sessionId;
+    }
+    const idx = sessionId === undefined ? 0 : log.findIndex((e) => e.sessionId === sessionId);
+    if (idx === -1 || log.length === 0) {
+      return { restored: false, found: false, scope: "task" };
+    }
+    const entry = log[idx]!;
+    const context = await this.#contextFor(taskId);
+    const page = this.#trackPage(await context.newPage());
+    this.#activePages.set(taskId, page);
+    await page.goto(entry.url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" }).catch(() => {});
+    await this.#recordVisit(taskId, page);
+    log.splice(idx, 1);
+    const tabId = context.pages().indexOf(page);
+    return {
+      restored: true,
+      found: true,
+      sessionId: entry.sessionId,
+      tabId,
+      url: stripQuery(page.url() || entry.url),
+      scope: "task",
+    };
+  }
+
   /** browser.browsingData.clear — honest subset on isolated: cookies
    *  (context.clearCookies), history (task visit log), downloads
    *  (download.delete per file). Everything else reports unsupported —
@@ -3632,6 +3715,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#contexts.delete(taskId);
     this.#activePages.delete(taskId);
     this.#visitLogs.delete(taskId);
+    this.#sessionLogs.delete(taskId);
     this.#bookmarkJars.delete(taskId);
     for (const p of ctx?.pages() ?? []) this.#forgetPage(p);
     await ctx?.close().catch(() => {});
@@ -3648,6 +3732,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       this.#pendingDialogs,
     ]) map.clear();
     this.#visitLogs.clear();
+    this.#sessionLogs.clear();
     this.#bookmarkJars.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;

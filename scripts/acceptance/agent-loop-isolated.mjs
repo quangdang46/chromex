@@ -948,7 +948,8 @@ try {
   await expectReject("browser.tab.create", { url: fixture.url("/"), muted: true }, "chrome-extension only", "muted arg refused (no silent drop)");
   await expectReject("browser.downloads.cancel", {}, "downloadId", "downloads.cancel without id refused");
   await expectReject("browser.tabGroups", { action: "list" }, "does not support", "tabGroups refused on isolated (no playwright equivalent)");
-  await expectReject("browser.sessions", { action: "list" }, "does not support", "sessions refused on isolated (closed pages cannot reopen)");
+  // sessions is now REAL on isolated (per-task recently-closed log) —
+  // verified in the sessions parity block below, not refused here.
   await expectReject("browser.proxy", { action: "get" }, "does not support", "proxy refused on isolated (fixed at launch)");
   await expectReject("browser.privacy", { action: "get" }, "does not support", "privacy refused on isolated (browser-global settings)");
   await expectReject("browser.management", { action: "list" }, "does not support", "management refused on isolated (no extension inventory)");
@@ -963,6 +964,25 @@ try {
   await expectReject("browser.permissions", { action: "getAll" }, "does not support", "permissions refused on isolated (no chrome.permissions)");
   await expectReject("browser.downloads.open", { downloadId: 1 }, "does not support", "downloads.open refused on isolated (no OS-handler channel)");
   await expectReject("browser.windows.get", { lastFocused: true }, "does not support", "windows.get refused on isolated (no window manager)");
+
+  // ── sessions parity: tab.close legs above populated the task's
+  // recently-closed log — list must surface them, restore must reopen ──
+  const sessList = await call("browser.sessions", { action: "list" });
+  const sessEntries = sessList?.entries ?? [];
+  assert(sessList?.scope === "task", `sessions list scope=task (got ${sessList?.scope})`);
+  assert(sessEntries.length > 0, `sessions list sees closed tabs (got ${sessEntries.length})`);
+  const sessFirst = sessEntries[0];
+  assert(typeof sessFirst?.sessionId === "string" && sessFirst.sessionId.startsWith("sess-"), `sessions entry has sessionId (got ${sessFirst?.sessionId})`);
+  assert(sessFirst?.kind === "tab" && typeof sessFirst?.url === "string", `sessions entry shape (got ${JSON.stringify(sessFirst).slice(0, 120)})`);
+  const sessBad = await call("browser.sessions", { action: "bogus" }).then(() => null).catch((e) => e);
+  assert(sessBad && /list\|restore/.test(String(sessBad?.message ?? sessBad)), "sessions bogus action refused");
+  const sessRestore = await call("browser.sessions", { action: "restore" }); // most recent
+  assert(sessRestore?.restored === true && sessRestore?.found === true, `sessions restore reopened (got ${JSON.stringify(sessRestore).slice(0, 160)})`);
+  assert(typeof sessRestore?.tabId === "number", `sessions restore returned tabId (got ${sessRestore?.tabId})`);
+  const sessAfter = await call("browser.sessions", { action: "list" });
+  assert((sessAfter?.entries?.length ?? 99) === sessEntries.length - 1, `sessions restore consumed the entry (${sessEntries.length}→${sessAfter?.entries?.length})`);
+  const sessGone = await call("browser.sessions", { action: "restore", sessionId: "sess-999999" });
+  assert(sessGone?.restored === false && sessGone?.found === false, `sessions restore of unknown id is honest no-op (got ${JSON.stringify(sessGone).slice(0, 120)})`);
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

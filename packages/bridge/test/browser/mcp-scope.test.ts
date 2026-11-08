@@ -73,7 +73,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.discard");
     expect(tools).not.toContain("browser.tabGroups");
-    expect(tools).not.toContain("browser.sessions");
+    expect(tools).toContain("browser.sessions"); // per-task recently-closed log parity
     expect(tools).not.toContain("browser.proxy");
     expect(tools).not.toContain("browser.privacy");
     expect(tools).not.toContain("browser.management");
@@ -86,7 +86,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.power");
     expect(tools).not.toContain("browser.runtime");
     expect(tools).not.toContain("browser.permissions");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 20);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 19);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 
