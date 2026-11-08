@@ -1,0 +1,29 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T06-03-38-374Z-61f9d3",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 37224,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T06:03:42.029Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:03:46.565Z] turn 1 active",
+    "[2026-11-08T06:03:46.584Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"751f2986-aa41-4fd2-8b0a-fdc0addad854\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794117826575-awixtv\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T06:03:46.587Z] second message queued",
+    "[2026-11-08T06:03:48.418Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"751f2986-aa41-4fd2-8b0a-fdc0addad854\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794117826575-awixtv\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n        \\n        <div class=\\\"composer-frame   \\\">\\n          <input id=\\\"file-attachment-input\\\" type=\\\"file\\\" multiple=\\\"\\\" hidden=\\\"\\\">\\n          \\n          \\n          \\n              <div class=\\\"composer-tray\\\">\\n                        <div class=\\\"context-summary composer-context-summary\\\">\\n                          \\n      <div class=\\\"composer-context-group\\\" data-composer-context-group=\\\"references\",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"751f2986-aa41-4fd2-8b0a-fdc0addad854\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"751f2986-aa41-4fd2-8b0a-fdc0addad854\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WW2YQV5KYGN59MW67R0QF7\\\",\\\"threadId\\\":\\\"01M6WW2YQKZPGANZ20DF2EJXV2\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"751f2986-aa41-4fd2-8b0a-fdc0addad854\",\"activeTurn\":{\"turnId\":\"01M6WW2YQV5KYGN59MW67R0QF7\",\"threadId\":\"01M6WW2YQKZPGANZ20DF2EJXV2\"},\"promptActivity\":true,\"queued\":{\"751f2986-aa41-4fd2-8b0a-fdc0addad854\":[{\"fileAttachments\":[],\"id\":\"queued-1794117826575-awixtv\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
+    "[2026-11-08T06:03:48.418Z] queue console: []",
+    "[2026-11-08T06:03:48.421Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-08T06:03:49.423Z] task 01M6WW2YQKZPGANZ20DF2EJXV2",
+    "[2026-11-08T06:04:15.540Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T06:04:15.588Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-08T06:04:15.588Z] queue console final: []"
+  ]
+}

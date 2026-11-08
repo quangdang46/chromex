@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   dequeueQueuedComposerMessage,
   enqueueQueuedComposerMessage,
+  mergeQueuedComposerMessages,
   queuedComposerMessagesFor,
   requeueQueuedComposerMessage,
   removeQueuedComposerMessage,
   resetQueuedComposerMessagesForTests,
+  restoreQueuedComposerMessages,
   type QueuedComposerMessage,
 } from "../src/sidepanel/composer-message-queue.js";
 
@@ -82,5 +84,40 @@ describe("composer-message-queue", () => {
     expect(head?.id).toBe("a1");
     requeueQueuedComposerMessage("conv-a", head!);
     expect(queuedComposerMessagesFor("conv-a").map((m) => m.id)).toEqual(["a1"]);
+  });
+
+  it("merge restores late-committing entries without clobbering live queues", () => {
+    // Simulates delayed re-hydrate: first hydrate saw nothing, the
+    // pre-reload write lands later, in-memory queue already has a1.
+    enqueueQueuedComposerMessage("conv-a", msg("a1"));
+    mergeQueuedComposerMessages({
+      "conv-a": [msg("a1"), msg("a2")],
+      "conv-b": [msg("b1")],
+    });
+    expect(queuedComposerMessagesFor("conv-a").map((m) => m.id)).toEqual(["a1", "a2"]);
+    expect(queuedComposerMessagesFor("conv-b").map((m) => m.id)).toEqual(["b1"]);
+  });
+
+  it("merge fills an empty queue and honours excludeIds", () => {
+    mergeQueuedComposerMessages(
+      { "conv-a": [msg("a1"), msg("a2")] },
+      new Set(["a1"]),
+    );
+    expect(queuedComposerMessagesFor("conv-a").map((m) => m.id)).toEqual(["a2"]);
+  });
+
+  it("merge does not resurrect a fully consumed queue", () => {
+    mergeQueuedComposerMessages(
+      { "conv-a": [msg("a1")] },
+      new Set(["a1"]),
+    );
+    expect(queuedComposerMessagesFor("conv-a")).toEqual([]);
+  });
+
+  it("restore still replaces the whole map for first hydrate", () => {
+    enqueueQueuedComposerMessage("conv-a", msg("stale"));
+    restoreQueuedComposerMessages({ "conv-b": [msg("b1")] });
+    expect(queuedComposerMessagesFor("conv-a")).toEqual([]);
+    expect(queuedComposerMessagesFor("conv-b").map((m) => m.id)).toEqual(["b1"]);
   });
 });

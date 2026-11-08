@@ -75,6 +75,29 @@ export function restoreQueuedComposerMessages(
   }
 }
 
+/** Merge persisted entries into the live queues without clobbering
+ *  in-memory state. Used by the delayed re-hydrate: a storage.local.set
+ *  issued before a reload can commit after the fresh page's first get,
+ *  so the first hydrate may see nothing while the write lands later.
+ *  excludeIds filters messages already consumed by a flush this page
+ *  life so a stale pre-flush snapshot cannot resurrect them. */
+export function mergeQueuedComposerMessages(
+  entries: Record<string, QueuedComposerMessage[]>,
+  excludeIds?: ReadonlySet<string>,
+): void {
+  for (const [conversationId, queue] of Object.entries(entries)) {
+    if (!Array.isArray(queue) || queue.length === 0) continue;
+    const candidates = excludeIds ? queue.filter((m) => !excludeIds.has(m.id)) : queue;
+    if (candidates.length === 0) continue;
+    const existing = queuesByConversationId.get(conversationId) ?? [];
+    const ids = new Set(existing.map((m) => m.id));
+    const merged = [...existing, ...candidates.filter((m) => !ids.has(m.id))];
+    if (merged.length > 0) {
+      queuesByConversationId.set(conversationId, merged);
+    }
+  }
+}
+
 export function resetQueuedComposerMessagesForTests(): void {
   queuesByConversationId.clear();
 }

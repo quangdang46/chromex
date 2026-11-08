@@ -26,6 +26,7 @@ import { shouldInterceptComposerDropdownOnEnter, shouldSubmitComposerOnKeydown }
 import {
   dequeueQueuedComposerMessage,
   enqueueQueuedComposerMessage,
+  mergeQueuedComposerMessages,
   queuedComposerMessagesFor,
   requeueQueuedComposerMessage,
   removeQueuedComposerMessage,
@@ -795,6 +796,9 @@ const promptActivitiesByConversationId = new Map<string, PromptActivityState>();
 const activePromptUserMessageIdsByConversationId = new Map<string, string>();
 const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
 const queuedComposerFlushInFlight = new Set<string>();
+// Queue ids dequeued for send during this page life — excluded when
+// merging a possibly-stale persisted snapshot during delayed re-hydrate.
+const consumedQueuedComposerMessageIds = new Set<string>();
 const streamingAssistantMessageIdsByConversationId = new Map<string, Set<string>>();
 const contextCompactionNoticeIdsByKey = new Map<string, string>();
 const messageTraceOpenByMessageId = new Map<string, boolean>();
@@ -2624,6 +2628,21 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
       await loadTabs();
     }
     reconcileQueuedComposerFlush();
+    // A storage.local.set issued just before a reload can commit after
+    // the fresh page's first hydrate get — the queue would look empty
+    // forever. Re-read once after the init storm settles and merge any
+    // late-landing entries (deduped by id, consumed ids excluded).
+    setTimeout(() => {
+      void hydrateQueuedComposerMessages({
+        merge: true,
+        excludeIds: consumedQueuedComposerMessageIds,
+      }).then((restored) => {
+        if (restored) {
+          render();
+          reconcileQueuedComposerFlush();
+        }
+      });
+    }, 1500);
   } catch (error) {
     state.initError = toUserFacingRuntimeError(error, getUiStrings(state.uiLocale).errors.init);
     render();
@@ -15349,32 +15368,46 @@ function queuedComposerMessagesForCurrentConversation(): QueuedComposerMessage[]
 
 const QUEUED_COMPOSER_MESSAGES_STORAGE_KEY = "chromex.sidepanel.queuedComposerMessages";
 
-function persistQueuedComposerMessages(): void {
+function persistQueuedComposerMessages(): Promise<void> {
   try {
     const serialized = serializeQueuedComposerMessages();
     // storage.local, not session: chrome.runtime.reload() wipes
     // storage.session, which would silently drop queued work exactly
     // when restart-recovery matters most.
-    void chrome.storage.local
+    // Awaiting callers get commit ordering: a reload after the queue
+    // strip is visible is guaranteed to see the write.
+    return chrome.storage.local
       .set({ [QUEUED_COMPOSER_MESSAGES_STORAGE_KEY]: serialized })
+      .then(() => undefined)
       .catch(() => undefined);
   } catch {
     // storage unavailable — queue stays in-memory only
+    return Promise.resolve();
   }
 }
 
-async function hydrateQueuedComposerMessages(): Promise<void> {
+async function hydrateQueuedComposerMessages(options: {
+  merge?: boolean;
+  excludeIds?: ReadonlySet<string>;
+} = {}): Promise<boolean> {
   try {
     const stored = await chrome.storage.local.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
     const entries = stored?.[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
     if (entries && typeof entries === "object") {
-      restoreQueuedComposerMessages(entries as Record<string, QueuedComposerMessage[]>);
+      const record = entries as Record<string, QueuedComposerMessage[]>;
+      if (options.merge) {
+        mergeQueuedComposerMessages(record, options.excludeIds);
+      } else {
+        restoreQueuedComposerMessages(record);
+      }
+      return true;
     }
   } catch (error) {
     // Queue restore failure is otherwise invisible — the user's queued
     // work silently vanishes on reload. Warn so it's diagnosable.
     console.warn("[chromex] queued composer hydration failed", error);
   }
+  return false;
 }
 
 function removeQueuedComposerMessageForCurrentConversation(id: string): void {
@@ -15391,8 +15424,25 @@ function removeQueuedComposerMessageForCurrentConversation(id: string): void {
 async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || isPromptTurnInFlight()) return;
+  // Gateway truth beats UI state: after a panel reload the local
+  // activeTurn can lag hello/sync — flushing in that window leaks the
+  // message into the gateway queue invisibly instead of holding it in
+  // the composer queue until the turn actually ends.
+  if (state.threadId) {
+    const gw = await sendRuntimeMessage<{
+      tasks?: Array<{ taskId?: string; id?: string; activeTurnId?: string | null }>;
+    }>({ type: "gateway.tasks" }).catch(() => null);
+    const task = (gw?.tasks ?? []).find((t) => (t.taskId ?? t.id) === state.threadId);
+    if (task?.activeTurnId) return;
+  }
   const next = dequeueQueuedComposerMessage(conversationId);
-  persistQueuedComposerMessages();
+  if (next) {
+    // Excluded from delayed re-hydrate merges: if the post-dequeue
+    // persist has not committed and a stale snapshot is read back, the
+    // message must not resurrect after being accepted as a prompt.
+    consumedQueuedComposerMessageIds.add(next.id);
+  }
+  void persistQueuedComposerMessages();
   if (!next) {
     render();
     return;
@@ -15563,7 +15613,9 @@ async function sendPrompt(
         fileAttachments: [...state.fileAttachments],
         profileId: activeProfileId,
       });
-      persistQueuedComposerMessages();
+      // Await the storage commit before the queue strip renders: a
+      // reload after the strip is visible must find the message.
+      await persistQueuedComposerMessages();
       state.composerDraft = "";
       state.fileAttachments = [];
       clearTransientComposerCommandPill();
