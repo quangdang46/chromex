@@ -254,7 +254,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.update": {
     description:
-      "Update a scoped tab's chrome state — pinned, muted, and/or zoomFactor (0.25–5). tabId optional (defaults like other tab tools). Low-risk reversible op.",
+      "Update a scoped tab's chrome state — pinned, muted, and/or zoomFactor (0.25–5). tabId optional (defaults like other tab tools). Low-risk reversible op. playwright-isolated supports zoomFactor only (via CDP page scale); pinned/muted are chrome-extension only.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       pinned: { type: "boolean", description: "Pin or unpin the tab." },

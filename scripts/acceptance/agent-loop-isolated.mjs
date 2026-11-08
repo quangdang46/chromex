@@ -269,6 +269,17 @@ try {
   const dupGet = await call("browser.page.get", { tabId: dupId, key: "url" });
   assert(String(dupGet?.value ?? "").endsWith("/keys"), `duplicate page landed on source URL (got ${dupGet?.value})`);
 
+  // tab.update zoomFactor → CDP page scale; pinned/muted refused.
+  const zoom = await call("browser.tab.update", { tabId: dupId, zoomFactor: 2 });
+  assert(zoom?.zoomFactor === 2, `tab.update applied zoom (${JSON.stringify(zoom)})`);
+  const zoomCheck = await call("browser.page.evaluate", {
+    tabId: dupId,
+    expression: "window.innerWidth",
+  });
+  assert(typeof zoomCheck?.value === "number", "page still evaluates after zoom");
+  const zoomBad = await call("browser.tab.update", { tabId: dupId, muted: true }).then(() => null).catch((e) => e);
+  assert(zoomBad !== null, "tab.update refused muted on isolated backend");
+
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {
     url: fixture.url("/dl"),

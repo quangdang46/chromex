@@ -42,6 +42,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.tab.close",
   "browser.tab.create",
   "browser.tab.duplicate",
+  "browser.tab.update",
   "browser.page.setInputFiles",
   "browser.page.dialog",
   "browser.page.snapshot",
@@ -332,6 +333,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#tabCreate(taskId, args);
       case "browser.tab.duplicate":
         return this.#tabDuplicate(taskId, args);
+      case "browser.tab.update":
+        return this.#tabUpdate(taskId, args);
       case "browser.page.navigate":
         return this.#withExpect(taskId, args, await this.#navigate(taskId, args));
       case "browser.page.snapshot":
@@ -485,6 +488,31 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       url: stripQuery(page.url()),
       title: await page.title(),
     };
+  }
+
+  /** browser.tab.update — zoomFactor maps to CDP
+   *  Emulation.setPageScaleFactor (same zoom the extension's
+   *  tabs.setZoom produces). pinned/muted are chrome tab-strip state
+   *  with no playwright equivalent — refused, never silently dropped. */
+  async #tabUpdate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    if (args.pinned !== undefined || args.muted !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot pin or mute tabs; args.pinned/args.muted are chrome-extension only");
+    }
+    const zoomFactor =
+      typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
+        ? args.zoomFactor
+        : undefined;
+    if (args.zoomFactor !== undefined && (zoomFactor === undefined || zoomFactor < 0.25 || zoomFactor > 5)) {
+      throw protocolError("proto.invalid", "browser.tab.update args.zoomFactor must be a number in [0.25, 5]");
+    }
+    if (zoomFactor === undefined) {
+      throw protocolError("proto.invalid", "browser.tab.update requires args.zoomFactor (pinned/muted unsupported on this backend)");
+    }
+    const session = await this.#emulationSession(page);
+    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: zoomFactor });
+    const context = await this.#contextFor(taskId);
+    return { updated: context.pages().indexOf(page), resolvedTabId: context.pages().indexOf(page), zoomFactor };
   }
 
   // ---- navigation / observation ----
