@@ -961,6 +961,32 @@ describe("tool host (P1-09)", () => {
     expect(created[0]).toEqual({ active: false });
   });
 
+  test("tab.close refuses a window's last tab on headless Chromium", async () => {
+    const d = deps({ headlessChrome: true });
+    d.getTab = vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true }));
+    d.queryTabs = vi.fn(async () => [{ id: 7, url: "https://x", windowId: 3 }]);
+    const h = createToolHostHandler(d);
+    // sole tab in its window → teardown → crash; must refuse
+    await expect(h(req("browser.tab.close", { tabId: 7 }))).rejects.toMatchObject({
+      code: "proto.unsupported",
+    });
+    expect(d.closeTab).not.toHaveBeenCalled();
+    // a sibling in the same window → close is safe
+    d.queryTabs = vi.fn(async () => [
+      { id: 7, url: "https://x", windowId: 3 },
+      { id: 8, url: "https://y", windowId: 3 },
+    ]);
+    const res = (await h(req("browser.tab.close", { tabId: 7 }))) as { closed: number };
+    expect(res.closed).toBe(7);
+    expect(d.closeTab).toHaveBeenCalledWith(7);
+    // headful (flag absent) → no sibling check at all
+    const d2 = deps();
+    const h2 = createToolHostHandler(d2);
+    await h2(req("browser.tab.close", { tabId: 7 }));
+    expect(d2.closeTab).toHaveBeenCalledWith(7);
+    expect(d2.queryTabs).not.toHaveBeenCalled();
+  });
+
   test("tab.create rejects non-http(s)/invalid urls and missing dep — never faked", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.tab.create", {}))).rejects.toMatchObject({ code: "proto.unsupported" });

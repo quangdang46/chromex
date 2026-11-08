@@ -384,6 +384,10 @@ export interface ToolHostDeps {
   }>;
   activateTab(tabId: number): Promise<void>;
   closeTab(tabId: number): Promise<void>;
+  /** True on headless Chromium builds (UA contains "HeadlessChrome").
+   *  Window teardown crashes those builds outright — tab.close refuses
+   *  to close a window's last tab and windows.remove is unavailable. */
+  headlessChrome?: boolean;
   activeTabId(): Promise<number | null>;
   /** chrome.debugger CDP tier (docs/adr/debugger-tier.md). Absent dep →
    *  every CDP-backed path (click args.trusted, page.dialog,
@@ -982,6 +986,20 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
       case "browser.tab.close": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
+        // Headless Chromium crashes on window teardown — closing a
+        // window's LAST tab destroys the window (BUS_ADRALN, reproduced
+        // on CfT 158). Refuse rather than kill the whole browser; the
+        // agent can open a sibling tab first, then close this one.
+        if (deps.headlessChrome) {
+          const [tab, all] = await Promise.all([deps.getTab(tabId), deps.queryTabs()]);
+          const siblings = all.filter((t) => t.windowId === tab?.windowId);
+          if (siblings.length <= 1) {
+            throw toolError(
+              "proto.unsupported",
+              "closing the last tab of a window tears the window down, which crashes headless Chromium — open another tab in the window first, then close this one",
+            );
+          }
+        }
         await deps.closeTab(tabId);
         return { closed: tabId, resolvedTabId: tabId };
       }

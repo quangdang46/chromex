@@ -231,7 +231,14 @@ const degradedReport = createDegradedReporter();
 // payload only, so dispatch on the method here.
 installNetworkLog();
 
+// Headless Chromium cannot tear down a window at all — chrome.windows.remove
+// AND closing a window's last tab both crash the whole browser process
+// (BUS_ADRALN, reproduced on CfT 158). Tool-host uses this to refuse those
+// paths with proto.unsupported instead of killing the host.
+const HEADLESS_CHROME = navigator.userAgent.includes("HeadlessChrome");
+
 const toolHostHandler = createToolHostHandler({
+    headlessChrome: HEADLESS_CHROME,
     sendToTab: async (tabId, message, options) => {
       const tab = await chrome.tabs.get(tabId);
       if (!tab.id || !tab.url) throw new Error(`tab ${tabId} has no url`);
@@ -527,7 +534,7 @@ const toolHostHandler = createToolHostHandler({
     // chrome.windows.remove AND last-tab-close (BUS_ADRALN, reproduced
     // on CfT 158). Omit the dep on headless so the tool refuses with
     // proto.unsupported instead of killing the browser.
-    ...(navigator.userAgent.includes("HeadlessChrome")
+    ...(HEADLESS_CHROME
       ? {}
       : {
           removeWindow: async (windowId: number) => {

@@ -236,7 +236,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.close": {
     description:
-      "Close a tab inside this task's scope. Irreversible — prefer leaving tabs open unless the user asked for it closed.",
+      "Close a tab inside this task's scope. Irreversible — prefer leaving tabs open unless the user asked for it closed. On headless Chromium builds, closing a window's LAST tab is refused with proto.unsupported (window teardown crashes the browser process there) — open a sibling tab in the same window first, then close the target.",
     inputSchema: objectSchema(TAB_TARGET_PROPS),
   },
   "browser.tab.create": {
