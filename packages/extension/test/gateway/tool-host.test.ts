@@ -3353,6 +3353,78 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(releaseCdp).toHaveBeenCalled();
   });
 
+  test("page.screencast holds frames across start/stop → per-frame artifacts", async () => {
+    const uploads: Array<{ kind: string; mimeType: string; dataBase64: string; taskId: string }> = [];
+    const cdp = fakeCdp({});
+    const h = createToolHostHandler(cdpDeps(509, cdp, {
+      uploadArtifact: vi.fn(async (input: { kind: string; mimeType: string; dataBase64: string; taskId: string }) => {
+        uploads.push(input);
+        return { artifactRef: `art-${uploads.length}`, sha256: "x", bytes: input.dataBase64.length };
+      }),
+    }));
+    const status0 = (await h(req("browser.page.screencast", { tabId: 509, action: "status" }))) as { running: boolean; frames: number };
+    expect(status0).toMatchObject({ running: false, frames: 0 });
+    await expect(h(req("browser.page.screencast", { tabId: 509, action: "stop" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screencast", { tabId: 509, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screencast", { tabId: 509, action: "start", frameId: 3 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const started = (await h(req("browser.page.screencast", { tabId: 509, action: "start", maxFrames: 5 }))) as { started: boolean; maxFrames: number };
+    expect(started).toMatchObject({ started: true, maxFrames: 5 });
+    // exact CDP start sequence — Page.enable then startScreencast with bounds
+    expect(cdp.sent.map((s) => s.method)).toEqual(["Page.enable", "Page.startScreencast"]);
+    expect(cdp.sent[1]?.params).toMatchObject({ format: "jpeg", everyNthFrame: 1, maxWidth: 1280 });
+    // frames arrive → each acked immediately; storage capped at maxFrames
+    cdp.fire("Page.screencastFrame", { sessionId: 11, data: "aGk=", metadata: { timestamp: 100.0 } });
+    cdp.fire("Page.screencastFrame", { sessionId: 12, data: "aGk=", metadata: { timestamp: 100.5 } });
+    for (let i = 0; i < 6; i++) {
+      cdp.fire("Page.screencastFrame", { sessionId: 20 + i, data: "eA==", metadata: { timestamp: 101 + i * 0.1 } });
+    }
+    const acks = cdp.sent.filter((s) => s.method === "Page.screencastFrameAck");
+    expect(acks.length).toBe(8); // every frame acked, even past the cap
+    const status1 = (await h(req("browser.page.screencast", { tabId: 509, action: "status" }))) as { running: boolean; frames: number };
+    expect(status1).toMatchObject({ running: true, frames: 5 });
+    await expect(h(req("browser.page.screencast", { tabId: 509, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const rep = (await h(req("browser.page.screencast", { tabId: 509, action: "stop" }))) as {
+      stopped: boolean; frames: number; artifactRefs: Array<{ artifactRef: string; index: number; timestamp: number; bytes: number }>;
+      firstTimestamp: number; lastTimestamp: number; durationMs: number;
+    };
+    expect(rep.stopped).toBe(true);
+    expect(rep.frames).toBe(5);
+    expect(rep.artifactRefs.map((a) => a.artifactRef)).toEqual(["art-1", "art-2", "art-3", "art-4", "art-5"]);
+    expect(rep.artifactRefs[0]).toMatchObject({ index: 0, timestamp: 100.0 });
+    expect(rep.durationMs).toBe(1200); // last kept frame ts 101.2 - first 100.0
+    expect(uploads.every((u) => u.kind === "screencast" && u.mimeType === "image/jpeg" && u.taskId === "t1")).toBe(true);
+    expect(cdp.sent.map((s) => s.method)).toContain("Page.stopScreencast");
+    const status2 = (await h(req("browser.page.screencast", { tabId: 509, action: "status" }))) as { running: boolean };
+    expect(status2.running).toBe(false);
+  });
+
+  test("page.screencast requires the artifact channel + maps domain-filter to unsupported", async () => {
+    // no uploadArtifact dep → honest unsupported before any CDP work
+    const cdp = fakeCdp({});
+    const hNoArt = createToolHostHandler(cdpDeps(510, cdp));
+    await expect(hNoArt(req("browser.page.screencast", { tabId: 510, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    expect(cdp.sent).toEqual([]);
+    // -32601 domain filter → proto.unsupported, session released
+    const cdp2 = fakeCdp({
+      "Page.startScreencast": () => {
+        throw new Error('{"code":-32601,"message":"\'Page.startScreencast\' wasn\'t found"}');
+      },
+    });
+    const releaseCdp = vi.fn(async () => {});
+    const h = createToolHostHandler(cdpDeps(511, cdp2, {
+      releaseCdp,
+      uploadArtifact: vi.fn(async () => ({ artifactRef: "a", sha256: "x", bytes: 1 })),
+    }));
+    await expect(h(req("browser.page.screencast", { tabId: 511, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    expect(releaseCdp).toHaveBeenCalled();
+  });
+
   test("snapshot mode:aria returns a formatted AX tree", async () => {
     const cdp = fakeCdp({
       "Accessibility.getFullAXTree": () => ({

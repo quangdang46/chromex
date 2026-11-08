@@ -506,6 +506,7 @@ const SUPPORTED = new Set([
   "browser.page.cdp",
   "browser.page.coverage",
   "browser.page.metrics",
+  "browser.page.screencast",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -867,6 +868,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
   const metricsHolds = new Map<
     number,
     { session: CdpSession; release: () => Promise<void> }
+  >();
+  // Screencast sessions — Page.startScreencast held across tool calls,
+  // one per tab. Frames accumulate in memory (bounded by maxFrames)
+  // and become artifacts on stop. Dies with the handler (SW restart
+  // detaches the debugger) — status then reports not-running honestly.
+  const screencastHolds = new Map<
+    number,
+    {
+      session: CdpSession;
+      release: () => Promise<void>;
+      frames: Array<{ data: string; timestamp: number }>;
+      unsubs: Array<() => void>;
+    }
   >();
   return async function handleToolRequest(payload: unknown): Promise<unknown> {
     const req = (payload ?? {}) as {
@@ -2058,6 +2072,128 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           const snap = await held.session.send<{ metrics?: unknown }>("Performance.getMetrics");
           await held.session.send("Performance.disable").catch(() => {});
           return { ...summarizeMetrics(snap), stopped: true, resolvedTabId: tabId };
+        } finally {
+          await held.release().catch(() => {});
+        }
+      }
+      case "browser.page.screencast": {
+        // CDP Page.startScreencast — motion/timing evidence a single
+        // screenshot cannot prove (did the spinner animate, did the
+        // toast appear and dismiss). start holds a refcounted session
+        // and subscribes screencastFrame; every frame is acked
+        // immediately (Chrome pauses delivery without acks) and stored
+        // bounded by args.maxFrames. stop ends capture and uploads each
+        // frame as an artifact — the coding agent gets files on disk,
+        // not an inline base64 flood.
+        cdpRequired(deps);
+        if (!deps.uploadArtifact) {
+          throw toolError("proto.unsupported", "screencast requires the artifact channel");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.screencast is tab-scoped; args.frameId is not supported");
+        }
+        const action = str(args.action);
+        if (action !== "start" && action !== "stop" && action !== "status") {
+          throw toolError(
+            "proto.invalid",
+            "browser.page.screencast requires args.action start|stop|status",
+          );
+        }
+        const held = screencastHolds.get(tabId);
+        if (action === "status") {
+          return {
+            running: held !== undefined,
+            frames: held?.frames.length ?? 0,
+            resolvedTabId: tabId,
+          };
+        }
+        if (action === "start") {
+          if (held) {
+            throw toolError(
+              "proto.invalid",
+              "screencast is already running for this tab — call action:'stop' first",
+            );
+          }
+          const quality = numArg(args.quality, "quality", 1, 100) ?? 70;
+          const maxWidth = numArg(args.maxWidth, "maxWidth", 320, 1920) ?? 1280;
+          const everyNthFrame = numArg(args.everyNthFrame, "everyNthFrame", 1, 10) ?? 1;
+          const maxFrames = numArg(args.maxFrames, "maxFrames", 1, 120) ?? 60;
+          const { session, release } = await cdpAcquire(deps, tabId);
+          const frames: Array<{ data: string; timestamp: number }> = [];
+          const hold = { session, release, frames, unsubs: [] as Array<() => void> };
+          try {
+            await session.send("Page.enable");
+            await session.send("Page.startScreencast", {
+              format: "jpeg",
+              quality,
+              maxWidth,
+              maxHeight: maxWidth,
+              everyNthFrame,
+            });
+          } catch (e) {
+            await release().catch(() => {});
+            if (/-32601|wasn't found/.test(String((e as Error)?.message ?? e))) {
+              throw toolError(
+                "proto.unsupported",
+                "Page.startScreencast is not exposed via chrome.debugger on this Chrome build",
+              );
+            }
+            throw e;
+          }
+          hold.unsubs.push(session.on("Page.screencastFrame", (p) => {
+            const data = typeof p.data === "string" ? p.data : "";
+            const sessionId = typeof p.sessionId === "number" ? p.sessionId : 0;
+            const ts = typeof (p.metadata as { timestamp?: unknown } | undefined)?.timestamp === "number"
+              ? (p.metadata as { timestamp: number }).timestamp
+              : 0;
+            if (data && frames.length < maxFrames) frames.push({ data, timestamp: ts });
+            // Chrome stalls delivery if frames go unacked — ack every
+            // frame even past the storage cap.
+            void session.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+          }));
+          screencastHolds.set(tabId, hold);
+          return { started: true, maxFrames, resolvedTabId: tabId };
+        }
+        if (!held) {
+          throw toolError(
+            "proto.invalid",
+            "screencast is not running for this tab — call action:'start' first",
+          );
+        }
+        screencastHolds.delete(tabId);
+        try {
+          await held.session.send("Page.stopScreencast").catch(() => {});
+          for (const u of held.unsubs) u();
+          const frames = held.frames;
+          const artifactRefs: Array<Record<string, unknown>> = [];
+          for (const [i, f] of frames.entries()) {
+            const up = await deps.uploadArtifact!({
+              taskId: req.taskId ?? "",
+              kind: "screencast",
+              mimeType: "image/jpeg",
+              dataBase64: f.data,
+            });
+            artifactRefs.push({
+              artifactRef: up.artifactRef,
+              index: i,
+              timestamp: f.timestamp,
+              bytes: up.bytes,
+            });
+          }
+          const first = frames[0]?.timestamp;
+          const last = frames[frames.length - 1]?.timestamp;
+          return {
+            stopped: true,
+            frames: frames.length,
+            artifactRefs,
+            firstTimestamp: first ?? null,
+            lastTimestamp: last ?? null,
+            durationMs: typeof first === "number" && typeof last === "number"
+              ? Math.max(0, Math.round((last - first) * 1000))
+              : null,
+            resolvedTabId: tabId,
+          };
         } finally {
           await held.release().catch(() => {});
         }

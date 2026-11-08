@@ -1145,6 +1145,58 @@ await runScenario(
         ...mt,
       };
 
+      // --- page.screencast: real CDP frame capture → per-frame
+      // artifacts. Same build-dependent domain exposure as coverage —
+      // start either works (frames+artifactRefs verified) or reports
+      // proto.unsupported honestly. ---
+      let sc = {};
+      try {
+        const scTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+        );
+        const scId = scTab?.result?.tabId ?? scTab?.result?.openedTabId ?? scTab?.tabId;
+        const scCall = (tool, args) => runner.browserToolCall(taskId, tool, args, token, 90_000);
+        const scSt0 = await scCall("browser.page.screencast", { tabId: scId, action: "status" });
+        sc.statusIdleOk = (scSt0?.result ?? scSt0 ?? {}).running === false;
+        const scBad = await scCall("browser.page.screencast", { tabId: scId, action: "stop" });
+        sc.stopRefusedOk = (scBad?.error?.code ?? "") === "proto.invalid";
+        const scStart = await scCall("browser.page.screencast", { tabId: scId, action: "start", maxFrames: 30, maxWidth: 640 });
+        sc.startCode = scStart?.error?.code ?? "";
+        sc.startOk = (scStart?.result ?? scStart ?? {}).started === true;
+        sc.startUnsupportedOk = sc.startCode === "proto.unsupported" &&
+          /Screencast|chrome\.debugger|artifact/.test(scStart?.error?.message ?? "");
+        if (sc.startOk) {
+          // continuous repaint so compositor frames flow
+          await scCall("browser.page.evaluate", {
+            tabId: scId,
+            expression: `window.__sc = setInterval(() => { document.body.style.background = \`hsl(\${Math.random()*360},60%,80%)\`; }, 30); "animating"`,
+          });
+          await new Promise((r) => setTimeout(r, 700));
+          const scStatus = await scCall("browser.page.screencast", { tabId: scId, action: "status" });
+          sc.statusRunOk = (scStatus?.result ?? scStatus ?? {}).running === true;
+          const scStop = await scCall("browser.page.screencast", { tabId: scId, action: "stop" });
+          const sres = scStop?.result ?? scStop ?? {};
+          sc.stopOk = sres.stopped === true;
+          sc.realFramesOk = typeof sres.frames === "number" && sres.frames > 0 &&
+            Array.isArray(sres.artifactRefs) && sres.artifactRefs.length > 0 &&
+            sres.artifactRefs.every((a) => typeof a.artifactRef === "string" && a.artifactRef.startsWith("artifact:"));
+          sc.sample = { frames: sres.frames, refs: sres.artifactRefs?.length, dur: sres.durationMs };
+          await scCall("browser.page.evaluate", { tabId: scId, expression: "clearInterval(window.__sc); 'stopped'" });
+        } else {
+          const scSt1 = await scCall("browser.page.screencast", { tabId: scId, action: "status" });
+          sc.statusRunOk = (scSt1?.result ?? scSt1 ?? {}).running === false;
+        }
+        await scCall("browser.tab.close", { tabId: scId });
+      } catch (e) {
+        sc.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`screencast → ${JSON.stringify(sc).slice(0, 300)}`);
+      results.pageScreencast = {
+        ok: sc.statusIdleOk === true && sc.stopRefusedOk === true &&
+          (sc.startUnsupportedOk === true || (sc.startOk === true && sc.statusRunOk === true && sc.stopOk === true && sc.realFramesOk === true)),
+        ...sc,
+      };
+
       // --- tabGroups: real chrome.tabs.group/tabGroups on the extension ---
       let tg = {};
       try {

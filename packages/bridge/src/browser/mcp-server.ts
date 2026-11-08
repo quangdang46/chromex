@@ -796,6 +796,21 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["action"],
     ),
   },
+  "browser.page.screencast": {
+    description:
+      "Motion/timing evidence capture via the CDP Page.startScreencast domain — proves what a single screenshot cannot (did the spinner actually animate, did the toast appear and dismiss, did the transition run). args.action: 'start' begins JPEG frame capture on the scoped tab (args.quality 1–100 default 70, args.maxWidth 320–1920 default 1280, args.everyNthFrame 1–10 default 1, args.maxFrames 1–120 default 60 — frames beyond maxFrames are acked but dropped); 'status' reports {running, frames}; do the page work, then 'stop' ends capture and returns the frame sequence — on chrome-extension each frame becomes an artifact ({artifactRefs:[{artifactRef,index,timestamp,bytes}]} — files on disk for the coding agent, plus firstTimestamp/lastTimestamp/durationMs); on playwright-isolated there is no artifact channel so frames return INLINE bounded by the 512KiB ceiling ({frameData:[{dataBase64,timestamp}], returned, truncated} — oldest frames kept). Frames are page visuals → same screenshot-class agentEgress as browser.page.screenshot. Page-level only — args.frameId → proto.invalid. A capture left running when the tab/SW dies reports honestly on the next call.",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        action: { type: "string", enum: ["start", "stop", "status"], description: "start begins capture, stop ends it and returns the frame sequence, status reports {running,frames} (required)." },
+        quality: { type: "number", description: "JPEG quality 1–100 (default 70)." },
+        maxWidth: { type: "number", description: "Frame max width/height px 320–1920 (default 1280)." },
+        everyNthFrame: { type: "number", description: "Capture every Nth compositor frame 1–10 (default 1)." },
+        maxFrames: { type: "number", description: "Storage cap 1–120 frames (default 60); extra frames are acked but dropped." },
+      },
+      ["action"],
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",

@@ -251,6 +251,12 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     });
   }
 
+  if (ctx.action === "browser.page.screencast") {
+    return verdict("read", {
+      reason: "screencast frames are read + agentEgress (handled above)",
+    });
+  }
+
   if (ctx.action === "browser.page.screenshot") {
     return verdict("read", {
       reason: "screenshot is read + agentEgress (handled above)",

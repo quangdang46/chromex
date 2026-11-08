@@ -851,6 +851,41 @@ try {
   assert(metStatus1?.running === false, "metrics reports idle after stop");
   await call("browser.tab.close", { tabId: metId });
 
+  // ── Loop 20d: page.screencast — real CDP frame sequence ──────────────
+  const scTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const scId = scTab?.tabId ?? scTab?.id;
+  const scStatus0 = await call("browser.page.screencast", { tabId: scId, action: "status" });
+  assert(scStatus0?.running === false, `screencast starts idle (got ${JSON.stringify(scStatus0)})`);
+  await expectReject("browser.page.screencast", { tabId: scId, action: "stop" }, "action:'start'", "screencast stop without start refused");
+  await expectReject("browser.page.screencast", { tabId: scId, action: "bogus" }, "start|stop|status", "screencast bogus action refused");
+  await expectReject("browser.page.screencast", { tabId: scId, action: "start", frameId: 1 }, "frameId", "screencast frameId refused (page-level)");
+  const scStart = await call("browser.page.screencast", { tabId: scId, action: "start", maxFrames: 30, maxWidth: 640 });
+  assert(scStart?.started === true, `screencast start (got ${JSON.stringify(scStart).slice(0, 120)})`);
+  await expectReject("browser.page.screencast", { tabId: scId, action: "start" }, "action:'stop'", "double screencast start refused");
+  // continuous repaint so compositor frames actually flow
+  await call("browser.page.evaluate", {
+    tabId: scId,
+    expression: `window.__sc = setInterval(() => { document.body.style.background = \`hsl(\${Math.random()*360},60%,80%)\`; }, 30); "animating"`,
+  });
+  await new Promise((r) => setTimeout(r, 700));
+  const scStatus1 = await call("browser.page.screencast", { tabId: scId, action: "status" });
+  assert(scStatus1?.running === true, `screencast running mid-capture (got ${JSON.stringify(scStatus1)})`);
+  const scStop = await call("browser.page.screencast", { tabId: scId, action: "stop" });
+  assert(scStop?.stopped === true, `screencast stop (got ${JSON.stringify(scStop).slice(0, 160)})`);
+  assert(typeof scStop?.frames === "number" && scStop.frames > 0,
+    `screencast captured real frames (got ${scStop?.frames})`);
+  assert(Array.isArray(scStop?.frameData) && scStop.frameData.length > 0,
+    `screencast returned inline frames (got ${scStop?.returned})`);
+  const firstFrame = scStop?.frameData?.[0];
+  assert(typeof firstFrame?.dataBase64 === "string" && firstFrame.dataBase64.startsWith("/9j/"),
+    `screencast frame is real JPEG base64 (got ${String(firstFrame?.dataBase64).slice(0, 20)})`);
+  assert(typeof firstFrame?.timestamp === "number" && scStop?.durationMs !== null,
+    `screencast timestamps present (got ts=${firstFrame?.timestamp} dur=${scStop?.durationMs})`);
+  await call("browser.page.evaluate", { tabId: scId, expression: "clearInterval(window.__sc); 'stopped'" });
+  const scStatus2 = await call("browser.page.screencast", { tabId: scId, action: "status" });
+  assert(scStatus2?.running === false, "screencast reports idle after stop");
+  await call("browser.tab.close", { tabId: scId });
+
   // ── Loop 21: browsingData.clear — honest subset on isolated ─────────
   // seed a cookie + rely on visit-log entries from earlier loops
   const bdTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });

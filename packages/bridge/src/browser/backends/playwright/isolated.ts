@@ -79,6 +79,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.cdp",
   "browser.page.coverage",
   "browser.page.metrics",
+  "browser.page.screencast",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -209,6 +210,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Pages with Performance metric collection enabled — WeakSet so
    *  closed pages drop out without bookkeeping. */
   readonly #metricsPages = new WeakSet<PwPage>();
+  /** page → running screencast hold (frames + ack subscription).
+   *  WeakMap so closed pages drop the hold without bookkeeping. */
+  readonly #screencastHolds = new WeakMap<PwPage, {
+    session: PwCDPSession;
+    frames: Array<{ data: string; timestamp: number }>;
+    listener: ((e: { method: string; params?: unknown }) => void) | null;
+  }>();
   /** page → finished responses kept for lazy body() reads
    *  (browser.page.responseBody). Bounded; Response objects stay
    *  valid for body() after the event loop turns. */
@@ -502,6 +510,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#coverage(taskId, args);
       case "browser.page.metrics":
         return this.#metrics(taskId, args);
+      case "browser.page.screencast":
+        return this.#screencast(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.history.delete":
@@ -2962,6 +2972,126 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const snap = (await session.send("Performance.getMetrics")) as { metrics?: unknown };
     await session.send("Performance.disable").catch(() => {});
     return { ...summarizeMetrics(snap), stopped: true, resolvedTabId: tabId };
+  }
+
+  /** browser.page.screencast — CDP Page.startScreencast, same protocol
+   *  the extension debugger tier sends. Frames have no artifact channel
+   *  on this backend, so stop returns them INLINE bounded by the same
+   *  512KiB ceiling screenshots use (oldest frames kept, truncated flag
+   *  honest). */
+  async #screencast(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    if (typeof args.frameId === "number" && args.frameId !== 0) {
+      throw protocolError("proto.invalid", "browser.page.screencast is tab-scoped; args.frameId is not supported");
+    }
+    const action = typeof args.action === "string" ? args.action : "";
+    if (action !== "start" && action !== "stop" && action !== "status") {
+      throw protocolError(
+        "proto.invalid",
+        "browser.page.screencast requires args.action start|stop|status",
+      );
+    }
+    const context = await this.#contextFor(taskId);
+    const tabId = context.pages().indexOf(page);
+    const held = this.#screencastHolds.get(page);
+    if (action === "status") {
+      return { running: held !== undefined, frames: held?.frames.length ?? 0, resolvedTabId: tabId };
+    }
+    const session = await this.#emulationSession(page);
+    if (action === "start") {
+      if (held) {
+        throw protocolError(
+          "proto.invalid",
+          "screencast is already running for this tab — call action:'stop' first",
+        );
+      }
+      const numArg = (v: unknown, min: number, max: number): number | undefined =>
+        typeof v === "number" && Number.isFinite(v)
+          ? Math.min(Math.max(Math.floor(v), min), max)
+          : undefined;
+      const quality = numArg(args.quality, 1, 100) ?? 70;
+      const maxWidth = numArg(args.maxWidth, 320, 1920) ?? 1280;
+      const everyNthFrame = numArg(args.everyNthFrame, 1, 10) ?? 1;
+      const maxFrames = numArg(args.maxFrames, 1, 120) ?? 60;
+      const frames: Array<{ data: string; timestamp: number }> = [];
+      const hold = { session, frames, listener: null as ((e: { method: string; params?: unknown }) => void) | null };
+      try {
+        await session.send("Page.enable");
+        await session.send("Page.startScreencast", {
+          format: "jpeg",
+          quality,
+          maxWidth,
+          maxHeight: maxWidth,
+          everyNthFrame,
+        });
+      } catch (e) {
+        if (/-32601|wasn't found/.test(String((e as Error)?.message ?? e))) {
+          throw protocolError(
+            "proto.unsupported",
+            "Page.startScreencast is not exposed on this Chromium build",
+          );
+        }
+        throw e;
+      }
+      const onEvent = (e: { method: string; params?: unknown }) => {
+        if (e.method !== "Page.screencastFrame") return;
+        const p = (e.params ?? {}) as Record<string, unknown>;
+        const data = typeof p.data === "string" ? p.data : "";
+        const sessionId = typeof p.sessionId === "number" ? p.sessionId : 0;
+        const meta = p.metadata as { timestamp?: unknown } | undefined;
+        const ts = typeof meta?.timestamp === "number" ? meta.timestamp : 0;
+        if (data && frames.length < maxFrames) frames.push({ data, timestamp: ts });
+        void session.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+      };
+      session.on("event", onEvent);
+      hold.listener = onEvent;
+      this.#screencastHolds.set(page, hold);
+      return { started: true, maxFrames, resolvedTabId: tabId };
+    }
+    if (!held) {
+      throw protocolError(
+        "proto.invalid",
+        "screencast is not running for this tab — call action:'start' first",
+      );
+    }
+    this.#screencastHolds.delete(page);
+    try {
+      await session.send("Page.stopScreencast").catch(() => {});
+      if (held.listener) session.off("event", held.listener);
+      // Inline frames bounded by the 512KiB decoded ceiling — keep the
+      // OLDEST frames chronologically until the budget is spent and
+      // mark the tail honestly truncated.
+      const out: Array<{ dataBase64: string; timestamp: number }> = [];
+      let total = 0;
+      let dropped = 0;
+      for (const f of held.frames) {
+        const bytes = Math.ceil((f.data.length * 3) / 4);
+        if (total + bytes > 512 * 1024 && out.length > 0) {
+          dropped++;
+          continue;
+        }
+        total += bytes;
+        out.push({ dataBase64: f.data, timestamp: f.timestamp });
+      }
+      const first = held.frames[0]?.timestamp;
+      const last = held.frames[held.frames.length - 1]?.timestamp;
+      return {
+        stopped: true,
+        frames: held.frames.length,
+        returned: out.length,
+        truncated: dropped > 0,
+        frameData: out,
+        firstTimestamp: first ?? null,
+        lastTimestamp: last ?? null,
+        durationMs: typeof first === "number" && typeof last === "number"
+          ? Math.max(0, Math.round((last - first) * 1000))
+          : null,
+        resolvedTabId: tabId,
+      };
+    } finally {
+      // session stays cached in #cdpSessions — screencast stop already
+      // ended capture; nothing else to release.
+    }
   }
 
   // ---- bookmarks ----
