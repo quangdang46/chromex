@@ -301,6 +301,27 @@ await runScenario(
         cross: frameClickResults.cross,
       };
 
+      // setInputFiles inside the same-origin iframe: content script
+      // marks the element, pierced DOM.getDocument finds the node.
+      let frameFiles = null;
+      let fout2 = null;
+      if (childFrame?.frameId) {
+        frameFiles = await runner.browserToolCall(
+          taskId, "browser.page.setInputFiles",
+          { selector: "#ffile", files: [uploadPath], frameId: childFrame.frameId },
+          token, 60_000,
+        );
+        await sleep(300);
+        const pwFr3 = page.frames().find((f) => f.url().includes("127.0.0.1") && f.url().includes("/iframe-child"));
+        fout2 = pwFr3 ? await pwFr3.locator("#fout2").textContent() : null;
+      }
+      evidence.note(`frame setInputFiles → status=${frameFiles?.status} fout2=${fout2}`);
+      results.frameSetInputFiles = {
+        ok: frameFiles?.status === "completed" && fout2 === "files:chromex-cdp-upload.txt",
+        status: frameFiles?.status,
+        fout2,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();

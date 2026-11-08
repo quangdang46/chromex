@@ -516,10 +516,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.setInputFiles": {
     description:
-      "Set local file paths on a file input via the debugger tier (CDP DOM.setFileInputFiles) — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label. Always requires approval (sensitive data entry); paths must be absolute. chrome-extension backend only, top frame.",
+      "Set local file paths on a file input via the debugger tier (CDP DOM.setFileInputFiles) — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label. Always requires approval (sensitive data entry); paths must be absolute. chrome-extension backend only; args.frameId targets a file input inside an iframe (same-process frames — out-of-process frames fail browser.element_not_found honestly).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
+        frameId: FRAME_ID,
         ref: TARGET_REF,
         selector: TARGET_SELECTOR,
         label: TARGET_LABEL,

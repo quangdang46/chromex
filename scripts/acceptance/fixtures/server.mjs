@@ -128,6 +128,8 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <p id="kout">none</p>
 <button id="pb" style="position:absolute;left:20px;top:120px;width:80px;height:30px" onmousedown="document.getElementById('pout').textContent='down:'+event.isTrusted" onmouseup="document.getElementById('pout').textContent+=' up:'+event.isTrusted">ptr-btn</button>
 <p id="pout">none</p>
+<input id="ffile" type="file" onchange="document.getElementById('fout2').textContent='files:'+Array.from(event.target.files).map(f=>f.name).join(',')" />
+<p id="fout2">none</p>
 </body></html>`,
 
   // keyboard + file-input proof: echoes the last key pressed, shows

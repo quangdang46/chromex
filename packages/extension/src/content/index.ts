@@ -355,6 +355,40 @@ function chromexRuntimeMessageListener(
     return false;
   }
 
+  if (message.type === "page.dom.mark") {
+    // Temporary attribute marker so the CDP DOM domain can find this
+    // exact element across iframe boundaries (DOM.* sees the pierced
+    // tree; frame-scoped selectors do not).
+    const attr = typeof message.attr === "string" ? message.attr : "";
+    const value = typeof message.value === "string" ? message.value : null;
+    if (!attr) {
+      sendResponse({ found: false, reason: "invalid" });
+      return false;
+    }
+    const resolved = resolveDomActionTargetDetailed({
+      action: "click",
+      ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
+      ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+      ...(typeof message.label === "string" ? { label: message.label } : {}),
+      reason: "mark",
+    });
+    if (resolved.status !== "resolved") {
+      sendResponse({
+        found: false,
+        reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
+        ...(resolved.status === "ambiguous" ? { count: resolved.count } : {}),
+      });
+      return false;
+    }
+    if (value === null) {
+      resolved.element.removeAttribute(attr);
+    } else {
+      resolved.element.setAttribute(attr, value);
+    }
+    sendResponse({ found: true });
+    return false;
+  }
+
   if (message.type === "page.geom.absolute") {
     // Element target → top-viewport coordinates. In the top frame the
     // rect is already absolute; in a subframe askFrameOffset walks the

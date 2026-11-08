@@ -189,6 +189,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.drag",
   "browser.page.find",
   "browser.page.network",
+  "browser.page.setInputFiles",
 ]);
 
 const SUPPORTED = new Set([
@@ -866,7 +867,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
       case "browser.page.setInputFiles": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        return await setInputFiles(deps, tabId, args);
+        return await setInputFiles(deps, tabId, args, frameIdArg(args));
       }
       case "browser.page.responseBody": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
@@ -2477,10 +2478,43 @@ function pathBaseName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+interface CdpDomNode {
+  nodeId?: number;
+  nodeType?: number;
+  nodeName?: string;
+  attributes?: string[];
+  children?: CdpDomNode[];
+  contentDocument?: CdpDomNode;
+  frameId?: string;
+}
+
+/** Find the nodeId carrying markerAttr=markerValue in a (possibly
+ *  pierced) DOM.getDocument tree. Used to locate an element inside an
+ *  iframe — frame-scoped selectors cannot cross document boundaries. */
+function findMarkedNodeId(
+  node: CdpDomNode | undefined,
+  attr: string,
+  value: string,
+): number | undefined {
+  if (!node) return undefined;
+  const attrs = node.attributes ?? [];
+  for (let i = 0; i + 1 < attrs.length; i += 2) {
+    if (attrs[i] === attr && attrs[i + 1] === value && typeof node.nodeId === "number") {
+      return node.nodeId;
+    }
+  }
+  for (const child of node.children ?? []) {
+    const hit = findMarkedNodeId(child, attr, value);
+    if (hit !== undefined) return hit;
+  }
+  return findMarkedNodeId(node.contentDocument, attr, value);
+}
+
 async function setInputFiles(
   deps: ToolHostDeps,
   tabId: number,
   args: Record<string, unknown>,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const rawFiles = args.files;
   if (!Array.isArray(rawFiles) || rawFiles.length === 0 || rawFiles.length > 10) {
@@ -2499,25 +2533,83 @@ async function setInputFiles(
     throw toolError("proto.invalid", "browser.page.setInputFiles requires args.ref, args.selector or args.label");
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
-  const target = await cdpLocateElement(deps, tabId, args);
+
+  // Subframe targets: the content script marks the resolved element
+  // with a unique attribute, then the pierced DOM tree finds it —
+  // frame-scoped selectors cannot cross document boundaries. Works for
+  // same-process iframes; out-of-process frames are invisible to this
+  // tab's DOM agent and fail browser.element_not_found honestly.
+  const markerAttr = "data-chromex-ftp";
+  const markerValue = frameId !== 0
+    ? `ftp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    : null;
+  if (markerValue !== null) {
+    const markRes = (await deps.sendToTab(tabId, {
+      type: "page.dom.mark",
+      attr: markerAttr,
+      value: markerValue,
+      ...(str(args.ref) ? { targetRef: str(args.ref) } : {}),
+      ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+      ...(str(args.label) ? { label: str(args.label) } : {}),
+    }, { frameId })) as { found?: boolean; reason?: string; count?: number };
+    if (markRes?.found !== true) {
+      if (markRes?.reason === "ambiguous") {
+        throw toolError("browser.ambiguous_target", `target matches ${markRes.count ?? "multiple"} elements`);
+      }
+      throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+    }
+  }
+
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
     await session.send("DOM.enable");
-    const doc = (await session.send("DOM.getDocument", { depth: 1 })) as { root?: { nodeId?: number } };
-    const rootId = doc?.root?.nodeId;
-    if (typeof rootId !== "number") {
-      throw toolError("browser.action_failed", "DOM.getDocument returned no root node");
+    let nodeId: number | undefined;
+    if (markerValue !== null) {
+      const doc = (await session.send("DOM.getDocument", {
+        depth: -1,
+        pierce: true,
+      })) as { root?: CdpDomNode };
+      nodeId = findMarkedNodeId(doc?.root, markerAttr, markerValue);
+      if (nodeId === undefined) {
+        throw toolError(
+          "browser.element_not_found",
+          "marked element not visible to the DOM domain (out-of-process iframe?)",
+        );
+      }
+    } else {
+      const target = await cdpLocateElement(deps, tabId, args);
+      const doc = (await session.send("DOM.getDocument", { depth: 1 })) as { root?: { nodeId?: number } };
+      const rootId = doc?.root?.nodeId;
+      if (typeof rootId !== "number") {
+        throw toolError("browser.action_failed", "DOM.getDocument returned no root node");
+      }
+      const q = (await session.send("DOM.querySelector", {
+        nodeId: rootId,
+        selector: target.selector,
+      })) as { nodeId?: number };
+      if (typeof q?.nodeId !== "number") {
+        throw toolError("browser.element_not_found", "target selector did not resolve in the DOM domain");
+      }
+      nodeId = q.nodeId;
     }
-    const q = (await session.send("DOM.querySelector", {
-      nodeId: rootId,
-      selector: target.selector,
-    })) as { nodeId?: number };
-    if (typeof q?.nodeId !== "number") {
-      throw toolError("browser.element_not_found", "target selector did not resolve in the DOM domain");
-    }
-    await session.send("DOM.setFileInputFiles", { nodeId: q.nodeId, files });
+    await session.send("DOM.setFileInputFiles", { nodeId, files });
   } finally {
     await release();
+    if (markerValue !== null) {
+      // best-effort cleanup — a leftover attribute is harmless but untidy
+      try {
+        await deps.sendToTab(tabId, {
+          type: "page.dom.mark",
+          attr: markerAttr,
+          value: null,
+          ...(str(args.ref) ? { targetRef: str(args.ref) } : {}),
+          ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+          ...(str(args.label) ? { label: str(args.label) } : {}),
+        }, { frameId });
+      } catch {
+        // ignore cleanup failure
+      }
+    }
   }
   return {
     ok: true,

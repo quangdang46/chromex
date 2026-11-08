@@ -100,7 +100,12 @@ for Testing:
   programmatic — not gestures.
   `filePicker` stays `false` —
   `browser.page.setInputFiles` writes `input.files` by path; the native
-  picker UI remains unreachable.
+  picker UI remains unreachable. `setInputFiles` also accepts
+  `args.frameId`: the content script marks the resolved element
+  (`page.dom.mark`) and a pierced `DOM.getDocument` finds the node —
+  verified inside a same-origin iframe (`cdp-headless`). Out-of-process
+  iframes are invisible to the tab's DOM agent and fail
+  `browser.element_not_found` honestly.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,
   `browser.page.responseBody`) exist only on the chrome-extension
   backend; `playwright-isolated` rejects them `proto.unsupported` —
