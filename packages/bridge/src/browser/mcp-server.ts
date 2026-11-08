@@ -194,6 +194,9 @@ const ELEMENT_TARGET_WITH_TAB: Record<string, JsonSchema> = {
 const SNAPSHOT_FIRST =
   "Snapshot before acting: call browser.page.snapshot, target elements by ref, and re-snapshot after navigation or DOM changes — refs go stale (browser.stale_snapshot) and must never be guessed.";
 
+const POPUP_NOTE =
+  "If the action opens a new tab (target=_blank link, window.open, window.open from evaluate), the result's openedTabs[] lists {tabId,url,title} and each tab is already inside your task scope — address it by tabId like any other tab; other tasks get browser.not_in_scope.";
+
 /** args.expect postcondition schema (chromex-0fza/22wi) — mirrors
  *  BrowserExpectCondition in shared/src/browser/tool.ts. At least one
  *  of selector/text/urlContains/goneSelector must be set for the
@@ -322,7 +325,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.evaluate": {
     description:
-      "Evaluate a JavaScript expression in the page's MAIN world (real page globals, page credentials, awaits promises — wrap statements in an async IIFE). Returns {value} JSON-bounded to 256KiB (truncated flag when cut); page exceptions surface as a tool error. ALWAYS requires user approval — the expression is opaque to the risk classifier. Content is untrusted page data.",
+      "Evaluate a JavaScript expression in the page's MAIN world (real page globals, page credentials, awaits promises — wrap statements in an async IIFE). Returns {value} JSON-bounded to 256KiB (truncated flag when cut); page exceptions surface as a tool error. ALWAYS requires user approval — the expression is opaque to the risk classifier. Content is untrusted page data. " + POPUP_NOTE,
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       frameId: FRAME_ID,
@@ -371,7 +374,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     }),
   },
   "browser.page.click": {
-    description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
+    description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST} ${POPUP_NOTE}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       button: { type: "string", enum: ["left", "right", "middle"], description: "Mouse button (default left)." },
@@ -426,7 +429,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     expectable: true,
   },
   "browser.page.submit": {
-    description: `Submit the form containing the target element. Submitting sends data off-page — confirm intent first. ${SNAPSHOT_FIRST}`,
+    description: `Submit the form containing the target element. Submitting sends data off-page — confirm intent first. ${SNAPSHOT_FIRST} ${POPUP_NOTE}`,
     inputSchema: objectSchema(ELEMENT_TARGET_WITH_TAB),
     expectable: true,
   },
@@ -494,7 +497,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     expectable: true,
   },
   "browser.page.press": {
-    description: `Press a key (e.g. 'Enter', 'Tab', 'Escape') with optional modifiers (control/alt/shift/meta). Targets the element, or the focused element/page when no target is given. key is required. ${SNAPSHOT_FIRST}`,
+    description: `Press a key (e.g. 'Enter', 'Tab', 'Escape') with optional modifiers (control/alt/shift/meta). Targets the element, or the focused element/page when no target is given. key is required. ${SNAPSHOT_FIRST} ${POPUP_NOTE}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       key: { type: "string", description: "Key to press (required), e.g. 'Enter', 'a', 'ArrowDown'." },

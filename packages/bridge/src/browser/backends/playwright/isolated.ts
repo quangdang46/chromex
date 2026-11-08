@@ -661,7 +661,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  never crosses shadow boundaries, so wait/text conditions would be
    *  blind to web-component UIs. */
   async #deepBodyText(page: PwPage): Promise<string> {
-    return page.locator("body").evaluate(deepInnerText).catch(() => "");
+    const body = page.locator("body");
+    const deep =
+      typeof body.evaluate === "function"
+        ? await body.evaluate(deepInnerText).catch(() => null)
+        : null;
+    if (typeof deep === "string") return deep;
+    return body.innerText().catch(() => "");
   }
 
   async #console(taskId: string, args: Record<string, unknown>): Promise<unknown> {
