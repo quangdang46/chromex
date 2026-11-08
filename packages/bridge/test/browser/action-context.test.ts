@@ -405,6 +405,57 @@ describe("BrowserToolServer — §4.8 ground-truth target preflight", () => {
     expect(approvals).toHaveLength(0);
   });
 
+  it("playwright-isolated backend gets the same ground-truth preflight", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = tokens.issue({
+      taskId: "task-1",
+      profileId: "profile-1",
+      backendId: "playwright-isolated",
+      allowedTools: ["browser.page.click"],
+      now: NOW,
+    });
+    const sent: Array<{ tool?: string }> = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "pw",
+      send: async (_method, payload) => {
+        const p = payload as { tool?: string };
+        sent.push(p);
+        if (p.tool === "browser.internal.describeTarget") {
+          return {
+            found: true,
+            label: "Delete account permanently",
+            tagName: "button",
+            pageOrigin: "https://app.example.com",
+            pageUrl: "https://app.example.com/settings",
+          };
+        }
+        return { ok: true };
+      },
+      onDisconnect: () => {},
+    };
+    const approvals: ToolApprovalRequest[] = [];
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async (ctx) => {
+        approvals.push(ctx);
+        return { verdict: "approved" as const };
+      },
+      now: () => NOW,
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { selector: "#danger" }),
+      backendId: "playwright-isolated",
+      token,
+      toolCallId: "tc-pw-preflight",
+    });
+    expect(out.status).toBe("completed");
+    expect(sent.map((s) => s.tool)).toEqual(["browser.internal.describeTarget", "browser.page.click"]);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ kind: "browser_action", risk: "external_mutation" });
+    expect(approvals[0]!.details.targetLabel).toBe("Delete account permanently");
+  });
+
   it("preflight failure fails open — dispatch surfaces the real error", async () => {
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = tokens.issue({

@@ -214,6 +214,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Execute a browser tool on the isolated backend. Throws
    *  ProtocolError-coded failures; returns the tool result payload. */
   async execute(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {
+    // §4.8 preflight pseudo-tool — resolved inside the page so the risk
+    // classifier sees ground truth, not agent-supplied args. Internal:
+    // never listed in supportedTools, never agent-visible.
+    if ((tool as string) === "browser.internal.describeTarget") {
+      return this.#describeTarget(taskId, args);
+    }
     if (!PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS.has(tool)) {
       throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
@@ -720,6 +726,92 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "dom action requires args.selector");
     }
     return sel;
+  }
+
+  /** §4.8 preflight: resolve the pending action's target inside the
+   *  page and report ground-truth facts — same contract as the
+   *  extension host's browser.internal.describeTarget (real label,
+   *  input type, form method/action, page origin). Targetless calls
+   *  (e.g. page.press) describe document.activeElement. */
+  async #describeTarget(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const sel =
+      typeof args.selector === "string" && args.selector
+        ? args.selector
+        : typeof args.ref === "string" && args.ref
+          ? args.ref
+          : null;
+    const facts = await page
+      .evaluate((selector: string | null) => {
+        const el = selector ? document.querySelector(selector) : document.activeElement;
+        if (!(el instanceof HTMLElement)) {
+          return { found: false, reason: "not_found" };
+        }
+        const labelledBy = el.getAttribute("aria-labelledby");
+        const labelledByText = labelledBy
+          ? labelledBy
+              .split(/\s+/)
+              .map((id) => document.getElementById(id)?.textContent ?? "")
+              .join(" ")
+          : "";
+        const inputLabels = el.id
+          ? Array.from(document.querySelectorAll(`label[for="${CSS.escape(el.id)}"]`))
+              .map((label) => label.textContent ?? "")
+              .join(" ")
+          : "";
+        const label = (
+          el.getAttribute("aria-label") ||
+          labelledByText ||
+          inputLabels ||
+          el.getAttribute("placeholder") ||
+          el.getAttribute("title") ||
+          (el instanceof HTMLInputElement ? el.value : "") ||
+          el.innerText ||
+          el.textContent ||
+          ""
+        )
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 160);
+        const form = el.closest("form");
+        const anchor = el instanceof HTMLAnchorElement ? el : el.querySelector("a[href]");
+        let formAction = "";
+        const formActionRaw = form?.getAttribute("action") ?? "";
+        if (formActionRaw) {
+          try {
+            const u = new URL(formActionRaw, location.href);
+            formAction = `${u.origin}${u.pathname}`;
+          } catch {
+            /* invalid form action URL */
+          }
+        }
+        let href = "";
+        if (anchor instanceof HTMLAnchorElement && anchor.href) {
+          try {
+            const u = new URL(anchor.href);
+            href = `${u.origin}${u.pathname}`;
+          } catch {
+            /* invalid href */
+          }
+        }
+        return {
+          found: true,
+          label,
+          tagName: el.tagName.toLowerCase(),
+          role: el.getAttribute("role") ?? "",
+          ...(el instanceof HTMLInputElement ? { inputType: el.type || "text" } : {}),
+          ...(el instanceof HTMLButtonElement || el instanceof HTMLInputElement
+            ? { controlType: (el.getAttribute("type") || "submit").toLowerCase() }
+            : {}),
+          ...(form ? { formMethod: (form.getAttribute("method") || "get").toLowerCase() } : {}),
+          ...(formAction ? { formAction } : {}),
+          ...(href ? { href } : {}),
+          pageOrigin: location.origin,
+          pageUrl: `${location.origin}${location.pathname}`,
+        };
+      }, sel)
+      .catch(() => null);
+    return facts ?? { found: false, reason: "evaluate_failed" };
   }
 
   async #domAction(taskId: string, tool: BrowserToolName, args: Record<string, unknown>): Promise<unknown> {

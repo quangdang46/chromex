@@ -528,3 +528,49 @@ describe("PlaywrightIsolatedBackend expect verification (chromex-0fza)", () => {
     expect(mouseCalls).toHaveLength(1); // rejected calls never dispatched
   });
 });
+
+describe("PlaywrightIsolatedBackend §4.8 describeTarget preflight", () => {
+  test("internal pseudo-tool resolves ground-truth facts inside the page", async () => {
+    const page = {
+      url: () => "https://app.example.com/settings",
+      evaluate: async (_fn: unknown, sel: string | null) => {
+        expect(sel).toBe("#danger");
+        return {
+          found: true,
+          label: "Delete account permanently",
+          tagName: "button",
+          role: "",
+          pageOrigin: "https://app.example.com",
+          pageUrl: "https://app.example.com/settings",
+        };
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.internal.describeTarget" as never, {
+      selector: "#danger",
+    })) as Record<string, unknown>;
+    expect(res).toMatchObject({
+      found: true,
+      label: "Delete account permanently",
+      pageOrigin: "https://app.example.com",
+    });
+  });
+
+  test("evaluate failure → found:false (fail-open, dispatch reports the real error)", async () => {
+    const page = {
+      url: () => "https://x.example/",
+      evaluate: async () => {
+        throw new Error("execution context destroyed");
+      },
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.internal.describeTarget" as never, {
+      selector: "#gone",
+    })) as Record<string, unknown>;
+    expect(res.found).toBe(false);
+  });
+});

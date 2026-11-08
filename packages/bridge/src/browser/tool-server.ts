@@ -684,16 +684,23 @@ export class BrowserToolServer {
     // §4.8 ground truth: args-only context is blind for element
     // actions — enrich with the facts the host resolves inside the
     // page (real label/input type/form method/page origin) BEFORE
-    // classifying. Fail-open on preflight errors: the dispatch itself
-    // surfaces stale-ref/not-found honestly; blocking here would only
-    // mask the real error behind an approval prompt. Skipped entirely
-    // when the call is already terminal (out of scope) or ambiguous —
-    // no point spending a host round-trip on a denied request.
+    // classifying. Both real-tab backends implement the internal
+    // describeTarget pseudo-tool. Fail-open on preflight errors: the
+    // dispatch itself surfaces stale-ref/not-found honestly; blocking
+    // here would only mask the real error behind an approval prompt.
+    // Skipped entirely when the call is already terminal (out of
+    // scope) or ambiguous — no point spending a host round-trip.
+    const preflightBackend =
+      backendId === "chrome-extension" || backendId === "playwright-isolated";
     const preflightRelevant =
-      backendId === "chrome-extension" &&
+      preflightBackend &&
       withinTabScope &&
       TARGET_DESCRIBE_TOOLS.has(req.tool) &&
-      !(explicitTabId === null && this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs));
+      !(
+        backendId === "chrome-extension" &&
+        explicitTabId === null &&
+        this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs)
+      );
     if (preflightRelevant) {
       const desc = await this.describeActionTarget(host, req, riskTabScope).catch(() => null);
       if (desc) applyTargetDescription(actx, desc);
