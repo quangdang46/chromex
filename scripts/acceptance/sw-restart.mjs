@@ -128,6 +128,7 @@ await runScenario(
 
       let click2 = null;
       let count2 = null;
+      let ariaOk = false;
       if (get?.status === "completed") {
         const snap2 = await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
         const snapId2 = findSnapshotId(snap2);
@@ -144,6 +145,18 @@ await runScenario(
         await sleep(300);
         count2 = await page.evaluate(() => document.getElementById("count")?.textContent);
         evidence.note(`count after post-reload click=${count2}`);
+
+        // CDP tier must self-heal too: fresh SW has empty session state
+        // while Chrome may still hold the debugger attach. mode:"aria"
+        // forces acquireCdp → re-attach/"already attached" → AX tree.
+        const aria = await runner.browserToolCall(
+          taskId, "browser.page.snapshot", { mode: "aria" }, token, 60_000,
+        );
+        const ariaTree = JSON.stringify(aria?.result ?? {});
+        evidence.note(`post-reload aria snapshot=${aria?.status} len=${ariaTree.length}`);
+        ariaOk =
+          aria?.status === "completed" &&
+          /inc|button/i.test(ariaTree);
       }
 
       const pass =
@@ -151,13 +164,14 @@ await runScenario(
         authed >= 2 &&
         get?.status === "completed" &&
         click2?.status === "completed" &&
-        count2 === "2";
+        count2 === "2" &&
+        ariaOk === true;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "extension reload → new SW + NM host re-registered → calls recovered → post-reload click delivered exactly once"
-          : `newSw=${!!newSw} authed=${authed} get=${get?.status} click=${click2?.status} count=${count1}→${count2}`,
-        details: { newSw: newSw?.url?.() ?? null, authed, getStatus: get?.status, click2Status: click2?.status, count1, count2 },
+          ? "extension reload → new SW + NM host re-registered → calls + CDP tier recovered → post-reload click delivered exactly once"
+          : `newSw=${!!newSw} authed=${authed} get=${get?.status} click=${click2?.status} count=${count1}→${count2} aria=${ariaOk}`,
+        details: { newSw: newSw?.url?.() ?? null, authed, getStatus: get?.status, click2Status: click2?.status, count1, count2, ariaOk },
       };
     } finally {
       await fixture.close();
