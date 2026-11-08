@@ -909,6 +909,7 @@ try {
   await expectReject("browser.processes", { action: "list" }, "does not support", "processes refused on isolated (no process table)");
   await expectReject("browser.dns", { action: "resolve", hostname: "example.com" }, "does not support", "dns refused on isolated (no system resolver API)");
   await expectReject("browser.power", { action: "request" }, "does not support", "power refused on isolated (no host power API)");
+  await expectReject("browser.runtime", { action: "info" }, "does not support", "runtime refused on isolated (no extension runtime)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

@@ -701,6 +701,12 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // the result is IP literals, not page data. Pure observation.
       return verdict("read", { reason: "dns resolution read" });
 
+    case "browser.runtime":
+      // Host introspection — browser brand/version, extension id +
+      // manifest version, platform os/arch. The extension's own
+      // metadata, no page or profile data.
+      return verdict("read", { reason: "runtime host info read" });
+
     case "browser.power": {
       const op = ctx.powerOp ?? "request";
       if (op === "permission") {

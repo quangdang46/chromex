@@ -1026,6 +1026,13 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       level: { type: "string", enum: ["system", "display"], description: "request: keep-awake level (default system)." },
     }),
   },
+  "browser.runtime": {
+    description:
+      "Host introspection for the extension's own runtime (chrome.runtime) — lets the agent know what it is running on before choosing capabilities. args.action: 'info' (default, only action) returns {browser: {brand, version, majorVersion?} | null, extension: {id, version, name?, manifestVersion}, platform: {os, arch}} — browser brand/version comes from chrome.runtime.getBrowserInfo (Chrome 100+; null on builds without it), platform from getPlatformInfo. Use the returned browser.version to gate version-dependent behavior (e.g. userScripts needs Chrome 120+, DNR session rules Chrome 84+). Read-only, no permission required, no page data. On playwright-isolated → proto.unsupported (no extension runtime).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["info"], description: "Operation (default info)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

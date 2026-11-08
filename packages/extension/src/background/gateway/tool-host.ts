@@ -285,6 +285,11 @@ export interface ToolHostDeps {
     request(level: "system" | "display"): Promise<unknown | "permission" | null>;
     release(): Promise<unknown | "permission" | null>;
   } | undefined;
+  /** chrome.runtime (browser.runtime) — host introspection. No
+   *  permission required; absent dep → proto.unsupported. */
+  runtime?: {
+    info(): Promise<unknown>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -465,6 +470,7 @@ const SUPPORTED = new Set([
   "browser.processes",
   "browser.dns",
   "browser.power",
+  "browser.runtime",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -3314,6 +3320,18 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           default:
             throw toolError("proto.invalid", "browser.power args.action must be request|release|permission");
         }
+      }
+      case "browser.runtime": {
+        // chrome.runtime host introspection — always available on the
+        // extension backend, no permission gate.
+        if (!deps.runtime) {
+          throw toolError("proto.unsupported", "runtime info is not available on this host");
+        }
+        const action = str(args.action) ?? "info";
+        if (action !== "info") {
+          throw toolError("proto.invalid", "browser.runtime args.action must be info");
+        }
+        return deps.runtime.info();
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

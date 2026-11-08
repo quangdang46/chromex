@@ -2265,6 +2265,25 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.runtime marshals info + validates action", async () => {
+    const info = {
+      browser: { brand: "Chromium", version: "141.0.0.0", majorVersion: "141" },
+      extension: { id: "abc", version: "0.1.8", manifestVersion: 3 },
+      platform: { os: "mac", arch: "arm64" },
+    };
+    const rt = { info: vi.fn(async () => info) };
+    const h = createToolHostHandler(deps({ runtime: rt }));
+    // info is the default action
+    const res = (await h(req("browser.runtime", {}))) as typeof info;
+    expect(res.browser?.brand).toBe("Chromium");
+    expect(rt.info).toHaveBeenCalledTimes(1);
+    await h(req("browser.runtime", { action: "info" }));
+    await expect(h(req("browser.runtime", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.runtime", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

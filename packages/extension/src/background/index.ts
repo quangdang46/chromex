@@ -1148,6 +1148,57 @@ const toolHostHandler = createToolHostHandler({
         return { ok: true, held: false };
       },
     },
+    runtime: {
+      // chrome.runtime host introspection — no permission required,
+      // always available on the extension backend. getBrowserInfo is
+      // untyped in @types/chrome (Chrome 100+) — cast; absent → null.
+      info: async () => {
+        const browserInfoApi = (chrome.runtime as unknown as {
+          getBrowserInfo?: () => Promise<{ brand?: string; version?: string; majorVersion?: string }>;
+        }).getBrowserInfo;
+        let browser = browserInfoApi
+          ? await browserInfoApi.call(chrome.runtime).then(
+              (b) => ({
+                brand: typeof b?.brand === "string" ? b.brand.slice(0, 60) : null,
+                version: typeof b?.version === "string" ? b.version.slice(0, 60) : null,
+                ...(typeof b?.majorVersion === "string" || typeof b?.majorVersion === "number"
+                  ? { majorVersion: b.majorVersion }
+                  : {}),
+              }),
+              () => null,
+            )
+          : null;
+        if (browser === null || typeof browser.version !== "string" || browser.version.length === 0) {
+          // getBrowserInfo is absent on some builds (Chrome for Testing)
+          // — fall back to the service worker's own user agent, which
+          // always carries the Chrome version.
+          const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+          const m = /(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+){1,3})/.exec(ua);
+          if (m) {
+            browser = {
+              brand: "Chromium",
+              version: m[1],
+              majorVersion: m[1].split(".")[0],
+            };
+          }
+        }
+        const platform = await chrome.runtime.getPlatformInfo().then(
+          (p) => ({ os: p?.os ?? null, arch: p?.arch ?? null }),
+          () => ({ os: null, arch: null }),
+        );
+        const manifest = chrome.runtime.getManifest() as { name?: string; version?: string; manifest_version?: number };
+        return {
+          browser,
+          extension: {
+            id: chrome.runtime.id,
+            version: typeof manifest?.version === "string" ? manifest.version : null,
+            ...(typeof manifest?.name === "string" ? { name: manifest.name.slice(0, 120) } : {}),
+            manifestVersion: typeof manifest?.manifest_version === "number" ? manifest.manifest_version : null,
+          },
+          platform,
+        };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

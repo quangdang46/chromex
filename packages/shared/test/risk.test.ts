@@ -457,6 +457,12 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     }
   });
 
+  test("browser.runtime: pure read (host introspection)", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.runtime" }));
+    expect(v.risk).toBe("read");
+    expect(v.needsApproval).toBe(false);
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

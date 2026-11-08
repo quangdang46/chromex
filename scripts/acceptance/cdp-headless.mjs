@@ -1408,6 +1408,24 @@ await runScenario(
         ...dp,
       };
 
+      // --- runtime: no permission needed — verify REAL host info ---
+      const rtRes = await runner.browserToolCall(
+        taskId, "browser.runtime", { action: "info" }, token, 60_000,
+      );
+      const rt = rtRes?.result ?? {};
+      const rtBrowser = rt.browser ?? {};
+      const rtExt = rt.extension ?? {};
+      const rtOk =
+        rtRes?.status === "completed" &&
+        typeof rtBrowser.version === "string" &&
+        rtBrowser.version.length > 0 &&
+        typeof rtExt.id === "string" &&
+        rtExt.id.length > 0 &&
+        rtExt.manifestVersion === 3 &&
+        typeof rt.platform?.os === "string";
+      evidence.note(`runtime → ${JSON.stringify(rt).slice(0, 300)}`);
+      results.runtime = { ok: rtOk === true, browserVersion: rtBrowser.version ?? null, extId: rtExt.id ?? null };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.
