@@ -743,6 +743,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.page.serviceWorker": {
+    description:
+      "Inspect and manage the page origin's Service Worker registrations — the workers that intercept fetch and decide whether Cache Storage entries are ever consulted. actions: 'list' (default — every registration with scope, scriptURL, installing/waiting/active state + activeState, plus whether this page is controlled and by which script), 'unregister' (args.scope exact-match required — removes the registration; the worker stops controlling the origin on next navigation). Registration metadata is a read; unregister always requires approval. Requires a secure context (https/localhost) — on insecure pages navigator.serviceWorker is absent and the call fails honestly. Available on both backends (page-context API). frameId is rejected (top-frame scope).",
+    inputSchema: objectSchema(
+      {
+        action: { type: "string", enum: ["list", "unregister"], description: "Default 'list'." },
+        scope: { type: "string", description: "unregister: exact registration scope URL to remove." },
+      },
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",

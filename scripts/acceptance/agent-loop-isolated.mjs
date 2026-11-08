@@ -664,6 +664,38 @@ try {
   await expectReject("browser.page.caches", { tabId: ckId, action: "listKeys" }, "args.cache", "cache-scoped op without cache refused");
   await expectReject("browser.page.caches", { tabId: ckId, cache: "x", action: "match" }, "args.url", "match without url refused");
 
+  // ── Loop 19: page.serviceWorker — registration list + unregister ───
+  const swTab = await call("browser.tab.create", { url: fixture.url("/sw"), active: false });
+  const swId = swTab?.tabId ?? swTab?.id;
+  // registration is async — poll the tool until the worker appears
+  let swList;
+  for (let i = 0; i < 20; i++) {
+    swList = await call("browser.page.serviceWorker", { tabId: swId });
+    if ((swList?.count ?? 0) > 0) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const swReg = (swList?.registrations ?? [])[0];
+  assert(
+    swReg?.scope?.startsWith(fixture.url("/")) && String(swReg?.scriptURL ?? "").endsWith("/sw.js"),
+    `serviceWorker list sees the /sw.js registration (got ${JSON.stringify(swReg).slice(0, 120)})`,
+  );
+  assert(swList?.controlled === true || swReg?.state === "active" || swReg?.state === "waiting" || swReg?.state === "installing",
+    `registration reported with a real state (state=${swReg?.state})`);
+  // unregister by exact scope
+  const swUn = await call("browser.page.serviceWorker", {
+    tabId: swId, action: "unregister", scope: swReg.scope,
+  });
+  assert(swUn?.unregistered === true && swUn?.found === true, "unregister removed the registration");
+  const swAfter = await call("browser.page.serviceWorker", { tabId: swId });
+  assert((swAfter?.count ?? -1) === 0, "registration list is empty after unregister");
+  const swMissing = await call("browser.page.serviceWorker", {
+    tabId: swId, action: "unregister", scope: fixture.url("/none"),
+  });
+  assert(swMissing?.found === false && swMissing?.unregistered === false, "unregister of unknown scope is honest no-op");
+  await expectReject("browser.page.serviceWorker", { tabId: swId, action: "unregister" }, "args.scope", "unregister without scope refused");
+  await expectReject("browser.page.serviceWorker", { tabId: swId, action: "bogus" }, "list|unregister", "bogus action refused");
+  await call("browser.tab.close", { tabId: swId });
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

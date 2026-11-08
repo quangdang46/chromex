@@ -881,6 +881,48 @@ await runScenario(
         ...cc,
       };
 
+      // --- serviceWorker: registration list + unregister via chromexSwOp ---
+      let sw = {};
+      try {
+        const swTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/sw") }, token, 60_000,
+        );
+        const swTabId = swTab?.result?.tabId ?? swTab?.result?.openedTabId ?? swTab?.tabId;
+        // registration is async — poll the tool until the worker appears
+        let swList;
+        for (let i = 0; i < 20; i++) {
+          swList = await runner.browserToolCall(
+            taskId, "browser.page.serviceWorker", { tabId: swTabId }, token, 60_000,
+          );
+          if (((swList?.result ?? swList ?? {}).count ?? 0) > 0) break;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        const swRes = swList?.result ?? swList ?? {};
+        const swReg = (swRes.registrations ?? [])[0];
+        sw.listOk = String(swReg?.scriptURL ?? "").endsWith("/sw.js") &&
+          String(swReg?.scope ?? "").startsWith(fixture.url("/"));
+        sw.stateOk = ["active", "waiting", "installing"].includes(swReg?.state);
+        const swUn = await runner.browserToolCall(
+          taskId, "browser.page.serviceWorker",
+          { tabId: swTabId, action: "unregister", scope: swReg?.scope }, token, 60_000,
+        );
+        sw.unregOk = (swUn?.result ?? swUn ?? {}).unregistered === true;
+        const swAfter = await runner.browserToolCall(
+          taskId, "browser.page.serviceWorker", { tabId: swTabId }, token, 60_000,
+        );
+        sw.emptyOk = ((swAfter?.result ?? swAfter ?? {}).count ?? -1) === 0;
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: swTabId }, token, 60_000,
+        );
+      } catch (e) {
+        sw.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`serviceWorker → ${JSON.stringify(sw).slice(0, 300)}`);
+      results.serviceWorker = {
+        ok: sw.listOk === true && sw.stateOk === true && sw.unregOk === true && sw.emptyOk === true,
+        ...sw,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.
@@ -900,7 +942,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches + serviceWorker"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

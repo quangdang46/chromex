@@ -72,6 +72,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.localStorage",
   "browser.page.indexedDB",
   "browser.page.caches",
+  "browser.page.serviceWorker",
   "browser.history.search",
   "browser.bookmarks",
   "browser.page.network",
@@ -423,6 +424,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#idb(taskId, args);
       case "browser.page.caches":
         return this.#caches(taskId, args);
+      case "browser.page.serviceWorker":
+        return this.#serviceWorker(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.bookmarks":
@@ -2238,6 +2241,69 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     )) as { ok?: boolean; result?: Record<string, unknown>; error?: string } | undefined;
     if (!out || out.ok !== true) {
       throw protocolError("browser.action_failed", `cache op failed: ${out?.error ?? "no result"}`);
+    }
+    return out.result ?? {};
+  }
+
+  // ---- serviceWorker ----
+
+  /** Same contract as the extension backend's chromexSwOp — fixed
+   *  in-page function; list reads registration metadata, unregister
+   *  removes by exact scope. */
+  async #serviceWorker(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "list";
+    if (!["list", "unregister"].includes(action)) {
+      throw protocolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister");
+    }
+    const scope = typeof args.scope === "string" && args.scope ? args.scope : "";
+    if (action === "unregister" && !scope) {
+      throw protocolError("proto.invalid", "browser.page.serviceWorker unregister requires args.scope");
+    }
+    const out = (await page.evaluate(
+      async ([act, sc]: [string, string]) => {
+        try {
+          if (!("serviceWorker" in navigator)) {
+            return { ok: false, error: "serviceWorker API unavailable (insecure context?)" };
+          }
+          const sw = navigator.serviceWorker;
+          if (act === "list") {
+            const regs = await sw.getRegistrations();
+            const describe = (r: ServiceWorkerRegistration) => ({
+              scope: r.scope,
+              scriptURL:
+                r.active?.scriptURL ?? r.waiting?.scriptURL ?? r.installing?.scriptURL ?? null,
+              state: r.active ? "active" : r.waiting ? "waiting" : r.installing ? "installing" : "none",
+              activeState: r.active?.state ?? null,
+            });
+            return {
+              ok: true,
+              result: {
+                registrations: regs.map(describe),
+                count: regs.length,
+                controlled: sw.controller !== null,
+                controllerScriptURL: sw.controller?.scriptURL ?? null,
+              },
+            };
+          }
+          if (act === "unregister") {
+            const regs = await sw.getRegistrations();
+            const target = regs.find((r) => r.scope === sc);
+            if (!target) {
+              return { ok: true, result: { scope: sc, unregistered: false, found: false } };
+            }
+            const ok = await target.unregister();
+            return { ok: true, result: { scope: sc, unregistered: ok, found: true } };
+          }
+          return { ok: false, error: `unknown action: ${act}` };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+      [action, scope] as [string, string],
+    )) as { ok?: boolean; result?: Record<string, unknown>; error?: string } | undefined;
+    if (!out || out.ok !== true) {
+      throw protocolError("browser.action_failed", `serviceWorker op failed: ${out?.error ?? "no result"}`);
     }
     return out.result ?? {};
   }

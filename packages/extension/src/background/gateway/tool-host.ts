@@ -39,6 +39,7 @@ import { chromexEvaluate } from "../../content/evaluate.js";
 import { chromexStorageOp } from "../../content/storage.js";
 import { chromexIdbOp } from "../../content/idb.js";
 import { chromexCacheOp } from "../../content/caches.js";
+import { chromexSwOp } from "../../content/sw.js";
 import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
@@ -286,6 +287,7 @@ const SUPPORTED = new Set([
   "browser.page.localStorage",
   "browser.page.indexedDB",
   "browser.page.caches",
+  "browser.page.serviceWorker",
   "browser.history.search",
   "browser.bookmarks",
   "browser.downloads.list",
@@ -1448,6 +1450,35 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `cache op failed: ${res?.error ?? "no result"}`);
+        }
+        return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+      }
+      case "browser.page.serviceWorker": {
+        // Fixed-shape SW registration helper — list reads metadata,
+        // unregister removes by exact scope.
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "serviceWorker access requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.serviceWorker is tab-scoped; args.frameId is not supported");
+        }
+        const action = str(args.action) ?? "list";
+        if (!["list", "unregister"].includes(action)) {
+          throw toolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister");
+        }
+        const scope = str(args.scope);
+        if (action === "unregister" && !scope) {
+          throw toolError("proto.invalid", "browser.page.serviceWorker unregister requires args.scope");
+        }
+        const res = (await deps.runInMainWorld!(
+          tabId,
+          chromexSwOp as (...fnArgs: unknown[]) => unknown,
+          [action, scope ?? ""],
+          [0],
+        )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
+        if (!res || res.ok !== true) {
+          throw toolError("browser.action_failed", `serviceWorker op failed: ${res?.error ?? "no result"}`);
         }
         return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
       }

@@ -1034,6 +1034,31 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.serviceWorker marshals into chromexSwOp + validates", async () => {
+    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
+        calls.push({ funcName: func.name, args });
+        return { ok: true, result: { registrations: [], count: 0, controlled: false } };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.serviceWorker", { tabId: 42 }))) as { count: number };
+    expect(res.count).toBe(0);
+    expect(calls[0]).toMatchObject({ funcName: "chromexSwOp" });
+    expect(calls[0]!.args).toEqual(["list", ""]);
+    await h(req("browser.page.serviceWorker", {
+      tabId: 42, action: "unregister", scope: "https://x.test/",
+    }));
+    expect(calls[1]!.args).toEqual(["unregister", "https://x.test/"]);
+    await expect(h(req("browser.page.serviceWorker", { tabId: 42, action: "unregister" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.serviceWorker", { tabId: 42, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.serviceWorker", { tabId: 42, frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("browser.bookmarks marshals ops and validates", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const d = deps({

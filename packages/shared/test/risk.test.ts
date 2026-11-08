@@ -272,6 +272,17 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.page.caches" })).risk).toBe("read");
   });
 
+  test("browser.page.serviceWorker: list read; unregister approval", () => {
+    const list = classifyActionRisk(ctx({ action: "browser.page.serviceWorker", swOp: "list" }));
+    expect(list.risk).toBe("read");
+    expect(list.needsApproval).toBe(false);
+    const un = classifyActionRisk(ctx({ action: "browser.page.serviceWorker", swOp: "unregister" }));
+    expect(un.needsApproval).toBe(true);
+    expect(un.allowTaskEligible).toBe(false);
+    expect(un.kind).toBe("browser_action");
+    expect(classifyActionRisk(ctx({ action: "browser.page.serviceWorker" })).risk).toBe("read");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

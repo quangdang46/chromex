@@ -311,6 +311,20 @@ window.__restore = function(){ document.getElementById('btn').textContent = 'Del
 <p id="r">none</p>
 <p id="a">none</p>
 </body></html>`,
+
+  // service worker proof: registers /sw.js on load, reports state into
+  // the DOM — the browser.page.serviceWorker acceptance leg observes
+  // registration via the tool and control via this page.
+  "/sw": `<!doctype html><html><body>
+<h1>SW Page</h1><p id="swstate">pending</p>
+<script>
+navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((r) => {
+  document.getElementById('swstate').textContent = 'registered:' + r.scope;
+}).catch((e) => {
+  document.getElementById('swstate').textContent = 'failed:' + e.message;
+});
+</script>
+</body></html>`,
 };
 
 export async function startFixtureServer() {
@@ -392,6 +406,13 @@ export async function startFixtureServer() {
   ws.onerror = () => { document.getElementById("wstate").textContent = "error"; };
 </script>
 </body></html>`);
+      return;
+    }
+    if (url.pathname === "/sw.js") {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end(`self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', () => {});`);
       return;
     }
     const html = PAGES[url.pathname];

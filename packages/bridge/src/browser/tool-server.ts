@@ -438,6 +438,9 @@ export function buildActionContext(
     ...(req.tool === "browser.page.caches"
       ? { cacheOp: typeof args.action === "string" ? args.action : "listCaches" }
       : {}),
+    ...(req.tool === "browser.page.serviceWorker"
+      ? { swOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit
     // target — the key itself is the resolved input. hover still needs a

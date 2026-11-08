@@ -62,6 +62,9 @@ export interface ActionContext {
    *  match returns response bodies (egress), put/delete/clear mutate
    *  the Cache API store. */
   cacheOp?: string;
+  /** browser.page.serviceWorker sub-action — list is a read,
+   *  unregister mutates the origin's worker registrations. */
+  swOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -519,6 +522,21 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "cache metadata/key list" });
+    }
+
+    case "browser.page.serviceWorker": {
+      const op = ctx.swOp ?? "list";
+      if (op === "unregister") {
+        // Removing a registration kills the worker controlling the
+        // origin — never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "service worker unregister changes origin behavior",
+        });
+      }
+      return verdict("read", { reason: "service worker registration list" });
     }
 
     case "browser.windows.update":
