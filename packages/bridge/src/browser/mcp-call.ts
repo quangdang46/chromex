@@ -115,6 +115,15 @@ async function main(): Promise<void> {
   if (argv.includes("--list") || tool === "list_tools") {
     const list = await request("tools/list", {});
     child.kill();
+    // Server-level steering (initialize.instructions) teaches the
+    // snapshot-first workflow and the "these ARE the user's browser"
+    // rule — models that discover tools via --list never see an MCP
+    // client's instruction channel, so surface it here.
+    const serverInstructions =
+      (init.result as { instructions?: string } | undefined)?.instructions ?? "";
+    if (serverInstructions.trim()) {
+      process.stdout.write(`# ${serverInstructions.trim()}\n\n`);
+    }
     const tools =
       ((list.result as {
         tools?: Array<{
