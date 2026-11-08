@@ -187,6 +187,18 @@ export interface ToolHostDeps {
   acquireCdpTarget?(targetId: string): Promise<CdpSession>;
   releaseCdpTarget?(targetId: string): Promise<void>;
   listCdpTargets?(): Promise<Array<{ id: string; type: string; url: string }>>;
+  /** chrome.history.search — needs the OPTIONAL "history" permission.
+   *  Return null when the permission is not granted → the tool reports
+   *  proto.unsupported honestly instead of an empty fake result. */
+  searchHistory?(q: {
+    text?: string;
+    url?: string;
+    startTime?: number;
+    endTime?: number;
+    limit: number;
+  }): Promise<
+    Array<{ url: string; title?: string; visitCount?: number; lastVisitTime?: number }> | null
+  >;
 }
 
 function toolError(code: string, message: string): Error {
@@ -259,6 +271,7 @@ const SUPPORTED = new Set([
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
+  "browser.history.search",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -1317,6 +1330,57 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("browser.action_failed", `storage op failed: ${res?.error ?? "no result"}`);
         }
         return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+      }
+      case "browser.history.search": {
+        // Not tab-scoped: profile browsing history via chrome.history.
+        // The permission is OPTIONAL — ungranted → proto.unsupported.
+        if (!deps.searchHistory) {
+          throw toolError("proto.unsupported", "history search requires the optional history permission");
+        }
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+            : 50;
+        const parseTime = (v: unknown): number | undefined => {
+          if (typeof v === "number" && Number.isFinite(v)) return v;
+          if (typeof v === "string") {
+            const t = Date.parse(v);
+            if (Number.isFinite(t)) return t;
+          }
+          return undefined;
+        };
+        const qText = str(args.text);
+        const qUrl = str(args.url);
+        const qStart = parseTime(args.startTime);
+        const qEnd = parseTime(args.endTime);
+        const items = await deps.searchHistory({
+          ...(qText ? { text: qText } : {}),
+          ...(qUrl ? { url: qUrl } : {}),
+          ...(qStart !== undefined ? { startTime: qStart } : {}),
+          ...(qEnd !== undefined ? { endTime: qEnd } : {}),
+          limit,
+        });
+        if (items === null) {
+          throw toolError("proto.unsupported", "history permission is not granted");
+        }
+        return {
+          visits: items.map((h) => ({
+            url: h.url,
+            ...(h.title ? { title: h.title } : {}),
+            ...(typeof h.visitCount === "number" ? { visitCount: h.visitCount } : {}),
+            // chrome.history reports times in microseconds since epoch —
+            // normalize to epoch ms and keep the ISO form unambiguous.
+            ...(typeof h.lastVisitTime === "number"
+              ? {
+                  lastVisitTime: h.lastVisitTime > 1e14 ? Math.floor(h.lastVisitTime / 1000) : h.lastVisitTime,
+                  lastVisitTimeIso: new Date(
+                    h.lastVisitTime > 1e14 ? h.lastVisitTime / 1000 : h.lastVisitTime,
+                  ).toISOString(),
+                }
+              : {}),
+          })),
+          count: items.length,
+        };
       }
       case "browser.downloads.list": {
         // Not tab-scoped: lists the profile's downloads via chrome.downloads.

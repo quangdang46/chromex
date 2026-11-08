@@ -972,6 +972,37 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.localStorage", { tabId: 42, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("browser.history.search marshals query and normalizes times", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const d = deps({
+      searchHistory: vi.fn(async (q: Record<string, unknown>) => {
+        calls.push(q);
+        return [
+          { url: "https://x.example/a", title: "A", visitCount: 2, lastVisitTime: 1_700_000_000_000_000 },
+          { url: "https://y.example/b", title: "B" },
+        ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.history.search", {
+      text: "example", url: "x.example", limit: 5,
+      startTime: "2026-01-01T00:00:00Z",
+    }))) as { visits: Array<Record<string, unknown>>; count: number };
+    expect(res.count).toBe(2);
+    // µs-scale lastVisitTime normalized to ms + ISO
+    expect(res.visits[0]!.lastVisitTime).toBe(1_700_000_000_000);
+    expect(res.visits[0]!.lastVisitTimeIso).toBe(new Date(1_700_000_000_000).toISOString());
+    expect(calls[0]).toMatchObject({ text: "example", url: "x.example", limit: 5 });
+    expect(typeof calls[0]!.startTime).toBe("number");
+    // ungranted permission (null) → proto.unsupported, never fake empty
+    const dNull = deps({ searchHistory: vi.fn(async () => null) });
+    await expect(createToolHostHandler(dNull)(req("browser.history.search", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    // missing dep → proto.unsupported too
+    await expect(createToolHostHandler(deps())(req("browser.history.search", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

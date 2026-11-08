@@ -113,6 +113,9 @@ const READ_TOOLS = new Set([
   // class as responseBody (page-text, bounded, approval-gated).
   "browser.page.webSocket",
   "browser.windows.list",
+  // browsing history is personal data leaving the browser — same
+  // egress gate as page text (approval for non-local destinations)
+  "browser.history.search",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;

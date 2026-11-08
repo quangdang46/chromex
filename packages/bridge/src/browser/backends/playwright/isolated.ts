@@ -70,6 +70,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
+  "browser.history.search",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -218,6 +219,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Pages already wired with observation listeners — popup pages arrive
    *  via context "page" events and must not be double-tracked. */
   readonly #trackedPages = new WeakSet<PwPage>();
+
+  /** Per-task visit log backing browser.history.search — isolated
+   *  contexts have no browser profile history, so the log records the
+   *  pages THIS task created/navigated (honest scope, documented in
+   *  the tool description). Capped per task. */
+  readonly #visitLogs = new Map<string, Array<{ url: string; title: string; ts: number }>>();
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
@@ -403,6 +410,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#cookies(taskId, args);
       case "browser.page.localStorage":
         return this.#storage(taskId, args);
+      case "browser.history.search":
+        return this.#historySearch(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -475,6 +484,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (url) {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
     }
+    await this.#recordVisit(taskId, page);
     const tabId = context.pages().indexOf(page);
     return {
       openedTabId: tabId,
@@ -497,6 +507,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (url && url !== "about:blank") {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" }).catch(() => {});
     }
+    await this.#recordVisit(taskId, page);
     const tabId = context.pages().indexOf(page);
     return {
       openedTabId: tabId,
@@ -549,6 +560,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
     const page = await this.#pageFor(taskId, args);
     await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
+    await this.#recordVisit(taskId, page);
     return { url: stripQuery(page.url()), title: await page.title() };
   }
 
@@ -2011,7 +2023,56 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     } else {
       throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
     }
+    await this.#recordVisit(taskId, page);
     return { navigated: action, ...(moved !== null ? { moved } : {}), url: stripQuery(page.url()) };
+  }
+
+  /** Append a visit to the task's log (cap 500 — oldest dropped). */
+  async #recordVisit(taskId: string, page: PwPage): Promise<void> {
+    const url = page.url();
+    if (!url || url === "about:blank") return;
+    const log = this.#visitLogs.get(taskId) ?? [];
+    this.#visitLogs.set(taskId, log);
+    log.push({
+      url: stripQuery(url),
+      // fake pages in unit tests may lack title()
+      title: typeof page.title === "function" ? await page.title().catch(() => "") : "",
+      ts: Date.now(),
+    });
+    if (log.length > 500) log.splice(0, log.length - 500);
+  }
+
+  /** browser.history.search over the task visit log — the honest
+   *  isolated equivalent of chrome.history (no browser profile here). */
+  async #historySearch(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const log = this.#visitLogs.get(taskId) ?? [];
+    const text = typeof args.text === "string" && args.text ? args.text.toLowerCase() : undefined;
+    const urlFilter = typeof args.url === "string" && args.url ? args.url : undefined;
+    const parseTime = (v: unknown): number | undefined => {
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string") {
+        const t = Date.parse(v);
+        if (Number.isFinite(t)) return t;
+      }
+      return undefined;
+    };
+    const startTime = parseTime(args.startTime);
+    const endTime = parseTime(args.endTime);
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+        : 50;
+    const visits = log
+      .filter((v) => {
+        if (text && !(v.url.toLowerCase().includes(text) || v.title.toLowerCase().includes(text))) return false;
+        if (urlFilter && !v.url.includes(urlFilter)) return false;
+        if (startTime !== undefined && v.ts < startTime) return false;
+        if (endTime !== undefined && v.ts > endTime) return false;
+        return true;
+      })
+      .slice(-limit)
+      .map((v) => ({ ...v, lastVisitTime: v.ts, lastVisitTimeIso: new Date(v.ts).toISOString() }));
+    return { visits, count: visits.length, scope: "task" };
   }
 
   // ---- cookies ----
@@ -2563,6 +2624,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const ctx = this.#contexts.get(taskId);
     this.#contexts.delete(taskId);
     this.#activePages.delete(taskId);
+    this.#visitLogs.delete(taskId);
     for (const p of ctx?.pages() ?? []) this.#forgetPage(p);
     await ctx?.close().catch(() => {});
   }
@@ -2577,6 +2639,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       this.#wsBuffers, this.#routeRules, this.#fulfilledBodies,
       this.#pendingDialogs,
     ]) map.clear();
+    this.#visitLogs.clear();
     await this.#browser?.close().catch(() => {});
     this.#browser = null;
   }

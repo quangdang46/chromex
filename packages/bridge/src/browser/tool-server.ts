@@ -302,6 +302,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   // CDP response bodies are page content (docs/adr/debugger-tier.md).
   "browser.page.responseBody": "page-text",
   "browser.page.webSocket": "page-text",
+  // history entries are personal browsing data — same egress gate.
+  "browser.history.search": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -315,6 +317,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",
+  "browser.history.search",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"

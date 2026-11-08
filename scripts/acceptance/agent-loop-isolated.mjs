@@ -517,6 +517,22 @@ try {
   assert(!(lsAfter?.keys ?? []).includes("theme"), "remove deleted the key");
   await expectReject("browser.page.localStorage", { tabId: ckId, action: "set", key: "x" }, "args.value", "set without value refused");
 
+  // ── Loop 15: history.search over the task visit log ────────────────
+  // Isolated contexts have no browser profile — the log records pages
+  // THIS task created/navigated (scope:"task" stays honest).
+  const hsAll = await call("browser.history.search", {});
+  assert((hsAll?.count ?? 0) > 5, `visit log captured task navigations (count=${hsAll?.count})`);
+  assert(hsAll?.scope === "task", "isolated history is honestly task-scoped");
+  const hsKeys = await call("browser.history.search", { text: "/keys" });
+  assert(
+    (hsKeys?.visits ?? []).some((v) => String(v.url).includes("/keys")),
+    "text search finds the /keys visit",
+  );
+  const hsNone = await call("browser.history.search", { text: "definitely-not-visited-xyz" });
+  assert((hsNone?.count ?? -1) === 0, "no-match search returns empty honestly");
+  const hsLimit = await call("browser.history.search", { limit: 1 });
+  assert((hsLimit?.visits ?? []).length === 1, "limit bounds results");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

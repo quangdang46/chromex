@@ -710,6 +710,19 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.history.search": {
+    description:
+      "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",
+    inputSchema: objectSchema(
+      {
+        text: { type: "string", description: "Substring matched against URL and title." },
+        url: { type: "string", description: "URL substring filter." },
+        startTime: { description: "Only visits after this — epoch ms or ISO date string.", anyOf: [{ type: "number" }, { type: "string" }] },
+        endTime: { description: "Only visits before this — epoch ms or ISO date string.", anyOf: [{ type: "number" }, { type: "string" }] },
+        limit: { type: "integer", description: "Max results (1–200, default 50)." },
+      },
+    ),
+  },
   "browser.downloads.list": {
     description:
       "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",

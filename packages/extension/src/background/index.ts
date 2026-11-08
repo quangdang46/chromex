@@ -292,6 +292,31 @@ const toolHostHandler = createToolHostHandler({
       if (action === "forward") return chrome.tabs.goForward(tabId);
       return chrome.tabs.reload(tabId);
     },
+    searchHistory: async ({ text, url, startTime, endTime, limit }) => {
+      const granted = await chrome.permissions.contains({ permissions: ["history"] });
+      if (!granted || !chrome.history?.search) return null;
+      // chrome.history timestamps are microseconds since epoch; callers
+      // pass epoch ms — values already at µs scale pass through.
+      const toUs = (ms: number | undefined) =>
+        ms === undefined ? undefined : ms > 1e14 ? ms : ms * 1000;
+      // HistoryQuery has no url field — filter client-side.
+      const items = await chrome.history.search({
+        text: text ?? "",
+        ...(startTime !== undefined ? { startTime: toUs(startTime) } : {}),
+        ...(endTime !== undefined ? { endTime: toUs(endTime) } : {}),
+        maxResults: limit,
+      });
+      return items
+        .filter((h): h is chrome.history.HistoryItem & { url: string } =>
+          typeof h.url === "string" && h.url.length > 0)
+        .filter((h) => !url || h.url.includes(url))
+        .map((h) => ({
+          url: h.url,
+          ...(h.title ? { title: h.title } : {}),
+          ...(typeof h.visitCount === "number" ? { visitCount: h.visitCount } : {}),
+          ...(typeof h.lastVisitTime === "number" ? { lastVisitTime: h.lastVisitTime } : {}),
+        }));
+    },
     listDownloads: async ({ state, limit, startTime }) => {
       const items = await chrome.downloads.search({
         ...(state ? { state: state as chrome.downloads.DownloadQuery["state"] } : {}),
