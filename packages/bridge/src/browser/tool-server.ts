@@ -222,6 +222,7 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.find": "page-text",
   // CDP response bodies are page content (docs/adr/debugger-tier.md).
   "browser.page.responseBody": "page-text",
+  "browser.page.webSocket": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check

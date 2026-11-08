@@ -98,6 +98,9 @@ const READ_TOOLS = new Set([
   // CDP tier (docs/adr/debugger-tier.md): response bodies are page
   // content — same read+egress class as extract/find.
   "browser.page.responseBody",
+  // WS frames are page-originated payload content — same read+egress
+  // class as responseBody (page-text, bounded, approval-gated).
+  "browser.page.webSocket",
   "browser.windows.list",
 ]);
 

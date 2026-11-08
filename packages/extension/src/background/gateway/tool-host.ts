@@ -3,7 +3,7 @@
  * the Gateway pushes to this extension (P1-09 §9.2 step 4).
  *
  * Maps the §9 tool surface onto existing primitives:
- *  - tabs.*/windows.*/downloads.* → chrome.tabs/windows/downloads
+ *  - tabs / windows / downloads tools → chrome.tabs/windows/downloads
  *  - page.snapshot/get/extract/find/console/network/history
  *                → page.dom.* content-script messages + webRequest log
  *  - page.click/focus/fill/select/submit/type/scroll/navigate/hover/
@@ -11,8 +11,8 @@
  *  - args.trusted variants → CDP Input.dispatchMouseEvent/KeyEvent
  *    (isTrusted=true) via background/cdp.ts
  *  - page.snapshot mode:"aria", page.dialog, page.setInputFiles,
- *    page.responseBody, page.screenshot element clips, page.emulate,
- *    page.pdf → chrome.debugger CDP tier (docs/adr/debugger-tier.md)
+ *    page.responseBody, page.webSocket, page.screenshot element clips,
+ *    page.emulate, page.pdf → chrome.debugger CDP tier (docs/adr/debugger-tier.md)
  *  - page.evaluate → chrome.scripting world:"MAIN" (always approval)
  *  - page.upload → in-memory DataTransfer path (content script)
  *
@@ -254,6 +254,7 @@ const SUPPORTED = new Set([
   "browser.page.dialog",
   "browser.page.setInputFiles",
   "browser.page.responseBody",
+  "browser.page.webSocket",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -1070,6 +1071,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.responseBody": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         return await pageResponseBody(deps, tabId, args);
+      }
+      case "browser.page.webSocket": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await pageWebSocket(deps, tabId, args);
       }
       case "browser.page.history": {
         const action = str(args.action);
@@ -3067,7 +3072,28 @@ interface NetworkTapEntry {
   failed?: boolean;
 }
 
+interface WsFrameEntry {
+  dir: "sent" | "recv";
+  /** text payload, or base64 when opcode is binary — truncated */
+  data: string;
+  binary: boolean;
+  opcode?: number;
+  truncated?: boolean;
+  ts: number;
+}
+
+interface WsTapEntry {
+  requestId: string;
+  url: string;
+  ts: number;
+  closed: boolean;
+  frames: WsFrameEntry[];
+}
+
 const NETWORK_TAP_CAP = 300;
+const WS_TAP_CAP = 50;
+const WS_FRAMES_PER_CONN_CAP = 200;
+const WS_FRAME_MAX_BYTES = 8 * 1024;
 const RESPONSE_BODY_DEFAULT_MAX = 64 * 1024;
 const RESPONSE_BODY_MAX = 256 * 1024;
 
@@ -3077,17 +3103,21 @@ const RESPONSE_BODY_MAX = 256 * 1024;
  *  Cleared on SW restart (module state) — the next call re-taps and the
  *  buffer honestly restarts. Tab close is handled by cdp.ts state GC +
  *  the getTab liveness check in the tool case. */
-const networkTaps = new Map<number, { session: CdpSession; entries: NetworkTapEntry[]; since: number }>();
+const networkTaps = new Map<
+  number,
+  { session: CdpSession; entries: NetworkTapEntry[]; sockets: WsTapEntry[]; since: number }
+>();
 
 async function ensureNetworkTap(
   deps: ToolHostDeps,
   tabId: number,
-): Promise<{ session: CdpSession; entries: NetworkTapEntry[]; since: number }> {
+): Promise<{ session: CdpSession; entries: NetworkTapEntry[]; sockets: WsTapEntry[]; since: number }> {
   const existing = networkTaps.get(tabId);
   if (existing) return existing;
   const { session } = await cdpAcquire(deps, tabId);
   await session.send("Network.enable");
   const entries: NetworkTapEntry[] = [];
+  const sockets: WsTapEntry[] = [];
   const upsert = (requestId: string, patch: Partial<NetworkTapEntry>) => {
     let e = [...entries].reverse().find((x) => x.requestId === requestId);
     if (!e) {
@@ -3134,7 +3164,57 @@ async function ensureNetworkTap(
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (requestId) upsert(requestId, { finished: true, failed: true });
   });
-  const tap = { session, entries, since: Date.now() };
+  // WebSocket connections + frames (browser.page.webSocket). CDP reports
+  // opcode 1=text / 2=binary; `data` is the payload text (binary frames
+  // arrive base64-encoded by the protocol). Bounded per-connection and
+  // per-tap so a chatty socket cannot grow memory without limit.
+  const wsByRequest = new Map<string, WsTapEntry>();
+  const wsUpsert = (requestId: string, url: string) => {
+    let s = wsByRequest.get(requestId);
+    if (!s) {
+      s = { requestId, url, ts: Date.now(), closed: false, frames: [] };
+      wsByRequest.set(requestId, s);
+      sockets.push(s);
+      if (sockets.length > WS_TAP_CAP) {
+        const dropped = sockets.splice(0, sockets.length - WS_TAP_CAP);
+        for (const d of dropped) wsByRequest.delete(d.requestId);
+      }
+    } else if (url && !s.url) {
+      s.url = url;
+    }
+    return s;
+  };
+  const wsFrame = (dir: "sent" | "recv") => (p: Record<string, unknown>) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    if (!requestId) return;
+    const resp = (p.response ?? {}) as { opcode?: number; payloadData?: string; data?: string };
+    const s = wsByRequest.get(requestId);
+    if (!s || s.frames.length >= WS_FRAMES_PER_CONN_CAP) return;
+    const raw = typeof resp.payloadData === "string" ? resp.payloadData
+      : typeof resp.data === "string" ? resp.data : "";
+    const truncated = raw.length > WS_FRAME_MAX_BYTES;
+    s.frames.push({
+      dir,
+      data: truncated ? raw.slice(0, WS_FRAME_MAX_BYTES) : raw,
+      binary: resp.opcode === 2,
+      ...(typeof resp.opcode === "number" ? { opcode: resp.opcode } : {}),
+      ts: Date.now(),
+      ...(truncated ? { truncated: true } : {}),
+    });
+  };
+  session.on("Network.webSocketCreated", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    const url = typeof p.url === "string" ? p.url : "";
+    if (requestId) wsUpsert(requestId, url);
+  });
+  session.on("Network.webSocketFrameSent", wsFrame("sent"));
+  session.on("Network.webSocketFrameReceived", wsFrame("recv"));
+  session.on("Network.webSocketClosed", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    const s = requestId ? wsByRequest.get(requestId) : undefined;
+    if (s) s.closed = true;
+  });
+  const tap = { session, entries, sockets, since: Date.now() };
   networkTaps.set(tabId, tap);
   return tap;
 }
@@ -3227,6 +3307,62 @@ async function pageResponseBody(
   );
   return {
     requests: filtered.slice(-limit).map(toPublic),
+    capturingSince: tap.since,
+    resolvedTabId: tabId,
+  };
+}
+
+// ---- browser.page.webSocket ----------------------------------------------
+
+async function pageWebSocket(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const tab = await deps.getTab(tabId);
+  if (!tab) {
+    networkTaps.delete(tabId);
+    throw toolError("browser.no_tab", `tab ${tabId} not found`);
+  }
+  const tap = await ensureNetworkTap(deps, tabId);
+  const urlContains = str(args.urlContains);
+  const frameLimit = clampMs(args.frameLimit, 50, WS_FRAMES_PER_CONN_CAP);
+  const requestId = str(args.requestId);
+
+  const toPublic = (s: WsTapEntry, withFrames: boolean) => ({
+    requestId: s.requestId,
+    url: urlOriginPath(s.url),
+    ts: s.ts,
+    closed: s.closed,
+    frameCount: s.frames.length,
+    ...(withFrames
+      ? {
+          frames: s.frames.slice(-frameLimit).map((f) => ({
+            dir: f.dir,
+            data: f.data,
+            binary: f.binary,
+            ...(typeof f.opcode === "number" ? { opcode: f.opcode } : {}),
+            ...(f.truncated ? { truncated: true } : {}),
+            ts: f.ts,
+          })),
+        }
+      : {}),
+  });
+
+  if (requestId !== undefined) {
+    const s = [...tap.sockets].reverse().find((x) => x.requestId === requestId);
+    if (!s) {
+      throw toolError("browser.not_found", `no captured WebSocket with requestId ${requestId}`);
+    }
+    return { ...toPublic(s, true), capturingSince: tap.since, resolvedTabId: tabId };
+  }
+
+  const limit = clampMs(args.limit, 20, WS_TAP_CAP);
+  const filtered = tap.sockets.filter(
+    (s) => urlContains === undefined || s.url.includes(urlContains),
+  );
+  return {
+    sockets: filtered.slice(-limit).map((s) => toPublic(s, false)),
     capturingSince: tap.since,
     resolvedTabId: tabId,
   };

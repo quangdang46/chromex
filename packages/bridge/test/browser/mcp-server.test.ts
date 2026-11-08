@@ -289,6 +289,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.dialog": { accept: true, timeoutMs: 3000 },
   "browser.page.setInputFiles": { selector: "input[type=file]", files: ["/tmp/a.png"] },
   "browser.page.responseBody": { requestId: "req-1", maxBytes: 4096 },
+  "browser.page.webSocket": { requestId: "ws-1", frameLimit: 20 },
   "browser.page.find": { text: "Sign in", limit: 10 },
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },

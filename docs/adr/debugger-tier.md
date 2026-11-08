@@ -12,7 +12,7 @@ are unreachable, `input[type=file]` picks need the DataTransfer
 workaround, `webRequest` yields metadata only (no bodies), and there is
 no accessibility tree. Every remaining capability gap in
 `docs/product-acceptance-matrix.md` (dialogs, file picker, trusted
-input, response bodies, real a11y) funnels through one mechanism:
+input, response bodies + WebSocket frames, real a11y) funnels through one mechanism:
 `chrome.debugger` → CDP.
 
 ## Spike evidence (`scripts/spike/cdp-tier.mjs` — 11/11)
@@ -26,6 +26,9 @@ for Testing:
   `role.value`, names) — the true a11y snapshot, not a DOM approximation.
 - `Network.enable` + `Network.responseReceived` +
   `Network.getResponseBody` — full response bodies retrievable.
+- `Network.webSocketCreated` / `webSocketFrameSent` /
+  `webSocketFrameReceived` / `webSocketClosed` — WebSocket
+  connections + frame payloads (`payloadData`) retrievable.
 - `DOM.setFileInputFiles` — `input.files` populated with real File
   objects (verified via `onchange` → filename in DOM).
 - `Page.javascriptDialogOpening` + `Page.handleJavaScriptDialog` —
@@ -75,7 +78,9 @@ for Testing:
 - Capability claims (updated after `cdp-headless` PASS, not before):
   `accessibility: true` (snapshot `mode:"aria"`), `nativeDialogs: true`
   (`browser.page.dialog`), `networkBodies: true`
-  (`browser.page.responseBody`). `trustedGesture` is `true` — every
+  (`browser.page.responseBody`), `webSocketFrames: true`
+  (`browser.page.webSocket` — connections + sent/recv frame payloads,
+  captured only after the tap attaches, per-frame 8KiB truncation). `trustedGesture` is `true` — every
   gesture-bearing tool has a verified `args.trusted` path:
   `browser.page.click` (Input.dispatchMouseEvent), `press`/`type`/`fill`
   (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →
@@ -131,8 +136,8 @@ for Testing:
   playwright-isolated supports only viewport + media keys and refuses
   the rest `proto.unsupported`.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,
-  `browser.page.responseBody`) exist only on the chrome-extension
-  backend; `playwright-isolated` rejects them `proto.unsupported` —
+  `browser.page.responseBody`, `browser.page.webSocket`) exist only on
+  the chrome-extension backend; `playwright-isolated` rejects them `proto.unsupported` —
   honest negative, no silent downgrade.
 - No `chrome.debugger` use for page scraping — CDP is for operations
   DOM-tier cannot do; observation stays on the cheaper paths.

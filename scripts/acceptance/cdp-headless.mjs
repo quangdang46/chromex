@@ -13,6 +13,7 @@
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
+//   - page.webSocket         → Network webSocket* events (sent+recv frames)
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,6 +98,45 @@ await runScenario(
       results.responseBody = {
         ok: bodyPayload?.body === '{"v":"ok"}',
         snippet: bodyText.slice(0, 200),
+      };
+
+      // --- webSocket: prime the tap BEFORE the socket opens, then the
+      // /ws fixture page connects + echoes — frames must be captured ---
+      await runner.browserToolCall(
+        taskId, "browser.page.webSocket", { urlContains: "/ws" }, token, 60_000,
+      );
+      await page.goto(fixture.url("/ws"), { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(
+        () => document.getElementById("wout")?.textContent?.startsWith("echo:"),
+        { timeout: 10_000 },
+      );
+      await sleep(500); // let CDP deliver the frame events
+      let wsList = null, wsFrames = null;
+      const wsDeadline = Date.now() + 15_000;
+      while (Date.now() < wsDeadline && !wsFrames) {
+        wsList = await runner.browserToolCall(
+          taskId, "browser.page.webSocket", { urlContains: "/ws" }, token, 60_000,
+        );
+        const socks = wsList?.result?.sockets ?? wsList?.sockets ?? [];
+        const hit = socks.find((s) => /\/ws/.test(s.url ?? ""));
+        if (hit?.requestId) {
+          wsFrames = await runner.browserToolCall(
+            taskId, "browser.page.webSocket", { requestId: hit.requestId }, token, 60_000,
+          );
+          break;
+        }
+        await sleep(400);
+      }
+      const wsPayload = wsFrames?.result ?? wsFrames ?? {};
+      const wsFrameList = wsPayload?.frames ?? [];
+      const wsDirs = wsFrameList.map((f) => `${f.dir}:${f.data}`).join(" | ");
+      evidence.note(`webSocket → ${JSON.stringify({ sockets: wsList?.result?.sockets?.length ?? wsList?.sockets?.length, frames: wsFrameList.length, sample: wsDirs.slice(0, 200) })}`);
+      results.webSocket = {
+        ok:
+          wsFrameList.some((f) => f.dir === "sent" && f.data === "hello-agent") &&
+          wsFrameList.some((f) => f.dir === "recv" && f.data === "echo:hello-agent"),
+        frames: wsFrameList.length,
+        snippet: wsDirs.slice(0, 200),
       };
 
       // --- aria snapshot ---

@@ -92,6 +92,12 @@ export interface BrowserBackendCapabilities {
    *  only requests made after the tap attached are captured, and the tap
    *  keeps the debugger attached while in use. */
   networkBodies?: boolean;
+  /** WebSocket connections + frame payloads observable
+   *  (browser.page.webSocket). chrome-extension: CDP
+   *  Network.webSocketCreated / webSocketFrameSent / webSocketFrameReceived
+   *  / webSocketClosed on the same per-tab tap — only connections opened
+   *  after attach are captured, frames truncated per-entry. */
+  webSocketFrames?: boolean;
 }
 
 /**
@@ -154,8 +160,11 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     downloadsSave: true,
     downloadsCancel: true,
     networkInspection: true,
-    // CDP Network.getResponseBody tap (browser.page.responseBody).
+    // CDP Network.getResponseBody tap (browser.page.responseBody) and
+    // webSocketCreated/webSocketFrame*/webSocketClosed
+    // (browser.page.webSocket) on the same per-tab tap.
     networkBodies: true,
+    webSocketFrames: true,
     windowManagement: true,
   },
   "playwright-isolated": {

@@ -79,7 +79,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.page.dialog");
     expect(tools).not.toContain("browser.page.setInputFiles");
     expect(tools).not.toContain("browser.page.responseBody");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 10);
+    expect(tools).not.toContain("browser.page.webSocket");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 11);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

@@ -3,6 +3,7 @@
 // 127.0.0.1 both reach it — auth.* hostnames trip the §4.8 financial
 // classifier, which is what S7 needs.
 import http from "node:http";
+import crypto from "node:crypto";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -170,6 +171,7 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 export async function startFixtureServer() {
   const requests = [];
   const sockets = new Set();
+  const wsMessages = [];
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
     requests.push({ method: req.method, path: url.pathname, at: Date.now() });
@@ -219,6 +221,21 @@ export async function startFixtureServer() {
       res.end("download-bytes-from-fixture");
       return;
     }
+    // WebSocket fixture page — connects to /ws, sends a hello, shows the echo
+    if (url.pathname === "/ws") {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(`<!doctype html><html><head><title>WS Fixture</title></head><body>
+<h1>WS Fixture</h1><p id="wstate">connecting</p><p id="wout">none</p>
+<script>
+  const ws = new WebSocket("ws://127.0.0.1:${port}/ws");
+  ws.onopen = () => { document.getElementById("wstate").textContent = "open"; ws.send("hello-agent"); };
+  ws.onmessage = (e) => { document.getElementById("wout").textContent = e.data; };
+  ws.onclose = () => { document.getElementById("wstate").textContent = "closed"; };
+  ws.onerror = () => { document.getElementById("wstate").textContent = "error"; };
+</script>
+</body></html>`);
+      return;
+    }
     const html = PAGES[url.pathname];
     if (html) {
       res.writeHead(200, { "content-type": "text/html" });
@@ -227,6 +244,68 @@ export async function startFixtureServer() {
     }
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
+  });
+  // Minimal RFC6455 endpoint at /ws: handshake + masked-frame parse +
+  // text echo. Just enough for the browser.page.webSocket acceptance leg.
+  const wsSend = (sock, opcode, payload) => {
+    const len = payload.length;
+    let header;
+    if (len < 126) header = Buffer.from([0x80 | opcode, len]);
+    else if (len < 65536) {
+      header = Buffer.alloc(4);
+      header[0] = 0x80 | opcode; header[1] = 126; header.writeUInt16BE(len, 2);
+    } else {
+      header = Buffer.alloc(10);
+      header[0] = 0x80 | opcode; header[1] = 127; header.writeBigUInt64BE(BigInt(len), 2);
+    }
+    sock.write(Buffer.concat([header, payload]));
+  };
+  server.on("upgrade", (req, sock) => {
+    if (req.url !== "/ws") { sock.destroy(); return; }
+    const key = req.headers["sec-websocket-key"];
+    if (typeof key !== "string") { sock.destroy(); return; }
+    const accept = crypto
+      .createHash("sha1")
+      .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+      .digest("base64");
+    sock.write(
+      "HTTP/1.1 101 Switching Protocols\r\n" +
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    let buf = Buffer.alloc(0);
+    sock.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        if (buf.length < 2) return;
+        const fin = (buf[0] & 0x80) !== 0;
+        const opcode = buf[0] & 0x0f;
+        const masked = (buf[1] & 0x80) !== 0;
+        let len = buf[1] & 0x7f;
+        let off = 2;
+        if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+        else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+        const maskOff = off;
+        if (masked) off += 4;
+        if (buf.length < off + len) return;
+        let payload = Buffer.from(buf.subarray(off, off + len));
+        if (masked) {
+          const mask = buf.subarray(maskOff, maskOff + 4);
+          for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i % 4];
+        }
+        buf = buf.subarray(off + len);
+        if (!fin) continue; // fixture only handles unfragmented frames
+        if (opcode === 8) { sock.end(); return; }
+        if (opcode === 9) { wsSend(sock, 0xA, payload); continue; }
+        if (opcode === 1 || opcode === 2) {
+          wsMessages.push(payload.toString("utf8"));
+          if (opcode === 1) wsSend(sock, 1, Buffer.from(`echo:${payload.toString("utf8")}`));
+        }
+      }
+    });
+    sock.on("error", () => {});
+    sockets.add(sock);
+    sock.on("close", () => sockets.delete(sock));
   });
   server.on("connection", (sock) => {
     sockets.add(sock);
@@ -244,6 +323,7 @@ export async function startFixtureServer() {
     // hostname that trips the financial classifier (auth.* → approval)
     gatedUrl: (p = "/") => `http://auth.localhost:${port}${p}`,
     requests,
+    wsMessages,
     close: () =>
       new Promise((r) => {
         for (const sock of sockets) sock.destroy();
