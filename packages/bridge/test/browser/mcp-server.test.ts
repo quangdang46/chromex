@@ -310,6 +310,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.evaluate": { expression: "document.title", timeoutMs: 5000 },
   "browser.page.emulate": { width: 390, height: 844, mobile: true, colorScheme: "dark" },
   "browser.page.pdf": { landscape: true, paperWidth: 11, paperHeight: 8.5 },
+  "browser.page.mhtml": {},
   "browser.page.click": { ref: "e12", snapshotId: "snap-1" },
   "browser.page.focus": { selector: "#q" },
   "browser.page.type": { ref: "e3", text: "hello" },

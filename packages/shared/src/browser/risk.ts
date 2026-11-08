@@ -215,6 +215,12 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     });
   }
 
+  if (ctx.action === "browser.page.mhtml") {
+    return verdict("read", {
+      reason: "mhtml capture is read + agentEgress (handled above)",
+    });
+  }
+
   if (ctx.action === "browser.page.screenshot") {
     return verdict("read", {
       reason: "screenshot is read + agentEgress (handled above)",

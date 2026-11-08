@@ -545,6 +545,23 @@ await runScenario(
         artifactRef: typeof pdfPayload?.artifactRef === "string" ? "present" : pdfPayload?.artifactRef,
       };
 
+      // --- mhtml: Page.captureSnapshot → artifact ---
+      let mhtmlRes = null;
+      try {
+        mhtmlRes = await runner.browserToolCall(
+          taskId, "browser.page.mhtml", {}, token, 60_000,
+        );
+      } catch (e) {
+        mhtmlRes = { rpcError: e?.message };
+      }
+      const mhtmlPayload = mhtmlRes?.result ?? mhtmlRes ?? {};
+      evidence.note(`mhtml → ${JSON.stringify(mhtmlPayload).slice(0, 200)}`);
+      results.mhtml = {
+        ok: mhtmlRes?.status === "completed" && mhtmlPayload?.mimeType === "multipart/related" && (mhtmlPayload?.bytes ?? 0) > 200,
+        bytes: mhtmlPayload?.bytes,
+        artifactRef: typeof mhtmlPayload?.artifactRef === "string" ? "present" : mhtmlPayload?.artifactRef,
+      };
+
       // --- emulate: viewport + dark colorScheme, verified via evaluate ---
       let emu = null, emuCheck = null, emuReset = null;
       try {

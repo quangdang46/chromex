@@ -178,6 +178,11 @@ try {
   assert(typeof shot?.dataBase64 === "string" && shot.dataBase64.length > 100 && shot?.mimeType === "image/jpeg",
     `screenshot returned jpeg payload (${shot?.bytes} bytes)`);
 
+  const mhtml = await call("browser.page.mhtml", { tabId: cTab });
+  assert(mhtml?.ok === true && mhtml?.mimeType === "multipart/related" && (mhtml?.bytes ?? 0) > 200
+    && typeof mhtml?.sha256 === "string" && mhtml.sha256.length === 64,
+    `mhtml captured full-fidelity snapshot (${mhtml?.bytes} bytes)`);
+
   await call("browser.tab.activate", { tabId: bTab });
   const tabsBefore = await call("browser.tabs.list", {});
   const nBefore = Array.isArray(tabsBefore) ? tabsBefore.length : tabsBefore?.tabs?.length ?? 0;

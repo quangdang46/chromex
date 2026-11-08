@@ -41,6 +41,7 @@ const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
   "browser.page.extract": 30_000,
   "browser.page.screenshot": 30_000,
   "browser.page.pdf": 60_000,
+  "browser.page.mhtml": 60_000,
   "browser.page.wait": 35_000,
   "browser.page.evaluate": 20_000,
   "browser.page.cdp": 20_000,
@@ -293,6 +294,7 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.extract": "page-text",
   "browser.page.screenshot": "screenshot",
   "browser.page.pdf": "screenshot",
+  "browser.page.mhtml": "screenshot",
   // console entries are page-generated content — same egress class as
   // extracted text (may carry tokens/PII the page logged).
   "browser.page.console": "page-text",

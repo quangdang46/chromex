@@ -373,6 +373,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       paperHeight: { type: "number", description: "Paper height in inches (3–24, default 11)." },
     }),
   },
+  "browser.page.mhtml": {
+    description:
+      "Capture the tab as MHTML (multipart/related) via CDP Page.captureSnapshot — the full-fidelity page snapshot including iframes, shadow DOM, external resources and inline styles; the deliverable-evidence counterpart to page.pdf. Returns {bytes, sha256, mimeType:'multipart/related', artifactRef?} — the MHTML is stored as an artifact (or proto.payload_too_large honestly when it exceeds the 512KiB artifact cap), NOT returned inline. Both backends: chrome-extension via chrome.debugger, playwright-isolated via CDPSession. Tab-scoped; args.frameId unsupported. Read + agentEgress (screenshot class) — approval follows the egress policy.",
+    inputSchema: objectSchema({ ...TAB_TARGET_PROPS }),
+  },
   "browser.page.click": {
     description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST} ${POPUP_NOTE}`,
     inputSchema: objectSchema({

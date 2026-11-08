@@ -53,6 +53,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.evaluate",
   "browser.page.emulate",
   "browser.page.pdf",
+  "browser.page.mhtml",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -386,6 +387,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#withExpect(taskId, args, await this.#emulate(taskId, args));
       case "browser.page.pdf":
         return this.#withExpect(taskId, args, await this.#pdf(taskId, args));
+      case "browser.page.mhtml":
+        return this.#withExpect(taskId, args, await this.#mhtml(taskId, args));
       case "browser.page.click":
       case "browser.page.focus":
       case "browser.page.type":
@@ -955,6 +958,38 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       mimeType: "application/pdf",
       bytes: buf.length,
       sha256: createHash("sha256").update(buf).digest("hex"),
+    };
+  }
+
+  /** MHTML evidence capture — same CDP Page.captureSnapshot the
+   *  extension debugger tier sends; bounded by the 512KiB artifact
+   *  cap, oversized captures fail honestly. */
+  async #mhtml(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    if (typeof args.frameId === "number" && args.frameId !== 0) {
+      throw protocolError("proto.invalid", "browser.page.mhtml is tab-scoped; args.frameId is not supported");
+    }
+    const session = await this.#emulationSession(page);
+    const res = (await (session.send as (m: string, p?: unknown) => Promise<unknown>)(
+      "Page.captureSnapshot",
+      { format: "mhtml" },
+    )) as { data?: unknown } | undefined;
+    if (typeof res?.data !== "string" || res.data.length === 0) {
+      throw protocolError("browser.action_failed", "Page.captureSnapshot returned no data");
+    }
+    const bytes = Buffer.byteLength(res.data, "utf8");
+    if (bytes > 512 * 1024) {
+      throw protocolError(
+        "proto.payload_too_large",
+        `mhtml is ${bytes} bytes — exceeds the 512KiB artifact cap`,
+      );
+    }
+    const { createHash } = await import("node:crypto");
+    return {
+      ok: true,
+      mimeType: "multipart/related",
+      bytes,
+      sha256: createHash("sha256").update(res.data, "utf8").digest("hex"),
     };
   }
 

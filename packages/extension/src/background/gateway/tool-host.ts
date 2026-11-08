@@ -319,6 +319,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.evaluate",
   "browser.page.emulate",
   "browser.page.pdf",
+  "browser.page.mhtml",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -353,6 +354,7 @@ const SUPPORTED = new Set([
   "browser.page.evaluate",
   "browser.page.emulate",
   "browser.page.pdf",
+  "browser.page.mhtml",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -1115,6 +1117,51 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               kind: "pdf",
               mimeType: "application/pdf",
               dataBase64: pdf.data,
+            });
+            out.artifactRef = art.artifactRef;
+          }
+          return out;
+        } finally {
+          await release();
+        }
+      }
+      case "browser.page.mhtml": {
+        // CDP Page.captureSnapshot — full-fidelity MHTML evidence
+        // (iframes, shadow DOM, external resources, inline styles).
+        // The MHTML string is UTF-8 encoded, base64'd for the artifact
+        // store, and bounded by the same 512KiB cap as pdf/screenshot.
+        cdpRequired(deps);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.mhtml is tab-scoped; args.frameId is not supported");
+        }
+        const { session, release } = await cdpAcquire(deps, tabId);
+        try {
+          const res = (await session.send("Page.captureSnapshot", { format: "mhtml" })) as { data?: unknown } | undefined;
+          if (typeof res?.data !== "string" || res.data.length === 0) {
+            throw toolError("browser.action_failed", "Page.captureSnapshot returned no data");
+          }
+          const dataBase64 = utf8ToBase64(res.data);
+          const bytes = base64DecodedBytes(dataBase64);
+          if (bytes > SCREENSHOT_MAX_DECODED_BYTES) {
+            throw toolError(
+              "proto.payload_too_large",
+              `mhtml is ${bytes} bytes — exceeds the ${SCREENSHOT_MAX_DECODED_BYTES}-byte artifact cap`,
+            );
+          }
+          const out: Record<string, unknown> = {
+            ok: true,
+            mimeType: "multipart/related",
+            bytes,
+            sha256: await sha256Hex(new TextEncoder().encode(res.data)),
+            resolvedTabId: tabId,
+          };
+          if (deps.uploadArtifact) {
+            const art = await deps.uploadArtifact({
+              taskId: req.taskId ?? "",
+              kind: "mhtml",
+              mimeType: "multipart/related",
+              dataBase64,
             });
             out.artifactRef = art.artifactRef;
           }
