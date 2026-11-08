@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--scope");
   const [tool, jsonArg] = positional;
-  if (!tool) usage();
+  if (!tool && !argv.includes("--list")) usage();
   const args = jsonArg ? (JSON.parse(jsonArg) as Record<string, unknown>) : {};
   const scopePath = await resolveScopePath(argv);
   await readFile(scopePath, "utf8"); // fail fast if unreadable
@@ -106,19 +106,50 @@ async function main(): Promise<void> {
   if (init.error) throw new Error(`initialize failed: ${JSON.stringify(init.error)}`);
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 
-  const res = await request("tools/call", { name: tool, arguments: args });
-  child.kill();
-  if (res.error) {
-    process.stderr.write(`tool error: ${JSON.stringify(res.error)}\n`);
-    process.exit(1);
+  const call = (name: string, callArgs: Record<string, unknown>) =>
+    request("tools/call", { name, arguments: callArgs });
+
+  // Discovery path: `mcp-call.js --list` prints every advertised tool
+  // name + one-line description so a model that guessed wrong can
+  // self-correct without reading source.
+  if (argv.includes("--list") || tool === "list_tools") {
+    const list = await request("tools/list", {});
+    child.kill();
+    const tools = ((list.result as { tools?: Array<{ name: string; description?: string }> })?.tools) ?? [];
+    for (const t of tools) {
+      const desc = (t.description ?? "").split("\n")[0]?.slice(0, 120) ?? "";
+      process.stdout.write(`${t.name} — ${desc}\n`);
+    }
+    return;
   }
-  const result = res.result as { content?: Array<{ type: string; text?: string }>; isError?: boolean };
-  const text = (result?.content ?? [])
+  if (!tool) usage();
+
+  const res = await call(tool, args);
+  const result = res.result as
+    | { content?: Array<{ type: string; text?: string }>; isError?: boolean }
+    | undefined;
+  let text = (result?.content ?? [])
     .filter((c) => c.type === "text" && typeof c.text === "string")
     .map((c) => c.text)
     .join("\n");
+  if (res.error) {
+    text = `tool error: ${JSON.stringify(res.error)}`;
+  }
+  // Self-correcting error: an unknown tool name is the most common
+  // failure — append the advertised names so the caller can retry
+  // without a second discovery round-trip. Covers both the JSON-RPC
+  // error shape and the isError-content shape the server emits.
+  if (/unknown tool/i.test(text)) {
+    const list = await request("tools/list", {});
+    const names =
+      ((list.result as { tools?: Array<{ name: string }> })?.tools ?? []).map(
+        (t) => t.name,
+      );
+    text += `\navailable tools:\n  ${names.join("\n  ")}`;
+  }
+  child.kill();
   process.stdout.write(text + "\n");
-  if (result?.isError) process.exit(1);
+  if (res.error || result?.isError) process.exit(1);
 }
 
 main().catch((err) => {

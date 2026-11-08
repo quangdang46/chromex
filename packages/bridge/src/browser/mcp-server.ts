@@ -885,8 +885,9 @@ export class BrowserMcpServer {
             // the same tools through it.
             `If your toolset cannot call these tools directly, run ` +
             `\`node ${fileURLToPath(new URL("./mcp-call.js", import.meta.url))} <tool_name> '<json_args>'\` ` +
-            `via your shell/exec tool instead — tool names are the ` +
-            `browser_* names listed below.`,
+            `via your shell/exec tool instead — first run the same ` +
+            `command with --list to see the exact tool names and ` +
+            `descriptions.`,
           serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         });
       case "notifications/initialized":
