@@ -143,17 +143,42 @@ async function findPlaywrightChromiumExecutable() {
     const dirs = [];
     for (const e of entries) {
       if (!e.isDirectory() || !e.name.startsWith("chromium-")) continue;
+      // Revision number decides recency — dir mtime lies (a failed or
+      // partial install can touch an old revision's dir).
+      const rev = Number(e.name.slice("chromium-".length)) || 0;
       try {
         const st = await stat(join(root, e.name));
-        dirs.push({ path: join(root, e.name), mtimeMs: st.mtimeMs });
+        dirs.push({ path: join(root, e.name), mtimeMs: st.mtimeMs, rev });
       } catch {}
     }
-    dirs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    dirs.sort((a, b) => b.rev - a.rev || b.mtimeMs - a.mtimeMs);
     for (const d of dirs) {
       for (const suffix of suffixes) {
         const p = join(d.path, suffix);
         try {
           await access(p, fsConstants.X_OK);
+          // A Chrome-for-Testing dir can keep its main executable while
+          // the Framework dylib is missing (interrupted install) — the
+          // binary then dlopen-crashes at launch. Verify the framework
+          // before trusting the candidate.
+          if (p.includes("Google Chrome for Testing.app") && platform() === "darwin") {
+            // p = <app>/Contents/MacOS/<bin> → framework lives at
+            // <app>/Contents/Frameworks/… (sibling of MacOS).
+            const fw = join(
+              dirname(p),
+              "..",
+              "Frameworks",
+              "Google Chrome for Testing Framework.framework",
+              "Versions",
+              "Current",
+              "Google Chrome for Testing Framework",
+            );
+            try {
+              await access(fw);
+            } catch {
+              continue;
+            }
+          }
           found.push(p);
         } catch {}
       }

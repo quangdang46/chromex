@@ -1389,6 +1389,25 @@ await runScenario(
         ...sys,
       };
 
+      // --- dns/power: optional permissions — ungranted → honest unsupported ---
+      let dp = {};
+      const dnsRes = await runner.browserToolCall(
+        taskId, "browser.dns", { action: "resolve", hostname: "example.com" }, token, 60_000,
+      );
+      const dnsErr = dnsRes?.error ?? {};
+      dp.dnsUnsupportedOk = dnsRes?.status === "failed" && dnsErr.code === "proto.unsupported";
+      dp.msg = String(dnsErr.message ?? "").slice(0, 160);
+      const powerRes = await runner.browserToolCall(
+        taskId, "browser.power", { action: "request" }, token, 60_000,
+      );
+      const powerErr = powerRes?.error ?? {};
+      dp.powerUnsupportedOk = powerRes?.status === "failed" && powerErr.code === "proto.unsupported";
+      evidence.note(`dns/power → ${JSON.stringify(dp).slice(0, 300)}`);
+      results.dnsPower = {
+        ok: dp.dnsUnsupportedOk === true && dp.powerUnsupportedOk === true,
+        ...dp,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

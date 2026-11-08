@@ -1010,6 +1010,22 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       action: { type: "string", enum: ["list", "permission"], description: "Operation (default list)." },
     }),
   },
+  "browser.dns": {
+    description:
+      "DNS resolution for the browser's host (chrome.dns) — resolve a hostname to its IP addresses. Complements browser.dnr/browser.proxy diagnosis: check what a domain resolves to before/after changing network rules. args.action: 'resolve' (default) requires args.hostname (1-253 chars, hostname characters only — no URLs, no IP literals) and returns {hostname, addresses[], resolved, error?} — resolution failures (NXDOMAIN etc.) return resolved:false with the error in-band rather than a protocol error; 'permission' returns the granted state. Requires the optional 'dns' permission — ungranted → proto.unsupported with 'dns permission is not granted'. Read-only. On playwright-isolated → proto.unsupported (no system resolver API).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["resolve", "permission"], description: "Operation (default resolve)." },
+      hostname: { type: "string", description: "resolve: hostname to resolve (1-253 chars, [a-zA-Z0-9.-_] only)." },
+    }),
+  },
+  "browser.power": {
+    description:
+      "System power-management assertions (chrome.power) — keep the machine awake during long autonomous tasks so the OS doesn't sleep mid-run. args.action: 'request' (default) asserts a keep-awake hold at args.level 'system' (default — prevents system sleep) or 'display' (also prevents display sleep/dim); 'release' drops the assertion (only one hold is active per extension — a new request replaces it); 'permission' returns the granted state. Requires the optional 'power' permission — ungranted → proto.unsupported with 'power permission is not granted'. request/release change machine power state → approval required (task-eligible: 'keep the machine awake during this task' is a meaningful standing grant); always release when the task ends. On playwright-isolated → proto.unsupported.",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["request", "release", "permission"], description: "Operation (default request)." },
+      level: { type: "string", enum: ["system", "display"], description: "request: keep-awake level (default system)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

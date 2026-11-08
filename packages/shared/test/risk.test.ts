@@ -443,6 +443,20 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     }
   });
 
+  test("browser.dns: pure read; browser.power: permission read, request/release approval task-eligible", () => {
+    const dns = classifyActionRisk(ctx({ action: "browser.dns" }));
+    expect(dns.risk).toBe("read");
+    expect(dns.needsApproval).toBe(false);
+    const perm = classifyActionRisk(ctx({ action: "browser.power", powerOp: "permission" }));
+    expect(perm.risk).toBe("read");
+    for (const op of ["request", "release", undefined] as const) {
+      const v = classifyActionRisk(ctx({ action: "browser.power", powerOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(true);
+    }
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

@@ -69,6 +69,8 @@ export type BrowserToolName =
   | "browser.userScripts"
   | "browser.system"
   | "browser.processes"
+  | "browser.dns"
+  | "browser.power"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -137,6 +139,8 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.userScripts",
   "browser.system",
   "browser.processes",
+  "browser.dns",
+  "browser.power",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",

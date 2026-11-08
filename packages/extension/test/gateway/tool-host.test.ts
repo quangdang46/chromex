@@ -2178,6 +2178,93 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.dns marshals resolve/permission + validates hostname", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const dns = {
+      permission: vi.fn(async () => {
+        calls.push({ op: "permission", args: [] });
+        return "granted";
+      }),
+      resolve: vi.fn(async (hostname: string) => {
+        calls.push({ op: "resolve", args: [hostname] });
+        return { hostname, addresses: ["93.184.216.34"], resolved: true };
+      }),
+    };
+    const h = createToolHostHandler(deps({ dns }));
+    // resolve is the default action
+    const resRes = (await h(req("browser.dns", { hostname: "example.com" }))) as { resolved: boolean };
+    expect(resRes.resolved).toBe(true);
+    expect(calls[0]).toEqual({ op: "resolve", args: ["example.com"] });
+    const permRes = (await h(req("browser.dns", { action: "permission" }))) as { granted: boolean };
+    expect(permRes.granted).toBe(true);
+    await expect(h(req("browser.dns", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // hostname validation — missing, too long, bad chars all proto.invalid
+    await expect(h(req("browser.dns", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dns", { hostname: "https://example.com/path" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dns", { hostname: "bad host.com" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.dns", { hostname: "a".repeat(254) })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → proto.unsupported naming dns
+    const dPerm = deps({
+      dns: {
+        permission: vi.fn(async () => "permission" as const),
+        resolve: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.dns", { hostname: "example.com" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("dns permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.dns", { hostname: "example.com" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("browser.power marshals request/release/permission + validates level", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const power = {
+      permission: vi.fn(async () => {
+        calls.push({ op: "permission", args: [] });
+        return "granted";
+      }),
+      request: vi.fn(async (level: string) => {
+        calls.push({ op: "request", args: [level] });
+        return { ok: true, held: true, level };
+      }),
+      release: vi.fn(async () => {
+        calls.push({ op: "release", args: [] });
+        return { ok: true, held: false };
+      }),
+    };
+    const h = createToolHostHandler(deps({ power }));
+    // request is the default action, level defaults to system
+    const reqRes = (await h(req("browser.power", {}))) as { held: boolean; level: string };
+    expect(reqRes).toEqual({ ok: true, held: true, level: "system" });
+    expect(calls[0]).toEqual({ op: "request", args: ["system"] });
+    await h(req("browser.power", { action: "request", level: "display" }));
+    expect(calls[1]).toEqual({ op: "request", args: ["display"] });
+    const relRes = (await h(req("browser.power", { action: "release" }))) as { held: boolean };
+    expect(relRes.held).toBe(false);
+    const permRes = (await h(req("browser.power", { action: "permission" }))) as { granted: boolean };
+    expect(permRes.granted).toBe(true);
+    await expect(h(req("browser.power", { action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.power", { action: "request", level: "turbo" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → proto.unsupported naming power
+    const dPerm = deps({
+      power: {
+        permission: vi.fn(async () => "permission" as const),
+        request: vi.fn(async () => "permission" as const),
+        release: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.power", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("power permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.power", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

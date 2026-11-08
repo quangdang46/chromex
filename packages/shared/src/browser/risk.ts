@@ -93,6 +93,9 @@ export interface ActionContext {
    *  state, register/unregister/update/configureWorld/resetWorld mutate
    *  persistent injections, execute runs one-shot page script. */
   userScriptsOp?: string;
+  /** browser.power sub-action — request/release hold or drop a
+   *  system/display keep-awake assertion, permission reads grant state. */
+  powerOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -692,6 +695,29 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // Process inventory — tab titles/urls ride inside each Process,
       // so the egress classifier treats this like tabs.list (page-text).
       return verdict("read", { reason: "browser process inventory read" });
+
+    case "browser.dns":
+      // Hostname → address resolution — agent supplies the hostname,
+      // the result is IP literals, not page data. Pure observation.
+      return verdict("read", { reason: "dns resolution read" });
+
+    case "browser.power": {
+      const op = ctx.powerOp ?? "request";
+      if (op === "permission") {
+        return verdict("read", { reason: "power permission read" });
+      }
+      // requestKeepAwake/releaseKeepAwake assert or drop a system-level
+      // power-management hold — a machine state change outside the
+      // browser, approval per call but task-grantable ("keep the
+      // machine awake while this task runs" is a meaningful standing
+      // permission for long autonomous work).
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: true,
+        reason: "system power keep-awake assertion changes machine power state",
+      });
+    }
 
     case "browser.page.caches": {
       const op = ctx.cacheOp ?? "listCaches";

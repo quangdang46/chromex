@@ -907,6 +907,8 @@ try {
   await expectReject("browser.userScripts", { action: "list" }, "does not support", "userScripts refused on isolated (no persistent injection API)");
   await expectReject("browser.system", { action: "memory" }, "does not support", "system refused on isolated (no host hardware API)");
   await expectReject("browser.processes", { action: "list" }, "does not support", "processes refused on isolated (no process table)");
+  await expectReject("browser.dns", { action: "resolve", hostname: "example.com" }, "does not support", "dns refused on isolated (no system resolver API)");
+  await expectReject("browser.power", { action: "request" }, "does not support", "power refused on isolated (no host power API)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

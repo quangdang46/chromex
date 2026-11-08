@@ -1091,6 +1091,63 @@ const toolHostHandler = createToolHostHandler({
         }));
       },
     },
+    dns: {
+      // chrome.dns — optional "dns" permission checked per call.
+      // chrome.dns is untyped in @types/chrome; cast like the other
+      // optional APIs. Resolution failures (NXDOMAIN etc.) are
+      // legitimate results — returned in-band as resolved:false,
+      // not thrown as protocol errors.
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["dns"] });
+        return granted ? "granted" : "permission";
+      },
+      resolve: async (hostname: string) => {
+        const granted = await chrome.permissions.contains({ permissions: ["dns"] });
+        if (!granted) return "permission";
+        const api = (chrome as unknown as {
+          dns?: { resolve(hostname: string): Promise<string[]> };
+        }).dns;
+        if (!api?.resolve) return null;
+        try {
+          const addresses = await api.resolve(hostname);
+          return {
+            hostname,
+            addresses: (Array.isArray(addresses) ? addresses : []).slice(0, 32),
+            resolved: true,
+          };
+        } catch (err) {
+          return {
+            hostname,
+            addresses: [] as string[],
+            resolved: false,
+            error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+          };
+        }
+      },
+    },
+    power: {
+      // chrome.power — optional "power" permission checked per call.
+      // requestKeepAwake/releaseKeepAwake are void sync calls; the
+      // hold is per-extension and a new request replaces the old one.
+      permission: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["power"] });
+        return granted ? "granted" : "permission";
+      },
+      request: async (level: "system" | "display") => {
+        const granted = await chrome.permissions.contains({ permissions: ["power"] });
+        if (!granted) return "permission";
+        if (!chrome.power?.requestKeepAwake) return null;
+        chrome.power.requestKeepAwake(level);
+        return { ok: true, held: true, level };
+      },
+      release: async () => {
+        const granted = await chrome.permissions.contains({ permissions: ["power"] });
+        if (!granted) return "permission";
+        if (!chrome.power?.releaseKeepAwake) return null;
+        chrome.power.releaseKeepAwake();
+        return { ok: true, held: false };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

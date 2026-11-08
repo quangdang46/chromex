@@ -353,6 +353,8 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.userScripts",
   "browser.system",
   "browser.processes",
+  "browser.dns",
+  "browser.power",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -499,6 +501,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.userScripts"
       ? { userScriptsOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
+    ...(req.tool === "browser.power"
+      ? { powerOp: typeof args.action === "string" ? args.action : "request" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

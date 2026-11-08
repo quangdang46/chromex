@@ -45,7 +45,9 @@
     "userScripts",
     "system.memory",
     "system.cpu",
-    "processes"
+    "processes",
+    "dns",
+    "power"
   ],
   "background": {
     "service_worker": "background.js",

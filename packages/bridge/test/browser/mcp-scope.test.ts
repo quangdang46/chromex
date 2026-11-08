@@ -82,7 +82,9 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.userScripts");
     expect(tools).not.toContain("browser.system");
     expect(tools).not.toContain("browser.processes");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 14);
+    expect(tools).not.toContain("browser.dns");
+    expect(tools).not.toContain("browser.power");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 16);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

@@ -270,6 +270,21 @@ export interface ToolHostDeps {
     permission(): Promise<string | "permission" | null>;
     list(): Promise<unknown[] | "permission" | null>;
   } | undefined;
+  /** chrome.dns (browser.dns) — hostname resolution.
+   *  "permission" → optional dns permission not granted; null → API
+   *  unavailable → proto.unsupported. */
+  dns?: {
+    permission(): Promise<string | "permission" | null>;
+    resolve(hostname: string): Promise<unknown | "permission" | null>;
+  } | undefined;
+  /** chrome.power (browser.power) — keep-awake assertions.
+   *  "permission" → optional power permission not granted; null → API
+   *  unavailable → proto.unsupported. */
+  power?: {
+    permission(): Promise<string | "permission" | null>;
+    request(level: "system" | "display"): Promise<unknown | "permission" | null>;
+    release(): Promise<unknown | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -448,6 +463,8 @@ const SUPPORTED = new Set([
   "browser.userScripts",
   "browser.system",
   "browser.processes",
+  "browser.dns",
+  "browser.power",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -3204,6 +3221,98 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           default:
             throw toolError("proto.invalid", "browser.processes args.action must be list|permission");
+        }
+      }
+      case "browser.dns": {
+        // chrome.dns — hostname resolution. Optional "dns" permission
+        // checked per call in index.ts; resolution failures surface
+        // in-band as resolved:false, not protocol errors.
+        if (!deps.dns) {
+          throw toolError("proto.unsupported", "dns resolution is not available on this host");
+        }
+        const api = deps.dns;
+        const action = str(args.action) ?? "resolve";
+        const dnsSentinel = async <T>(v: Promise<T | "permission" | null>): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", "dns permission is not granted");
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.dns is not available on this Chrome build");
+          }
+          return r as T;
+        };
+        switch (action) {
+          case "resolve": {
+            const hostname = str(args.hostname);
+            if (
+              hostname === undefined ||
+              hostname.length < 1 ||
+              hostname.length > 253 ||
+              !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(hostname)
+            ) {
+              throw toolError(
+                "proto.invalid",
+                "browser.dns args.hostname must be 1-253 chars of [a-zA-Z0-9._-] starting alphanumeric",
+              );
+            }
+            const out = await dnsSentinel(api.resolve(hostname));
+            return out;
+          }
+          case "permission": {
+            const p = await api.permission();
+            if (p === "permission") {
+              return { permission: "not_granted", granted: false };
+            }
+            if (p === null) {
+              throw toolError("proto.unsupported", "chrome.dns is not available on this Chrome build");
+            }
+            return { permission: p, granted: p === "granted" };
+          }
+          default:
+            throw toolError("proto.invalid", "browser.dns args.action must be resolve|permission");
+        }
+      }
+      case "browser.power": {
+        // chrome.power — keep-awake assertions. Optional "power"
+        // permission checked per call in index.ts.
+        if (!deps.power) {
+          throw toolError("proto.unsupported", "power management is not available on this host");
+        }
+        const api = deps.power;
+        const action = str(args.action) ?? "request";
+        const powerSentinel = async <T>(v: Promise<T | "permission" | null>): Promise<T> => {
+          const r = await v;
+          if (r === "permission") {
+            throw toolError("proto.unsupported", "power permission is not granted");
+          }
+          if (r === null) {
+            throw toolError("proto.unsupported", "chrome.power is not available on this Chrome build");
+          }
+          return r as T;
+        };
+        switch (action) {
+          case "request": {
+            const level = str(args.level) ?? "system";
+            if (level !== "system" && level !== "display") {
+              throw toolError("proto.invalid", "browser.power args.level must be system|display");
+            }
+            return powerSentinel(api.request(level));
+          }
+          case "release":
+            return powerSentinel(api.release());
+          case "permission": {
+            const p = await api.permission();
+            if (p === "permission") {
+              return { permission: "not_granted", granted: false };
+            }
+            if (p === null) {
+              throw toolError("proto.unsupported", "chrome.power is not available on this Chrome build");
+            }
+            return { permission: p, granted: p === "granted" };
+          }
+          default:
+            throw toolError("proto.invalid", "browser.power args.action must be request|release|permission");
         }
       }
       case "browser.windows.list": {
