@@ -1,0 +1,2 @@
+{"seq":1,"taskId":"01M6YF1TPFZMDXF9THHKM6SW54","type":"task.created","payload":{"type":"task.created","taskId":"01M6YF1TPFZMDXF9THHKM6SW54","profileId":"codex","providerId":"codex","backend":{"backendId":"chrome-extension","pinnedBy":"user"}},"at":1794171267793}
+{"seq":2,"taskId":"01M6YF1TPFZMDXF9THHKM6SW54","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794171267794}

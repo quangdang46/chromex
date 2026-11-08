@@ -1,0 +1,11 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T20-54-22-238Z-74e48a",
+  "status": "FAIL",
+  "summary": "harness error: page.goto: net::ERR_INVALID_HTTP_RESPONSE at http://127.0.0.1:57575/\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:57575/\", waiting until \"domcontentloaded\"\u001b[22m\n",
+  "durationMs": 5684,
+  "error": "page.goto: net::ERR_INVALID_HTTP_RESPONSE at http://127.0.0.1:57575/\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:57575/\", waiting until \"domcontentloaded\"\u001b[22m\n\n    at runScenario.autoAnswer (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/cdp-headless.mjs:68:18)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:806:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/cdp-headless.mjs:42:1",
+  "notes": [
+    "[2026-11-08T20:54:27.781Z] authed gateway connections=2 (1=client, 2+=browser host)"
+  ]
+}

@@ -4441,6 +4441,86 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cdp.sent.length).toBe(before);
   });
 
+  test("pz ref focus/submit route through node-scoped callFunctionOn", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "BUTTON", backendNodeId: 42,
+                attributes: ["id", "go"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "button" }, name: { value: "go" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [0, 0, 50, 0, 50, 30, 0, 30] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-9" } }),
+      "Runtime.callFunctionOn": (params: { functionDeclaration?: string }) => ({
+        result: { value: String(params?.functionDeclaration ?? "").includes("requestSubmit") ? "submitted" : true },
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(524, cdp));
+    const pz = (await h(req("browser.page.pierce", { tabId: 524 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    const ref = pz.elements[0]!.ref;
+    const foc = (await h(req("browser.page.focus", { tabId: 524, ref }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(foc.ok).toBe(true);
+    expect(foc.pierced).toBe(true);
+    const focusFn = cdp.sent.find(
+      (s) => s.method === "Runtime.callFunctionOn" && String(s.params?.functionDeclaration ?? "").includes("this.focus()"),
+    );
+    expect(focusFn).toBeDefined();
+    const sub = (await h(req("browser.page.submit", { tabId: 524, ref }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(sub.ok).toBe(true);
+    expect(sub.pierced).toBe(true);
+    const fn = cdp.sent.find(
+      (s) => s.method === "Runtime.callFunctionOn" && String(s.params?.functionDeclaration ?? "").includes("requestSubmit"),
+    );
+    expect(fn).toBeDefined();
+    // no-form outcome → honest action_failed
+    const cdp2 = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{ nodeType: 1, nodeName: "BUTTON", backendNodeId: 43, attributes: ["id", "x"] }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({ nodes: [{ backendDOMNodeId: 43, role: { value: "button" }, name: { value: "x" } }] }),
+      "DOM.getBoxModel": () => ({ model: { content: [0, 0, 1, 0, 1, 1, 0, 1] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "o" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: "no-form" } }),
+    });
+    const h2 = createToolHostHandler(cdpDeps(525, cdp2));
+    const pz2 = (await h2(req("browser.page.pierce", { tabId: 525 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    await expect(h2(req("browser.page.submit", { tabId: 525, ref: pz2.elements[0]!.ref })))
+      .rejects.toMatchObject({ code: "browser.action_failed" });
+  });
+
   test("pz ref type/fill/press route through DOM.focus + trusted keys", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({

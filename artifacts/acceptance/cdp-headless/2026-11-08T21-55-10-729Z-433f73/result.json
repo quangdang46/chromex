@@ -1,0 +1,624 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T21-55-10-729Z-433f73",
+  "status": "FAIL",
+  "summary": "results={\"responseBody\":{\"ok\":true,\"snippet\":\"{\\\"requestId\\\":\\\"2733.4\\\",\\\"method\\\":\\\"GET\\\",\\\"url\\\":\\\"http://127.0.0.1:54628/api/ping\\\",\\\"type\\\":\\\"Fetch\\\",\\\"status\\\":200,\\\"mimeType\\\":\\\"application/json\\\",\\\"finished\\\":true,\\\"ts\\\":1794174915538,\\\"body\\\":\\\"{\\\\\\\"v\\\\\\\":\\\\\\\"ok\\\\\\\"}\\\",\\\"bodyB\"},\"webSocket\":{\"ok\":true,\"frames\":2,\"snippet\":\"sent:hello-agent | recv:echo:hello-agent\"},\"route\":{\"ok\":true,\"mocked\":\"pong:mocked\",\"real\":\"pong:ok\",\"aborted\":\"fetch-failed\",\"modified\":\"pong:rerouted\"},\"aria\":{\"ok\":true},\"trustedClick\":{\"ok\":true,\"untrusted\":\"isTrusted:false\",\"trusted\":\"isTrusted:true\",\"clickStatus\":\"completed\"},\"trustedHover\":{\"ok\":true,\"mouseover\":\"isTrusted:true\",\"cssOutline\":\"solid\"},\"trustedScroll\":{\"ok\":true,\"afterDom\":\"count:0 trusted:none delta:0\",\"afterTrusted\":\"count:1 trusted:true delta:300\",\"scrollYDom\":288,\"scrollYTrusted\":300,\"badTargetStatus\":\"failed\"},\"trustedPress\":{\"ok\":true,\"untrusted\":\"key:a,trusted:false\",\"trusted\":\"key:Enter,trusted:true\"},\"trustedType\":{\"ok\":true,\"status\":\"completed\",\"value\":\"Hi!\",\"out\":\"key:!,trusted:true\"},\"trustedFill\":{\"ok\":true,\"status\":\"completed\",\"value\":\"xy\"},\"trustedDrag\":{\"ok\":true,\"down\":\"isTrusted:true\",\"out\":\"up@360,80\",\"status\":\"completed\"},\"pageGetLiveness\":{\"ok\":true,\"page\":{\"readyState\":\"complete\",\"visibilityState\":\"visible\",\"hasFocus\":true,\"online\":true},\"status\":\"complete\",\"discarded\":false,\"autoDiscardable\":true,\"muted\":false},\"trustedFramePress\":{\"ok\":true,\"status\":\"completed\",\"kout\":\"key:x,trusted:true\"},\"trustedFrameClick\":{\"ok\":false,\"same\":{\"ok\":true,\"status\":\"completed\",\"pout\":\"down:true up:true\"},\"cross\":{\"ok\":false,\"status\":\"completed\",\"pout\":\"none\"}},\"frameSetInputFiles\":{\"ok\":true,\"status\":\"completed\",\"fout2\":\"files:chromex-cdp-upload.txt\"},\"frameElementScreenshot\":{\"ok\":true,\"status\":\"completed\",\"bytes\":1530},\"frameUpload\":{\"ok\":true,\"status\":\"completed\",\"fout2\":\"files:mem.txt\"},\"oopifSetInputFiles\":{\"ok\":true,\"fout2\":\"files:cross.txt\"},\"frameResponseBody\":{\"ok\":true,\"body\":\"{\\\"ok\\\":true}\"},\"pdf\":{\"ok\":true,\"bytes\":75959,\"artifactRef\":\"present\"},\"mhtml\":{\"ok\":true,\"bytes\":6058,\"artifactRef\":\"present\"},\"emulate\":{\"ok\":true,\"check\":{\"dark\":true,\"w\":390},\"reset\":\"completed\"},\"dialog\":{\"ok\":true,\"handled\":true,\"pageText\":\"confirm:true\"},\"alertDialog\":{\"ok\":true,\"pageText\":\"alert-done\"},\"setInputFiles\":{\"ok\":true,\"status\":\"completed\",\"fname\":\"chromex-cdp-upload.txt\"},\"cookies\":{\"ok\":true,\"setOk\":true,\"echo\":\"cdpack=cv1\",\"listOk\":true,\"httpOnlyOk\":true,\"valuesOk\":true,\"clearOk\":true},\"localStorage\":{\"ok\":true,\"keysOk\":true,\"getOk\":true,\"domOk\":true,\"sessionOk\":true,\"clearOk\":true},\"indexedDB\":{\"ok\":true,\"noCreate\":true,\"createOk\":true,\"getOk\":true,\"keysOk\":true,\"domOk\":true,\"deleteOk\":true},\"caches\":{\"ok\":true,\"noCreate\":true,\"putOk\":true,\"keysOk\":true,\"matchOk\":true,\"domOk\":true,\"clearOk\":true},\"serviceWorker\":{\"ok\":true,\"listOk\":true,\"stateOk\":true,\"updOk\":true,\"unregOk\":true,\"emptyOk\":true},\"cdp\":{\"ok\":true,\"treeOk\":true,\"errOk\":true,\"frameOk\":true,\"frameVal\":\"http://localhost:54628/iframe-child\",\"sameUnsupported\":true,\"pierceIframeFound\":1,\"pierceIframeOk\":true,\"pierceOopifFound\":1,\"pierceOopifOk\":true,\"pierceIframeClickOk\":true,\"pierceIframeOrigins\":[\"closed-http://127.0.0.1:54628\",\"closed-http://localhost:54628\"],\"pierceIframeEvalOk\":true},\"coverage\":{\"ok\":true,\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"proto.unsupported\",\"startOk\":false,\"startUnsupportedOk\":true,\"statusRunOk\":true},\"pageMetrics\":{\"ok\":true,\"statusIdleOk\":true,\"readRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"realMetricsOk\":true,\"sample\":{\"heap\":2734864,\"layouts\":1,\"docs\":4},\"stopOk\":true,\"statusRunOk\":true},\"pageScreencast\":{\"ok\":true,\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"statusRunOk\":true,\"stopOk\":true,\"realFramesOk\":true,\"sample\":{\"frames\":1,\"refs\":1,\"dur\":0}},\"tabGroups\":{\"ok\":true,\"createOk\":true,\"listOk\":true,\"updateOk\":true,\"ungroupOk\":true,\"badColorOk\":true},\"tabMove\":{\"ok\":true,\"listOk\":true,\"moveOk\":true,\"badIndexOk\":true,\"autoDiscardableOk\":true,\"visibility\":\"visible\",\"freezeOk\":true,\"freezeHalted\":false,\"freezeAliveOk\":true,\"unfreezeOk\":true,\"resumeOk\":true,\"freezeEffectiveOk\":true},\"tabHighlight\":{\"ok\":true,\"createOk\":true,\"callOk\":true,\"highlightedOk\":true,\"activeAfter\":true},\"tabMoveWindow\":{\"ok\":true,\"createOk\":true,\"siblingOk\":true,\"targetOk\":true,\"callOk\":true,\"movedOk\":true,\"backOk\":true,\"guardOk\":true,\"aliveOk\":true},\"cacheBypass\":{\"ok\":true,\"createOk\":true,\"v1\":1,\"badBackOk\":true,\"badTypeOk\":true,\"normalOk\":true,\"callOk\":true,\"versions\":{\"v1\":1,\"vNorm\":1,\"vBypass\":3},\"bypassOk\":true},\"screenshotFullPage\":{\"ok\":true,\"createOk\":true,\"viewport\":{\"height\":720,\"width\":1280},\"full\":{\"height\":5130,\"width\":1280},\"badComboOk\":true,\"badTypeOk\":true},\"waitResponse\":{\"ok\":true,\"createOk\":true,\"matchedOk\":true,\"statusOk\":true,\"evidenceOk\":true,\"timeoutOk\":true,\"frameOk\":true},\"waitConsole\":{\"ok\":true,\"createOk\":true,\"primeOk\":true,\"matchedOk\":true,\"levelOk\":true,\"evidenceOk\":true,\"levelTimeoutOk\":true,\"badArgOk\":true},\"tabsWait\":{\"ok\":true,\"createOk\":true,\"matchedOk\":true,\"tabOk\":true,\"urlOk\":true,\"scopeOk\":true,\"staleOk\":true,\"badArgOk\":true,\"loadOk\":true,\"loadElapsedOk\":true,\"loadBadOk\":true},\"tabsWaitDisappear\":{\"ok\":true,\"createOk\":true,\"goneOk\":true,\"stayTimeoutOk\":true,\"instantOk\":true,\"comboOk\":true},\"pierce\":{\"ok\":true,\"createOk\":true,\"rootsOk\":true,\"btnOk\":true,\"nameOk\":true,\"boxOk\":true,\"clickOk\":true,\"effectOk\":true,\"badRefOk\":true,\"inpOk\":true,\"fillOk\":true,\"typeOk\":true,\"valueOk\":true,\"evalOk\":true,\"upOk\":true,\"uploadOk\":true,\"filesOk\":true,\"selOk\":true,\"dragOk\":true,\"selectOk\":true,\"selectValOk\":true,\"dragCallOk\":true,\"dragValOk\":true,\"stOk\":true,\"waitOk\":true,\"waitElapsedOk\":true,\"waitTimeoutOk\":true,\"waitPairOk\":true,\"filterOk\":true},\"siteSettings\":{\"ok\":true,\"setStatus\":\"failed\",\"setCode\":\"proto.unsupported\",\"setUnsupportedOk\":true,\"setMsg\":\"proto.unsupported: contentSettings permission is not granted\",\"getUnsupportedOk\":true},\"sessions\":{\"ok\":true,\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: sessions permission is not granted\",\"restoreUnsupportedOk\":true},\"proxy\":{\"ok\":true,\"getUnsupportedOk\":true,\"msg\":\"proto.unsupported: proxy permission is not granted\",\"setUnsupportedOk\":true},\"privacy\":{\"ok\":true,\"getUnsupportedOk\":true,\"msg\":\"proto.unsupported: privacy permission is not granted\",\"setUnsupportedOk\":true},\"management\":{\"ok\":true,\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: management permission is not granted\",\"uninstallUnsupportedOk\":true},\"notifications\":{\"ok\":true,\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: notifications permission is not granted\",\"sendUnsupportedOk\":true},\"dnr\":{\"ok\":true,\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: declarativeNetRequest permission is not granted\",\"addUnsupportedOk\":true},\"userScripts\":{\"ok\":true,\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: userScripts permission is not granted\",\"registerUnsupportedOk\":true},\"systemProcesses\":{\"ok\":true,\"memoryUnsupportedOk\":true,\"msg\":\"proto.unsupported: system.memory permission is not granted\",\"processesUnsupportedOk\":true,\"termNoPidOk\":true,\"termUnsupportedOk\":true},\"dnsPower\":{\"ok\":true,\"dnsUnsupportedOk\":true,\"msg\":\"proto.unsupported: dns permission is not granted\",\"powerUnsupportedOk\":true},\"downloadsOpen\":{\"ok\":true,\"reachedChrome\":true,\"msg\":\"internal: Invalid downloadId\"},\"downloadsManage\":{\"ok\":true,\"pauseOk\":true,\"pauseMsg\":\"internal: download 999999 not found\",\"resumeOk\":true,\"resumeMsg\":\"internal: download 999999 not found\",\"eraseOk\":true,\"eraseMsg\":\"internal: download 999999 not found\"},\"windowsGet\":{\"ok\":true,\"listOk\":true,\"byIdOk\":true,\"lastFocusedOk\":true,\"badIdOk\":true},\"windowsPopup\":{\"ok\":true,\"badTypeOk\":true,\"createOk\":true,\"windowId\":1942615046,\"listedOk\":true,\"updateOk\":true,\"bounds\":{\"width\":500,\"height\":400},\"boundsOk\":true,\"badBoundsOk\":true,\"attOk\":true},\"windowsRemove\":{\"ok\":true,\"status\":\"failed\",\"code\":\"proto.unsupported\",\"msg\":\"proto.unsupported: window remove is not available on this host\"},\"runtime\":{\"ok\":true,\"browserVersion\":\"158.0.0.0\",\"extId\":\"menmlhahmendmkiicbjihgjhppkgaeom\"},\"permissions\":{\"ok\":true,\"getAllOk\":true,\"containsOk\":true,\"badNameOk\":true,\"originsOk\":true},\"action\":{\"ok\":true,\"setOk\":true,\"ownerOk\":true,\"getOk\":true,\"clearOk\":true,\"badTextOk\":true},\"bookmarks\":{\"ok\":true,\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: bookmarks permission is not granted\"},\"historyDelete\":{\"ok\":true,\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: history permission is not granted\"},\"browsingDataClear\":{\"ok\":true,\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: browsingData permission is not granted\"}}",
+  "durationMs": 86009,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": true,
+        "snippet": "{\"requestId\":\"2733.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:54628/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794174915538,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyB"
+      },
+      "webSocket": {
+        "ok": true,
+        "frames": 2,
+        "snippet": "sent:hello-agent | recv:echo:hello-agent"
+      },
+      "route": {
+        "ok": true,
+        "mocked": "pong:mocked",
+        "real": "pong:ok",
+        "aborted": "fetch-failed",
+        "modified": "pong:rerouted"
+      },
+      "aria": {
+        "ok": true
+      },
+      "trustedClick": {
+        "ok": true,
+        "untrusted": "isTrusted:false",
+        "trusted": "isTrusted:true",
+        "clickStatus": "completed"
+      },
+      "trustedHover": {
+        "ok": true,
+        "mouseover": "isTrusted:true",
+        "cssOutline": "solid"
+      },
+      "trustedScroll": {
+        "ok": true,
+        "afterDom": "count:0 trusted:none delta:0",
+        "afterTrusted": "count:1 trusted:true delta:300",
+        "scrollYDom": 288,
+        "scrollYTrusted": 300,
+        "badTargetStatus": "failed"
+      },
+      "trustedPress": {
+        "ok": true,
+        "untrusted": "key:a,trusted:false",
+        "trusted": "key:Enter,trusted:true"
+      },
+      "trustedType": {
+        "ok": true,
+        "status": "completed",
+        "value": "Hi!",
+        "out": "key:!,trusted:true"
+      },
+      "trustedFill": {
+        "ok": true,
+        "status": "completed",
+        "value": "xy"
+      },
+      "trustedDrag": {
+        "ok": true,
+        "down": "isTrusted:true",
+        "out": "up@360,80",
+        "status": "completed"
+      },
+      "pageGetLiveness": {
+        "ok": true,
+        "page": {
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "hasFocus": true,
+          "online": true
+        },
+        "status": "complete",
+        "discarded": false,
+        "autoDiscardable": true,
+        "muted": false
+      },
+      "trustedFramePress": {
+        "ok": true,
+        "status": "completed",
+        "kout": "key:x,trusted:true"
+      },
+      "trustedFrameClick": {
+        "ok": false,
+        "same": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        },
+        "cross": {
+          "ok": false,
+          "status": "completed",
+          "pout": "none"
+        }
+      },
+      "frameSetInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:chromex-cdp-upload.txt"
+      },
+      "frameElementScreenshot": {
+        "ok": true,
+        "status": "completed",
+        "bytes": 1530
+      },
+      "frameUpload": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:mem.txt"
+      },
+      "oopifSetInputFiles": {
+        "ok": true,
+        "fout2": "files:cross.txt"
+      },
+      "frameResponseBody": {
+        "ok": true,
+        "body": "{\"ok\":true}"
+      },
+      "pdf": {
+        "ok": true,
+        "bytes": 75959,
+        "artifactRef": "present"
+      },
+      "mhtml": {
+        "ok": true,
+        "bytes": 6058,
+        "artifactRef": "present"
+      },
+      "emulate": {
+        "ok": true,
+        "check": {
+          "dark": true,
+          "w": 390
+        },
+        "reset": "completed"
+      },
+      "dialog": {
+        "ok": true,
+        "handled": true,
+        "pageText": "confirm:true"
+      },
+      "alertDialog": {
+        "ok": true,
+        "pageText": "alert-done"
+      },
+      "setInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fname": "chromex-cdp-upload.txt"
+      },
+      "cookies": {
+        "ok": true,
+        "setOk": true,
+        "echo": "cdpack=cv1",
+        "listOk": true,
+        "httpOnlyOk": true,
+        "valuesOk": true,
+        "clearOk": true
+      },
+      "localStorage": {
+        "ok": true,
+        "keysOk": true,
+        "getOk": true,
+        "domOk": true,
+        "sessionOk": true,
+        "clearOk": true
+      },
+      "indexedDB": {
+        "ok": true,
+        "noCreate": true,
+        "createOk": true,
+        "getOk": true,
+        "keysOk": true,
+        "domOk": true,
+        "deleteOk": true
+      },
+      "caches": {
+        "ok": true,
+        "noCreate": true,
+        "putOk": true,
+        "keysOk": true,
+        "matchOk": true,
+        "domOk": true,
+        "clearOk": true
+      },
+      "serviceWorker": {
+        "ok": true,
+        "listOk": true,
+        "stateOk": true,
+        "updOk": true,
+        "unregOk": true,
+        "emptyOk": true
+      },
+      "cdp": {
+        "ok": true,
+        "treeOk": true,
+        "errOk": true,
+        "frameOk": true,
+        "frameVal": "http://localhost:54628/iframe-child",
+        "sameUnsupported": true,
+        "pierceIframeFound": 1,
+        "pierceIframeOk": true,
+        "pierceOopifFound": 1,
+        "pierceOopifOk": true,
+        "pierceIframeClickOk": true,
+        "pierceIframeOrigins": [
+          "closed-http://127.0.0.1:54628",
+          "closed-http://localhost:54628"
+        ],
+        "pierceIframeEvalOk": true
+      },
+      "coverage": {
+        "ok": true,
+        "statusIdleOk": true,
+        "stopRefusedOk": true,
+        "startCode": "proto.unsupported",
+        "startOk": false,
+        "startUnsupportedOk": true,
+        "statusRunOk": true
+      },
+      "pageMetrics": {
+        "ok": true,
+        "statusIdleOk": true,
+        "readRefusedOk": true,
+        "startCode": "",
+        "startOk": true,
+        "startUnsupportedOk": false,
+        "realMetricsOk": true,
+        "sample": {
+          "heap": 2734864,
+          "layouts": 1,
+          "docs": 4
+        },
+        "stopOk": true,
+        "statusRunOk": true
+      },
+      "pageScreencast": {
+        "ok": true,
+        "statusIdleOk": true,
+        "stopRefusedOk": true,
+        "startCode": "",
+        "startOk": true,
+        "startUnsupportedOk": false,
+        "statusRunOk": true,
+        "stopOk": true,
+        "realFramesOk": true,
+        "sample": {
+          "frames": 1,
+          "refs": 1,
+          "dur": 0
+        }
+      },
+      "tabGroups": {
+        "ok": true,
+        "createOk": true,
+        "listOk": true,
+        "updateOk": true,
+        "ungroupOk": true,
+        "badColorOk": true
+      },
+      "tabMove": {
+        "ok": true,
+        "listOk": true,
+        "moveOk": true,
+        "badIndexOk": true,
+        "autoDiscardableOk": true,
+        "visibility": "visible",
+        "freezeOk": true,
+        "freezeHalted": false,
+        "freezeAliveOk": true,
+        "unfreezeOk": true,
+        "resumeOk": true,
+        "freezeEffectiveOk": true
+      },
+      "tabHighlight": {
+        "ok": true,
+        "createOk": true,
+        "callOk": true,
+        "highlightedOk": true,
+        "activeAfter": true
+      },
+      "tabMoveWindow": {
+        "ok": true,
+        "createOk": true,
+        "siblingOk": true,
+        "targetOk": true,
+        "callOk": true,
+        "movedOk": true,
+        "backOk": true,
+        "guardOk": true,
+        "aliveOk": true
+      },
+      "cacheBypass": {
+        "ok": true,
+        "createOk": true,
+        "v1": 1,
+        "badBackOk": true,
+        "badTypeOk": true,
+        "normalOk": true,
+        "callOk": true,
+        "versions": {
+          "v1": 1,
+          "vNorm": 1,
+          "vBypass": 3
+        },
+        "bypassOk": true
+      },
+      "screenshotFullPage": {
+        "ok": true,
+        "createOk": true,
+        "viewport": {
+          "height": 720,
+          "width": 1280
+        },
+        "full": {
+          "height": 5130,
+          "width": 1280
+        },
+        "badComboOk": true,
+        "badTypeOk": true
+      },
+      "waitResponse": {
+        "ok": true,
+        "createOk": true,
+        "matchedOk": true,
+        "statusOk": true,
+        "evidenceOk": true,
+        "timeoutOk": true,
+        "frameOk": true
+      },
+      "waitConsole": {
+        "ok": true,
+        "createOk": true,
+        "primeOk": true,
+        "matchedOk": true,
+        "levelOk": true,
+        "evidenceOk": true,
+        "levelTimeoutOk": true,
+        "badArgOk": true
+      },
+      "tabsWait": {
+        "ok": true,
+        "createOk": true,
+        "matchedOk": true,
+        "tabOk": true,
+        "urlOk": true,
+        "scopeOk": true,
+        "staleOk": true,
+        "badArgOk": true,
+        "loadOk": true,
+        "loadElapsedOk": true,
+        "loadBadOk": true
+      },
+      "tabsWaitDisappear": {
+        "ok": true,
+        "createOk": true,
+        "goneOk": true,
+        "stayTimeoutOk": true,
+        "instantOk": true,
+        "comboOk": true
+      },
+      "pierce": {
+        "ok": true,
+        "createOk": true,
+        "rootsOk": true,
+        "btnOk": true,
+        "nameOk": true,
+        "boxOk": true,
+        "clickOk": true,
+        "effectOk": true,
+        "badRefOk": true,
+        "inpOk": true,
+        "fillOk": true,
+        "typeOk": true,
+        "valueOk": true,
+        "evalOk": true,
+        "upOk": true,
+        "uploadOk": true,
+        "filesOk": true,
+        "selOk": true,
+        "dragOk": true,
+        "selectOk": true,
+        "selectValOk": true,
+        "dragCallOk": true,
+        "dragValOk": true,
+        "stOk": true,
+        "waitOk": true,
+        "waitElapsedOk": true,
+        "waitTimeoutOk": true,
+        "waitPairOk": true,
+        "filterOk": true
+      },
+      "siteSettings": {
+        "ok": true,
+        "setStatus": "failed",
+        "setCode": "proto.unsupported",
+        "setUnsupportedOk": true,
+        "setMsg": "proto.unsupported: contentSettings permission is not granted",
+        "getUnsupportedOk": true
+      },
+      "sessions": {
+        "ok": true,
+        "listUnsupportedOk": true,
+        "msg": "proto.unsupported: sessions permission is not granted",
+        "restoreUnsupportedOk": true
+      },
+      "proxy": {
+        "ok": true,
+        "getUnsupportedOk": true,
+        "msg": "proto.unsupported: proxy permission is not granted",
+        "setUnsupportedOk": true
+      },
+      "privacy": {
+        "ok": true,
+        "getUnsupportedOk": true,
+        "msg": "proto.unsupported: privacy permission is not granted",
+        "setUnsupportedOk": true
+      },
+      "management": {
+        "ok": true,
+        "listUnsupportedOk": true,
+        "msg": "proto.unsupported: management permission is not granted",
+        "uninstallUnsupportedOk": true
+      },
+      "notifications": {
+        "ok": true,
+        "listUnsupportedOk": true,
+        "msg": "proto.unsupported: notifications permission is not granted",
+        "sendUnsupportedOk": true
+      },
+      "dnr": {
+        "ok": true,
+        "listUnsupportedOk": true,
+        "msg": "proto.unsupported: declarativeNetRequest permission is not granted",
+        "addUnsupportedOk": true
+      },
+      "userScripts": {
+        "ok": true,
+        "listUnsupportedOk": true,
+        "msg": "proto.unsupported: userScripts permission is not granted",
+        "registerUnsupportedOk": true
+      },
+      "systemProcesses": {
+        "ok": true,
+        "memoryUnsupportedOk": true,
+        "msg": "proto.unsupported: system.memory permission is not granted",
+        "processesUnsupportedOk": true,
+        "termNoPidOk": true,
+        "termUnsupportedOk": true
+      },
+      "dnsPower": {
+        "ok": true,
+        "dnsUnsupportedOk": true,
+        "msg": "proto.unsupported: dns permission is not granted",
+        "powerUnsupportedOk": true
+      },
+      "downloadsOpen": {
+        "ok": true,
+        "reachedChrome": true,
+        "msg": "internal: Invalid downloadId"
+      },
+      "downloadsManage": {
+        "ok": true,
+        "pauseOk": true,
+        "pauseMsg": "internal: download 999999 not found",
+        "resumeOk": true,
+        "resumeMsg": "internal: download 999999 not found",
+        "eraseOk": true,
+        "eraseMsg": "internal: download 999999 not found"
+      },
+      "windowsGet": {
+        "ok": true,
+        "listOk": true,
+        "byIdOk": true,
+        "lastFocusedOk": true,
+        "badIdOk": true
+      },
+      "windowsPopup": {
+        "ok": true,
+        "badTypeOk": true,
+        "createOk": true,
+        "windowId": 1942615046,
+        "listedOk": true,
+        "updateOk": true,
+        "bounds": {
+          "width": 500,
+          "height": 400
+        },
+        "boundsOk": true,
+        "badBoundsOk": true,
+        "attOk": true
+      },
+      "windowsRemove": {
+        "ok": true,
+        "status": "failed",
+        "code": "proto.unsupported",
+        "msg": "proto.unsupported: window remove is not available on this host"
+      },
+      "runtime": {
+        "ok": true,
+        "browserVersion": "158.0.0.0",
+        "extId": "menmlhahmendmkiicbjihgjhppkgaeom"
+      },
+      "permissions": {
+        "ok": true,
+        "getAllOk": true,
+        "containsOk": true,
+        "badNameOk": true,
+        "originsOk": true
+      },
+      "action": {
+        "ok": true,
+        "setOk": true,
+        "ownerOk": true,
+        "getOk": true,
+        "clearOk": true,
+        "badTextOk": true
+      },
+      "bookmarks": {
+        "ok": true,
+        "status": "failed",
+        "code": "proto.unsupported",
+        "unsupportedOk": true,
+        "msg": "proto.unsupported: bookmarks permission is not granted"
+      },
+      "historyDelete": {
+        "ok": true,
+        "status": "failed",
+        "code": "proto.unsupported",
+        "unsupportedOk": true,
+        "msg": "proto.unsupported: history permission is not granted"
+      },
+      "browsingDataClear": {
+        "ok": true,
+        "status": "failed",
+        "code": "proto.unsupported",
+        "unsupportedOk": true,
+        "msg": "proto.unsupported: browsingData permission is not granted"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T21:55:15.179Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T21:55:15.526Z] responseBody prime → {\"toolCallId\":\"rpc-mw8df4qo-dsg1pp\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794174915525,\"resolvedTabId\":1942614993}}",
+    "[2026-11-08T21:55:16.069Z] responseBody → {\"requestId\":\"2733.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:54628/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794174915538,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1942614993}",
+    "[2026-11-08T21:55:17.377Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+    "[2026-11-08T21:55:18.253Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+    "[2026-11-08T21:55:18.521Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1942614993}",
+    "[2026-11-08T21:55:18.805Z] trusted snap=completed snapId=snap:ae1be3d6-c96a-49ae-9b7d-a6a28120f248",
+    "[2026-11-08T21:55:20.373Z] untrusted click → {\"toolCallId\":\"rpc-mw8df7h1-6z34qi\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T21:55:20.373Z] trusted click → {\"toolCallId\":\"rpc-mw8df867-yas3qr\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T21:55:20.387Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T21:55:20.807Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T21:55:21.382Z] scroll: dom=count:0 trusted:none delta:0 y=288 | trusted=count:1 trusted:true delta:300 y=300 | badTarget=failed",
+    "[2026-11-08T21:55:23.050Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T21:55:23.050Z] press statuses: completed/completed",
+    "[2026-11-08T21:55:23.079Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T21:55:23.097Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T21:55:24.201Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T21:55:24.495Z] page.get liveness → {\"ok\":true,\"page\":{\"readyState\":\"complete\",\"visibilityState\":\"visible\",\"hasFocus\":true,\"online\":true},\"status\":\"complete\",\"discarded\":false,\"autoDiscardable\":true,\"muted\":false}",
+    "[2026-11-08T21:55:25.442Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T21:55:26.388Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T21:55:27.329Z] frame click cross → status=completed pout=none",
+    "[2026-11-08T21:55:27.902Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+    "[2026-11-08T21:55:28.282Z] frame screenshot → status=completed bytes=1530",
+    "[2026-11-08T21:55:28.846Z] frame upload → status=completed fout2=files:mem.txt",
+    "[2026-11-08T21:55:29.121Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw8dff7z-xw3urn\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":1942614993}} fout2=files:cross.txt",
+    "[2026-11-08T21:55:30.518Z] frame responseBody → {\"requestId\":\"2733.21\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:54628/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794174929385,\"body\":\"{\\\"ok\\\":true}\",\"",
+    "[2026-11-08T21:55:30.849Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":75959,\"sha256\":\"bf640913bd22dbab39fe7cdf8d8d65360df4f9645164e3959d7995aa7eca9df2\",\"resolvedTabId\":1942614993,\"artifactRef\":\"artifact:art-01M6YJHKWYZ8Y1V",
+    "[2026-11-08T21:55:31.123Z] mhtml → {\"ok\":true,\"mimeType\":\"multipart/related\",\"bytes\":6058,\"sha256\":\"4eede7b51d6671fa239ee23517f5c6cb1df557836b5405433162e30d2c8b6d2f\",\"resolvedTabId\":1942614993,\"artifactRef\":\"artifact:art-01M6YJHM5FKG88",
+    "[2026-11-08T21:55:32.010Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":1942614993} check={\"dark\":true,\"w\":390}",
+    "[2026-11-08T21:55:32.292Z] dialog snap=completed snapId=snap:02f57572-8538-44da-9671-69325dafbbaa",
+    "[2026-11-08T21:55:33.188Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1942614993}",
+    "[2026-11-08T21:55:33.198Z] dialog result text=confirm:true",
+    "[2026-11-08T21:55:34.340Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1942614993} page=alert-done",
+    "[2026-11-08T21:55:34.883Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":1942614993}",
+    "[2026-11-08T21:55:34.896Z] fname=chromex-cdp-upload.txt",
+    "[2026-11-08T21:55:37.758Z] cookies → {\"setOk\":true,\"echo\":\"cdpack=cv1\",\"listOk\":true,\"httpOnlyOk\":true,\"valuesOk\":true,\"clearOk\":true}",
+    "[2026-11-08T21:55:39.686Z] localStorage → {\"keysOk\":true,\"getOk\":true,\"domOk\":true,\"sessionOk\":true,\"clearOk\":true}",
+    "[2026-11-08T21:55:41.889Z] indexedDB → {\"noCreate\":true,\"createOk\":true,\"getOk\":true,\"keysOk\":true,\"domOk\":true,\"deleteOk\":true}",
+    "[2026-11-08T21:55:43.573Z] caches → {\"noCreate\":true,\"putOk\":true,\"keysOk\":true,\"matchOk\":true,\"domOk\":true,\"clearOk\":true}",
+    "[2026-11-08T21:55:44.704Z] serviceWorker → {\"listOk\":true,\"stateOk\":true,\"updOk\":true,\"unregOk\":true,\"emptyOk\":true}",
+    "[2026-11-08T21:55:48.883Z] cdp → {\"treeOk\":true,\"errOk\":true,\"frameOk\":true,\"frameVal\":\"http://localhost:54628/iframe-child\",\"sameUnsupported\":true,\"pierceIframeFound\":1,\"pierceIframeOk\":true,\"pierceOopifFound\":1,\"pierceOopifOk\":true,\"pierceIframeClickOk\":true,\"pierceIframeOrigins\":[\"closed-http://127.0.0.1:54628\",\"closed-http://lo",
+    "[2026-11-08T21:55:50.208Z] coverage → {\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"proto.unsupported\",\"startOk\":false,\"startUnsupportedOk\":true,\"statusRunOk\":true}",
+    "[2026-11-08T21:55:50.546Z] metrics → {\"statusIdleOk\":true,\"readRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"realMetricsOk\":true,\"sample\":{\"heap\":2734864,\"layouts\":1,\"docs\":4},\"stopOk\":true,\"statusRunOk\":true}",
+    "[2026-11-08T21:55:53.342Z] screencast → {\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"statusRunOk\":true,\"stopOk\":true,\"realFramesOk\":true,\"sample\":{\"frames\":1,\"refs\":1,\"dur\":0}}",
+    "[2026-11-08T21:55:55.744Z] tabGroups → {\"createOk\":true,\"listOk\":true,\"updateOk\":true,\"ungroupOk\":true,\"badColorOk\":true}",
+    "[2026-11-08T21:55:58.394Z] tabMove → {\"listOk\":true,\"moveOk\":true,\"badIndexOk\":true,\"autoDiscardableOk\":true,\"visibility\":\"visible\",\"freezeOk\":true,\"freezeHalted\":false,\"freezeAliveOk\":true,\"unfreezeOk\":true,\"resumeOk\":true,\"freezeEffectiveOk\":true}",
+    "[2026-11-08T21:55:59.005Z] tab.highlight → {\"createOk\":true,\"callOk\":true,\"highlightedOk\":true,\"activeAfter\":true}",
+    "[2026-11-08T21:56:00.129Z] tabMoveWindow → {\"createOk\":true,\"siblingOk\":true,\"targetOk\":true,\"callOk\":true,\"movedOk\":true,\"backOk\":true,\"guardOk\":true,\"aliveOk\":true}",
+    "[2026-11-08T21:56:05.849Z] cacheBypass → {\"createOk\":true,\"v1\":1,\"badBackOk\":true,\"badTypeOk\":true,\"normalOk\":true,\"callOk\":true,\"versions\":{\"v1\":1,\"vNorm\":1,\"vBypass\":3},\"bypassOk\":true}",
+    "[2026-11-08T21:56:08.037Z] screenshotFullPage → {\"createOk\":true,\"viewport\":{\"height\":720,\"width\":1280},\"full\":{\"height\":5130,\"width\":1280},\"ok\":true,\"badComboOk\":true,\"badTypeOk\":true}",
+    "[2026-11-08T21:56:09.346Z] waitResponse → {\"createOk\":true,\"matchedOk\":true,\"statusOk\":true,\"evidenceOk\":true,\"timeoutOk\":true,\"frameOk\":true}",
+    "[2026-11-08T21:56:12.335Z] waitConsole → {\"createOk\":true,\"primeOk\":true,\"matchedOk\":true,\"levelOk\":true,\"evidenceOk\":true,\"levelTimeoutOk\":true,\"badArgOk\":true}",
+    "[2026-11-08T21:56:17.597Z] tabsWait → {\"createOk\":true,\"matchedOk\":true,\"tabOk\":true,\"urlOk\":true,\"scopeOk\":true,\"staleOk\":true,\"badArgOk\":true,\"loadOk\":true,\"loadElapsedOk\":true,\"loadBadOk\":true}",
+    "[2026-11-08T21:56:19.998Z] tabsWaitDisappear → {\"createOk\":true,\"goneOk\":true,\"stayTimeoutOk\":true,\"instantOk\":true,\"comboOk\":true}",
+    "[2026-11-08T21:56:29.603Z] pierce → {\"createOk\":true,\"rootsOk\":true,\"btnOk\":true,\"nameOk\":true,\"boxOk\":true,\"clickOk\":true,\"effectOk\":true,\"badRefOk\":true,\"inpOk\":true,\"fillOk\":true,\"typeOk\":true,\"valueOk\":true,\"evalOk\":true,\"upOk\":true,\"uploadOk\":true,\"filesOk\":true,\"selOk\":true,\"dragOk\":true,\"selectOk\":true,\"selectValOk\":true,\"dragC",
+    "[2026-11-08T21:56:29.863Z] siteSettings → {\"setStatus\":\"failed\",\"setCode\":\"proto.unsupported\",\"setUnsupportedOk\":true,\"setMsg\":\"proto.unsupported: contentSettings permission is not granted\",\"getUnsupportedOk\":true}",
+    "[2026-11-08T21:56:30.374Z] sessions → {\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: sessions permission is not granted\",\"restoreUnsupportedOk\":true}",
+    "[2026-11-08T21:56:30.631Z] proxy → {\"getUnsupportedOk\":true,\"msg\":\"proto.unsupported: proxy permission is not granted\",\"setUnsupportedOk\":true}",
+    "[2026-11-08T21:56:30.891Z] privacy → {\"getUnsupportedOk\":true,\"msg\":\"proto.unsupported: privacy permission is not granted\",\"setUnsupportedOk\":true}",
+    "[2026-11-08T21:56:31.151Z] management → {\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: management permission is not granted\",\"uninstallUnsupportedOk\":true}",
+    "[2026-11-08T21:56:31.410Z] notifications → {\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: notifications permission is not granted\",\"sendUnsupportedOk\":true}",
+    "[2026-11-08T21:56:31.923Z] dnr → {\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: declarativeNetRequest permission is not granted\",\"addUnsupportedOk\":true}",
+    "[2026-11-08T21:56:32.439Z] userScripts → {\"listUnsupportedOk\":true,\"msg\":\"proto.unsupported: userScripts permission is not granted\",\"registerUnsupportedOk\":true}",
+    "[2026-11-08T21:56:33.207Z] system/processes → {\"memoryUnsupportedOk\":true,\"msg\":\"proto.unsupported: system.memory permission is not granted\",\"processesUnsupportedOk\":true,\"termNoPidOk\":true,\"termUnsupportedOk\":true}",
+    "[2026-11-08T21:56:33.465Z] dns/power → {\"dnsUnsupportedOk\":true,\"msg\":\"proto.unsupported: dns permission is not granted\",\"powerUnsupportedOk\":true}",
+    "[2026-11-08T21:56:33.723Z] downloads.open → {\"reachedChrome\":true,\"msg\":\"internal: Invalid downloadId\"}",
+    "[2026-11-08T21:56:34.488Z] downloads.manage → {\"pauseOk\":true,\"pauseMsg\":\"internal: download 999999 not found\",\"resumeOk\":true,\"resumeMsg\":\"internal: download 999999 not found\",\"eraseOk\":true,\"eraseMsg\":\"internal: download 999999 not found\"}",
+    "[2026-11-08T21:56:34.497Z] windows.get → {\"listOk\":true,\"byIdOk\":true,\"lastFocusedOk\":true,\"badIdOk\":true}",
+    "[2026-11-08T21:56:35.369Z] windows.popup → {\"badTypeOk\":true,\"createOk\":true,\"windowId\":1942615046,\"listedOk\":true,\"updateOk\":true,\"bounds\":{\"width\":500,\"height\":400},\"boundsOk\":true,\"badBoundsOk\":true,\"attOk\":true}",
+    "[2026-11-08T21:56:35.625Z] windows.remove headless → {\"ok\":true,\"status\":\"failed\",\"code\":\"proto.unsupported\",\"msg\":\"proto.unsupported: window remove is not available on this host\"}",
+    "[2026-11-08T21:56:35.631Z] runtime → {\"browser\":{\"brand\":\"Chromium\",\"version\":\"158.0.0.0\",\"majorVersion\":\"158\"},\"extension\":{\"id\":\"menmlhahmendmkiicbjihgjhppkgaeom\",\"version\":\"0.1.7\",\"name\":\"Chromex\",\"manifestVersion\":3},\"platform\":{\"os\":\"mac\",\"arch\":\"arm64\"}}",
+    "[2026-11-08T21:56:35.928Z] permissions → {\"getAllOk\":true,\"containsOk\":true,\"badNameOk\":true,\"originsOk\":true}",
+    "[2026-11-08T21:56:35.971Z] action → {\"setOk\":true,\"ownerOk\":true,\"getOk\":true,\"clearOk\":true,\"badTextOk\":true}",
+    "[2026-11-08T21:56:36.229Z] bookmarks → {\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: bookmarks permission is not granted\"}",
+    "[2026-11-08T21:56:36.484Z] history.delete → {\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: history permission is not granted\"}",
+    "[2026-11-08T21:56:36.739Z] browsingData.clear → {\"status\":\"failed\",\"code\":\"proto.unsupported\",\"unsupportedOk\":true,\"msg\":\"proto.unsupported: browsingData permission is not granted\"}"
+  ]
+}

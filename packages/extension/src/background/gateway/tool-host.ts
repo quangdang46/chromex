@@ -4891,6 +4891,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (tool === "browser.page.select" && pierceRefTarget) {
           return await pierceSelect(deps, tabId, args, expectCond, frameId);
         }
+        // Same for focus/submit — closed roots have no content-script
+        // path; DOM.focus + node-scoped requestSubmit mirror the
+        // content-script semantics (submitter preservation included).
+        if ((tool === "browser.page.focus" || tool === "browser.page.submit") && pierceRefTarget) {
+          return await pierceFocusSubmit(deps, tabId, tool, args, expectCond, frameId, expectedTarget);
+        }
         const step = domStepFor(tool, args);
         if (expectedTarget) step.expectedTarget = expectedTarget;
         const actionDispatchedAt = Date.now();
@@ -6707,6 +6713,113 @@ async function pierceSelect(
     pierced: true,
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+/** browser.page.focus / browser.page.submit on pz refs — the
+ *  content-script paths can't reach closed roots. Focus is DOM.focus
+ *  on the node; submit mirrors submitDomActionElement semantics:
+ *  nearest form (or the element itself when it IS a form), submitter
+ *  preserved for multi-button forms, requestSubmit with form.submit()
+ *  fallback, validation errors surfaced honestly. */
+async function pierceFocusSubmit(
+  deps: ToolHostDeps,
+  tabId: number,
+  tool: string,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+  frameId: number,
+  expectedTarget?: Record<string, string> | null,
+): Promise<Record<string, unknown>> {
+  const ref = str(args.ref);
+  if (ref === undefined || !PIERCE_REF_RE.test(ref)) {
+    throw toolError("proto.invalid", `${tool} pz path requires args.ref`);
+  }
+  if (frameId !== 0) {
+    throw toolError("proto.invalid", "pierce refs carry their own frame — drop args.frameId");
+  }
+  if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+    throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+  }
+  const hit = pierceHit(tabId, ref);
+  cdpRequired(deps);
+  const { session, release } = await pierceAcquire(deps, hit);
+  const actionDispatchedAt = Date.now();
+  try {
+    if (expectedTarget) await pierceVerifyExpected(session, hit, expectedTarget);
+    if (tool === "browser.page.focus") {
+      // Mirror the content-script path: el.focus() inside the node's
+      // own root scope — DOM.focus doesn't reliably set activeElement
+      // for nodes inside closed shadow roots.
+      const node = (await session.send("DOM.resolveNode", { backendNodeId: hit.backendNodeId })) as {
+        object?: { objectId?: string };
+      };
+      const objectId = node?.object?.objectId;
+      if (!objectId) {
+        throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+      }
+      const fres = (await session.send("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration:
+          "function(){this.focus();var r=this.getRootNode();return r&&r.activeElement===this?true:this.matches(':focus')}",
+        returnByValue: true,
+      })) as { result?: { value?: unknown } };
+      if (fres?.result?.value !== true) {
+        throw toolError("browser.action_failed", "pierce focus did not take — element may be unfocusable");
+      }
+    } else {
+      const node = (await session.send("DOM.resolveNode", { backendNodeId: hit.backendNodeId })) as {
+        object?: { objectId?: string };
+      };
+      const objectId = node?.object?.objectId;
+      if (!objectId) {
+        throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+      }
+      const res = (await session.send("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration:
+          "function(){var el=this;" +
+          "var form=(String(el.tagName||'').toLowerCase()==='form')?el:(el.closest?el.closest('form'):null);" +
+          "if(!form)return 'no-form';" +
+          "var tn=String(el.tagName||'').toLowerCase();" +
+          "var submitter=((tn==='button'||tn==='input')&&(el.type==='submit'||el.type==='image')&&el.form===form)?el:undefined;" +
+          "try{if(typeof form.requestSubmit==='function'){form.requestSubmit(submitter);return 'submitted'}}catch(e){return 'error:'+String(e&&e.message||e).slice(0,140)}" +
+          "try{form.submit();return 'submitted'}catch(e){return 'error:'+String(e&&e.message||e).slice(0,140)}}",
+        returnByValue: true,
+      })) as { result?: { value?: unknown } };
+      const outcome = String(res?.result?.value ?? "");
+      if (outcome === "no-form") {
+        throw toolError("browser.action_failed", "No form was found near the pierce target.");
+      }
+      if (outcome !== "submitted") {
+        throw toolError("browser.action_failed", `pierce submit failed: ${outcome.replace(/^error:/, "")}`);
+      }
+    }
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  // submit can open target=_blank popups — same harvest as the
+  // content-script path.
+  const openedTabs = tool === "browser.page.submit"
+    ? await collectOpenedTabs(deps, tabId, actionDispatchedAt)
+    : [];
+  return {
+    ok: true,
+    summary: tool === "browser.page.focus" ? "pierce focus" : "pierce submit",
+    step: { action: tool === "browser.page.focus" ? "focus" : "submit", ok: true },
+    pierced: true,
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    ...(openedTabs.length > 0 ? { openedTabs } : {}),
     resolvedTabId: tabId,
   };
 }

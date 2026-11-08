@@ -1,0 +1,18 @@
+{
+  "scenario": "wheel-debug",
+  "runId": "2026-11-08T20-28-58-078Z-3779a1",
+  "status": "PASS",
+  "summary": "wheel=count:0 trusted:none delta:0 y=0",
+  "durationMs": 8749,
+  "details": {
+    "res": "failed",
+    "txt": "count:0 trusted:none delta:0",
+    "y": 0
+  },
+  "notes": [
+    "[2026-11-08T20:29:05.754Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T20:29:06.114Z] trusted scroll → {\"toolCallId\":\"rpc-mw8acc48-capfvt\",\"tool\":\"browser.page.scroll\",\"status\":\"failed\",\"error\":{\"code\":\"browser.action_failed\",\"message\":\"browser.action_failed: Page.getLayoutMetrics returned no viewport size\"}}",
+    "[2026-11-08T20:29:06.568Z] #r=count:0 trusted:none delta:0 scrollY=0",
+    "[2026-11-08T20:29:06.829Z] raw cdp eval → {\"toolCallId\":\"rpc-mw8accjt-7o8b8t\",\"tool\":\"browser.page.cdp\",\"status\":\"completed\",\"result\":{\"method\":\"Runtime.evaluate\",\"ok\":true,\"result\":{\"result\":{\"description\":\"0\",\"type\":\"number\",\"value\":0}},\"resultBytes\":56,\"resolvedTabId\":161349354}}"
+  ]
+}

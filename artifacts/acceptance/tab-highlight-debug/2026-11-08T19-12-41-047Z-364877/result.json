@@ -1,0 +1,45 @@
+{
+  "scenario": "tab-highlight-debug",
+  "runId": "2026-11-08T19-12-41-047Z-364877",
+  "status": "PASS",
+  "summary": "debug",
+  "durationMs": 5823,
+  "details": {
+    "tabId": 1144798164,
+    "hl": {
+      "toolCallId": "rpc-mw87m5wl-v0inzh",
+      "tool": "browser.tab.highlight",
+      "status": "completed",
+      "result": {
+        "highlighted": 1144798164,
+        "windowId": 1144798162,
+        "index": 1,
+        "resolvedTabId": 1144798164
+      }
+    },
+    "listEntry": {
+      "id": 1144798164,
+      "title": "127.0.0.1:53890/keys",
+      "url": "http://127.0.0.1:53890/keys",
+      "origin": "http://127.0.0.1:53890",
+      "active": true,
+      "windowId": 1144798162,
+      "status": "complete",
+      "pinned": false,
+      "groupId": -1,
+      "index": 1,
+      "discarded": false,
+      "autoDiscardable": true,
+      "highlighted": true
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:12:45.559Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:12:45.646Z] create → {\"toolCallId\":\"rpc-mw87m5ug-brti9x\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1144798164,\"tabId\":1144798164,\"resolvedTabId\":1144798164,\"id\":1144798164,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}} tabId=1144798164",
+    "[2026-11-08T19:12:45.668Z] pre-highlight entry → undefined",
+    "[2026-11-08T19:12:45.755Z] highlight → {\"toolCallId\":\"rpc-mw87m5wl-v0inzh\",\"tool\":\"browser.tab.highlight\",\"status\":\"completed\",\"result\":{\"highlighted\":1144798164,\"windowId\":1144798162,\"index\":1,\"resolvedTabId\":1144798164}}",
+    "[2026-11-08T19:12:46.159Z] list entry → {\"id\":1144798164,\"title\":\"127.0.0.1:53890/keys\",\"url\":\"http://127.0.0.1:53890/keys\",\"origin\":\"http://127.0.0.1:53890\",\"active\":true,\"windowId\":1144798162,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":true}",
+    "[2026-11-08T19:12:46.177Z] sibling → {\"toolCallId\":\"rpc-mw87m6a8-5f9092\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1144798165,\"tabId\":1144798165,\"resolvedTabId\":1144798165,\"id\":1144798165,\"url\":\"\",\"origin\":",
+    "[2026-11-08T19:12:46.871Z] close → {\"toolCallId\":\"rpc-mw87m6lw-1vhsxd\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":1144798164,\"resolvedTabId\":1144798164}}"
+  ]
+}

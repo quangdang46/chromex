@@ -1,0 +1,44 @@
+{
+  "scenario": "tab-highlight-debug",
+  "runId": "2026-11-08T19-12-19-621Z-d62e6a",
+  "status": "PASS",
+  "summary": "debug",
+  "durationMs": 10637,
+  "details": {
+    "tabId": 390652190,
+    "hl": {
+      "toolCallId": "rpc-mw87lt2y-nqxsp2",
+      "tool": "browser.tab.highlight",
+      "status": "completed",
+      "result": {
+        "highlighted": 390652190,
+        "windowId": 390652188,
+        "index": 1,
+        "resolvedTabId": 390652190
+      }
+    },
+    "listEntry": {
+      "id": 390652190,
+      "title": "127.0.0.1:53822/keys",
+      "url": "http://127.0.0.1:53822/keys",
+      "origin": "http://127.0.0.1:53822",
+      "active": true,
+      "windowId": 390652188,
+      "status": "complete",
+      "pinned": false,
+      "groupId": -1,
+      "index": 1,
+      "discarded": false,
+      "autoDiscardable": true,
+      "highlighted": true
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:12:29.005Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:12:29.049Z] create → {\"toolCallId\":\"rpc-mw87lt1y-t736zq\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":390652190,\"tabId\":390652190,\"resolvedTabId\":390652190,\"id\":390652190,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}} tabId=390652190",
+    "[2026-11-08T19:12:29.151Z] highlight → {\"toolCallId\":\"rpc-mw87lt2y-nqxsp2\",\"tool\":\"browser.tab.highlight\",\"status\":\"completed\",\"result\":{\"highlighted\":390652190,\"windowId\":390652188,\"index\":1,\"resolvedTabId\":390652190}}",
+    "[2026-11-08T19:12:29.554Z] list entry → {\"id\":390652190,\"title\":\"127.0.0.1:53822/keys\",\"url\":\"http://127.0.0.1:53822/keys\",\"origin\":\"http://127.0.0.1:53822\",\"active\":true,\"windowId\":390652188,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":true}",
+    "[2026-11-08T19:12:29.569Z] sibling → {\"toolCallId\":\"rpc-mw87ltgz-s5y9n8\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":390652191,\"tabId\":390652191,\"resolvedTabId\":390652191,\"id\":390652191,\"url\":\"\",\"origin\":\"\",\"",
+    "[2026-11-08T19:12:30.259Z] close → {\"toolCallId\":\"rpc-mw87ltsj-hnktrw\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":390652190,\"resolvedTabId\":390652190}}"
+  ]
+}

@@ -256,6 +256,10 @@ sr.innerHTML = \`
   <div id="dsrc" role="button" aria-label="drag-src" style="width:60px;height:30px;background:#cdf;margin-top:8px">src</div>
   <div id="ddst" role="button" aria-label="drag-dst" style="width:60px;height:30px;background:#fcd">dst</div>
   <div id="status" role="status" aria-live="polite" style="margin-top:8px">pending</div>
+  <form id="pform" style="margin-top:8px">
+    <input name="q" value="pierce-q">
+    <button id="psubmit" type="submit">pierce-submit</button>
+  </form>
 \`;
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
@@ -272,6 +276,10 @@ sr.getElementById('choice').addEventListener('change', (e) => {
 });
 sr.getElementById('ddst').addEventListener('mouseup', (e) => {
   window.__pierceDrag = Math.round(e.clientX) + ',' + Math.round(e.clientY);
+});
+sr.getElementById('pform').addEventListener('submit', (e) => {
+  e.preventDefault();
+  window.__pierceSubmit = (e.submitter && e.submitter.id) || 'no-submitter';
 });
 </script>
 </body></html>`,

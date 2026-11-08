@@ -2188,12 +2188,48 @@ await runScenario(
             pj.shotOk = pshot?.status === "completed"
               && typeof pshotRes.dataBase64 === "string" && pshotRes.dataBase64.length > 100
               && typeof pshotRes.artifactRef === "string";
+            // submit + focus inside the closed root — requestSubmit with
+            // submitter preservation, DOM.focus on the node
+            const psub = elements.find((e) => e.id === "psubmit");
+            pj.submitOk = typeof psub?.ref === "string";
+            if (pj.submitOk) {
+              const subRes = await runner.browserToolCall(
+                taskId, "browser.page.submit", { tabId: pjTab, ref: psub.ref }, token, 60_000,
+              ).catch(() => null);
+              pj.submitCallOk = (subRes?.result ?? subRes ?? {}).pierced === true;
+              const evS = await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, expression: "window.__pierceSubmit||''" }, token, 60_000,
+              ).catch(() => null);
+              pj.submitValOk = String(evS?.result?.value ?? evS?.value ?? "") === "psubmit";
+            } else {
+              pj.submitCallOk = pj.submitValOk = false;
+            }
+            const pfocus = elements.find((e) => e.id === "psubmit");
+            pj.focusOk = typeof pfocus?.ref === "string";
+            if (pj.focusOk) {
+              const focRes = await runner.browserToolCall(
+                taskId, "browser.page.focus", { tabId: pjTab, ref: pfocus.ref }, token, 60_000,
+              ).catch(() => null);
+              pj.focusCallOk = (focRes?.result ?? focRes ?? {}).pierced === true;
+              const evF = await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, ref: pfocus.ref,
+                  expression: "this.matches(':focus') ? 'yes' : 'no'" },
+                token, 60_000,
+              ).catch(() => null);
+              pj.focusRaw = String(evF?.result?.value ?? evF?.value ?? "ERR");
+              pj.focusValOk = pj.focusRaw === "yes";
+            } else {
+              pj.focusCallOk = pj.focusValOk = false;
+            }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
             pj.filterOk = ((filt?.result ?? filt ?? {}).elements ?? []).length >= 1;
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
+            pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
             pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2202,6 +2238,7 @@ await runScenario(
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
+          pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
           pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2216,6 +2253,8 @@ await runScenario(
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
           pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
           pj.shotOk === true &&
+          pj.submitOk === true && pj.submitCallOk === true && pj.submitValOk === true &&
+          pj.focusOk === true && pj.focusCallOk === true && pj.focusValOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
           pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
           pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&

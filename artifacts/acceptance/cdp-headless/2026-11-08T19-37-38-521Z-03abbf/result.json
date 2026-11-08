@@ -1,0 +1,531 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T19-37-38-521Z-03abbf",
+  "status": "FAIL",
+  "summary": "results={\"responseBody\":{\"ok\":true,\"snippet\":\"{\\\"requestId\\\":\\\"62644.4\\\",\\\"method\\\":\\\"GET\\\",\\\"url\\\":\\\"http://127.0.0.1:58306/api/ping\\\",\\\"type\\\":\\\"Fetch\\\",\\\"status\\\":200,\\\"mimeType\\\":\\\"application/json\\\",\\\"finished\\\":true,\\\"ts\\\":1794166683847,\\\"body\\\":\\\"{\\\\\\\"v\\\\\\\":\\\\\\\"ok\\\\\\\"}\\\",\\\"body\"},\"webSocket\":{\"ok\":true,\"frames\":2,\"snippet\":\"sent:hello-agent | recv:echo:hello-agent\"},\"route\":{\"ok\":true,\"mocked\":\"pong:mocked\",\"real\":\"pong:ok\",\"aborted\":\"fetch-failed\",\"modified\":\"pong:rerouted\"},\"aria\":{\"ok\":true},\"trustedClick\":{\"ok\":true,\"untrusted\":\"isTrusted:false\",\"trusted\":\"isTrusted:true\",\"clickStatus\":\"completed\"},\"trustedHover\":{\"ok\":true,\"mouseover\":\"isTrusted:true\",\"cssOutline\":\"solid\"},\"trustedPress\":{\"ok\":true,\"untrusted\":\"key:a,trusted:false\",\"trusted\":\"key:Enter,trusted:true\"},\"trustedType\":{\"ok\":true,\"status\":\"completed\",\"value\":\"Hi!\",\"out\":\"key:!,trusted:true\"},\"trustedFill\":{\"ok\":true,\"status\":\"completed\",\"value\":\"xy\"},\"trustedDrag\":{\"ok\":true,\"down\":\"isTrusted:true\",\"out\":\"up@360,80\",\"status\":\"completed\"},\"pageGetLiveness\":{\"ok\":true,\"page\":{\"readyState\":\"complete\",\"visibilityState\":\"visible\",\"hasFocus\":true,\"online\":true},\"status\":\"loading\",\"discarded\":false,\"autoDiscardable\":true,\"muted\":false},\"trustedFramePress\":{\"ok\":true,\"status\":\"completed\",\"kout\":\"key:x,trusted:true\"},\"trustedFrameClick\":{\"ok\":true,\"same\":{\"ok\":true,\"status\":\"completed\",\"pout\":\"down:true up:true\"},\"cross\":{\"ok\":true,\"status\":\"completed\",\"pout\":\"down:true up:true\"}},\"frameSetInputFiles\":{\"ok\":true,\"status\":\"completed\",\"fout2\":\"files:chromex-cdp-upload.txt\"},\"frameElementScreenshot\":{\"ok\":true,\"status\":\"completed\",\"bytes\":1530},\"frameUpload\":{\"ok\":true,\"status\":\"completed\",\"fout2\":\"files:mem.txt\"},\"oopifSetInputFiles\":{\"ok\":true,\"fout2\":\"files:cross.txt\"},\"frameResponseBody\":{\"ok\":true,\"body\":\"{\\\"ok\\\":true}\"},\"pdf\":{\"ok\":true,\"bytes\":64654,\"artifactRef\":\"present\"},\"mhtml\":{\"ok\":true,\"bytes\":5553,\"artifactRef\":\"present\"},\"emulate\":{\"ok\":true,\"check\":{\"dark\":true,\"w\":390},\"reset\":\"completed\"},\"dialog\":{\"ok\":true,\"handled\":true,\"pageText\":\"confirm:true\"},\"alertDialog\":{\"ok\":true,\"pageText\":\"alert-done\"},\"setInputFiles\":{\"ok\":true,\"status\":\"completed\",\"fname\":\"chromex-cdp-upload.txt\"},\"cookies\":{\"ok\":true,\"setOk\":true,\"echo\":\"cdpack=cv1\",\"listOk\":true,\"httpOnlyOk\":true,\"valuesOk\":true,\"clearOk\":true},\"localStorage\":{\"ok\":true,\"keysOk\":true,\"getOk\":true,\"domOk\":true,\"sessionOk\":true,\"clearOk\":true},\"indexedDB\":{\"ok\":true,\"noCreate\":true,\"createOk\":true,\"getOk\":true,\"keysOk\":true,\"domOk\":true,\"deleteOk\":true},\"caches\":{\"ok\":true,\"noCreate\":true,\"putOk\":true,\"keysOk\":true,\"matchOk\":true,\"domOk\":true,\"clearOk\":true},\"serviceWorker\":{\"ok\":true,\"listOk\":true,\"stateOk\":true,\"updOk\":true,\"unregOk\":true,\"emptyOk\":true},\"cdp\":{\"ok\":true,\"treeOk\":true,\"errOk\":true,\"frameOk\":true,\"frameVal\":\"http://localhost:58306/iframe-child\",\"sameUnsupported\":true},\"coverage\":{\"ok\":true,\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"proto.unsupported\",\"startOk\":false,\"startUnsupportedOk\":true,\"statusRunOk\":true},\"pageMetrics\":{\"ok\":true,\"statusIdleOk\":true,\"readRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"realMetricsOk\":true,\"sample\":{\"heap\":7391340,\"layouts\":1,\"docs\":15},\"stopOk\":true,\"statusRunOk\":true},\"pageScreencast\":{\"ok\":true,\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"statusRunOk\":true,\"stopOk\":true,\"realFramesOk\":true,\"sample\":{\"frames\":1,\"refs\":1,\"dur\":0}},\"tabGroups\":{\"ok\":true,\"createOk\":true,\"listOk\":true,\"updateOk\":true,\"ungroupOk\":true,\"badColorOk\":true},\"tabMove\":{\"ok\":true,\"listOk\":true,\"moveOk\":true,\"badIndexOk\":true,\"autoDiscardableOk\":true,\"visibility\":\"visible\",\"freezeOk\":true,\"freezeHalted\":false,\"freezeAliveOk\":true,\"unfreezeOk\":true,\"resumeOk\":true,\"freezeEffectiveOk\":true},\"tabHighlight\":{\"ok\":true,\"createOk\":true,\"callOk\":true,\"highlightedOk\":true,\"activeAfter\":true},\"tabMoveWindow\":{\"ok\":true,\"createOk\":true,\"siblingOk\":true,\"targetOk\":true,\"callOk\":true,\"movedOk\":true,\"backOk\":true,\"guardOk\":true,\"aliveOk\":true},\"cacheBypass\":{\"ok\":true,\"createOk\":true,\"v1\":1,\"badBackOk\":true,\"badTypeOk\":true,\"normalOk\":true,\"callOk\":true,\"versions\":{\"v1\":1,\"vNorm\":1,\"vBypass\":3},\"bypassOk\":true},\"screenshotFullPage\":{\"ok\":true,\"createOk\":true,\"viewport\":{\"height\":720,\"width\":1280},\"full\":{\"height\":5130,\"width\":1280},\"badComboOk\":true,\"badTypeOk\":true},\"crashRecovery\":{\"ok\":false,\"createOk\":true,\"crashCallOk\":true,\"deadCrashed\":false,\"deadNoPage\":true,\"reloadOk\":false,\"liveOk\":false},\"siteSettings\":{\"ok\":false,\"setStatus\":\"failed\",\"setCode\":\"browser.no_host\",\"setUnsupportedOk\":false,\"setMsg\":\"no browser host for task scope (no_host)\",\"getUnsupportedOk\":false},\"sessions\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"restoreUnsupportedOk\":false},\"proxy\":{\"ok\":false,\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false},\"privacy\":{\"ok\":false,\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false},\"management\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"uninstallUnsupportedOk\":false},\"notifications\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"sendUnsupportedOk\":false},\"dnr\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"addUnsupportedOk\":false},\"userScripts\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"registerUnsupportedOk\":false},\"systemProcesses\":{\"ok\":false,\"memoryUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"processesUnsupportedOk\":false,\"termNoPidOk\":false,\"termUnsupportedOk\":false},\"dnsPower\":{\"ok\":false,\"dnsUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"powerUnsupportedOk\":false},\"downloadsOpen\":{\"ok\":false,\"reachedChrome\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"downloadsManage\":{\"ok\":false,\"pauseOk\":false,\"pauseMsg\":\"no browser host for task scope (no_host)\",\"resumeOk\":false,\"resumeMsg\":\"no browser host for task scope (no_host)\",\"eraseOk\":false,\"eraseMsg\":\"no browser host for task scope (no_host)\"},\"windowsGet\":{\"ok\":false,\"listOk\":false,\"byIdOk\":false,\"lastFocusedOk\":false,\"badIdOk\":false},\"windowsPopup\":{\"ok\":false,\"badTypeOk\":false,\"createOk\":false,\"windowId\":null,\"listedOk\":false},\"windowsRemove\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"msg\":\"no browser host for task scope (no_host)\"},\"runtime\":{\"ok\":false,\"browserVersion\":null,\"extId\":null},\"permissions\":{\"ok\":false,\"getAllOk\":false,\"containsOk\":false,\"badNameOk\":false,\"originsOk\":false},\"action\":{\"ok\":false,\"setOk\":false,\"ownerOk\":false,\"getOk\":false,\"clearOk\":false,\"badTextOk\":false},\"bookmarks\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"historyDelete\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"browsingDataClear\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}}",
+  "durationMs": 123175,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": true,
+        "snippet": "{\"requestId\":\"62644.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:58306/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794166683847,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"body"
+      },
+      "webSocket": {
+        "ok": true,
+        "frames": 2,
+        "snippet": "sent:hello-agent | recv:echo:hello-agent"
+      },
+      "route": {
+        "ok": true,
+        "mocked": "pong:mocked",
+        "real": "pong:ok",
+        "aborted": "fetch-failed",
+        "modified": "pong:rerouted"
+      },
+      "aria": {
+        "ok": true
+      },
+      "trustedClick": {
+        "ok": true,
+        "untrusted": "isTrusted:false",
+        "trusted": "isTrusted:true",
+        "clickStatus": "completed"
+      },
+      "trustedHover": {
+        "ok": true,
+        "mouseover": "isTrusted:true",
+        "cssOutline": "solid"
+      },
+      "trustedPress": {
+        "ok": true,
+        "untrusted": "key:a,trusted:false",
+        "trusted": "key:Enter,trusted:true"
+      },
+      "trustedType": {
+        "ok": true,
+        "status": "completed",
+        "value": "Hi!",
+        "out": "key:!,trusted:true"
+      },
+      "trustedFill": {
+        "ok": true,
+        "status": "completed",
+        "value": "xy"
+      },
+      "trustedDrag": {
+        "ok": true,
+        "down": "isTrusted:true",
+        "out": "up@360,80",
+        "status": "completed"
+      },
+      "pageGetLiveness": {
+        "ok": true,
+        "page": {
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "hasFocus": true,
+          "online": true
+        },
+        "status": "loading",
+        "discarded": false,
+        "autoDiscardable": true,
+        "muted": false
+      },
+      "trustedFramePress": {
+        "ok": true,
+        "status": "completed",
+        "kout": "key:x,trusted:true"
+      },
+      "trustedFrameClick": {
+        "ok": true,
+        "same": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        },
+        "cross": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        }
+      },
+      "frameSetInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:chromex-cdp-upload.txt"
+      },
+      "frameElementScreenshot": {
+        "ok": true,
+        "status": "completed",
+        "bytes": 1530
+      },
+      "frameUpload": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:mem.txt"
+      },
+      "oopifSetInputFiles": {
+        "ok": true,
+        "fout2": "files:cross.txt"
+      },
+      "frameResponseBody": {
+        "ok": true,
+        "body": "{\"ok\":true}"
+      },
+      "pdf": {
+        "ok": true,
+        "bytes": 64654,
+        "artifactRef": "present"
+      },
+      "mhtml": {
+        "ok": true,
+        "bytes": 5553,
+        "artifactRef": "present"
+      },
+      "emulate": {
+        "ok": true,
+        "check": {
+          "dark": true,
+          "w": 390
+        },
+        "reset": "completed"
+      },
+      "dialog": {
+        "ok": true,
+        "handled": true,
+        "pageText": "confirm:true"
+      },
+      "alertDialog": {
+        "ok": true,
+        "pageText": "alert-done"
+      },
+      "setInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fname": "chromex-cdp-upload.txt"
+      },
+      "cookies": {
+        "ok": true,
+        "setOk": true,
+        "echo": "cdpack=cv1",
+        "listOk": true,
+        "httpOnlyOk": true,
+        "valuesOk": true,
+        "clearOk": true
+      },
+      "localStorage": {
+        "ok": true,
+        "keysOk": true,
+        "getOk": true,
+        "domOk": true,
+        "sessionOk": true,
+        "clearOk": true
+      },
+      "indexedDB": {
+        "ok": true,
+        "noCreate": true,
+        "createOk": true,
+        "getOk": true,
+        "keysOk": true,
+        "domOk": true,
+        "deleteOk": true
+      },
+      "caches": {
+        "ok": true,
+        "noCreate": true,
+        "putOk": true,
+        "keysOk": true,
+        "matchOk": true,
+        "domOk": true,
+        "clearOk": true
+      },
+      "serviceWorker": {
+        "ok": true,
+        "listOk": true,
+        "stateOk": true,
+        "updOk": true,
+        "unregOk": true,
+        "emptyOk": true
+      },
+      "cdp": {
+        "ok": true,
+        "treeOk": true,
+        "errOk": true,
+        "frameOk": true,
+        "frameVal": "http://localhost:58306/iframe-child",
+        "sameUnsupported": true
+      },
+      "coverage": {
+        "ok": true,
+        "statusIdleOk": true,
+        "stopRefusedOk": true,
+        "startCode": "proto.unsupported",
+        "startOk": false,
+        "startUnsupportedOk": true,
+        "statusRunOk": true
+      },
+      "pageMetrics": {
+        "ok": true,
+        "statusIdleOk": true,
+        "readRefusedOk": true,
+        "startCode": "",
+        "startOk": true,
+        "startUnsupportedOk": false,
+        "realMetricsOk": true,
+        "sample": {
+          "heap": 7391340,
+          "layouts": 1,
+          "docs": 15
+        },
+        "stopOk": true,
+        "statusRunOk": true
+      },
+      "pageScreencast": {
+        "ok": true,
+        "statusIdleOk": true,
+        "stopRefusedOk": true,
+        "startCode": "",
+        "startOk": true,
+        "startUnsupportedOk": false,
+        "statusRunOk": true,
+        "stopOk": true,
+        "realFramesOk": true,
+        "sample": {
+          "frames": 1,
+          "refs": 1,
+          "dur": 0
+        }
+      },
+      "tabGroups": {
+        "ok": true,
+        "createOk": true,
+        "listOk": true,
+        "updateOk": true,
+        "ungroupOk": true,
+        "badColorOk": true
+      },
+      "tabMove": {
+        "ok": true,
+        "listOk": true,
+        "moveOk": true,
+        "badIndexOk": true,
+        "autoDiscardableOk": true,
+        "visibility": "visible",
+        "freezeOk": true,
+        "freezeHalted": false,
+        "freezeAliveOk": true,
+        "unfreezeOk": true,
+        "resumeOk": true,
+        "freezeEffectiveOk": true
+      },
+      "tabHighlight": {
+        "ok": true,
+        "createOk": true,
+        "callOk": true,
+        "highlightedOk": true,
+        "activeAfter": true
+      },
+      "tabMoveWindow": {
+        "ok": true,
+        "createOk": true,
+        "siblingOk": true,
+        "targetOk": true,
+        "callOk": true,
+        "movedOk": true,
+        "backOk": true,
+        "guardOk": true,
+        "aliveOk": true
+      },
+      "cacheBypass": {
+        "ok": true,
+        "createOk": true,
+        "v1": 1,
+        "badBackOk": true,
+        "badTypeOk": true,
+        "normalOk": true,
+        "callOk": true,
+        "versions": {
+          "v1": 1,
+          "vNorm": 1,
+          "vBypass": 3
+        },
+        "bypassOk": true
+      },
+      "screenshotFullPage": {
+        "ok": true,
+        "createOk": true,
+        "viewport": {
+          "height": 720,
+          "width": 1280
+        },
+        "full": {
+          "height": 5130,
+          "width": 1280
+        },
+        "badComboOk": true,
+        "badTypeOk": true
+      },
+      "crashRecovery": {
+        "ok": false,
+        "createOk": true,
+        "crashCallOk": true,
+        "deadCrashed": false,
+        "deadNoPage": true,
+        "reloadOk": false,
+        "liveOk": false
+      },
+      "siteSettings": {
+        "ok": false,
+        "setStatus": "failed",
+        "setCode": "browser.no_host",
+        "setUnsupportedOk": false,
+        "setMsg": "no browser host for task scope (no_host)",
+        "getUnsupportedOk": false
+      },
+      "sessions": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "restoreUnsupportedOk": false
+      },
+      "proxy": {
+        "ok": false,
+        "getUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "setUnsupportedOk": false
+      },
+      "privacy": {
+        "ok": false,
+        "getUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "setUnsupportedOk": false
+      },
+      "management": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "uninstallUnsupportedOk": false
+      },
+      "notifications": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "sendUnsupportedOk": false
+      },
+      "dnr": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "addUnsupportedOk": false
+      },
+      "userScripts": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "registerUnsupportedOk": false
+      },
+      "systemProcesses": {
+        "ok": false,
+        "memoryUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "processesUnsupportedOk": false,
+        "termNoPidOk": false,
+        "termUnsupportedOk": false
+      },
+      "dnsPower": {
+        "ok": false,
+        "dnsUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "powerUnsupportedOk": false
+      },
+      "downloadsOpen": {
+        "ok": false,
+        "reachedChrome": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "downloadsManage": {
+        "ok": false,
+        "pauseOk": false,
+        "pauseMsg": "no browser host for task scope (no_host)",
+        "resumeOk": false,
+        "resumeMsg": "no browser host for task scope (no_host)",
+        "eraseOk": false,
+        "eraseMsg": "no browser host for task scope (no_host)"
+      },
+      "windowsGet": {
+        "ok": false,
+        "listOk": false,
+        "byIdOk": false,
+        "lastFocusedOk": false,
+        "badIdOk": false
+      },
+      "windowsPopup": {
+        "ok": false,
+        "badTypeOk": false,
+        "createOk": false,
+        "windowId": null,
+        "listedOk": false
+      },
+      "windowsRemove": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "runtime": {
+        "ok": false,
+        "browserVersion": null,
+        "extId": null
+      },
+      "permissions": {
+        "ok": false,
+        "getAllOk": false,
+        "containsOk": false,
+        "badNameOk": false,
+        "originsOk": false
+      },
+      "action": {
+        "ok": false,
+        "setOk": false,
+        "ownerOk": false,
+        "getOk": false,
+        "clearOk": false,
+        "badTextOk": false
+      },
+      "bookmarks": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "historyDelete": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "browsingDataClear": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:38:03.105Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:38:03.811Z] responseBody prime → {\"toolCallId\":\"rpc-mw88ip3l-5iv5r2\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794166683809,\"resolvedTabId\":140137194}}",
+    "[2026-11-08T19:38:04.458Z] responseBody → {\"requestId\":\"62644.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:58306/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794166683847,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":140137194}",
+    "[2026-11-08T19:38:06.215Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+    "[2026-11-08T19:38:08.024Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+    "[2026-11-08T19:38:08.339Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":140137194}",
+    "[2026-11-08T19:38:08.667Z] trusted snap=completed snapId=snap:6f0e2651-1319-40e3-88e5-c11107f49bf7",
+    "[2026-11-08T19:38:10.448Z] untrusted click → {\"toolCallId\":\"rpc-mw88it23-mdepzm\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T19:38:10.448Z] trusted click → {\"toolCallId\":\"rpc-mw88ittq-z0u4vd\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T19:38:10.472Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T19:38:10.968Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T19:38:12.867Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T19:38:12.867Z] press statuses: completed/completed",
+    "[2026-11-08T19:38:13.027Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T19:38:13.147Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T19:38:14.976Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T19:38:17.338Z] page.get liveness → {\"ok\":true,\"page\":{\"readyState\":\"complete\",\"visibilityState\":\"visible\",\"hasFocus\":true,\"online\":true},\"status\":\"loading\",\"discarded\":false,\"autoDiscardable\":true,\"muted\":false}",
+    "[2026-11-08T19:38:18.361Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T19:38:19.348Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T19:38:20.536Z] frame click cross → status=completed pout=down:true up:true",
+    "[2026-11-08T19:38:21.158Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+    "[2026-11-08T19:38:21.720Z] frame screenshot → status=completed bytes=1530",
+    "[2026-11-08T19:38:22.361Z] frame upload → status=completed fout2=files:mem.txt",
+    "[2026-11-08T19:38:22.652Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw88j3mi-xdnlbk\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":140137194}} fout2=files:cross.txt",
+    "[2026-11-08T19:38:24.104Z] frame responseBody → {\"requestId\":\"62644.20\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:58306/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794166702924,\"body\":\"{\\\"ok\\\":true}\",",
+    "[2026-11-08T19:38:24.593Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":64654,\"sha256\":\"85b3c55a5ec02623c761fa4bd32b2c6113e9c3aee9e56a088f322faec7c9513f\",\"resolvedTabId\":140137194,\"artifactRef\":\"artifact:art-01M6YAPJE5VB6C05",
+    "[2026-11-08T19:38:24.891Z] mhtml → {\"ok\":true,\"mimeType\":\"multipart/related\",\"bytes\":5553,\"sha256\":\"2c4ed9a967c91d1a849c3dc60e346987f91b5f916b7558ba1251f343a802b78c\",\"resolvedTabId\":140137194,\"artifactRef\":\"artifact:art-01M6YAPJQRK857V",
+    "[2026-11-08T19:38:25.822Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":140137194} check={\"dark\":true,\"w\":390}",
+    "[2026-11-08T19:38:26.221Z] dialog snap=completed snapId=snap:c0c86164-12e9-4faa-8de0-89958a7ba0df",
+    "[2026-11-08T19:38:27.148Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":140137194}",
+    "[2026-11-08T19:38:27.170Z] dialog result text=confirm:true",
+    "[2026-11-08T19:38:28.416Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":140137194} page=alert-done",
+    "[2026-11-08T19:38:29.057Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":140137194}",
+    "[2026-11-08T19:38:29.073Z] fname=chromex-cdp-upload.txt",
+    "[2026-11-08T19:38:32.082Z] cookies → {\"setOk\":true,\"echo\":\"cdpack=cv1\",\"listOk\":true,\"httpOnlyOk\":true,\"valuesOk\":true,\"clearOk\":true}",
+    "[2026-11-08T19:38:34.105Z] localStorage → {\"keysOk\":true,\"getOk\":true,\"domOk\":true,\"sessionOk\":true,\"clearOk\":true}",
+    "[2026-11-08T19:38:36.567Z] indexedDB → {\"noCreate\":true,\"createOk\":true,\"getOk\":true,\"keysOk\":true,\"domOk\":true,\"deleteOk\":true}",
+    "[2026-11-08T19:38:38.587Z] caches → {\"noCreate\":true,\"putOk\":true,\"keysOk\":true,\"matchOk\":true,\"domOk\":true,\"clearOk\":true}",
+    "[2026-11-08T19:38:40.701Z] serviceWorker → {\"listOk\":true,\"stateOk\":true,\"updOk\":true,\"unregOk\":true,\"emptyOk\":true}",
+    "[2026-11-08T19:38:42.762Z] cdp → {\"treeOk\":true,\"errOk\":true,\"frameOk\":true,\"frameVal\":\"http://localhost:58306/iframe-child\",\"sameUnsupported\":true}",
+    "[2026-11-08T19:38:44.109Z] coverage → {\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"proto.unsupported\",\"startOk\":false,\"startUnsupportedOk\":true,\"statusRunOk\":true}",
+    "[2026-11-08T19:38:44.539Z] metrics → {\"statusIdleOk\":true,\"readRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"realMetricsOk\":true,\"sample\":{\"heap\":7391340,\"layouts\":1,\"docs\":15},\"stopOk\":true,\"statusRunOk\":true}",
+    "[2026-11-08T19:38:48.058Z] screencast → {\"statusIdleOk\":true,\"stopRefusedOk\":true,\"startCode\":\"\",\"startOk\":true,\"startUnsupportedOk\":false,\"statusRunOk\":true,\"stopOk\":true,\"realFramesOk\":true,\"sample\":{\"frames\":1,\"refs\":1,\"dur\":0}}",
+    "[2026-11-08T19:38:52.590Z] tabGroups → {\"createOk\":true,\"listOk\":true,\"updateOk\":true,\"ungroupOk\":true,\"badColorOk\":true}",
+    "[2026-11-08T19:38:56.148Z] tabMove → {\"listOk\":true,\"moveOk\":true,\"badIndexOk\":true,\"autoDiscardableOk\":true,\"visibility\":\"visible\",\"freezeOk\":true,\"freezeHalted\":false,\"freezeAliveOk\":true,\"unfreezeOk\":true,\"resumeOk\":true,\"freezeEffectiveOk\":true}",
+    "[2026-11-08T19:38:57.534Z] tab.highlight → {\"createOk\":true,\"callOk\":true,\"highlightedOk\":true,\"activeAfter\":true}",
+    "[2026-11-08T19:38:59.283Z] tabMoveWindow → {\"createOk\":true,\"siblingOk\":true,\"targetOk\":true,\"callOk\":true,\"movedOk\":true,\"backOk\":true,\"guardOk\":true,\"aliveOk\":true}",
+    "[2026-11-08T19:39:05.227Z] cacheBypass → {\"createOk\":true,\"v1\":1,\"badBackOk\":true,\"badTypeOk\":true,\"normalOk\":true,\"callOk\":true,\"versions\":{\"v1\":1,\"vNorm\":1,\"vBypass\":3},\"bypassOk\":true}",
+    "[2026-11-08T19:39:07.693Z] screenshotFullPage → {\"createOk\":true,\"viewport\":{\"height\":720,\"width\":1280},\"full\":{\"height\":5130,\"width\":1280},\"ok\":true,\"badComboOk\":true,\"badTypeOk\":true}",
+    "[2026-11-08T19:39:41.020Z] crashRecovery → {\"createOk\":true,\"crashCallOk\":true,\"deadCrashed\":false,\"deadNoPage\":true,\"reloadOk\":false,\"liveOk\":false}",
+    "[2026-11-08T19:39:41.034Z] siteSettings → {\"setStatus\":\"failed\",\"setCode\":\"browser.no_host\",\"setUnsupportedOk\":false,\"setMsg\":\"no browser host for task scope (no_host)\",\"getUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.039Z] sessions → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"restoreUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.046Z] proxy → {\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.049Z] privacy → {\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.052Z] management → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"uninstallUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.054Z] notifications → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"sendUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.070Z] dnr → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"addUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.090Z] userScripts → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"registerUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.106Z] system/processes → {\"memoryUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"processesUnsupportedOk\":false,\"termNoPidOk\":false,\"termUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.112Z] dns/power → {\"dnsUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"powerUnsupportedOk\":false}",
+    "[2026-11-08T19:39:41.116Z] downloads.open → {\"reachedChrome\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T19:39:41.126Z] downloads.manage → {\"pauseOk\":false,\"pauseMsg\":\"no browser host for task scope (no_host)\",\"resumeOk\":false,\"resumeMsg\":\"no browser host for task scope (no_host)\",\"eraseOk\":false,\"eraseMsg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T19:39:41.140Z] windows.get → {\"listOk\":false,\"byIdOk\":false,\"lastFocusedOk\":false,\"badIdOk\":false}",
+    "[2026-11-08T19:39:41.650Z] windows.popup → {\"badTypeOk\":false,\"createOk\":false,\"windowId\":null,\"listedOk\":false}",
+    "[2026-11-08T19:39:41.655Z] windows.remove headless → {\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T19:39:41.661Z] runtime → {}",
+    "[2026-11-08T19:39:41.671Z] permissions → {\"getAllOk\":false,\"containsOk\":false,\"badNameOk\":false,\"originsOk\":false}",
+    "[2026-11-08T19:39:41.686Z] action → {\"setOk\":false,\"ownerOk\":false,\"getOk\":false,\"clearOk\":false,\"badTextOk\":false}",
+    "[2026-11-08T19:39:41.690Z] bookmarks → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T19:39:41.693Z] history.delete → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T19:39:41.695Z] browsingData.clear → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}"
+  ]
+}

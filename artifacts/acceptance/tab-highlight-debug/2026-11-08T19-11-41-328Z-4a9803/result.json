@@ -1,0 +1,42 @@
+{
+  "scenario": "tab-highlight-debug",
+  "runId": "2026-11-08T19-11-41-328Z-4a9803",
+  "status": "PASS",
+  "summary": "debug",
+  "durationMs": 10456,
+  "details": {
+    "tabId": 432329626,
+    "hl": {
+      "toolCallId": "rpc-mw87kzn6-6rcdsv",
+      "tool": "browser.tab.highlight",
+      "status": "failed",
+      "error": {
+        "code": "internal",
+        "message": "internal: No tab at index: 432329626."
+      }
+    },
+    "listEntry": {
+      "id": 432329626,
+      "title": "127.0.0.1:53524/keys",
+      "url": "http://127.0.0.1:53524/keys",
+      "origin": "http://127.0.0.1:53524",
+      "active": false,
+      "windowId": 432329624,
+      "status": "complete",
+      "pinned": false,
+      "groupId": -1,
+      "index": 1,
+      "discarded": false,
+      "autoDiscardable": true,
+      "highlighted": false
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:11:50.646Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:11:50.897Z] create → {\"toolCallId\":\"rpc-mw87kzhi-h9slel\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":432329626,\"tabId\":432329626,\"resolvedTabId\":432329626,\"id\":432329626,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}} tabId=432329626",
+    "[2026-11-08T19:11:50.948Z] highlight → {\"toolCallId\":\"rpc-mw87kzn6-6rcdsv\",\"tool\":\"browser.tab.highlight\",\"status\":\"failed\",\"error\":{\"code\":\"internal\",\"message\":\"internal: No tab at index: 432329626.\"}}",
+    "[2026-11-08T19:11:51.356Z] list entry → {\"id\":432329626,\"title\":\"127.0.0.1:53524/keys\",\"url\":\"http://127.0.0.1:53524/keys\",\"origin\":\"http://127.0.0.1:53524\",\"active\":false,\"windowId\":432329624,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":false}",
+    "[2026-11-08T19:11:51.381Z] sibling → {\"toolCallId\":\"rpc-mw87kzzw-mjv2zh\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":432329627,\"tabId\":432329627,\"resolvedTabId\":432329627,\"id\":432329627,\"url\":\"\",\"origin\":\"\",\"",
+    "[2026-11-08T19:11:52.056Z] close → {\"toolCallId\":\"rpc-mw87l0br-nmo4pt\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":432329626,\"resolvedTabId\":432329626}}"
+  ]
+}

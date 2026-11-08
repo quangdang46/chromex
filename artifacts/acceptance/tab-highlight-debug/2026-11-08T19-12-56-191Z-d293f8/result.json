@@ -1,0 +1,46 @@
+{
+  "scenario": "tab-highlight-debug",
+  "runId": "2026-11-08T19-12-56-191Z-d293f8",
+  "status": "PASS",
+  "summary": "debug",
+  "durationMs": 5591,
+  "details": {
+    "tabId": 1299434148,
+    "hl": {
+      "toolCallId": "rpc-mw87mhe6-sulbvf",
+      "tool": "browser.tab.highlight",
+      "status": "completed",
+      "result": {
+        "highlighted": 1299434148,
+        "windowId": 1299434146,
+        "index": 1,
+        "resolvedTabId": 1299434148
+      }
+    },
+    "listEntry": {
+      "id": 1299434148,
+      "title": "127.0.0.1:54011/keys",
+      "url": "http://127.0.0.1:54011/keys",
+      "origin": "http://127.0.0.1:54011",
+      "active": true,
+      "windowId": 1299434146,
+      "status": "complete",
+      "pinned": false,
+      "groupId": -1,
+      "index": 1,
+      "discarded": false,
+      "autoDiscardable": true,
+      "highlighted": true
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:13:00.516Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:13:00.545Z] create → {\"toolCallId\":\"rpc-mw87mhd8-9tucoi\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1299434148,\"tabId\":1299434148,\"resolvedTabId\":1299434148,\"id\":1299434148,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}} tabId=1299434148",
+    "[2026-11-08T19:13:00.558Z] pre-highlight entry → undefined",
+    "[2026-11-08T19:13:00.697Z] highlight → {\"toolCallId\":\"rpc-mw87mhe6-sulbvf\",\"tool\":\"browser.tab.highlight\",\"status\":\"completed\",\"result\":{\"highlighted\":1299434148,\"windowId\":1299434146,\"index\":1,\"resolvedTabId\":1299434148}}",
+    "[2026-11-08T19:13:01.101Z] window 1299434146 tabs → [{\"id\":1299434148,\"index\":1,\"active\":true,\"highlighted\":true}]",
+    "[2026-11-08T19:13:01.101Z] list entry → {\"id\":1299434148,\"title\":\"127.0.0.1:54011/keys\",\"url\":\"http://127.0.0.1:54011/keys\",\"origin\":\"http://127.0.0.1:54011\",\"active\":true,\"windowId\":1299434146,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":true}",
+    "[2026-11-08T19:13:01.114Z] sibling → {\"toolCallId\":\"rpc-mw87mhta-dzwhwu\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1299434149,\"tabId\":1299434149,\"resolvedTabId\":1299434149,\"id\":1299434149,\"url\":\"\",\"origin\":",
+    "[2026-11-08T19:13:01.785Z] close → {\"toolCallId\":\"rpc-mw87mi4r-z2sxmz\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":1299434148,\"resolvedTabId\":1299434148}}"
+  ]
+}

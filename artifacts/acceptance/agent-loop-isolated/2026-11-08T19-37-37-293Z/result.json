@@ -1,0 +1,28 @@
+{
+  "scenario": "agent-loop-isolated",
+  "status": "FAIL",
+  "summary": "ASSERT FAIL: crashed tab reports crashed:true (got null)",
+  "notes": [
+    "ok — tab.create returned tabId=0",
+    "ok — snapshot observes the form page",
+    "ok — args.expect verified step2 revealed after click",
+    "ok — page.wait text=Submitted resolved",
+    "ok — extract verifies submit-ok page",
+    "ok — fixture server received POST /submit",
+    "ok — POST body carries name=Agent",
+    "ok — POST body carries plan field",
+    "ok — console captured the page error",
+    "ok — broken page honestly still reports 'broken' (no fake success)",
+    "ok — slow page observed while pending",
+    "ok — wait text=ready resolved after delay",
+    "ok — selectorGone resolved; page still intact",
+    "ok — selector === selectorGone rejected → proto.invalid browser.page.wait args.selector and args.selectorGone must differ",
+    "ok — history back navigated to previous page",
+    "ok — back landed on /slow",
+    "ok — cache-probe loaded (got 1)",
+    "ok — normal reload revalidated → same cached body (v1→v1)",
+    "ok — bypassCache reload dispatched",
+    "ok — bypassCache fetched fresh body (v1→v3)",
+    "ok — bypassCache on back refused → proto.invalid browser.page.history args.bypassCache only applies to action reload"
+  ]
+}

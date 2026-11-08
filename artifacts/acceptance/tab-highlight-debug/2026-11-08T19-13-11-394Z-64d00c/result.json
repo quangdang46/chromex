@@ -1,0 +1,46 @@
+{
+  "scenario": "tab-highlight-debug",
+  "runId": "2026-11-08T19-13-11-394Z-64d00c",
+  "status": "PASS",
+  "summary": "debug",
+  "durationMs": 6139,
+  "details": {
+    "tabId": 2079632432,
+    "hl": {
+      "toolCallId": "rpc-mw87mtmw-lv5ry8",
+      "tool": "browser.tab.highlight",
+      "status": "completed",
+      "result": {
+        "highlighted": 2079632432,
+        "windowId": 2079632430,
+        "index": 1,
+        "resolvedTabId": 2079632432
+      }
+    },
+    "listEntry": {
+      "id": 2079632432,
+      "title": "127.0.0.1:54070/keys",
+      "url": "http://127.0.0.1:54070/keys",
+      "origin": "http://127.0.0.1:54070",
+      "active": true,
+      "windowId": 2079632430,
+      "status": "complete",
+      "pinned": false,
+      "groupId": -1,
+      "index": 1,
+      "discarded": false,
+      "autoDiscardable": true,
+      "highlighted": true
+    }
+  },
+  "notes": [
+    "[2026-11-08T19:13:15.588Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T19:13:15.619Z] create → {\"toolCallId\":\"rpc-mw87mszv-3rglpf\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":2079632432,\"tabId\":2079632432,\"resolvedTabId\":2079632432,\"id\":2079632432,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}} tabId=2079632432",
+    "[2026-11-08T19:13:16.424Z] pre-highlight entry → {\"id\":2079632432,\"title\":\"127.0.0.1:54070/keys\",\"url\":\"http://127.0.0.1:54070/keys\",\"origin\":\"http://127.0.0.1:54070\",\"active\":false,\"windowId\":2079632430,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":false}",
+    "[2026-11-08T19:13:16.446Z] highlight → {\"toolCallId\":\"rpc-mw87mtmw-lv5ry8\",\"tool\":\"browser.tab.highlight\",\"status\":\"completed\",\"result\":{\"highlighted\":2079632432,\"windowId\":2079632430,\"index\":1,\"resolvedTabId\":2079632432}}",
+    "[2026-11-08T19:13:16.851Z] window 2079632430 tabs → [{\"id\":2079632432,\"index\":1,\"active\":true,\"highlighted\":true}]",
+    "[2026-11-08T19:13:16.851Z] list entry → {\"id\":2079632432,\"title\":\"127.0.0.1:54070/keys\",\"url\":\"http://127.0.0.1:54070/keys\",\"origin\":\"http://127.0.0.1:54070\",\"active\":true,\"windowId\":2079632430,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"index\":1,\"discarded\":false,\"autoDiscardable\":true,\"highlighted\":true}",
+    "[2026-11-08T19:13:16.865Z] sibling → {\"toolCallId\":\"rpc-mw87mtyr-j20eiz\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":2079632433,\"tabId\":2079632433,\"resolvedTabId\":2079632433,\"id\":2079632433,\"url\":\"\",\"origin\":",
+    "[2026-11-08T19:13:17.533Z] close → {\"toolCallId\":\"rpc-mw87muaa-jcf27b\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":2079632432,\"resolvedTabId\":2079632432}}"
+  ]
+}
