@@ -43,6 +43,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.tab.create",
   "browser.tab.duplicate",
   "browser.page.setInputFiles",
+  "browser.page.dialog",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.extract",
@@ -99,6 +100,7 @@ type PwCDPSession = import("playwright-core").CDPSession;
 type PwResponse = import("playwright-core").Response;
 type PwRoute = import("playwright-core").Route;
 type PwWebSocket = import("playwright-core").WebSocket;
+type PwDialog = import("playwright-core").Dialog;
 
 /** One observed network request — mirrors browser.page.network entries
  *  on chrome-extension (metadata only, bodies never captured). */
@@ -201,6 +203,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  response.body() cannot read fulfilled payloads back, so the
    *  fulfill branch records them here for responseBody lookups. */
   readonly #fulfilledBodies = new Map<PwPage, Array<{ url: string; body: string; ts: number }>>();
+  /** page → currently-open JS dialog (browser.page.dialog). The
+   *  listener is installed at track time — playwright auto-dismisses
+   *  dialogs only when NO listener exists, so registering it keeps
+   *  dialogs open (real browser semantics) until the tool resolves
+   *  them. */
+  readonly #pendingDialogs = new Map<PwPage, {
+    dialog: PwDialog; type: string; message: string; defaultPrompt: string;
+  } | null>();
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
@@ -370,6 +380,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#route(taskId, args);
       case "browser.page.unroute":
         return this.#unroute(taskId, args);
+      case "browser.page.dialog":
+        return this.#dialog(taskId, args);
       case "browser.page.history":
         return this.#history(taskId, args);
       case "browser.downloads.list":
@@ -586,7 +598,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#ensureNetworkCapture(page);
     this.#ensureResponseTap(page);
     this.#ensureWsTap(page);
+    this.#ensureDialogCapture(page);
     return page;
+  }
+
+  #ensureDialogCapture(page: PwPage): void {
+    if (this.#pendingDialogs.has(page)) return;
+    this.#pendingDialogs.set(page, null);
+    page.on("dialog", (d) => {
+      this.#pendingDialogs.set(page, {
+        dialog: d,
+        type: d.type(),
+        message: d.message().slice(0, MAX_CONSOLE_TEXT),
+        defaultPrompt: String(d.defaultValue() ?? "").slice(0, 1000),
+      });
+    });
   }
 
   async #console(taskId: string, args: Record<string, unknown>): Promise<unknown> {
@@ -1211,6 +1237,56 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       this.#routeRules.delete(page);
     }
     return { removed, remaining: rules.length };
+  }
+
+  /** browser.page.dialog — resolve the page's open JS dialog. The
+   *  capture listener (installed at track time) holds dialogs open
+   *  until this tool accepts/dismisses them — same semantics as the
+   *  extension's Page.handleJavaScriptDialog, including waiting for a
+   *  dialog that has not opened yet. */
+  async #dialog(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    this.#ensureDialogCapture(page);
+    const accept = args.accept === true; // default dismiss — never confirm implicitly
+    const promptText =
+      typeof args.promptText === "string" && args.promptText.length <= 8192
+        ? args.promptText
+        : undefined;
+    const timeoutMs =
+      typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
+        ? Math.min(Math.max(Math.floor(args.timeoutMs), 100), 30_000)
+        : 5_000;
+    const deadline = Date.now() + timeoutMs;
+    let pending = this.#pendingDialogs.get(page) ?? null;
+    while (pending === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+      pending = this.#pendingDialogs.get(page) ?? null;
+    }
+    if (pending === null) {
+      return { handled: false, reason: "no_dialog" };
+    }
+    this.#pendingDialogs.set(page, null);
+    try {
+      if (accept) {
+        await pending.dialog.accept(promptText);
+      } else {
+        await pending.dialog.dismiss();
+      }
+    } catch (e) {
+      throw protocolError(
+        "browser.action_failed",
+        `dialog handling failed: ${String((e as Error)?.message ?? e)}`,
+      );
+    }
+    return {
+      handled: true,
+      accept,
+      dialog: {
+        type: pending.type,
+        message: pending.message,
+        ...(pending.defaultPrompt ? { defaultPrompt: pending.defaultPrompt } : {}),
+      },
+    };
   }
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {

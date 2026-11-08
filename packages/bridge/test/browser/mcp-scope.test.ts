@@ -73,9 +73,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.update");
     expect(tools).not.toContain("browser.tab.discard");
-    // CDP-tier tools are chrome-extension only (docs/adr/debugger-tier.md)
-    expect(tools).not.toContain("browser.page.dialog");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 6);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 5);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

@@ -96,7 +96,11 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   frame tap (page.on websocket, 8KiB/frame caps), route/unroute
   (fulfill/abort/modify via page.route, first-match, 50-rule cap,
   full detach on empty) — fulfill+modify+abort+responseBody verified
-  in `agent-loop-isolated` Loop 10b
+  in `agent-loop-isolated` Loop 10b; **page.dialog parity**: track-time
+  dialog listener holds JS dialogs open (real browser semantics —
+  playwright auto-dismisses only with no listener), accept/dismiss +
+  promptText + no_dialog honest result — confirm accept, alert
+  dismiss, no_dialog verified in Loop 10c
   `gateway-mcp-isolated` PASS — the full provider path without user
   Chrome: real in-process Gateway + spawned mcp-stdio.js child +
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC

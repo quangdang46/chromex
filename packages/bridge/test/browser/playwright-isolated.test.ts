@@ -28,7 +28,7 @@ describe("PlaywrightIsolatedBackend", () => {
       loadPlaywright: async () => ({ chromium: { launch: async () => { throw new Error("no launch in test"); } } }) as never,
     });
     await expect(
-      backend.execute("t1", "browser.page.dialog" as never, {}),
+      backend.execute("t1", "browser.windows.list" as never, {}),
     ).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 

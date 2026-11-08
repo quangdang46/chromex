@@ -347,6 +347,22 @@ try {
   assert(String(aborted?.text ?? "").includes("fetch-failed"), `route abort failed the request (got "${aborted?.text}")`);
   await call("browser.page.unroute", { tabId: fTab });
 
+  // ── Loop 10c: page.dialog — confirm accept + alert dismiss +
+  //  honest no_dialog on the isolated backend ──────────────────────
+  const dlgTab = await call("browser.tab.create", { url: fixture.url("/dialog"), active: false });
+  const dlgId = dlgTab?.tabId ?? dlgTab?.id;
+  await call("browser.page.click", { tabId: dlgId, selector: "#ask" });
+  const dlgAccept = await call("browser.page.dialog", { tabId: dlgId, accept: true, timeoutMs: 8000 });
+  assert(dlgAccept?.handled === true && dlgAccept?.dialog?.type === "confirm", `dialog accepted (${JSON.stringify(dlgAccept?.dialog)})`);
+  const dlgOut = await call("browser.page.wait", { tabId: dlgId, text: "confirm:true", timeoutMs: 8000 });
+  assert(!!dlgOut, "confirm() resolved true after accept");
+  await call("browser.page.click", { tabId: dlgId, selector: "#alertBtn" });
+  const dlgDismiss = await call("browser.page.dialog", { tabId: dlgId, timeoutMs: 8000 });
+  assert(dlgDismiss?.handled === true && dlgDismiss?.dialog?.type === "alert", `alert dismissed (${JSON.stringify(dlgDismiss?.dialog)})`);
+  await call("browser.page.wait", { tabId: dlgId, text: "alert-done", timeoutMs: 8000 });
+  const dlgNone = await call("browser.page.dialog", { tabId: dlgId, timeoutMs: 1000 });
+  assert(dlgNone?.handled === false && dlgNone?.reason === "no_dialog", "dialog reports no_dialog honestly");
+
   // ── Loop 11: open shadow DOM on the isolated backend — playwright
   //  locators pierce open roots natively; text/extract must too ─────
   const shTab = await call("browser.tab.create", { url: fixture.url("/shadow"), active: false });

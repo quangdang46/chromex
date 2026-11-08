@@ -562,7 +562,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.dialog": {
     description:
-      "Handle the page's open JavaScript dialog (alert/confirm/prompt/beforeunload) via the debugger tier — accept or dismiss it and optionally supply prompt text. Waits up to timeoutMs for a dialog to appear; reports handled:false reason:no_dialog when none is open. Always requires approval: accepting a confirm() can resolve a page side effect. chrome-extension backend only.",
+      "Handle the page's open JavaScript dialog (alert/confirm/prompt/beforeunload) — accept or dismiss it and optionally supply prompt text. Waits up to timeoutMs for a dialog to appear; reports handled:false reason:no_dialog when none is open. Both backends support it (chrome-extension via Page.handleJavaScriptDialog, playwright-isolated via page dialog events — dialogs stay open until resolved, matching real browser semantics). Always requires approval: accepting a confirm() can resolve a page side effect.",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
