@@ -1505,6 +1505,52 @@ describe("tool host (P1-09)", () => {
     expect(calls[0]).toMatchObject({ tabId: 7, funcName: "chromexConsoleCollect", args: [5, "error"] });
   });
 
+  test("page.console unscoped merges every frame's buffer with frameId tags", async () => {
+    const fids: number[] = [];
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      runInMainWorld: vi.fn(async (_t: number, _f: unknown, _a: unknown, frameIds?: number[]) => {
+        const fid = frameIds?.[0];
+        fids.push(fid ?? -1);
+        return {
+          installed: true,
+          entries: fid === 20
+            ? [{ level: "error", text: "widget boom", ts: 5 }]
+            : [{ level: "log", text: "top note", ts: 3 }],
+        };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.console", { limit: 10 }))) as {
+      entries: Array<{ text?: string; frameId?: number; ts?: number }>;
+      captured: boolean;
+      frames: number;
+    };
+    expect(res.captured).toBe(true);
+    expect(res.frames).toBe(2);
+    expect(fids.sort()).toEqual([10, 20]);
+    // merged + ts-sorted: top entry (ts 3) before widget entry (ts 5)
+    expect(res.entries.map((e) => e.text)).toEqual(["top note", "widget boom"]);
+    expect(res.entries.map((e) => e.frameId)).toEqual([10, 20]);
+  });
+
+  test("page.console explicit frameId stays single-frame", async () => {
+    const fids: number[] = [];
+    const d = deps({
+      listFrames: vi.fn(async () => [{ frameId: 10, url: "https://x.test/" }]),
+      runInMainWorld: vi.fn(async (_t: number, _f: unknown, _a: unknown, frameIds?: number[]) => {
+        fids.push(frameIds?.[0] ?? -1);
+        return { installed: true, entries: [] };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.console", { frameId: 0 }));
+    expect(fids).toEqual([0]);
+  });
+
   test("page.console without runInMainWorld dep → proto.unsupported", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.page.console"))).rejects.toMatchObject({ code: "proto.unsupported" });

@@ -793,6 +793,60 @@ function frameIdArg(args: Record<string, unknown>): number {
   return v;
 }
 
+/** Console buffers live per-frame (`window.__chromexConsoleBuffer` in
+ *  each frame's own MAIN world) — an unscoped read that only hits the
+ *  top frame misses every embedded widget's console/errors. Merged
+ *  collection enumerates the tab's frames and reads each buffer,
+ *  tagging entries with their frameId. Capped so iframe-heavy pages
+ *  stay bounded; per-frame injection failures skip honestly. */
+const CONSOLE_MERGE_FRAME_CAP = 16;
+
+async function collectConsoleEntries(
+  deps: { runInMainWorld?: ToolHostDeps["runInMainWorld"] },
+  tabId: number,
+  limit: number,
+  level: string | null,
+  frameIds: number[],
+): Promise<{ entries: Array<Record<string, unknown>>; captured: boolean }> {
+  const merged: Array<Record<string, unknown>> = [];
+  let captured = false;
+  for (const fid of frameIds.slice(0, CONSOLE_MERGE_FRAME_CAP)) {
+    try {
+      const res = (await deps.runInMainWorld!(tabId, chromexConsoleCollect, [limit, level], [fid])) as
+        | { installed?: boolean; entries?: unknown }
+        | undefined;
+      if (res?.installed === true) captured = true;
+      for (const e of Array.isArray(res?.entries) ? res.entries : []) {
+        if (e !== null && typeof e === "object") {
+          merged.push({ ...(e as Record<string, unknown>), frameId: fid });
+        }
+      }
+    } catch {
+      // frame navigated away or injection refused — skip it honestly
+    }
+  }
+  merged.sort(
+    (a, b) => (typeof a.ts === "number" ? a.ts : 0) - (typeof b.ts === "number" ? b.ts : 0),
+  );
+  return { entries: merged.slice(-limit), captured };
+}
+
+/** Frame ids for an unscoped console read: all frames via webNavigation
+ *  when available, else the top frame (frameId 0) as before. */
+async function consoleFrameIds(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<number[] | undefined> {
+  if (typeof deps.listFrames !== "function") return undefined;
+  try {
+    const frames = await deps.listFrames(tabId);
+    const ids = [...new Set(frames.map((f) => f.frameId).filter((n) => Number.isInteger(n)))];
+    return ids.length > 0 ? ids : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** §6.2 snapshot metadata: TTL 5min, LRU 32/task — used by P2-02
  *  stale/verify semantics. Registry is per-extension-install. */
 const snapshotRegistry = new SnapshotRegistry();
@@ -1545,6 +1599,22 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
             : 100;
         const level = str(args.level) ?? null;
+        // Unscoped (no args.frameId) reads merge every frame's buffer —
+        // console buffers are per-frame, so a top-frame-only read would
+        // silently miss embedded-widget errors. Explicit frameId keeps
+        // the single-frame read (0 = top frame, unchanged).
+        if (args.frameId === undefined || args.frameId === null) {
+          const fids = await consoleFrameIds(deps, tabId);
+          if (fids !== undefined) {
+            const merged = await collectConsoleEntries(deps, tabId, limit, level, fids);
+            return {
+              entries: merged.entries,
+              captured: merged.captured,
+              frames: fids.length,
+              resolvedTabId: tabId,
+            };
+          }
+        }
         const frameId = frameIdArg(args);
         const res = (await deps.runInMainWorld!(tabId, chromexConsoleCollect, [limit, level], [frameId])) as
           | { installed?: boolean; entries?: unknown }
@@ -2153,26 +2223,44 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           // that is honestly absent (documented in the tool description).
           const since = Date.now() - waitTimeoutMs;
           const deadline = Date.now() + waitTimeoutMs;
-          const consoleFrameId = frameIdArg(args);
+          // Unscoped consoleText polls every frame's buffer (console
+          // buffers are per-frame) — an OOPIF widget's console.error is
+          // just as matchable as the top frame's. Explicit frameId keeps
+          // the single-frame poll.
+          const consoleUnscoped = args.frameId === undefined || args.frameId === null;
+          const consoleFids = consoleUnscoped
+            ? ((await consoleFrameIds(deps, tabId)) ?? [frameIdArg(args)])
+            : [frameIdArg(args)];
+          const pollConsole = async (): Promise<Array<Record<string, unknown>>> => {
+            if (consoleFids.length === 1) {
+              const cres = (await deps
+                .runInMainWorld!(tabId, chromexConsoleCollect, [200, null], [consoleFids[0]!])
+                .catch(() => undefined)) as { entries?: unknown } | undefined;
+              return (Array.isArray(cres?.entries) ? cres.entries : [])
+                .filter((e): e is Record<string, unknown> => e !== null && typeof e === "object")
+                .map((e) => ({ ...e, frameId: consoleFids[0] }));
+            }
+            return (await collectConsoleEntries(deps, tabId, 200, null, consoleFids)).entries;
+          };
           try {
-            await deps.runInMainWorld!(tabId, chromexConsoleCollect, [200, consoleLevel ?? null], [consoleFrameId]);
+            if (consoleFids.length === 1) {
+              await deps.runInMainWorld!(tabId, chromexConsoleCollect, [200, consoleLevel ?? null], [consoleFids[0]!]);
+            } else {
+              await collectConsoleEntries(deps, tabId, 200, consoleLevel ?? null, consoleFids);
+            }
           } catch {
             // install failure surfaces on the poll below as timeout
           }
-          let consoleHit: { level?: unknown; text?: unknown; ts?: unknown } | undefined;
+          let consoleHit: { level?: unknown; text?: unknown; ts?: unknown; frameId?: unknown } | undefined;
           while (Date.now() < deadline) {
-            const cres = (await deps
-              .runInMainWorld!(tabId, chromexConsoleCollect, [200, null], [consoleFrameId])
-              .catch(() => undefined)) as { entries?: unknown } | undefined;
-            const entries = Array.isArray(cres?.entries) ? cres.entries : [];
+            const entries = await pollConsole();
             const hit = entries.find((e) => {
-              const en = e as { level?: unknown; text?: unknown; ts?: unknown };
               return (
-                typeof en.ts === "number" && en.ts >= since &&
-                typeof en.text === "string" && en.text.includes(consoleText!) &&
-                (consoleLevel === undefined || en.level === consoleLevel)
+                typeof e.ts === "number" && e.ts >= since &&
+                typeof e.text === "string" && e.text.includes(consoleText!) &&
+                (consoleLevel === undefined || e.level === consoleLevel)
               );
-            }) as { level?: unknown; text?: unknown; ts?: unknown } | undefined;
+            });
             if (hit) {
               consoleHit = hit;
               break;
@@ -2192,6 +2280,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               console: {
                 level: consoleHit.level ?? "",
                 text: consoleHit.text ?? "",
+                ...(typeof consoleHit.frameId === "number" ? { frameId: consoleHit.frameId } : {}),
                 ts: consoleHit.ts ?? 0,
               },
               resolvedTabId: tabId,

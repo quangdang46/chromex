@@ -1231,6 +1231,56 @@ await runScenario(
         } else {
           cdp.waitFrameOk = false;
         }
+        // All-frames console: prime the hook (installs in EVERY frame),
+        // fire console.error inside the OOPIF via pierce evaluate — an
+        // unscoped page.console must surface it tagged with the OOPIF's
+        // frameId, and an unscoped consoleText wait must match it.
+        if (cdpCross?.frameId) {
+          await runner.browserToolCall(
+            taskId, "browser.page.console", { tabId: cdpFrameTabId, limit: 5 }, token, 60_000,
+          ).catch(() => null);
+          const pierceRef4 = await runner.browserToolCall(
+            taskId, "browser.page.pierce",
+            { tabId: cdpFrameTabId, frameId: cdpCross.frameId }, token, 60_000,
+          ).catch(() => null);
+          const cfb4 = (pierceRef4?.result ?? pierceRef4 ?? {}).elements ?? [];
+          const probeRef4 = cfb4.find((e) => e.id === "cfb")?.ref;
+          if (probeRef4) {
+            await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: cdpFrameTabId, ref: probeRef4, expression: "(console.error('cdp-oopif-console-x'), 'fired')" },
+              token, 60_000,
+            ).catch(() => null);
+          }
+          const conRes = await runner.browserToolCall(
+            taskId, "browser.page.console", { tabId: cdpFrameTabId, limit: 50 }, token, 60_000,
+          ).catch(() => null);
+          const conEntries = (conRes?.result ?? conRes ?? {}).entries ?? [];
+          const oopifCon = conEntries.find(
+            (e) => String(e.text).includes("cdp-oopif-console-x"),
+          );
+          cdp.consoleOopifOk = oopifCon?.frameId === cdpCross.frameId;
+          if (probeRef4) {
+            await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: cdpFrameTabId, ref: probeRef4, expression: "(console.error('cdp-oopif-wait-y'), 'fired')" },
+              token, 60_000,
+            ).catch(() => null);
+            const cwait = await runner.browserToolCall(
+              taskId, "browser.page.wait",
+              { tabId: cdpFrameTabId, consoleText: "cdp-oopif-wait-y", timeoutMs: 8000 },
+              token, 60_000,
+            ).catch(() => null);
+            const cwaitBody = cwait?.result ?? cwait ?? {};
+            cdp.consoleWaitOopifOk = cwaitBody.matched === "console" &&
+              cwaitBody.console?.frameId === cdpCross.frameId;
+          } else {
+            cdp.consoleWaitOopifOk = false;
+          }
+        } else {
+          cdp.consoleOopifOk = false;
+          cdp.consoleWaitOopifOk = false;
+        }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1243,7 +1293,8 @@ await runScenario(
           cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
           cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
           cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
-          cdp.ariaOopifOk === true && cdp.waitFrameOk === true,
+          cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
+          cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true,
         ...cdp,
       };
 
