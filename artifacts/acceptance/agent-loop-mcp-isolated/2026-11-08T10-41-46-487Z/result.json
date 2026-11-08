@@ -1,0 +1,21 @@
+{
+  "scenario": "agent-loop-mcp-isolated",
+  "status": "FAIL",
+  "error": "Error: ASSERT FAIL: cookies hard-blocked by tool server\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-loop-mcp-isolated.mjs:37:20)\n    at file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-loop-mcp-isolated.mjs:183:3",
+  "asserts": [
+    "ok — MCP initialize handshake",
+    "ok — tools/list advertises page tools",
+    "ok — tools/list omits backend-unsupported tools",
+    "ok — tools/list count matches allowedTools (42)",
+    "ok — browser_tab_create → tabId=0",
+    "ok — snapshot result is fenced as untrusted data",
+    "ok — nonce markers present",
+    "ok — snapshot returned page content",
+    "ok — args.expect verified step2 revealed (through MCP)",
+    "ok — extract verifies submit-ok page",
+    "ok — fixture server received POST /submit with name=Agent",
+    "ok — gated tab created (tabId=1)",
+    "ok — approval hook saw financial-risk action(s): [{\"tool\":\"browser.page.submit\",\"risk\":\"external_mutation\"},{\"tool\":\"browser.tab.create\",\"risk\":\"financial\"},{\"tool\":\"browser.page.click\",\"risk\":\"financial\"}]",
+    "ok — unsupported tool refused at MCP scope gate"
+  ]
+}

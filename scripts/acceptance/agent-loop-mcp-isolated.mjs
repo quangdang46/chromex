@@ -169,18 +169,18 @@ try {
     taskId: TASK,
     profileId: "profile-e2e",
     backendId: "playwright-isolated",
-    allowedTools: [...allowed, "browser.page.cookies"],
+    allowedTools: [...allowed, "browser.page.download"],
   });
   const blocked = await toolServer.execute({
     toolCallId: "mcp-e2e-blocked-1",
     taskId: TASK,
-    tool: "browser.page.cookies",
+    tool: "browser.page.download",
     args: {},
     token: wideToken,
     profileId: "profile-e2e",
     backendId: "playwright-isolated",
   });
-  assert(blocked.status === "failed" && blocked.error?.code === "browser.tool_blocked", "cookies hard-blocked by tool server");
+  assert(blocked.status === "failed" && blocked.error?.code === "browser.tool_blocked", "page.download hard-blocked by tool server");
 
   // ── Loop 6: token rejection — a forged token never reaches dispatch ──
   const forged = await toolServer.execute({
