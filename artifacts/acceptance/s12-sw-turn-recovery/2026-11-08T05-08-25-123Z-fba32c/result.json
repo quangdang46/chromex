@@ -1,0 +1,15 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-08T05-08-25-123Z-fba32c",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n",
+  "durationMs": 38955,
+  "error": "page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s12-sw-turn-recovery.mjs:81:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s12-sw-turn-recovery.mjs:18:1",
+  "notes": [
+    "[2026-11-08T05:08:29.237Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:08:33.280Z] turn 1 active",
+    "[2026-11-08T05:08:33.300Z] second message queued",
+    "[2026-11-08T05:08:33.430Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-08T05:08:33.932Z] new service worker=up"
+  ]
+}

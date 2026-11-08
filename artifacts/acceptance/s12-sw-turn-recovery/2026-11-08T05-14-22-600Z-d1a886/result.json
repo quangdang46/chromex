@@ -1,0 +1,40 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-08T05-14-22-600Z-d1a886",
+  "status": "FAIL",
+  "summary": "newSw=true queueGone=true completed=0 userMsgs=0 failed=0 cancelled=0 unknown=0",
+  "durationMs": 166458,
+  "details": {
+    "newSw": true,
+    "queueGone": true,
+    "completed": 0,
+    "userMsgs": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{}"
+  },
+  "notes": [
+    "[2026-11-08T05:14:29.607Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:14:35.866Z] turn 1 active",
+    "[2026-11-08T05:14:35.888Z] second message queued",
+    "[2026-11-08T05:14:36.087Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-08T05:14:36.588Z] new service worker=up",
+    "[2026-11-08T05:14:36.590Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794114876589,\"uptimeMs\":13750,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:38.599Z] post-reload gw check 1: diag={\"diagnostics\":{\"at\":1794114878595,\"uptimeMs\":15756,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:40.604Z] post-reload gw check 2: diag={\"diagnostics\":{\"at\":1794114880603,\"uptimeMs\":17764,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:42.609Z] post-reload gw check 3: diag={\"diagnostics\":{\"at\":1794114882608,\"uptimeMs\":19769,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:44.615Z] post-reload gw check 4: diag={\"diagnostics\":{\"at\":1794114884613,\"uptimeMs\":21774,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:46.622Z] post-reload gw check 5: diag={\"diagnostics\":{\"at\":1794114886621,\"uptimeMs\":23782,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:48.629Z] post-reload gw check 6: diag={\"diagnostics\":{\"at\":1794114888627,\"uptimeMs\":25788,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:50.632Z] post-reload gw check 7: diag={\"diagnostics\":{\"at\":1794114890631,\"uptimeMs\":27792,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:52.638Z] post-reload gw check 8: diag={\"diagnostics\":{\"at\":1794114892636,\"uptimeMs\":29797,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:14:54.657Z] post-reload gw check 9: diag={\"diagnostics\":{\"at\":1794114894646,\"uptimeMs\":31807,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WS8FQKXM29VP9MSF2GK03P\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:15:18.077Z] post-reload: stopSeen=false {\"stored\":\"{}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"664e4081-8e00-4643-923a-962dc7f27af6\\\",\\\"threadId\\\":null,\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"[]\"}",
+    "[2026-11-08T05:15:18.078Z] queue strip present post-reload=false",
+    "[2026-11-08T05:15:19.081Z] task.list raw: {\"tasks\":[]}",
+    "[2026-11-08T05:15:38.130Z] task null",
+    "[2026-11-08T05:17:08.597Z] final: queueGone=true completed=0 cancelled=0 failed=0 unknown=0 userMsgs=0 seq=",
+    "[2026-11-08T05:17:08.850Z] storedQueue={}"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-08T05-09-44-763Z-76f3b8",
+  "status": "FAIL",
+  "summary": "newSw=true queueGone=true completed=0 userMsgs=0 failed=0 cancelled=0 unknown=0",
+  "durationMs": 142102,
+  "details": {
+    "newSw": true,
+    "queueGone": true,
+    "completed": 0,
+    "userMsgs": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{}"
+  },
+  "notes": [
+    "[2026-11-08T05:09:49.669Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:09:54.297Z] turn 1 active",
+    "[2026-11-08T05:09:54.328Z] second message queued",
+    "[2026-11-08T05:09:54.469Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-08T05:09:54.971Z] new service worker=up",
+    "[2026-11-08T05:10:15.964Z] post-reload: stopSeen=false {\"stored\":\"{}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"03700fd3-cda4-4d05-a913-318523e494d4\\\",\\\"threadId\\\":null,\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"[]\"}",
+    "[2026-11-08T05:10:15.966Z] queue strip present post-reload=false",
+    "[2026-11-08T05:10:36.009Z] task null",
+    "[2026-11-08T05:12:06.406Z] final: queueGone=true completed=0 cancelled=0 failed=0 unknown=0 userMsgs=0 seq=",
+    "[2026-11-08T05:12:06.661Z] storedQueue={}"
+  ]
+}

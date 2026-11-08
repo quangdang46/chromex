@@ -1,0 +1,165 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T05-37-06-966Z-f14813",
+  "status": "PASS",
+  "summary": "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get",
+  "durationMs": 14800,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": true,
+        "snippet": "{\"requestId\":\"65963.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:50972/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794116230982,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"body"
+      },
+      "webSocket": {
+        "ok": true,
+        "frames": 2,
+        "snippet": "sent:hello-agent | recv:echo:hello-agent"
+      },
+      "route": {
+        "ok": true,
+        "mocked": "pong:mocked",
+        "real": "pong:ok",
+        "aborted": "fetch-failed",
+        "modified": "pong:rerouted"
+      },
+      "aria": {
+        "ok": true
+      },
+      "trustedClick": {
+        "ok": true,
+        "untrusted": "isTrusted:false",
+        "trusted": "isTrusted:true",
+        "clickStatus": "completed"
+      },
+      "trustedHover": {
+        "ok": true,
+        "mouseover": "isTrusted:true",
+        "cssOutline": "solid"
+      },
+      "trustedPress": {
+        "ok": true,
+        "untrusted": "key:a,trusted:false",
+        "trusted": "key:Enter,trusted:true"
+      },
+      "trustedType": {
+        "ok": true,
+        "status": "completed",
+        "value": "Hi!",
+        "out": "key:!,trusted:true"
+      },
+      "trustedFill": {
+        "ok": true,
+        "status": "completed",
+        "value": "xy"
+      },
+      "trustedDrag": {
+        "ok": true,
+        "down": "isTrusted:true",
+        "out": "up@360,80",
+        "status": "completed"
+      },
+      "trustedFramePress": {
+        "ok": true,
+        "status": "completed",
+        "kout": "key:x,trusted:true"
+      },
+      "trustedFrameClick": {
+        "ok": true,
+        "same": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        },
+        "cross": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        }
+      },
+      "frameSetInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:chromex-cdp-upload.txt"
+      },
+      "frameElementScreenshot": {
+        "ok": true,
+        "status": "completed",
+        "bytes": 1530
+      },
+      "frameUpload": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:mem.txt"
+      },
+      "oopifSetInputFiles": {
+        "ok": true,
+        "fout2": "files:cross.txt"
+      },
+      "frameResponseBody": {
+        "ok": true,
+        "body": "{\"ok\":true}"
+      },
+      "pdf": {
+        "ok": true,
+        "bytes": 57625,
+        "artifactRef": "present"
+      },
+      "emulate": {
+        "ok": true,
+        "check": {
+          "dark": true,
+          "w": 390
+        },
+        "reset": "completed"
+      },
+      "dialog": {
+        "ok": true,
+        "handled": true,
+        "pageText": "confirm:true"
+      },
+      "alertDialog": {
+        "ok": true,
+        "pageText": "alert-done"
+      },
+      "setInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fname": "chromex-cdp-upload.txt"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T05:37:10.571Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:37:10.969Z] responseBody prime → {\"toolCallId\":\"rpc-mw7ehbg1-tt0sgw\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794116230968,\"resolvedTabId\":1193776530}}",
+    "[2026-11-08T05:37:11.512Z] responseBody → {\"requestId\":\"65963.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:50972/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794116230982,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1193776530}",
+    "[2026-11-08T05:37:12.801Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+    "[2026-11-08T05:37:13.686Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+    "[2026-11-08T05:37:13.947Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1193776530}",
+    "[2026-11-08T05:37:14.227Z] trusted snap=completed snapId=snap:55db239f-f126-4458-8a4e-05418c0bd0b9",
+    "[2026-11-08T05:37:14.534Z] untrusted click → {\"toolCallId\":\"rpc-mw7ehe5v-vh9ybz\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T05:37:14.534Z] trusted click → {\"toolCallId\":\"rpc-mw7ehedn-kl34qt\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T05:37:14.548Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T05:37:14.962Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T05:37:15.401Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T05:37:15.402Z] press statuses: completed/completed",
+    "[2026-11-08T05:37:15.413Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T05:37:15.424Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T05:37:15.797Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T05:37:16.393Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T05:37:16.704Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T05:37:17.023Z] frame click cross → status=completed pout=down:true up:true",
+    "[2026-11-08T05:37:17.618Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+    "[2026-11-08T05:37:17.973Z] frame screenshot → status=completed bytes=1530",
+    "[2026-11-08T05:37:18.533Z] frame upload → status=completed fout2=files:mem.txt",
+    "[2026-11-08T05:37:18.796Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw7ehhhi-etb1rw\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":1193776530}} fout2=files:cross.txt",
+    "[2026-11-08T05:37:19.569Z] frame responseBody → {\"requestId\":\"65963.20\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:50972/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794116239056,\"body\":\"{\\\"ok\\\":true}\",",
+    "[2026-11-08T05:37:19.891Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":57625,\"sha256\":\"389588ff96e9744358dc9a9f224d2a4eb1cfb0655e22a0f02f3a6d70a3af75ff\",\"resolvedTabId\":1193776530,\"artifactRef\":\"artifact:art-01M6WTJGGH3268D",
+    "[2026-11-08T05:37:20.157Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":1193776530} check={\"dark\":true,\"w\":390}",
+    "[2026-11-08T05:37:20.428Z] dialog snap=completed snapId=snap:6e27b0e5-17fa-4394-b703-f6b8a49ade4c",
+    "[2026-11-08T05:37:20.695Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1193776530}",
+    "[2026-11-08T05:37:20.704Z] dialog result text=confirm:true",
+    "[2026-11-08T05:37:21.230Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1193776530} page=alert-done",
+    "[2026-11-08T05:37:21.758Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":1193776530}",
+    "[2026-11-08T05:37:21.767Z] fname=chromex-cdp-upload.txt"
+  ]
+}

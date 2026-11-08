@@ -1,0 +1,41 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-08T05-18-39-524Z-9a4768",
+  "status": "FAIL",
+  "summary": "newSw=true queueGone=true completed=1 userMsgs=1 failed=0 cancelled=0 unknown=0",
+  "durationMs": 133478,
+  "details": {
+    "newSw": true,
+    "queueGone": true,
+    "completed": 1,
+    "userMsgs": 1,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T05:18:44.754Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:18:49.342Z] turn 1 active",
+    "[2026-11-08T05:18:49.367Z] second message queued",
+    "[2026-11-08T05:18:49.368Z] pre-reload task.list: {\"tasks\":[]}",
+    "[2026-11-08T05:18:49.524Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-08T05:18:50.026Z] new service worker=up",
+    "[2026-11-08T05:18:50.027Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794115130027,\"uptimeMs\":10205,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:18:52.029Z] post-reload gw check 1: diag={\"diagnostics\":{\"at\":1794115132028,\"uptimeMs\":12206,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:18:54.036Z] post-reload gw check 2: diag={\"diagnostics\":{\"at\":1794115134034,\"uptimeMs\":14212,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:18:56.040Z] post-reload gw check 3: diag={\"diagnostics\":{\"at\":1794115136039,\"uptimeMs\":16217,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:18:58.042Z] post-reload gw check 4: diag={\"diagnostics\":{\"at\":1794115138041,\"uptimeMs\":18219,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:00.046Z] post-reload gw check 5: diag={\"diagnostics\":{\"at\":1794115140045,\"uptimeMs\":20223,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:02.049Z] post-reload gw check 6: diag={\"diagnostics\":{\"at\":1794115142049,\"uptimeMs\":22227,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:04.053Z] post-reload gw check 7: diag={\"diagnostics\":{\"at\":1794115144051,\"uptimeMs\":24229,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:06.055Z] post-reload gw check 8: diag={\"diagnostics\":{\"at\":1794115146054,\"uptimeMs\":26232,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:08.057Z] post-reload gw check 9: diag={\"diagnostics\":{\"at\":1794115148057,\"uptimeMs\":28235,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6WSGAPA6DX60RNSMS9EQQPY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[]}",
+    "[2026-11-08T05:19:12.435Z] post-reload: stopSeen=true {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"f36eb698-3ffd-4c98-9438-040314d86c1e\\\",\\\"threadId\\\":null,\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"[]\"}",
+    "[2026-11-08T05:19:12.436Z] queue strip present post-reload=false",
+    "[2026-11-08T05:19:13.439Z] task.list raw: {\"tasks\":[]}",
+    "[2026-11-08T05:19:22.456Z] task 01M6WSHM4FPM2R023Q0Z7CC8GZ",
+    "[2026-11-08T05:20:52.809Z] final: queueGone=true completed=1 cancelled=0 failed=0 unknown=0 userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed",
+    "[2026-11-08T05:20:52.875Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  ]
+}

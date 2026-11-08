@@ -1,0 +1,14 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T04-44-57-097Z-bf88a6",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n",
+  "durationMs": 23125,
+  "error": "page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:91:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T04:45:00.810Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:45:04.818Z] turn 1 active",
+    "[2026-11-08T04:45:04.828Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"4f03156e-1103-4ac5-9833-c0aad5d4501f\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794113104825-73pkb4\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T04:45:04.852Z] second message queued"
+  ]
+}

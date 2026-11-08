@@ -1,0 +1,26 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T04-42-17-452Z-91e4e2",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 21894,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T04:42:22.725Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:42:26.844Z] turn 1 active",
+    "[2026-11-08T04:42:26.858Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"dfc30ddc-445e-4887-ab15-83a99161d88c\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794112946851-q9daa1\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T04:42:26.861Z] second message queued",
+    "[2026-11-08T04:42:28.243Z] queue survived sidepanel reload",
+    "[2026-11-08T04:42:29.244Z] task 01M6WQE23W2ZM3CYQAA44RBPM3",
+    "[2026-11-08T04:42:39.292Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T04:42:39.331Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  ]
+}

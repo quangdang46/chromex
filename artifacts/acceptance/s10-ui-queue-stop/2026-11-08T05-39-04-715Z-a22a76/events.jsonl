@@ -1,0 +1,13 @@
+{"seq":1,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"task.created","payload":{"type":"task.created","taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794116353174}
+{"seq":2,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794116353177}
+{"seq":3,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6WTNZ4WF34HQHNXTV3PTCDA","message":{"gatewayTurnId":"01M6WTNZ4WF34HQHNXTV3PTCDA","clientMessageId":"prompt-1794116350920-omm05k3bqo","content":[{"type":"text","text":"first long turn — keep working"}]},"clientMessageId":"prompt-1794116350920-omm05k3bqo"},"at":1794116353180}
+{"seq":4,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6WTNZ4WF34HQHNXTV3PTCDA"},"at":1794116353185}
+{"seq":null,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"assistant.delta","payload":{},"at":1794116353298}
+{"seq":null,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"assistant.delta","payload":{},"at":1794116353800}
+{"seq":null,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"assistant.delta","payload":{},"at":1794116354300}
+{"seq":null,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"assistant.delta","payload":{},"at":1794116354803}
+{"seq":null,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"assistant.delta","payload":{},"at":1794116355304}
+{"seq":5,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6WTNZ4WF34HQHNXTV3PTCDA","reason":"interrupted"},"at":1794116355684}
+{"seq":6,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794116355685}
+{"seq":7,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794116355686}
+{"seq":8,"taskId":"01M6WTNZ4JD4Y4A61DM5DKZ3PM","type":"task.completed","payload":{"type":"task.completed"},"at":1794116355686}
