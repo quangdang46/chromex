@@ -796,6 +796,11 @@ const promptActivitiesByConversationId = new Map<string, PromptActivityState>();
 const activePromptUserMessageIdsByConversationId = new Map<string, string>();
 const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
 const queuedComposerFlushInFlight = new Set<string>();
+// Conversations whose prompt.send was accepted but whose turn.started
+// has not arrived yet — the event can lag seconds on a cold SW, and
+// without this marker the gap reads as "no turn in flight" (queue
+// flushes into a new task / sends drop instead of queueing).
+const promptAwaitingTurnConversationIds = new Set<string>();
 // Queue ids dequeued for send during this page life — excluded when
 // merging a possibly-stale persisted snapshot during delayed re-hydrate.
 const consumedQueuedComposerMessageIds = new Set<string>();
@@ -1793,6 +1798,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     shouldRender = true;
   }
   if (event.type === "turn.started" && event.activeTurn) {
+    promptAwaitingTurnConversationIds.delete(eventConversationId || state.currentConversationId || "");
     if (!isCurrentConversationEvent && eventConversationId) {
       activeTurnsByConversationId.set(eventConversationId, event.activeTurn);
       rememberConversationThreadId(eventConversationId, event.activeTurn.threadId);
@@ -2627,11 +2633,30 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     if (state.attachments.has("open-tabs") || state.selectedTabIds.length) {
       await loadTabs();
     }
+    // ui.init payload is fully applied above — threadId, activeTurn and
+    // the per-conversation maps are seeded, so flush decisions from here
+    // on have complete gateway truth.
+    sidepanelInitSettled = true;
     reconcileQueuedComposerFlush();
     // A storage.local.set issued just before a reload can commit after
     // the fresh page's first hydrate get — the queue would look empty
-    // forever. Re-read once after the init storm settles and merge any
-    // late-landing entries (deduped by id, consumed ids excluded).
+    // forever. Merge late-landing entries via storage.onChanged (no
+    // fixed delay to lose the race) plus one delayed re-read as
+    // backstop; both dedupe by id and exclude consumed ids.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      const change = changes[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
+      if (!change) return;
+      const entries = change.newValue;
+      if (entries && typeof entries === "object") {
+        mergeQueuedComposerMessages(
+          entries as Record<string, QueuedComposerMessage[]>,
+          consumedQueuedComposerMessageIds,
+        );
+        render();
+        reconcileQueuedComposerFlush();
+      }
+    });
     setTimeout(() => {
       void hydrateQueuedComposerMessages({
         merge: true,
@@ -2873,6 +2898,7 @@ function applyBufferedConversationBridgeEvent(conversationId: string, event: Sid
       break;
     }
     case "turn.started": {
+      promptAwaitingTurnConversationIds.delete(conversationId);
       if (event.activeTurn) {
         activeTurnsByConversationId.set(conversationId, event.activeTurn);
       }
@@ -3329,6 +3355,7 @@ async function hydrateGeneratedImagesForDetachedConversation(
 }
 
 function clearConversationActivity(conversationId: string): void {
+  promptAwaitingTurnConversationIds.delete(conversationId);
   promptActivitiesByConversationId.delete(conversationId);
   pendingPromptRequestIdsByConversationId.delete(conversationId);
   activePromptUserMessageIdsByConversationId.delete(conversationId);
@@ -12643,7 +12670,12 @@ function isCurrentPromptWorkActive(): boolean {
 }
 
 function isPromptTurnInFlight(): boolean {
-  return Boolean(state.activeTurn) || Boolean(state.promptActivity) || isCurrentPromptRequestPending();
+  return (
+    Boolean(state.activeTurn) ||
+    Boolean(state.promptActivity) ||
+    isCurrentPromptRequestPending() ||
+    promptAwaitingTurnConversationIds.has(state.currentConversationId ?? "")
+  );
 }
 
 function canSendCurrentComposerMessage(
@@ -15422,17 +15454,32 @@ function removeQueuedComposerMessageForCurrentConversation(id: string): void {
  *  when the active turn ends; re-queues if a new turn already started
  *  (e.g. the user sent a fresh prompt while the flush was in flight). */
 async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
+  // Gate INSIDE the flush, not just reconcile: turn.completed handlers
+  // call this directly and can fire while ui.init is still seeding
+  // threadId/activeTurn — flushing then leaks the message into a new
+  // gateway task while the real turn still runs.
+  if (!sidepanelInitSettled) return;
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || isPromptTurnInFlight()) return;
   // Gateway truth beats UI state: after a panel reload the local
   // activeTurn can lag hello/sync — flushing in that window leaks the
   // message into the gateway queue invisibly instead of holding it in
-  // the composer queue until the turn actually ends.
-  if (state.threadId) {
+  // the composer queue until the turn actually ends. The task binding
+  // may live in the remembered thread map before state.threadId catches
+  // up, so check all known bindings for this conversation.
+  const boundThreadId =
+    state.threadId ||
+    conversationThreadIdsById.get(conversationId) ||
+    activeTurnsByConversationId.get(conversationId)?.threadId ||
+    "";
+  if (boundThreadId) {
     const gw = await sendRuntimeMessage<{
       tasks?: Array<{ taskId?: string; id?: string; activeTurnId?: string | null }>;
     }>({ type: "gateway.tasks" }).catch(() => null);
-    const task = (gw?.tasks ?? []).find((t) => (t.taskId ?? t.id) === state.threadId);
+    // Can't verify gateway truth (SW restarting / gateway down) — hold
+    // the queue rather than risk leaking the message into a new task.
+    if (!gw) return;
+    const task = (gw?.tasks ?? []).find((t) => (t.taskId ?? t.id) === boundThreadId);
     if (task?.activeTurnId) return;
   }
   const next = dequeueQueuedComposerMessage(conversationId);
@@ -15477,11 +15524,18 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   }
 }
 
+// Queue flush must never run before ui.init has seeded threadId +
+// activeTurn — a reconcile fired mid-init (storage.onChanged, bridge
+// events) would see "no turn in flight" and leak the queued message
+// into a brand-new gateway task while the real turn still runs.
+let sidepanelInitSettled = false;
+
 /** Re-deliver a persisted queue entry whose turn.end event may have been
  *  missed while the panel was reloading or another conversation was
  *  active. flushQueuedComposerMessage no-ops while a turn is in flight,
  *  so this is safe to call whenever turn state is (re)hydrated. */
 function reconcileQueuedComposerFlush(): void {
+  if (!sidepanelInitSettled) return;
   const conversationId = state.currentConversationId;
   if (!conversationId || isPromptTurnInFlight()) {
     return;
@@ -15755,6 +15809,13 @@ async function sendPrompt(
       return;
     }
     options.onPromptAccepted?.();
+    // prompt.send accepted → a turn is guaranteed coming, but
+    // turn.started can lag seconds behind on a cold SW. Mark the
+    // conversation so the gap still counts as in-flight (queue holds,
+    // flush holds); turn.started/terminal events clear it.
+    if (!sendAsTurnSteer && conversationIdAtStart) {
+      promptAwaitingTurnConversationIds.add(conversationIdAtStart);
+    }
     if (!sendAsTurnSteer && result.planClarification?.question?.trim()) {
       state.currentConversationId = result.currentConversationId ?? state.currentConversationId;
       state.actionCards = mergePromptResultActionCards(state.actionCards, result.actionCards ?? []);
