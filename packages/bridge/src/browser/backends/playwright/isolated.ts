@@ -508,15 +508,22 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         : 10_000;
     // Same contract as the extension path: expression semantics, awaited
     // promises. Playwright string-evaluate already awaits the result.
-    const value = await Promise.race([
-      page.evaluate(expression),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(protocolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs),
-      ),
-    ]).catch((e: unknown) => {
+    let value: unknown;
+    try {
+      value = await Promise.race([
+        page.evaluate(expression),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(protocolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs),
+        ),
+      ]);
+    } catch (e) {
       if (e && typeof e === "object" && "code" in e) throw e;
-      throw protocolError("browser.action_failed", `page evaluation failed: ${e instanceof Error ? e.message : String(e)}`);
-    });
+      // Match the extension contract: page-thrown exceptions come back
+      // as {ok:false,error} data, not a tool failure — the agent can
+      // read and recover from them. Bounded; still fenced downstream.
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: message.slice(0, 4096), truncated: false };
+    }
     let serialized: string | undefined;
     try {
       serialized = JSON.stringify(value);
