@@ -861,6 +861,22 @@ export class BrowserMcpServer {
         return this.#ok(msg.id ?? null, {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: {} },
+          // Server-level steering: without this the model happily
+          // drives Codex's built-in browser-use/exec_command instead of
+          // the extension tools — observed live: a "find EDM video"
+          // turn ran 287 browser-use calls and zero chromex_browser
+          // calls, then ended mid-plan. Instructions are the only
+          // channel that reaches the model before tool selection.
+          instructions:
+            "These tools ARE the user's browser — the agent owns it. " +
+            "For ANY browser or web-page interaction (open a site, click, " +
+            "type, read page content, inspect network, screenshot, verify " +
+            "results) you MUST call the browser.* tools below. Do NOT use " +
+            "exec_command, shell scripts, browser-use, playwright, curl, " +
+            "or any other browser automation — those bypass the user's " +
+            "real tabs, approvals, and tab scope. Observe before acting " +
+            "(snapshot/get), act with refs, then verify the real outcome " +
+            "before reporting done.",
           serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         });
       case "notifications/initialized":
