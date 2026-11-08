@@ -124,6 +124,30 @@ await runScenario(
         crossFrameReject.status === "failed" ||
         /stale|frame|snapshot/i.test(JSON.stringify(crossFrameReject?.error ?? crossFrameReject));
 
+      // evaluate in MAIN world: top frame + the OOPIF cross-origin child
+      // (chrome.scripting frameIds reach out-of-process frames).
+      let evalTop = null, evalFrame = null;
+      try {
+        evalTop = await runner.browserToolCall(
+          taskId, "browser.page.evaluate", { expression: "location.pathname" }, token, 60_000,
+        );
+        if (crossFrame?.frameId) {
+          evalFrame = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { expression: "location.origin", frameId: crossFrame.frameId }, token, 60_000,
+          );
+        }
+      } catch (e) {
+        evalTop = evalTop ?? { rpcError: e?.message };
+      }
+      const evalTopVal = evalTop?.result?.value ?? evalTop?.value;
+      const evalFrameVal = evalFrame?.result?.value ?? evalFrame?.value;
+      evidence.note(`evaluate top=${JSON.stringify(evalTopVal)} frame=${JSON.stringify(evalFrameVal)}`);
+      results.evaluate = {
+        ok: evalTopVal === "/iframe-parent" && typeof evalFrameVal === "string" && evalFrameVal.includes("localhost"),
+        top: evalTopVal, frame: evalFrameVal,
+      };
+
       // negative: nonexistent frameId must fail honestly, not hit the top frame
       let badFrame = null;
       try {
@@ -140,11 +164,12 @@ await runScenario(
       const pass =
         results["same-origin"]?.ok === true &&
         results["cross-origin"]?.ok === true &&
+        results.evaluate?.ok === true &&
         sameHit && crossHit && rejected && badFrameFailed;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "frameId end-to-end on real extension: snapshot+click inside same- AND cross-origin iframes; cross-frame snapshotId refused; bad frameId fails honestly"
+          ? "frameId end-to-end on real extension: snapshot+click/evaluate inside same- AND cross-origin iframes (incl. OOPIF MAIN world); cross-frame snapshotId refused; bad frameId fails honestly"
           : `same=${JSON.stringify(results["same-origin"])} cross=${JSON.stringify(results["cross-origin"])} sameHit=${sameHit} crossHit=${crossHit} rejected=${rejected} badFrameFailed=${badFrameFailed}`,
         details: { results, sameHit, crossHit, rejected, badFrameFailed, hits },
       };

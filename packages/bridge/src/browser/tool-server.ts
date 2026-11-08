@@ -32,9 +32,14 @@ import { ToolTokenError, ToolTokenManager } from "./tool-token.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
 
-/** Tools that are hard-blocked from day one (§9.1/§9.2). */
+/** Tools that are hard-blocked (§9.1/§9.2). browser.page.evaluate was
+ *  unblocked after the CDP/scripting tier landed: it runs in the page
+ *  MAIN world but every call is approval-gated (risk classifier →
+ *  external_mutation, allow_task never offered) with the expression
+ *  previewed in argsPreview, and its result is page-text egress class.
+ *  Residual caveat: an approved expression can still trigger in-page
+ *  side effects (fetch etc.) that no tool-level gate observes. */
 export const HARD_BLOCKED_TOOLS: ReadonlySet<string> = new Set([
-  "browser.page.evaluate",
   "browser.page.cookies",
   "browser.page.localStorage",
   "browser.page.download",
@@ -210,6 +215,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   // console entries are page-generated content — same egress class as
   // extracted text (may carry tokens/PII the page logged).
   "browser.page.console": "page-text",
+  // evaluate returns arbitrary page-derived values — same egress class.
+  "browser.page.evaluate": "page-text",
   // find returns page text + element selectors — same egress class.
   "browser.page.find": "page-text",
   // CDP response bodies are page content (docs/adr/debugger-tier.md).

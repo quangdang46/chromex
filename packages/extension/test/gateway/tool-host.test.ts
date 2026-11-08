@@ -875,6 +875,36 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.console"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.evaluate runs the expression in the MAIN world (chromex-eval)", async () => {
+    const calls: Array<{ funcName: string; args: unknown[] | undefined; frameIds: unknown }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[], frameIds?: number[]) => {
+        calls.push({ funcName: func.name, args, frameIds });
+        return { ok: true, value: { title: "Hi" } };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.evaluate", { expression: "document.title", frameId: 3 }))) as {
+      ok: boolean; value: unknown; frameId: number;
+    };
+    expect(res.ok).toBe(true);
+    expect(res.value).toEqual({ title: "Hi" });
+    expect(res.frameId).toBe(3);
+    expect(calls[0]).toMatchObject({ funcName: "chromexEvaluate", args: ["document.title"], frameIds: [3] });
+  });
+
+  test("page.evaluate validates expression and surfaces page errors", async () => {
+    const d = deps({
+      runInMainWorld: vi.fn(async () => ({ ok: false, error: "ReferenceError: x is not defined" })),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.evaluate", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.evaluate", { expression: "   " }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.evaluate", { expression: "x" }))).rejects.toMatchObject({ code: "browser.action_failed" });
+    const noDep = createToolHostHandler(deps());
+    await expect(noDep(req("browser.page.evaluate", { expression: "1" }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

@@ -266,6 +266,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.extract": { selector: "main", maxChars: 4000 },
   "browser.page.screenshot": { tabId: 1 },
   "browser.page.console": { level: "error", limit: 50 },
+  "browser.page.evaluate": { expression: "document.title", timeoutMs: 5000 },
   "browser.page.click": { ref: "e12", snapshotId: "snap-1" },
   "browser.page.focus": { selector: "#q" },
   "browser.page.type": { ref: "e3", text: "hello" },

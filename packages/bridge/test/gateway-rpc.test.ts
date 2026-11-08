@@ -290,7 +290,7 @@ describe("gateway RPC surface (P1-07)", () => {
     expect(bad.error?.code).toBe("proto.auth_failed");
 
     // hard-blocked tool → blocked even with scope
-    const blocked = (await call("t2", "browser.page.evaluate", mint(["browser.page.evaluate"]))) as {
+    const blocked = (await call("t2", "browser.page.cookies", mint(["browser.page.cookies"]))) as {
       status: string; error?: { code: string };
     };
     expect(blocked.error?.code).toBe("browser.tool_blocked");

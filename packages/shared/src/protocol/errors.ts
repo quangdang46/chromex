@@ -59,6 +59,7 @@ export type ProtocolErrorCode =
   | "browser.element_not_visible"
   | "browser.navigated"
   | "browser.timeout"
+  | "browser.action_failed"
   | "browser.denied"
   | "browser.ambiguous_target"
   | "browser.host_lost_after_dispatch"
@@ -122,6 +123,9 @@ const CLASSIFICATION: Partial<Record<ProtocolErrorCode, ProtocolErrorClassificat
   "browser.element_not_visible": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "browser.navigated": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "browser.timeout": { retryable: true, requiresUserAction: false, sideEffectState: "unknown" },
+  // Page-side action failed mid-execution — partial side effects
+  // possible, so not retryable by default.
+  "browser.action_failed": { retryable: false, requiresUserAction: false, sideEffectState: "unknown" },
   // BEFORE dispatch: nothing was sent — safe to retry.
   "browser.no_host": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   // AFTER dispatch, no result: do NOT retry mutating actions.

@@ -94,7 +94,7 @@ describe("BrowserToolServer", () => {
     expect(out.error?.code).toBe("browser.no_host");
   });
 
-  it("hard-blocks evaluate/cookies/localStorage/download", async () => {
+  it("hard-blocks cookies/localStorage/download", async () => {
     // token must scope-allow the tools for the hard block to be reached
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = issue(tokens, { allowedTools: [...HARD_BLOCKED_TOOLS] });
@@ -160,7 +160,7 @@ describe("BrowserToolServer", () => {
     expect(risk("browser.page.snapshot").risk).toBe("read");
     // unresolved click context → fail closed approval
     expect(risk("browser.page.click").needsApproval).toBe(true);
-    // evaluate is hard-blocked upstream; classifier fails closed too
+    // evaluate is approval-gated (was hard-blocked pre-CDP tier)
     expect(risk("browser.page.evaluate").needsApproval).toBe(true);
   });
 

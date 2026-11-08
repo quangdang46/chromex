@@ -18,6 +18,7 @@ export type BrowserToolName =
   | "browser.page.extract"
   | "browser.page.screenshot"
   | "browser.page.console"
+  | "browser.page.evaluate"
   | "browser.page.click"
   | "browser.page.focus"
   | "browser.page.type"
@@ -57,6 +58,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.extract",
   "browser.page.screenshot",
   "browser.page.console",
+  "browser.page.evaluate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",

@@ -24,6 +24,7 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import { chromexConsoleCollect } from "../../content/console-capture.js";
+import { chromexEvaluate } from "../../content/evaluate.js";
 import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
@@ -180,6 +181,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.snapshot",
   "browser.page.extract",
   "browser.page.console",
+  "browser.page.evaluate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -210,6 +212,7 @@ const SUPPORTED = new Set([
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.console",
+  "browser.page.evaluate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -659,6 +662,47 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           entries: Array.isArray(res?.entries) ? res.entries : [],
           captured: res?.installed === true,
           resolvedTabId: tabId,
+        };
+      }
+      case "browser.page.evaluate": {
+        // Arbitrary JS in the page MAIN world (chrome.scripting). Always
+        // approval-gated by the risk classifier — the expression is
+        // opaque to it. Result is JSON-bounded; page-thrown errors come
+        // back as {ok:false,error} rather than a tool failure.
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "page evaluation requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const expression = str(args.expression);
+        if (expression === undefined || expression.trim().length === 0) {
+          throw toolError("proto.invalid", "browser.page.evaluate requires args.expression");
+        }
+        if (expression.length > 65536) {
+          throw toolError("proto.invalid", "args.expression exceeds 64KiB");
+        }
+        const frameId = frameIdArg(args);
+        const timeoutMs =
+          typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
+            ? Math.min(Math.max(args.timeoutMs, 100), 15_000)
+            : 10_000;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const res = (await Promise.race([
+          deps.runInMainWorld!(tabId, chromexEvaluate as (...fnArgs: unknown[]) => unknown, [expression], [frameId]),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(toolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs);
+          }),
+        ]).finally(() => clearTimeout(timer))) as
+          | { ok?: boolean; value?: unknown; error?: string; truncated?: boolean }
+          | undefined;
+        if (!res || res.ok !== true) {
+          throw toolError("browser.action_failed", `page evaluation failed: ${res?.error ?? "no result"}`);
+        }
+        return {
+          ok: true,
+          value: res.value ?? null,
+          truncated: res.truncated === true,
+          resolvedTabId: tabId,
+          frameId,
         };
       }
       case "browser.page.get": {

@@ -289,6 +289,19 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     case "browser.page.focus":
       return verdict("low", { reason: "focus is low-risk" });
 
+    case "browser.page.evaluate": {
+      // Arbitrary JS in the page's main world can read page state,
+      // mutate the DOM, and trigger network egress — the classifier
+      // cannot inspect the expression, so approval is always required
+      // and allow_task is never offered (§4.8).
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "arbitrary page script execution requires approval",
+      });
+    }
+
     case "browser.tab.duplicate": {
       // Cloning a tab reloads its URL — same exposure as tab.create to
       // the resolved target. Unresolved contexts fail closed.

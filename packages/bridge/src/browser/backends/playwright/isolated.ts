@@ -46,6 +46,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.extract",
   "browser.page.screenshot",
   "browser.page.console",
+  "browser.page.evaluate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -263,6 +264,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#screenshot(taskId, args);
       case "browser.page.console":
         return this.#console(taskId, args);
+      case "browser.page.evaluate":
+        return this.#withExpect(taskId, args, await this.#evaluate(taskId, args));
       case "browser.page.click":
       case "browser.page.focus":
       case "browser.page.type":
@@ -485,6 +488,40 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const wanted = level === "warn" ? "warning" : level;
     const filtered = wanted ? buf.filter((e) => e.level === wanted) : buf;
     return { entries: filtered.slice(-limit), captured: true };
+  }
+
+  async #evaluate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const expression = typeof args.expression === "string" ? args.expression.trim() : "";
+    if (expression.length === 0 || expression.length > 65536) {
+      throw protocolError("proto.invalid", "browser.page.evaluate requires args.expression (≤64KiB)");
+    }
+    const timeoutMs =
+      typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
+        ? Math.min(Math.max(args.timeoutMs, 100), 15_000)
+        : 10_000;
+    // Same contract as the extension path: expression semantics, awaited
+    // promises. Playwright string-evaluate already awaits the result.
+    const value = await Promise.race([
+      page.evaluate(expression),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(protocolError("browser.timeout", `evaluate exceeded ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]).catch((e: unknown) => {
+      if (e && typeof e === "object" && "code" in e) throw e;
+      throw protocolError("browser.action_failed", `page evaluation failed: ${e instanceof Error ? e.message : String(e)}`);
+    });
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(value);
+    } catch {
+      serialized = undefined;
+    }
+    const maxChars = 256 * 1024;
+    if (serialized === undefined || serialized.length > maxChars) {
+      return { ok: true, value: serialized === undefined ? null : serialized.slice(0, maxChars), truncated: true };
+    }
+    return { ok: true, value: JSON.parse(serialized) as unknown, truncated: false };
   }
 
   /** Lazily attach request/response/requestfailed capture to a page.
