@@ -17,6 +17,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 import type { BrowserBackendId } from "@codex-sidepanel/shared";
 
@@ -876,7 +877,16 @@ export class BrowserMcpServer {
             "or any other browser automation — those bypass the user's " +
             "real tabs, approvals, and tab scope. Observe before acting " +
             "(snapshot/get), act with refs, then verify the real outcome " +
-            "before reporting done.",
+            "before reporting done. " +
+            // Fallback for providers whose MCP client cannot invoke
+            // tools/call as functions (observed: weak codex models get
+            // "unsupported call"): chromex-call.js is an MCP client CLI
+            // next to this server — any shell-capable model can drive
+            // the same tools through it.
+            `If your toolset cannot call these tools directly, run ` +
+            `\`node ${fileURLToPath(new URL("./mcp-call.js", import.meta.url))} <tool_name> '<json_args>'\` ` +
+            `via your shell/exec tool instead — tool names are the ` +
+            `browser_* names listed below.`,
           serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         });
       case "notifications/initialized":
