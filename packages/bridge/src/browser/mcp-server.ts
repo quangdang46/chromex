@@ -1158,12 +1158,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.windows.update": {
     description:
-      "Update an existing window's focus and/or state (normal|minimized|maximized|fullscreen). windowId comes from browser.windows.list. Not tab-scoped.",
+      "Update an existing window's focus, state (normal|minimized|maximized|fullscreen), and/or bounds (left/top/width/height in screen px). Bounds require state normal — restore from minimized/maximized/fullscreen first or Chrome rejects the update. windowId comes from browser.windows.list. Not tab-scoped.",
     inputSchema: objectSchema(
       {
         windowId: { type: "integer", description: "Window id from browser.windows.list (required)." },
         focused: { type: "boolean", description: "Focus or unfocus the window." },
         state: { type: "string", enum: ["normal", "minimized", "maximized", "fullscreen"], description: "New window state." },
+        left: { type: "number", description: "Window left edge in screen px (may be negative on multi-monitor)." },
+        top: { type: "number", description: "Window top edge in screen px." },
+        width: { type: "number", description: "Window width in px (>= 1)." },
+        height: { type: "number", description: "Window height in px (>= 1)." },
       },
       ["windowId"],
     ),

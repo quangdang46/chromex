@@ -374,6 +374,20 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.windows.update", { windowId: 3, state: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("windows.update forwards bounds and validates them", async () => {
+    const d = deps();
+    const calls: Array<Record<string, unknown>> = [];
+    d.updateWindow = async (_id, opts) => { calls.push(opts as Record<string, unknown>); };
+    const h = createToolHostHandler(d);
+    await h(req("browser.windows.update", { windowId: 3, left: -100, top: 50, width: 800, height: 600 }));
+    expect(calls).toEqual([{ left: -100, top: 50, width: 800, height: 600 }]);
+    await h(req("browser.windows.update", { windowId: 3, width: 1024 }));
+    expect(calls[1]).toEqual({ width: 1024 });
+    await expect(h(req("browser.windows.update", { windowId: 3, width: 0 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.update", { windowId: 3, width: "wide" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.update", { windowId: 3, left: Number.NaN }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("windows.remove requires integer windowId and forwards to chrome.windows.remove", async () => {
     const d = deps();
     const calls: number[] = [];

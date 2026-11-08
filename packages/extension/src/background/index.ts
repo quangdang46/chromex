@@ -537,6 +537,10 @@ const toolHostHandler = createToolHostHandler({
       chrome.windows.update(windowId, {
         ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
         ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.UpdateInfo["state"]> } : {}),
+        ...(opts.left !== undefined ? { left: opts.left } : {}),
+        ...(opts.top !== undefined ? { top: opts.top } : {}),
+        ...(opts.width !== undefined ? { width: opts.width } : {}),
+        ...(opts.height !== undefined ? { height: opts.height } : {}),
       }),
     // Window destruction crashes headless Chromium outright — both
     // chrome.windows.remove AND last-tab-close (BUS_ADRALN, reproduced

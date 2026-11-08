@@ -170,7 +170,14 @@ export interface ToolHostDeps {
     type?: string | undefined;
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
-  updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
+  updateWindow?(windowId: number, opts: {
+    focused?: boolean;
+    state?: string;
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+  }): Promise<unknown>;
   /** chrome.windows.remove — closes the window and every tab in it.
    *  Absent on headless Chromium (window teardown crashes the browser
    *  process there — the dep is not registered, so the tool refuses
@@ -3976,7 +3983,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         };
       }
       case "browser.windows.update": {
-        // Not tab-scoped: focus/state on an existing window.
+        // Not tab-scoped: focus/state/bounds on an existing window.
         if (!deps.updateWindow) {
           throw toolError("proto.unsupported", "window update is not available on this host");
         }
@@ -3989,21 +3996,36 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (state !== undefined && !["normal", "minimized", "maximized", "fullscreen"].includes(state)) {
           throw toolError("proto.invalid", "browser.windows.update args.state must be normal|minimized|maximized|fullscreen");
         }
-        if (focused === undefined && state === undefined) {
-          throw toolError("proto.invalid", "browser.windows.update requires args.focused or args.state");
+        const boundArg = (key: string, min: number): number | undefined => {
+          const v = args[key];
+          if (v === undefined) return undefined;
+          if (typeof v !== "number" || !Number.isFinite(v) || v < min) {
+            throw toolError("proto.invalid", `browser.windows.update args.${key} must be a finite number >= ${min}`);
+          }
+          return v;
+        };
+        const left = boundArg("left", -32768);
+        const top = boundArg("top", -32768);
+        const width = boundArg("width", 1);
+        const height = boundArg("height", 1);
+        if (focused === undefined && state === undefined && left === undefined && top === undefined && width === undefined && height === undefined) {
+          throw toolError("proto.invalid", "browser.windows.update requires at least one of focused|state|left|top|width|height");
         }
         await deps.updateWindow(windowId, {
           ...(focused !== undefined ? { focused } : {}),
           ...(state ? { state } : {}),
+          ...(left !== undefined ? { left } : {}),
+          ...(top !== undefined ? { top } : {}),
+          ...(width !== undefined ? { width } : {}),
+          ...(height !== undefined ? { height } : {}),
         });
         return { updated: windowId };
       }
       case "browser.windows.remove": {
         // Not tab-scoped: closes the window AND every tab inside it —
         // blast radius is tab.close × N, so risk classification keeps
-        // it approval-gated and never task-eligible. The dep closes
-        // the window's tabs (chrome.windows.remove itself crashes
-        // headless Chromium) and reports what actually happened.
+        // it approval-gated and never task-eligible. Absent on headless
+        // (window teardown crashes the browser there).
         if (!deps.removeWindow) {
           throw toolError("proto.unsupported", "window remove is not available on this host");
         }

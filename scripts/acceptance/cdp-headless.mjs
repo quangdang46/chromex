@@ -1697,9 +1697,31 @@ await runScenario(
       const wpList = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 30_000);
       const wpWins = (wpList?.result ?? wpList ?? {}).windows ?? [];
       wp.listedOk = wpWins.some((w) => w.id === wp.windowId && w.type === "popup");
+      // bounds update round-trip: resize the popup, read it back via
+      // windows.get — proves left/top/width/height reach chrome.windows.update
+      if (wp.createOk) {
+        const wpUpd = await runner.browserToolCall(
+          taskId, "browser.windows.update",
+          { windowId: wp.windowId, width: 500, height: 400 }, token, 60_000,
+        );
+        wp.updateOk = (wpUpd?.result ?? wpUpd ?? {}).updated === wp.windowId;
+        await sleep(300);
+        const wpGet = await runner.browserToolCall(
+          taskId, "browser.windows.get", { windowId: wp.windowId }, token, 30_000,
+        );
+        const wpG = (wpGet?.result ?? wpGet ?? {}).window ?? {};
+        wp.bounds = { width: wpG.width ?? null, height: wpG.height ?? null };
+        wp.boundsOk = wpG.width === 500 && wpG.height === 400;
+        // bogus bounds refused before Chrome
+        const wpBadB = await runner.browserToolCall(
+          taskId, "browser.windows.update", { windowId: wp.windowId, width: 0 }, token, 60_000,
+        ).catch(() => null);
+        wp.badBoundsOk = wpBadB?.status === "failed" && (wpBadB?.error?.code ?? "") === "proto.invalid";
+      }
       evidence.note(`windows.popup → ${JSON.stringify(wp).slice(0, 300)}`);
       results.windowsPopup = {
-        ok: wp.badTypeOk === true && wp.createOk === true && wp.listedOk === true,
+        ok: wp.badTypeOk === true && wp.createOk === true && wp.listedOk === true &&
+          wp.updateOk === true && wp.boundsOk === true && wp.badBoundsOk === true,
         ...wp,
       };
 
