@@ -1,0 +1,33 @@
+{
+  "scenario": "sw-restart",
+  "runId": "2026-11-08T07-50-49-001Z-7ca186",
+  "status": "PASS",
+  "summary": "extension reload → new SW + NM host re-registered → calls + CDP tier recovered → post-reload click delivered exactly once",
+  "durationMs": 10923,
+  "details": {
+    "newSw": "chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
+    "authed": 2,
+    "getStatus": "completed",
+    "click2Status": "completed",
+    "count1": "1",
+    "count2": "2",
+    "ariaOk": true
+  },
+  "notes": [
+    "[2026-11-08T07:50:53.891Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T07:50:54.313Z] baseline snapshot=completed ref=dom-1",
+    "[2026-11-08T07:50:54.991Z] baseline click → completed",
+    "[2026-11-08T07:50:55.299Z] count after baseline=1",
+    "[2026-11-08T07:50:55.559Z] route arm → completed \"\"",
+    "[2026-11-08T07:50:55.576Z] interception check title=pong:routed",
+    "[2026-11-08T07:50:55.849Z] extension reload triggered (sws before=1)",
+    "[2026-11-08T07:50:56.350Z] new service worker=chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
+    "[2026-11-08T07:50:57.353Z] authed gateway connections post-reload=2",
+    "[2026-11-08T07:50:58.471Z] post-reload page.get → completed \"\"",
+    "[2026-11-08T07:50:58.730Z] post-reload snapshot=completed ref=dom-1",
+    "[2026-11-08T07:50:59.353Z] post-reload click → {\"toolCallId\":\"rpc-mw7j9dwr-jjck8f\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+    "[2026-11-08T07:50:59.656Z] count after post-reload click=2",
+    "[2026-11-08T07:50:59.920Z] post-reload aria snapshot=completed len=263",
+    "[2026-11-08T07:50:59.924Z] post-reload fetch title=pong:ok"
+  ]
+}

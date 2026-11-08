@@ -1,0 +1,613 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 1,
+      "ts": 1794124028638,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 2,
+      "ts": 1794124028653,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 3,
+      "ts": 1794124028771,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4ggy-3s7zzy",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://127.0.0.1:65369/form"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 4,
+      "ts": 1794124028774,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "low",
+        "needsApproval": false,
+        "reason": "http(s) navigation with resolved context",
+        "origin": "http://127.0.0.1:65369",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 5,
+      "ts": 1794124028808,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4ggy-3s7zzy",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "ok": true,
+            "summary": "Requested browser action completed.",
+            "step": {
+              "step": {
+                "action": "navigate",
+                "url": "http://127.0.0.1:65369/form",
+                "reason": "gateway tool browser.page.navigate"
+              },
+              "ok": true,
+              "message": "Navigated the current page."
+            },
+            "resolvedTabId": 2033295864
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 6,
+      "ts": 1794124028809,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gi1-qiyu5o",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 7,
+      "ts": 1794124028811,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.snapshot",
+        "risk": "external_mutation",
+        "needsApproval": true,
+        "reason": "data egress to non-local destination requires approval",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 8,
+      "ts": 1794124028813,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw7j4gi4-ubu9mz",
+          "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.snapshot requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "3b17e5a045c7f082d5c61aa0964e864994b979ea3f2b21121c3b5f51e17bafdb",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "allow_egress_task",
+              "label": "Allow page content for this task",
+              "kind": "allow_egress_task"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.snapshot",
+            "argsPreview": {},
+            "origin": "",
+            "egressTaskScope": "agent-egress|page-text|cloud-provider"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 9,
+      "ts": 1794124028816,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw7j4gi4-ubu9mz",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 10,
+      "ts": 1794124029086,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gi1-qiyu5o",
+        "tool": "browser.page.snapshot",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "snapshotId": "snap:3bb9dc6b-153e-4943-91d2-d7831c8c5c35",
+            "structuralFingerprint": "sfp1:b7516330ae2edf49f24572cb11d83607457dc1094991e6d83f481a87115595e5",
+            "stateFingerprint": "tfp1:178184e33d8e51ac8e7297eea6616303d05fb212de06cf209d8b25ec49c55950",
+            "saltEpoch": 1,
+            "metadata": {
+              "url": "http://127.0.0.1:65369/form",
+              "title": "Fixture Form",
+              "domain": "127.0.0.1"
+            },
+            "elements": [
+              {
+                "ref": "dom-1",
+                "role": "textbox",
+                "tagName": "input",
+                "label": "",
+                "text": "",
+                "selector": "#name",
+                "inputType": "text",
+                "tabIndex": 0,
+                "isTextEntryCandidate": true,
+                "opensEditableSurface": false,
+                "disabled": false,
+                "viewportRect": {
+                  "left": 50,
+                  "top": 80,
+                  "width": 153,
+                  "height": 21
+                }
+              },
+              {
+                "ref": "dom-2",
+                "role": "textbox",
+                "tagName": "input",
+                "label": "",
+                "text": "",
+                "selector": "#email",
+                "inputType": "email",
+                "tabIndex": 0,
+                "isTextEntryCandidate": true,
+                "opensEditableSurface": false,
+                "disabled": false,
+                "viewportRect": {
+                  "left": 249,
+                  "top": 80,
+                  "width": 153,
+                  "height": 21
+                }
+              },
+              {
+                "ref": "dom-3",
+                "role": "button",
+                "tagName": "button",
+                "label": "Next",
+                "text": "Next",
+                "selector": "#next",
+                "tabIndex": 0,
+                "isTextEntryCandidate": false,
+                "opensEditableSurface": true,
+                "disabled": false,
+                "viewportRect": {
+                  "left": 406,
+                  "top": 80,
+                  "width": 43,
+                  "height": 21
+                }
+              }
+            ],
+            "capabilities": {
+              "supportsDomAutomation": true,
+              "supportsVisualControlIndicator": true,
+              "preferredAutomationMode": "dom"
+            },
+            "resolvedTabId": 2033295864
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 11,
+      "ts": 1794124029088,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gps-dqiask",
+        "tool": "browser.page.wait",
+        "source": "browser",
+        "input": {
+          "text": "Next",
+          "timeoutMs": 8000
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 12,
+      "ts": 1794124029089,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.wait",
+        "risk": "read",
+        "needsApproval": false,
+        "reason": "read-only tool",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 13,
+      "ts": 1794124029091,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gps-dqiask",
+        "tool": "browser.page.wait",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "ok": true,
+            "matched": "conditions",
+            "elapsedMs": 0,
+            "resolvedTabId": 2033295864
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 14,
+      "ts": 1794124029093,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gpx-5we12x",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "input": {
+          "label": "Next"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 15,
+      "ts": 1794124029095,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.click",
+        "risk": "low",
+        "needsApproval": false,
+        "reason": "click with resolved benign context",
+        "origin": "http://127.0.0.1:65369",
+        "targetLabel": "Next",
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 16,
+      "ts": 1794124029102,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gpx-5we12x",
+        "tool": "browser.page.click",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "ok": true,
+            "summary": "Requested browser action completed.",
+            "step": {
+              "step": {
+                "reason": "gateway tool browser.page.click",
+                "label": "Next",
+                "action": "click",
+                "expectedTarget": {
+                  "label": "Next",
+                  "tagName": "button",
+                  "controlType": "submit",
+                  "pageOrigin": "http://127.0.0.1:65369",
+                  "pageUrl": "http://127.0.0.1:65369/form"
+                }
+              },
+              "ok": true,
+              "message": "Clicked Next.",
+              "verified": "unknown"
+            },
+            "verified": "unknown",
+            "resolvedTabId": 2033295864
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 17,
+      "ts": 1794124029103,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gq7-g3ien8",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 18,
+      "ts": 1794124029104,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.get",
+        "risk": "external_mutation",
+        "needsApproval": true,
+        "reason": "data egress to non-local destination requires approval",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 19,
+      "ts": 1794124029105,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw7j4gq9-1ogn85",
+          "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.get requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "acbd166a1dee6284b25674aec7d57bef2c6181f5a5857f4e296938079cb7e2e6",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "allow_egress_task",
+              "label": "Allow page content for this task",
+              "kind": "allow_egress_task"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.get",
+            "argsPreview": {},
+            "origin": "",
+            "egressTaskScope": "agent-egress|page-text|cloud-provider"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 20,
+      "ts": 1794124029107,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw7j4gq9-1ogn85",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X206PH4EJKKDRXDQC3B17X",
+      "seq": 21,
+      "ts": 1794124029362,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw7j4gq7-g3ien8",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "id": 2033295864,
+            "tabId": 2033295864,
+            "url": "http://127.0.0.1:65369/form",
+            "title": "Fixture Form",
+            "active": true,
+            "resolvedTabId": 2033295864,
+            "windowId": 2033295862,
+            "status": "complete",
+            "pinned": false,
+            "groupId": -1,
+            "scroll": {
+              "scrollX": 0,
+              "scrollY": 0,
+              "viewportWidth": 1280,
+              "viewportHeight": 720,
+              "documentHeight": 720,
+              "documentWidth": 1280
+            },
+            "frames": [
+              {
+                "frameId": 0,
+                "url": "http://127.0.0.1:65369/form",
+                "parentFrameId": -1
+              }
+            ]
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 21,
+  "hasMore": false
+}

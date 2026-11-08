@@ -1,0 +1,14 @@
+{"seq":1,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"task.created","payload":{"type":"task.created","taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794124050625}
+{"seq":2,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794124050626}
+{"seq":3,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6X20W67C1NH5SXNKYFT63FA","message":{"gatewayTurnId":"01M6X20W67C1NH5SXNKYFT63FA","clientMessageId":"prompt-1794124048421-mqmh0xnoo2g","content":[{"type":"text","text":"first long turn — keep working"}]},"clientMessageId":"prompt-1794124048421-mqmh0xnoo2g"},"at":1794124050632}
+{"seq":4,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6X20W67C1NH5SXNKYFT63FA"},"at":1794124050636}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124050728}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124051230}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124051731}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124052234}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124052734}
+{"seq":null,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"assistant.delta","payload":{},"at":1794124053210}
+{"seq":5,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6X20W67C1NH5SXNKYFT63FA","reason":"interrupted"},"at":1794124053210}
+{"seq":6,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794124053212}
+{"seq":7,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794124053213}
+{"seq":8,"taskId":"01M6X20W5W1QZW7AGZ02QCBJ4Q","type":"task.completed","payload":{"type":"task.completed"},"at":1794124053213}
