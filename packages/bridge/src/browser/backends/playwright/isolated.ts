@@ -1060,7 +1060,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.page.submit":
         await locator.evaluate((el) => {
           const form = (el as HTMLElement).closest("form");
-          if (form) (form as HTMLFormElement).requestSubmit();
+          if (!form) return;
+          const submitter =
+            (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) &&
+            (el.type === "submit" || el.type === "image") &&
+            el.form === form
+              ? el
+              : undefined;
+          (form as HTMLFormElement).requestSubmit(submitter);
         });
         return { submitted: true };
       case "browser.page.hover":

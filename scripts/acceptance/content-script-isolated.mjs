@@ -268,6 +268,29 @@ try {
     "verified click reached the page handler");
   await risk.page.close();
 
+  // ── Loop 9: submit must preserve event.submitter — multi-button
+  //  forms branch on which control initiated the submit. ─────────────
+  const sub = await openWithContent("/submitter");
+  const subSave = await sub.send(
+    perform([{ action: "submit", selector: "#save", reason: "e2e" }]),
+  );
+  assert(subSave?.ok === true, `submit via #save ok (${subSave?.summary})`);
+  const subOut1 = await sub.send({ type: "page.extract", selector: "#out" });
+  assert(
+    String(subOut1?.text ?? "").includes("submitter:save"),
+    `submit targeted at #save reports submitter:save (got "${subOut1?.text}")`,
+  );
+  const subPurge = await sub.send(
+    perform([{ action: "submit", selector: "#purge", reason: "e2e" }]),
+  );
+  assert(subPurge?.ok === true, `submit via #purge ok (${subPurge?.summary})`);
+  const subOut2 = await sub.send({ type: "page.extract", selector: "#out" });
+  assert(
+    String(subOut2?.text ?? "").includes("submitter:purge"),
+    `submit targeted at #purge reports submitter:purge (got "${subOut2?.text}")`,
+  );
+  await sub.page.close();
+
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(
     join(ARTIFACT_DIR, "result.json"),

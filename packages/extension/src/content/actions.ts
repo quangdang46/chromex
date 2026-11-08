@@ -731,8 +731,17 @@ export function submitDomActionElement(element: HTMLElement): void {
   if (!form) {
     throw new Error("No form was found near the target element.");
   }
+  // Preserve which control initiated the submit: forms with multiple
+  // submit buttons (Save vs Delete, per-row actions) branch on
+  // event.submitter — dropping it makes the handler guess.
+  const submitter =
+    (element instanceof HTMLButtonElement || element instanceof HTMLInputElement) &&
+    (element.type === "submit" || element.type === "image") &&
+    element.form === form
+      ? element
+      : undefined;
   if (typeof form.requestSubmit === "function") {
-    form.requestSubmit();
+    form.requestSubmit(submitter);
     return;
   }
   form.submit();

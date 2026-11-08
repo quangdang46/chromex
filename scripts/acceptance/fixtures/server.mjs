@@ -92,6 +92,18 @@ const PAGES = {
 </script>
 </body></html>`,
 
+  // submitter fidelity: two submit buttons in one form branch on
+  // event.submitter — submit targeted at #save must report save,
+  // targeted at #purge must report purge (not null/first button).
+  "/submitter": `<!doctype html><html><body>
+<form id="f" onsubmit="event.preventDefault(); document.getElementById('out').textContent='submitter:'+(event.submitter?event.submitter.id:'none')">
+  <input name="q" value="x">
+  <button id="save" type="submit">Save</button>
+  <button id="purge" type="submit">Purge</button>
+</form>
+<p id="out">idle</p>
+</body></html>`,
+
   // S2/S6: deliberate bug — the "Fix" button throws and never updates status;
   // a broken inline handler references a missing function.
   "/buggy": `<!doctype html><html><head><title>Buggy Page</title></head><body>
