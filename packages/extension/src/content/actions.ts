@@ -299,14 +299,14 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       };
     }
     const resolvedElement = target.status === "resolved" ? target.element : null;
-    // press may legitimately target the focused element when no explicit
-    // target resolves (e.g. "press Enter" in a form field).
+    // press/selectAll may legitimately target the focused element when no
+    // explicit target resolves (e.g. "press Enter" in a form field).
     const actionTarget =
       resolvedElement ??
-      (step.action === "press" && document.activeElement instanceof HTMLElement
+      ((step.action === "press" || step.action === "selectAll") && document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null);
-    if (!resolvedElement && step.action !== "scroll" && step.action !== "press") {
+    if (!resolvedElement && step.action !== "scroll" && step.action !== "press" && step.action !== "selectAll") {
       return { step, ok: false, message: "Target element was not found.", code: "browser.element_not_found" };
     }
 
@@ -426,6 +426,22 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         dispatchHoverSequence(element);
         message = `Hovered ${getElementLabel(element) || "the target element"}.`;
         break;
+      case "selectAll": {
+        // Selection is not the trusted part — the following CDP key
+        // events are. input.select() is deterministic for form fields;
+        // contenteditable falls back to execCommand.
+        const selTarget = actionTarget ?? document.activeElement;
+        if (selTarget instanceof HTMLInputElement || selTarget instanceof HTMLTextAreaElement) {
+          selTarget.select();
+        } else if (selTarget instanceof HTMLElement) {
+          selTarget.focus();
+          document.execCommand("selectAll");
+        } else {
+          return { step, ok: false, message: "No selectable element focused.", code: "browser.element_not_found" };
+        }
+        message = "Selected all content.";
+        break;
+      }
       case "press": {
         const pressTarget = actionTarget ?? document.body ?? document.documentElement;
         dispatchPressSequence(pressTarget, step);

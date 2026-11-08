@@ -8,6 +8,7 @@
 //   - click args.trusted     → Input.dispatchMouseEvent (isTrusted=true)
 //   - press/type args.trusted → Input.dispatchKeyEvent (isTrusted=true)
 //   - hover args.trusted    → Input.dispatchMouseEvent (isTrusted + :hover)
+//   - fill args.trusted     → select-all + Backspace + per-char keys (replace)
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
@@ -202,6 +203,20 @@ await runScenario(
         out: outAfterType,
       };
 
+      // trusted fill: select-all + delete + retype replaces "Hi!" → "xy"
+      const fillRes = await runner.browserToolCall(
+        taskId, "browser.page.fill",
+        { selector: "#k", text: "xy", trusted: true }, token, 60_000,
+      );
+      const filledValue = await page.locator("#k").inputValue();
+      const outAfterFill = await page.locator("#out").textContent();
+      evidence.note(`trusted fill → status=${fillRes?.status} value=${JSON.stringify(filledValue)} out=${outAfterFill}`);
+      results.trustedFill = {
+        ok: fillRes?.status === "completed" && filledValue === "xy" && /trusted:true/.test(outAfterFill ?? ""),
+        status: fillRes?.status,
+        value: filledValue,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
@@ -259,7 +274,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+hover (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

@@ -1612,4 +1612,23 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.hover", { tabId: 514, selector: "#b", x: 1, y: 2, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.hover", { tabId: 514, trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
+
+  test("fill trusted sends select-all + delete + per-char keys", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(515, cdp));
+    const res = (await h(req("browser.page.fill", {
+      tabId: 515, selector: "#k", text: "ab", trusted: true,
+    }))) as { ok: boolean; step?: { trusted?: boolean } };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    // select-all goes through the content script (page.dom.perform);
+    // CDP sees only Backspace + the typed chars.
+    const downs = cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent" && s.params?.type === "keyDown");
+    expect(downs.map((s) => `${s.params?.key}:${s.params?.modifiers}`)).toEqual([
+      "Backspace:0", "a:0", "b:0",
+    ]);
+    await expect(h(req("browser.page.fill", {
+      tabId: 515, selector: "#k", text: "é", trusted: true,
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
 });

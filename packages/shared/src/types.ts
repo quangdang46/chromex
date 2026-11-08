@@ -537,7 +537,11 @@ export type BrowserDomActionKind =
   | "hover"
   | "press"
   | "upload"
-  | "drag";
+  | "drag"
+  /** internal helper step (trusted fill): select the focused/target
+   *  element's full contents so a following trusted Backspace clears
+   *  it. Not exposed as a browser.page.* tool. */
+  | "selectAll";
 
 /** upload step payload — in-memory file bytes only (browser.page.upload).
  *  Local paths/native pickers are NOT expressible here; they stay

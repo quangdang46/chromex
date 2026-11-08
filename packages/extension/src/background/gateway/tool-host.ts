@@ -1338,6 +1338,15 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           return await trustedType(deps, tabId, args, expectCond);
         }
+        if (tool === "browser.page.fill" && args.trusted === true) {
+          if (frameId !== 0) {
+            throw toolError(
+              "proto.unsupported",
+              "trusted fill is only supported in the top frame (CDP Input is viewport-level)",
+            );
+          }
+          return await trustedFill(deps, tabId, args, expectCond);
+        }
         if (tool === "browser.page.hover" && args.trusted === true) {
           if (frameId !== 0) {
             throw toolError(
@@ -1352,7 +1361,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (args.trusted === true) {
           throw toolError(
             "proto.unsupported",
-            `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type and hover)`,
+            `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type, fill and hover)`,
           );
         }
         const step = domStepFor(tool, args);
@@ -2053,7 +2062,11 @@ async function cdpDispatchKey(
   const params: Record<string, unknown> = { key: def.key, modifiers };
   if (def.code !== undefined) params.code = def.code;
   if (def.vk !== undefined) params.windowsVirtualKeyCode = def.vk;
-  if (def.text !== undefined) params.text = def.text;
+  // `text` is the string the key produces — only valid without
+  // Control/Alt/Meta. Ctrl+A with text:"a" confuses the renderer (the
+  // chord is a shortcut, not text input); Shift still produces text.
+  const nonShiftMods = modifiers & ((CDP_MODIFIERS["Control"] ?? 2) | (CDP_MODIFIERS["Alt"] ?? 1) | (CDP_MODIFIERS["Meta"] ?? 4));
+  if (def.text !== undefined && nonShiftMods === 0) params.text = def.text;
   await session.send("Input.dispatchKeyEvent", { type: "keyDown", ...params });
   await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
 }
@@ -2110,11 +2123,29 @@ async function trustedPress(
   };
 }
 
+/** Resolve trusted-type text to per-char key defs. EVERY char validates
+ *  before any dispatch — unsupported input fails with zero partial
+ *  typing. \n maps to Enter; the rest go through the US-layout table. */
+function cdpResolveTypeText(tool: string, text: string): Array<{ def: CdpKeyDef; modifiers: number }> {
+  const enter = CDP_NAMED_KEYS["enter"];
+  if (!enter) throw toolError("proto.invalid", "internal: Enter key definition missing");
+  const keys: Array<{ def: CdpKeyDef; modifiers: number }> = [];
+  for (const ch of text) {
+    const resolved = ch === "\n" ? { def: enter, modifiers: 0 } : cdpKeyDef(ch, 0);
+    if (!resolved) {
+      throw toolError(
+        "proto.invalid",
+        `${tool} trusted text contains '${ch}' which is outside the US-layout key table (ASCII printable + newline)`,
+      );
+    }
+    keys.push(resolved);
+  }
+  return keys;
+}
+
 /** browser.page.type args.trusted — per-character dispatchKeyEvent, the
- *  trusted equivalent of pressSequentially. Every character is resolved
- *  BEFORE any dispatch so an unsupported char fails without partial
- *  input. ASCII printable + \n only; anything else is proto.invalid —
- *  never a silent downgrade to untrusted events. */
+ *  trusted equivalent of pressSequentially. ASCII printable + \n only;
+ *  anything else is proto.invalid — never a silent downgrade. */
 async function trustedType(
   deps: ToolHostDeps,
   tabId: number,
@@ -2125,21 +2156,7 @@ async function trustedType(
   if (text === undefined || text.length === 0) {
     throw toolError("proto.invalid", "browser.page.type requires args.text");
   }
-  const enter = CDP_NAMED_KEYS["enter"];
-  if (!enter) throw toolError("proto.invalid", "internal: Enter key definition missing");
-  const keys: Array<{ def: CdpKeyDef; modifiers: number }> = [];
-  for (const ch of text) {
-    const resolved = ch === "\n"
-      ? { def: enter, modifiers: 0 }
-      : cdpKeyDef(ch, 0);
-    if (!resolved) {
-      throw toolError(
-        "proto.invalid",
-        `browser.page.type trusted text contains '${ch}' which is outside the US-layout key table (ASCII printable + newline)`,
-      );
-    }
-    keys.push(resolved);
-  }
+  const keys = cdpResolveTypeText("browser.page.type", text);
   cdpRequired(deps);
   await cdpFocusTarget(deps, tabId, args);
 
@@ -2163,6 +2180,72 @@ async function trustedType(
     ok: true,
     summary: `trusted type ${text.length} chars`,
     step: { action: "type", trusted: true, chars: text.length, ok: true },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+/** browser.page.fill args.trusted — real keystrokes that REPLACE the
+ *  value: focus → select-all → Backspace → per-char trusted type. Same
+ *  US-layout/ASCII constraint as trustedType; all chars validate before
+ *  the first key event so a bad string leaves the field untouched. */
+async function trustedFill(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+): Promise<Record<string, unknown>> {
+  const text = str(args.text) ?? str(args.value);
+  if (text === undefined) {
+    throw toolError("proto.invalid", "browser.page.fill requires args.text");
+  }
+  const keys = cdpResolveTypeText("browser.page.fill", text);
+  const del = CDP_NAMED_KEYS["backspace"];
+  if (!del) throw toolError("proto.invalid", "internal: fill key definitions missing");
+  cdpRequired(deps);
+  // fill always targets an element — focus is mandatory, not optional
+  const loc = await cdpLocateElement(deps, tabId, args);
+  await cdpFocusTarget(deps, tabId, args);
+  // Select-all via the content script (input.select()/execCommand) —
+  // the select-all CHORD does not survive CDP dispatch reliably on
+  // every platform, and selection is not the trusted part anyway: the
+  // Backspace + typed chars below are isTrusted=true either way.
+  const selRes = (await deps.sendToTab(tabId, {
+    type: "page.dom.perform",
+    steps: [{ action: "selectAll", selector: loc.selector, reason: "trusted fill select-all" }],
+  })) as BrowserDomActionResult;
+  const selStep = selRes?.results?.[0];
+  if (selRes?.ok === false || selStep?.ok === false) {
+    throw toolError(
+      typeof selStep?.code === "string" && selStep.code.startsWith("browser.")
+        ? selStep.code
+        : "browser.action_failed",
+      selStep?.message ?? selRes?.summary ?? "could not select the field contents",
+    );
+  }
+
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    await cdpDispatchKey(session, del, 0);
+    for (const k of keys) {
+      await cdpDispatchKey(session, k.def, k.modifiers);
+    }
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted fill ${text.length} chars`,
+    step: { action: "fill", trusted: true, chars: text.length, ok: true },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

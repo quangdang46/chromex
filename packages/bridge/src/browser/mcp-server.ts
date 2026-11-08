@@ -350,6 +350,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ...ELEMENT_TARGET_WITH_TAB,
       text: { type: "string", description: "Replacement text (value is accepted as an alias)." },
       value: { type: "string", description: "Alias for text." },
+      trusted: { type: "boolean", description: "Replace via real keystrokes (focus → select-all → Backspace → per-char CDP key events, isTrusted=true; chrome-extension debugger tier, top frame only; ASCII printable + newline only). Default false = synthetic value set." },
     }),
     expectable: true,
   },
