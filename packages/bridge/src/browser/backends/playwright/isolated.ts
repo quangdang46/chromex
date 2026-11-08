@@ -77,6 +77,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
+  "browser.browsingData.clear",
   "browser.page.network",
   "browser.page.responseBody",
   "browser.page.webSocket",
@@ -436,6 +437,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#historyDelete(taskId, args);
       case "browser.bookmarks":
         return this.#bookmarks(taskId, args);
+      case "browser.browsingData.clear":
+        return this.#browsingDataClear(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
@@ -2132,6 +2135,97 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       deleted: deleted > 0,
       removed: deleted,
       ...(url ? { url, mode: "url" } : { mode: "range", startTime, endTime }),
+      scope: "task",
+    };
+  }
+
+  /** browser.browsingData.clear — honest subset on isolated: cookies
+   *  (context.clearCookies), history (task visit log), downloads
+   *  (download.delete per file). Everything else reports unsupported —
+   *  playwright has no profile-wide store to wipe. origins is refused:
+   *  there is no per-origin clear API to honor it with. */
+  async #browsingDataClear(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const VALID = new Set([
+      "appcache", "cache", "cacheStorage", "cookies", "downloads",
+      "fileSystems", "formData", "history", "indexedDB", "localStorage",
+      "passwords", "serviceWorkers", "webSQL",
+    ]);
+    const rawTypes = args.dataTypes;
+    if (!Array.isArray(rawTypes) || rawTypes.length === 0 || rawTypes.length > 16) {
+      throw protocolError("proto.invalid", "browser.browsingData.clear requires args.dataTypes (non-empty array ≤16)");
+    }
+    const dataTypes = [...new Set(rawTypes.filter((t): t is string => typeof t === "string"))];
+    if (dataTypes.length === 0 || dataTypes.some((t) => !VALID.has(t))) {
+      throw protocolError("proto.invalid", `browser.browsingData.clear args.dataTypes must be one of ${[...VALID].join("|")}`);
+    }
+    if (args.origins !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot scope browsingData.clear by origins — no per-origin clear API");
+    }
+    const parseTime = (v: unknown): number | undefined => {
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string") {
+        const t = Date.parse(v);
+        if (Number.isFinite(t)) return t;
+      }
+      return undefined;
+    };
+    const sinceMs = parseTime(args.since);
+    if (args.since !== undefined && sinceMs === undefined) {
+      throw protocolError("proto.invalid", "browser.browsingData.clear args.since must be epoch ms or ISO date string");
+    }
+    const cleared: string[] = [];
+    const unsupported: string[] = [];
+    const ignoredSince: string[] = [];
+    let removedHistory = 0;
+    let removedDownloads = 0;
+    const wants = new Set(dataTypes);
+
+    if (wants.has("cookies")) {
+      const context = this.#contexts.get(taskId);
+      if (context) {
+        await context.clearCookies();
+        cleared.push("cookies");
+        // clearCookies has no time filter — report honestly when since was asked
+        if (sinceMs !== undefined && sinceMs > 0) ignoredSince.push("cookies");
+      } else {
+        unsupported.push("cookies");
+      }
+    }
+    if (wants.has("history")) {
+      const log = this.#visitLogs.get(taskId) ?? [];
+      const kept = sinceMs !== undefined && sinceMs > 0
+        ? log.filter((v) => v.ts < sinceMs)
+        : [];
+      removedHistory = log.length - kept.length;
+      this.#visitLogs.set(taskId, kept);
+      cleared.push("history");
+    }
+    if (wants.has("downloads")) {
+      const log = this.#downloadLogs.get(taskId) ?? [];
+      for (const entry of log) {
+        try {
+          await entry.download.delete();
+          removedDownloads += 1;
+        } catch {
+          /* file may already be gone — the log entry still clears */
+        }
+      }
+      this.#downloadLogs.set(taskId, []);
+      cleared.push("downloads");
+      if (sinceMs !== undefined && sinceMs > 0) ignoredSince.push("downloads");
+    }
+    for (const t of dataTypes) {
+      if (!["cookies", "history", "downloads"].includes(t) && !unsupported.includes(t) && !cleared.includes(t)) {
+        unsupported.push(t);
+      }
+    }
+    return {
+      cleared,
+      unsupported,
+      removedHistory,
+      removedDownloads,
+      ...(ignoredSince.length ? { ignoredSince } : {}),
+      ...(sinceMs !== undefined && sinceMs > 0 ? { since: sinceMs } : {}),
       scope: "task",
     };
   }

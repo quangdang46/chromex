@@ -483,6 +483,18 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       return verdict("read", { reason: "indexedDB metadata/key list" });
     }
 
+    case "browser.browsingData.clear": {
+      // Wipes browsing data across the whole profile — the per-origin
+      // storage tools are scoped, this is not. Irreversible, never
+      // task-eligible.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "browsing data clear destroys profile state",
+      });
+    }
+
     case "browser.history.delete": {
       // Deletes the user's browsing history — irreversible profile-data
       // destruction, never task-eligible.

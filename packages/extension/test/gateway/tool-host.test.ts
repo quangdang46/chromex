@@ -1165,6 +1165,53 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.browsingData.clear marshals dataTypes/since/origins + validates", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const d = deps({
+      browsingDataClear: vi.fn(async (q: Record<string, unknown>) => {
+        calls.push(q);
+        return { cleared: q.dataTypes };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.browsingData.clear", {
+      dataTypes: ["cookies", "history"],
+      since: "2026-01-01T00:00:00Z",
+      origins: ["https://x.example"],
+    }))) as { cleared: string[] };
+    expect(res.cleared).toEqual(["cookies", "history"]);
+    expect(calls[0]).toMatchObject({
+      dataTypes: ["cookies", "history"],
+      sinceMs: Date.parse("2026-01-01T00:00:00Z"),
+      origins: ["https://x.example"],
+    });
+    // epoch-ms since also works; 0/absent → no sinceMs forwarded
+    await h(req("browser.browsingData.clear", { dataTypes: ["cache"], since: 1700000000000 }));
+    expect(calls[1]).toMatchObject({ dataTypes: ["cache"], sinceMs: 1700000000000 });
+    await h(req("browser.browsingData.clear", { dataTypes: ["cache"], since: 0 }));
+    expect(calls[2]).not.toHaveProperty("sinceMs");
+    // dedup before forwarding
+    await h(req("browser.browsingData.clear", { dataTypes: ["cookies", "cookies"] }));
+    expect(calls[3]).toMatchObject({ dataTypes: ["cookies"] });
+    // validation: missing/empty/oversized/unknown types, bad since, bad origins
+    await expect(h(req("browser.browsingData.clear", {})))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.browsingData.clear", { dataTypes: [] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.browsingData.clear", { dataTypes: ["bogus"] })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.browsingData.clear", { dataTypes: ["cookies"], since: "not-a-date" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.browsingData.clear", { dataTypes: ["cookies"], origins: "x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // ungranted permission (null) and missing dep → proto.unsupported
+    const dNull = deps({ browsingDataClear: vi.fn(async () => null) });
+    await expect(createToolHostHandler(dNull)(req("browser.browsingData.clear", { dataTypes: ["cookies"] })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(createToolHostHandler(deps())(req("browser.browsingData.clear", { dataTypes: ["cookies"] })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

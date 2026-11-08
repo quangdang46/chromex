@@ -209,6 +209,14 @@ export interface ToolHostDeps {
     startTime?: number;
     endTime?: number;
   }): Promise<unknown | null>;
+  /** chrome.browsingData.remove — needs the OPTIONAL "browsingData"
+   *  permission. sinceMs is epoch ms (0/undefined = all time);
+   *  origins restricts the wipe. null → proto.unsupported. */
+  browsingDataClear?(q: {
+    dataTypes: string[];
+    sinceMs?: number;
+    origins?: string[];
+  }): Promise<unknown | null>;
   /** chrome.bookmarks — needs the OPTIONAL "bookmarks" permission.
    *  Return null when the permission is not granted → proto.unsupported. */
   bookmarkOp?(op: {
@@ -299,6 +307,7 @@ const SUPPORTED = new Set([
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
+  "browser.browsingData.clear",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -1586,6 +1595,56 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         });
         if (res === null) {
           throw toolError("proto.unsupported", "history permission is not granted");
+        }
+        return res as Record<string, unknown>;
+      }
+      case "browser.browsingData.clear": {
+        // Not tab-scoped: whole-profile browsing data via
+        // chrome.browsingData. OPTIONAL "browsingData" permission —
+        // ungranted → proto.unsupported, never a fake success.
+        if (!deps.browsingDataClear) {
+          throw toolError("proto.unsupported", "browsing data clear requires the optional browsingData permission");
+        }
+        const VALID_TYPES = new Set([
+          "appcache", "cache", "cacheStorage", "cookies", "downloads",
+          "fileSystems", "formData", "history", "indexedDB", "localStorage",
+          "passwords", "serviceWorkers", "webSQL",
+        ]);
+        const rawTypes = args.dataTypes;
+        if (!Array.isArray(rawTypes) || rawTypes.length === 0 || rawTypes.length > 16) {
+          throw toolError("proto.invalid", "browser.browsingData.clear requires args.dataTypes (non-empty array ≤16)");
+        }
+        const dataTypes = [...new Set(rawTypes.map((t) => (typeof t === "string" ? t : "")))];
+        if (dataTypes.some((t) => !VALID_TYPES.has(t))) {
+          throw toolError("proto.invalid", `browser.browsingData.clear args.dataTypes must be one of ${[...VALID_TYPES].join("|")}`);
+        }
+        const parseTime = (v: unknown): number | undefined => {
+          if (typeof v === "number" && Number.isFinite(v)) return v;
+          if (typeof v === "string") {
+            const t = Date.parse(v);
+            if (Number.isFinite(t)) return t;
+          }
+          return undefined;
+        };
+        const sinceMs = parseTime(args.since);
+        if (args.since !== undefined && sinceMs === undefined) {
+          throw toolError("proto.invalid", "browser.browsingData.clear args.since must be epoch ms or ISO date string");
+        }
+        let origins: string[] | undefined;
+        if (args.origins !== undefined) {
+          if (!Array.isArray(args.origins) || args.origins.length > 50 ||
+              args.origins.some((o) => typeof o !== "string" || o.length === 0 || o.length > 500)) {
+            throw toolError("proto.invalid", "browser.browsingData.clear args.origins must be an array of origin strings (≤50)");
+          }
+          origins = args.origins as string[];
+        }
+        const res = await deps.browsingDataClear({
+          dataTypes,
+          ...(sinceMs !== undefined && sinceMs > 0 ? { sinceMs } : {}),
+          ...(origins ? { origins } : {}),
+        });
+        if (res === null) {
+          throw toolError("proto.unsupported", "browsingData permission is not granted");
         }
         return res as Record<string, unknown>;
       }

@@ -52,6 +52,7 @@ export type BrowserToolName =
   | "browser.history.search"
   | "browser.history.delete"
   | "browser.bookmarks"
+  | "browser.browsingData.clear"
   | "browser.downloads.list"
   | "browser.downloads.save"
   | "browser.downloads.cancel"
@@ -106,6 +107,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
+  "browser.browsingData.clear",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",

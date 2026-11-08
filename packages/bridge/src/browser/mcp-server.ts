@@ -802,6 +802,22 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.browsingData.clear": {
+    description:
+      "Clear browsing data across the WHOLE profile — the global counterpart to the per-origin storage tools (cookies/localStorage/indexedDB/caches are scoped to one origin; this wipes every origin). args.dataTypes is a required non-empty array drawn from: appcache, cache, cacheStorage, cookies, downloads, fileSystems, formData, history, indexedDB, localStorage, passwords, serviceWorkers, webSQL. Optional args.since (epoch ms or ISO — only data newer than this is removed; omit/0 = everything) and args.origins (array of origin strings restricting the wipe). ALWAYS requires approval — irreversible profile-state destruction, never task-eligible. On chrome-extension uses chrome.browsingData.remove and requires the optional 'browsingData' permission — ungranted → proto.unsupported. On playwright-isolated clears the honest subset (cookies via context.clearCookies, history via the task visit log, downloads via download.delete) and reports the rest in unsupported — nothing is faked.",
+    inputSchema: objectSchema({
+      dataTypes: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["appcache", "cache", "cacheStorage", "cookies", "downloads", "fileSystems", "formData", "history", "indexedDB", "localStorage", "passwords", "serviceWorkers", "webSQL"],
+        },
+        description: "Data types to clear (required, non-empty).",
+      },
+      since: { description: "Only remove data newer than this — epoch ms or ISO date string (omit or 0 = all time).", anyOf: [{ type: "number" }, { type: "string" }] },
+      origins: { type: "array", items: { type: "string" }, description: "Optional origin strings (e.g. https://example.com) restricting the wipe." },
+    }, ["dataTypes"]),
+  },
   "browser.downloads.list": {
     description:
       "List recent downloads for this profile/task context (id, state, filename — the absolute save path the coding tools can read, bytes, mime, fileExists, error, startTime). Not tab-scoped. On playwright-isolated only downloads observed through browser.downloads.save or page-initiated download events appear, and filename is empty until saveAs persists the file.",

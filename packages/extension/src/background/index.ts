@@ -317,6 +317,23 @@ const toolHostHandler = createToolHostHandler({
           ...(typeof h.lastVisitTime === "number" ? { lastVisitTime: h.lastVisitTime } : {}),
         }));
     },
+    browsingDataClear: async ({ dataTypes, sinceMs, origins }) => {
+      const granted = await chrome.permissions.contains({ permissions: ["browsingData"] });
+      if (!granted || !chrome.browsingData?.remove) return null;
+      const removalOptions: chrome.browsingData.RemovalOptions = {
+        // chrome expects microseconds since epoch; 0/undefined = all time
+        ...(sinceMs !== undefined && sinceMs > 0 ? { since: sinceMs * 1000 } : {}),
+        ...(origins?.length ? { origins: origins as [string, ...string[]] } : {}),
+      };
+      const dataToRemove: Record<string, true> = {};
+      for (const t of dataTypes) dataToRemove[t] = true;
+      await chrome.browsingData.remove(removalOptions, dataToRemove);
+      return {
+        cleared: dataTypes,
+        ...(sinceMs !== undefined && sinceMs > 0 ? { since: sinceMs } : {}),
+        ...(origins?.length ? { origins } : {}),
+      };
+    },
     deleteHistory: async ({ url, startTime, endTime }) => {
       const granted = await chrome.permissions.contains({ permissions: ["history"] });
       if (!granted || !chrome.history) return null;

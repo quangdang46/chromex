@@ -326,6 +326,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
+  "browser.browsingData.clear",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"

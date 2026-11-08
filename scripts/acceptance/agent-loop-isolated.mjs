@@ -768,6 +768,54 @@ try {
   await expectReject("browser.page.cdp", { tabId: cdpId, method: "Page.x", params: [1] }, "JSON object", "cdp array params refused");
   await call("browser.tab.close", { tabId: cdpId });
 
+  // ── Loop 21: browsingData.clear — honest subset on isolated ─────────
+  // seed a cookie + rely on visit-log entries from earlier loops
+  const bdTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const bdId = bdTab?.tabId ?? bdTab?.id;
+  await call("browser.page.cookies", { tabId: bdId, action: "set", name: "bdck", value: "v1" });
+  const bdClear = await call("browser.browsingData.clear", {
+    dataTypes: ["cookies", "history", "localStorage", "passwords"],
+  });
+  const bdCleared = Array.isArray(bdClear?.cleared) ? bdClear.cleared : [];
+  const bdUnsupported = Array.isArray(bdClear?.unsupported) ? bdClear.unsupported : [];
+  assert(
+    bdCleared.includes("cookies") && bdCleared.includes("history") &&
+    bdClear?.scope === "task" && typeof bdClear?.removedHistory === "number",
+    `browsingData.clear clears cookies+history scoped to task (got ${JSON.stringify(bdClear).slice(0, 160)})`,
+  );
+  assert(
+    bdUnsupported.includes("localStorage") && bdUnsupported.includes("passwords"),
+    `browsingData.clear reports unbacked types unsupported (got ${JSON.stringify(bdUnsupported)})`,
+  );
+  // verify effects: cookie jar empty, visit log empty
+  const bdCk = await call("browser.page.cookies", { tabId: bdId, action: "list" });
+  const bdCkArr = Array.isArray(bdCk) ? bdCk : bdCk?.cookies ?? [];
+  assert(
+    !bdCkArr.some((c) => c?.name === "bdck"),
+    `browsingData.clear actually removed the cookie (got ${JSON.stringify(bdCk).slice(0, 120)})`,
+  );
+  const bdHist = await call("browser.history.search", { text: "/keys", limit: 50 });
+  assert(
+    (bdHist?.count ?? -1) === 0,
+    `browsingData.clear actually emptied the visit log (count=${bdHist?.count})`,
+  );
+  // since honored for history: seed a visit via reload, clear with future since → nothing removed
+  await call("browser.page.history", { tabId: bdId, action: "reload" });
+  const bdSince = await call("browser.browsingData.clear", {
+    dataTypes: ["history"], since: Date.now() + 60_000,
+  });
+  const bdHist2 = await call("browser.history.search", { text: "/keys", limit: 50 });
+  assert(
+    (bdSince?.removedHistory ?? -1) === 0 && (bdHist2?.count ?? 0) > 0,
+    `browsingData.clear since keeps older history (removed=${bdSince?.removedHistory}, left=${bdHist2?.count})`,
+  );
+  // origins refused on isolated — no per-origin clear API to honor it
+  await expectReject("browser.browsingData.clear", { dataTypes: ["cookies"], origins: ["https://x"] }, "origins", "origins refused on isolated");
+  await expectReject("browser.browsingData.clear", {}, "dataTypes", "clear without dataTypes refused");
+  await expectReject("browser.browsingData.clear", { dataTypes: ["bogus"] }, "dataTypes", "unknown dataType refused");
+  await expectReject("browser.browsingData.clear", { dataTypes: ["cookies"], since: "nope" }, "since", "bad since refused");
+  await call("browser.tab.close", { tabId: bdId });
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

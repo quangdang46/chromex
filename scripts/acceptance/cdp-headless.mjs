@@ -994,11 +994,26 @@ await runScenario(
       evidence.note(`history.delete → ${JSON.stringify(hd).slice(0, 300)}`);
       results.historyDelete = { ok: hd.unsupportedOk === true, ...hd };
 
+      // --- browsingData.clear: optional permission — ungranted → honest unsupported ---
+      // Same pattern: approval gate fires (never task-eligible), then the
+      // "browsingData" optional permission is absent → proto.unsupported.
+      let bd = {};
+      const bdRes = await runner.browserToolCall(
+        taskId, "browser.browsingData.clear", { dataTypes: ["cookies", "history"] }, token, 60_000,
+      );
+      const bdErr = bdRes?.error ?? {};
+      bd.status = bdRes?.status;
+      bd.code = bdErr.code;
+      bd.unsupportedOk = bdRes?.status === "failed" && bdErr.code === "proto.unsupported";
+      bd.msg = String(bdErr.message ?? "").slice(0, 160);
+      evidence.note(`browsingData.clear → ${JSON.stringify(bd).slice(0, 300)}`);
+      results.browsingDataClear = { ok: bd.unsupportedOk === true, ...bd };
+
       const pass = Object.values(results).every((r) => r.ok === true);
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches + serviceWorker + raw CDP"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches + serviceWorker + raw CDP + browsingData.clear boundary"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };
