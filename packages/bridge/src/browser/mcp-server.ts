@@ -329,6 +329,35 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       timeoutMs: { type: "integer", description: "Evaluation timeout (100–15000, default 10000)." },
     }),
   },
+  "browser.page.emulate": {
+    description:
+      "Apply browser emulation overrides to the tab via the debugger tier (chrome-extension backend): viewport (width/height/deviceScaleFactor/mobile/screenWidth/screenHeight), userAgent, timezoneId, geolocation {latitude,longitude,accuracy?}, media (colorScheme light|dark|no-preference, reducedMotion reduce|no-preference), cpuThrottle (1–20), network {offline,latency,downloadThroughput,uploadThroughput}. Overrides persist until args.reset:true or tab close — the debugging infobar stays while active. Tab-scoped; args.frameId unsupported.",
+    inputSchema: objectSchema({
+      ...TAB_TARGET_PROPS,
+      reset: { type: "boolean", description: "Clear all emulation overrides and release the debugger session." },
+      width: { type: "number" }, height: { type: "number" },
+      deviceScaleFactor: { type: "number" }, mobile: { type: "boolean" },
+      screenWidth: { type: "number" }, screenHeight: { type: "number" },
+      userAgent: { type: "string" }, timezoneId: { type: "string" },
+      geolocation: {
+        type: "object",
+        properties: {
+          latitude: { type: "number" }, longitude: { type: "number" }, accuracy: { type: "number" },
+        },
+        required: ["latitude", "longitude"],
+      },
+      colorScheme: { type: "string", enum: ["light", "dark", "no-preference"] },
+      reducedMotion: { type: "string", enum: ["reduce", "no-preference"] },
+      cpuThrottle: { type: "number" },
+      network: {
+        type: "object",
+        properties: {
+          offline: { type: "boolean" }, latency: { type: "number" },
+          downloadThroughput: { type: "number" }, uploadThroughput: { type: "number" },
+        },
+      },
+    }),
+  },
   "browser.page.click": {
     description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({

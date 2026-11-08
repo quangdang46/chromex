@@ -1509,6 +1509,37 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(set?.params).toMatchObject({ nodeId: 42, files: ["/tmp/report.pdf"] });
   });
 
+  test("page.emulate applies CDP overrides and holds the session", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(513, cdp));
+    const res = (await h(req("browser.page.emulate", {
+      tabId: 513, width: 390, height: 844, mobile: true, colorScheme: "dark",
+    }))) as { ok: boolean; applied: string[] };
+    expect(res.ok).toBe(true);
+    expect(res.applied).toEqual(["viewport", "media"]);
+    const metrics = cdp.sent.find((s) => s.method === "Emulation.setDeviceMetricsOverride");
+    expect(metrics?.params).toMatchObject({ width: 390, height: 844, mobile: true });
+    const media = cdp.sent.find((s) => s.method === "Emulation.setEmulatedMedia");
+    expect(media?.params).toMatchObject({ features: [{ name: "prefers-color-scheme", value: "dark" }] });
+    // session held: releaseCdp NOT called yet (overrides are session-scoped)
+    // reset clears overrides then releases
+    const res2 = (await h(req("browser.page.emulate", { tabId: 513, reset: true }))) as { reset: boolean };
+    expect(res2.reset).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "Emulation.clearDeviceMetricsOverride")).toBe(true);
+  });
+
+  test("page.emulate validates args and requires overrides", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(514, cdp));
+    await expect(h(req("browser.page.emulate", { tabId: 514 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.emulate", { tabId: 514, width: 390 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.emulate", { tabId: 514, width: 10, height: 10 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.emulate", { tabId: 514, frameId: 2, width: 100, height: 100 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.emulate", { tabId: 514, colorScheme: "blue" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    const noCdp = createToolHostHandler(deps());
+    await expect(noCdp(req("browser.page.emulate", { tabId: 1, width: 100, height: 100 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.setInputFiles falls back to the OOPIF frame target", async () => {
     const tabCdp = fakeCdp({
       "DOM.getDocument": () => ({ root: { nodeId: 1 } }), // pierced tree: no marker

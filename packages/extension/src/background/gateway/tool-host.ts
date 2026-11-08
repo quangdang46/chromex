@@ -182,6 +182,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.extract",
   "browser.page.console",
   "browser.page.evaluate",
+  "browser.page.emulate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -213,6 +214,7 @@ const SUPPORTED = new Set([
   "browser.page.get",
   "browser.page.console",
   "browser.page.evaluate",
+  "browser.page.emulate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -704,6 +706,31 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           resolvedTabId: tabId,
           frameId,
         };
+      }
+      case "browser.page.emulate": {
+        // CDP Emulation/Network overrides are SESSION-scoped: they die
+        // with the debugger attach, and our sessions detach at
+        // refcount 0. emulate therefore holds its session open until
+        // args.reset or tab close — the "debugging" infobar stays while
+        // emulation is active (honest UX, documented in the ADR).
+        cdpRequired(deps);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.emulate is tab-scoped; args.frameId is not supported");
+        }
+        const hold = await emulationHold(deps, tabId);
+        try {
+          if (args.reset === true) {
+            await applyEmulationReset(hold.session);
+            await releaseEmulationHold(tabId);
+            return { ok: true, reset: true, resolvedTabId: tabId };
+          }
+          const applied = await applyEmulation(hold.session, args);
+          return { ok: true, applied, resolvedTabId: tabId };
+        } catch (e) {
+          if (e instanceof Error && "code" in e) throw e;
+          throw toolError("browser.action_failed", `emulation failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
       case "browser.page.get": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
@@ -2642,6 +2669,145 @@ function findMarkedNodeId(
     if (hit !== undefined) return hit;
   }
   return findMarkedNodeId(node.contentDocument, attr, value);
+}
+
+// ---- browser.page.emulate (CDP Emulation tier) -------------------------
+// Overrides are per-debugger-session; emulate holds the attach open.
+
+interface EmulationHold { session: CdpSession; release: () => Promise<void> }
+const emulationHolds = new Map<number, EmulationHold>();
+
+async function emulationHold(deps: ToolHostDeps, tabId: number): Promise<EmulationHold> {
+  const existing = emulationHolds.get(tabId);
+  if (existing) return existing;
+  const { session, release } = await cdpAcquire(deps, tabId);
+  const hold: EmulationHold = { session, release };
+  emulationHolds.set(tabId, hold);
+  return hold;
+}
+
+async function releaseEmulationHold(tabId: number): Promise<void> {
+  const hold = emulationHolds.get(tabId);
+  if (!hold) return;
+  emulationHolds.delete(tabId);
+  await hold.release().catch(() => {});
+}
+
+function numArg(v: unknown, name: string, min: number, max: number): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) {
+    throw toolError("proto.invalid", `args.${name} must be a number in [${min}, ${max}]`);
+  }
+  return v;
+}
+
+function strArg(v: unknown, name: string, max = 512): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string" || v.length === 0 || v.length > max) {
+    throw toolError("proto.invalid", `args.${name} must be a non-empty string ≤${max} chars`);
+  }
+  return v;
+}
+
+async function applyEmulation(session: CdpSession, args: Record<string, unknown>): Promise<string[]> {
+  const applied: string[] = [];
+  const width = numArg(args.width, "width", 100, 7680);
+  const height = numArg(args.height, "height", 100, 7680);
+  const dsf = numArg(args.deviceScaleFactor, "deviceScaleFactor", 0.5, 4);
+  const mobile = typeof args.mobile === "boolean" ? args.mobile : undefined;
+  if (width !== undefined || height !== undefined || dsf !== undefined || mobile !== undefined) {
+    if (width === undefined || height === undefined) {
+      throw toolError("proto.invalid", "emulate width/height must be provided together");
+    }
+    await session.send("Emulation.setDeviceMetricsOverride", {
+      width, height,
+      deviceScaleFactor: dsf ?? 1,
+      mobile: mobile ?? false,
+      ...(numArg(args.screenWidth, "screenWidth", 100, 7680) !== undefined
+        ? { screenWidth: numArg(args.screenWidth, "screenWidth", 100, 7680) }
+        : {}),
+      ...(numArg(args.screenHeight, "screenHeight", 100, 7680) !== undefined
+        ? { screenHeight: numArg(args.screenHeight, "screenHeight", 100, 7680) }
+        : {}),
+    });
+    applied.push("viewport");
+  }
+  const ua = strArg(args.userAgent, "userAgent", 1024);
+  if (ua !== undefined) {
+    await session.send("Emulation.setUserAgentOverride", { userAgent: ua });
+    applied.push("userAgent");
+  }
+  const tz = strArg(args.timezoneId, "timezoneId", 128);
+  if (tz !== undefined) {
+    await session.send("Emulation.setTimezoneOverride", { timezoneId: tz });
+    applied.push("timezone");
+  }
+  const geo = args.geolocation as Record<string, unknown> | undefined;
+  if (geo !== undefined) {
+    const latitude = numArg(geo?.latitude, "geolocation.latitude", -90, 90);
+    const longitude = numArg(geo?.longitude, "geolocation.longitude", -180, 180);
+    const accuracy = numArg(geo?.accuracy, "geolocation.accuracy", 0, 100000);
+    if (latitude === undefined || longitude === undefined) {
+      throw toolError("proto.invalid", "args.geolocation requires latitude and longitude");
+    }
+    await session.send("Emulation.setGeolocationOverride", {
+      latitude, longitude, accuracy: accuracy ?? 100,
+    });
+    applied.push("geolocation");
+  }
+  const features: Array<{ name: string; value: string }> = [];
+  if (args.colorScheme !== undefined) {
+    const v = strArg(args.colorScheme, "colorScheme", 32);
+    if (!["light", "dark", "no-preference"].includes(v ?? "")) {
+      throw toolError("proto.invalid", "args.colorScheme must be light|dark|no-preference");
+    }
+    features.push({ name: "prefers-color-scheme", value: v as string });
+  }
+  if (args.reducedMotion !== undefined) {
+    const v = strArg(args.reducedMotion, "reducedMotion", 32);
+    if (!["reduce", "no-preference"].includes(v ?? "")) {
+      throw toolError("proto.invalid", "args.reducedMotion must be reduce|no-preference");
+    }
+    features.push({ name: "prefers-reduced-motion", value: v as string });
+  }
+  if (features.length > 0) {
+    await session.send("Emulation.setEmulatedMedia", { features });
+    applied.push("media");
+  }
+  const cpu = numArg(args.cpuThrottle, "cpuThrottle", 1, 20);
+  if (cpu !== undefined) {
+    await session.send("Emulation.setCPUThrottlingRate", { rate: cpu });
+    applied.push("cpuThrottle");
+  }
+  const net = args.network as Record<string, unknown> | undefined;
+  if (net !== undefined) {
+    const offline = net.offline === true;
+    const latency = numArg(net.latency, "network.latency", 0, 60000) ?? -1;
+    const down = numArg(net.downloadThroughput, "network.downloadThroughput", -1, 1e10) ?? -1;
+    const up = numArg(net.uploadThroughput, "network.uploadThroughput", -1, 1e10) ?? -1;
+    await session.send("Network.emulateNetworkConditions", {
+      offline, latency, downloadThroughput: down, uploadThroughput: up,
+    });
+    applied.push("network");
+  }
+  if (applied.length === 0) {
+    throw toolError("proto.invalid", "browser.page.emulate requires at least one override arg (or args.reset)");
+  }
+  return applied;
+}
+
+async function applyEmulationReset(session: CdpSession): Promise<void> {
+  await Promise.allSettled([
+    session.send("Emulation.clearDeviceMetricsOverride"),
+    session.send("Emulation.setTimezoneOverride", { timezoneId: "" }),
+    session.send("Emulation.setGeolocationOverride", {}),
+    session.send("Emulation.setEmulatedMedia", { features: [] }),
+    session.send("Emulation.setCPUThrottlingRate", { rate: 1 }),
+    session.send("Network.emulateNetworkConditions", {
+      offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+    }),
+    session.send("Emulation.setUserAgentOverride", {}),
+  ]);
 }
 
 /** OOPIF path for setInputFiles: locate the frame's debugger target by

@@ -47,6 +47,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.screenshot",
   "browser.page.console",
   "browser.page.evaluate",
+  "browser.page.emulate",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -266,6 +267,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#console(taskId, args);
       case "browser.page.evaluate":
         return this.#withExpect(taskId, args, await this.#evaluate(taskId, args));
+      case "browser.page.emulate":
+        return this.#withExpect(taskId, args, await this.#emulate(taskId, args));
       case "browser.page.click":
       case "browser.page.focus":
       case "browser.page.type":
@@ -522,6 +525,54 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       return { ok: true, value: serialized === undefined ? null : serialized.slice(0, maxChars), truncated: true };
     }
     return { ok: true, value: JSON.parse(serialized) as unknown, truncated: false };
+  }
+
+  async #emulate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    // Honest subset: playwright gives per-page viewport + media
+    // emulation only. UA/timezone/geo/cpu/network are context- or
+    // CDP-level — refuse rather than silently drop.
+    const unsupported = ["userAgent", "timezoneId", "geolocation", "cpuThrottle", "network", "deviceScaleFactor", "mobile", "screenWidth", "screenHeight"]
+      .filter((k) => args[k] !== undefined);
+    if (unsupported.length > 0) {
+      throw protocolError("proto.unsupported", `playwright-isolated cannot emulate ${unsupported.join(", ")} (viewport/colorScheme/reducedMotion only)`);
+    }
+    const applied: string[] = [];
+    if (args.reset === true) {
+      // playwright accepts null to restore the context default viewport.
+      await (page.setViewportSize as unknown as (v: null) => Promise<void>)(null);
+      await page.emulateMedia({});
+      return { ok: true, reset: true, applied: ["viewport", "media"] };
+    }
+    const width = args.width, height = args.height;
+    if (width !== undefined || height !== undefined) {
+      if (typeof width !== "number" || typeof height !== "number") {
+        throw protocolError("proto.invalid", "emulate width/height must be numbers provided together");
+      }
+      await page.setViewportSize({ width, height });
+      applied.push("viewport");
+    }
+    const media: { colorScheme?: "light" | "dark" | "no-preference"; reducedMotion?: "reduce" | "no-preference" } = {};
+    if (args.colorScheme !== undefined) {
+      if (!["light", "dark", "no-preference"].includes(String(args.colorScheme))) {
+        throw protocolError("proto.invalid", "args.colorScheme must be light|dark|no-preference");
+      }
+      media.colorScheme = args.colorScheme as "light" | "dark" | "no-preference";
+    }
+    if (args.reducedMotion !== undefined) {
+      if (!["reduce", "no-preference"].includes(String(args.reducedMotion))) {
+        throw protocolError("proto.invalid", "args.reducedMotion must be reduce|no-preference");
+      }
+      media.reducedMotion = args.reducedMotion as "reduce" | "no-preference";
+    }
+    if (Object.keys(media).length > 0) {
+      await page.emulateMedia(media);
+      applied.push("media");
+    }
+    if (applied.length === 0) {
+      throw protocolError("proto.invalid", "browser.page.emulate requires at least one override arg (or args.reset)");
+    }
+    return { ok: true, applied };
   }
 
   /** Lazily attach request/response/requestfailed capture to a page.

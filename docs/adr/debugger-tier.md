@@ -118,6 +118,14 @@ for Testing:
   clipped via `Page.captureScreenshot` — verified inside an iframe in
   `cdp-headless`. Whole-tab capture stays on `captureVisibleTab`;
   `playwright-isolated` rejects element clips `proto.unsupported`.
+- `browser.page.emulate` applies CDP `Emulation.*`/`Network.emulateNetworkConditions`
+  overrides (viewport, UA, timezone, geolocation, media, CPU throttle,
+  network conditions). Overrides are session-scoped, so emulate HOLDS the
+  debugger attach until `args.reset:true` or tab close — the infobar
+  stays while emulation is active. Verified headless: 390px viewport +
+  dark `prefers-color-scheme` observed via evaluate, reset restores.
+  playwright-isolated supports only viewport + media keys and refuses
+  the rest `proto.unsupported`.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,
   `browser.page.responseBody`) exist only on the chrome-extension
   backend; `playwright-isolated` rejects them `proto.unsupported` —

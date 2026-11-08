@@ -420,6 +420,32 @@ await runScenario(
         body: fbPayload?.body,
       };
 
+      // --- emulate: viewport + dark colorScheme, verified via evaluate ---
+      let emu = null, emuCheck = null, emuReset = null;
+      try {
+        emu = await runner.browserToolCall(
+          taskId, "browser.page.emulate",
+          { width: 390, height: 844, colorScheme: "dark" }, token, 60_000,
+        );
+        emuCheck = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: "({w: window.innerWidth, dark: matchMedia('(prefers-color-scheme: dark)').matches})" },
+          token, 60_000,
+        );
+        emuReset = await runner.browserToolCall(
+          taskId, "browser.page.emulate", { reset: true }, token, 60_000,
+        );
+      } catch (e) {
+        emu = emu ?? { rpcError: e?.message };
+      }
+      const emuVal = emuCheck?.result?.value ?? emuCheck?.value;
+      evidence.note(`emulate → ${JSON.stringify(emu?.result ?? emu).slice(0, 160)} check=${JSON.stringify(emuVal)}`);
+      results.emulate = {
+        ok: emu?.status === "completed" && emuVal?.w === 390 && emuVal?.dark === true && emuReset?.status === "completed",
+        check: emuVal,
+        reset: emuReset?.status,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();

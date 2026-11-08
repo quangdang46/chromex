@@ -187,6 +187,9 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     case "browser.page.scroll":
     case "browser.tab.activate":
     case "browser.page.history":
+    case "browser.page.emulate":
+      // Emulation overrides are local, reversible (reset:true) and have
+      // no external side effect — same class as scroll/activate.
       return verdict("low", { reason: "low-risk navigation/UI action" });
 
     case "browser.page.setInputFiles": {
