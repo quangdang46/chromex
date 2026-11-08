@@ -62,6 +62,7 @@ const ALL = [
   "s11-ui-queue-flush",
   "s12-sw-turn-recovery",
   "s13-risk-preflight",
+  "s14-windows",
 ];
 const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
 

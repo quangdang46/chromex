@@ -1,0 +1,26 @@
+{
+  "scenario": "s14-windows",
+  "runId": "2026-11-08T08-52-52-655Z-671e3e",
+  "status": "PASS",
+  "summary": "agent created a dedicated window, drove its tab in-scope, targeted tab.create at windowId, maximized+restored window state, bogus state refused, window closed with its tabs",
+  "durationMs": 16351,
+  "details": {
+    "windowId": 36965756,
+    "winTabId": 36965757,
+    "tab2Id": 36965758,
+    "beforeCount": 1
+  },
+  "notes": [
+    "[2026-11-08T08:53:03.761Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T08:53:03.783Z] task 01M6X5RX53Z1JFGCHQZAA5S4EQ",
+    "[2026-11-08T08:53:03.788Z] browser.mcp scope acquired",
+    "[2026-11-08T08:53:03.803Z] windows before=1 ids=36965754",
+    "[2026-11-08T08:53:05.106Z] windows.create → windowId=36965756 tabId=36965757 tabs=1",
+    "[2026-11-08T08:53:06.197Z] page.get on window tab → {\"id\":36965757,\"tabId\":36965757,\"url\":\"http://127.0.0.1:53939/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":36965757,\"value\":\"Fixture Home\",\"windowId\":",
+    "[2026-11-08T08:53:06.212Z] tab.create windowId=36965756 → tabId=36965758",
+    "[2026-11-08T08:53:06.226Z] tabs.list row for tab2 → {\"id\":36965758,\"title\":\"127.0.0.1:53939/slow\",\"url\":\"http://127.0.0.1:53939/slow\",\"origin\":\"http://127.0.0.1:53939\",\"active\":false,\"windowId\":36965756,\"status\":\"loading\",\"pinned\":false,\"groupId\":-1}",
+    "[2026-11-08T08:53:07.011Z] windows.update maximized → state=maximized",
+    "[2026-11-08T08:53:07.396Z] bogus state refused → proto.invalid",
+    "[2026-11-08T08:53:08.485Z] post-cleanup window present=false"
+  ]
+}
