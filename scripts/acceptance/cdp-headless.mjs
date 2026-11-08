@@ -1052,6 +1052,14 @@ await runScenario(
           if (cdpCross?.frameId && cdpSame?.frameId) break;
           await sleep(250);
         }
+        // Prime the CDP network tap BEFORE the pierce clicks below —
+        // Network.* only reports requests observed after Network.enable,
+        // so the frame-hit fetches must fire while the tap (tab session
+        // + OOPIF frame target) is already attached.
+        await runner.browserToolCall(
+          taskId, "browser.page.responseBody",
+          { tabId: cdpFrameTabId, limit: 1 }, token, 60_000,
+        ).catch(() => null);
         if (cdpCross?.frameId) {
           const cdpFrRes = await runner.browserToolCall(
             taskId, "browser.page.cdp",
@@ -1126,6 +1134,26 @@ await runScenario(
           const pevVal = pev?.result?.value;
           cdp.pierceIframeEvalOk = pev?.result?.ok === true && String(pevVal).includes("cfb");
         }
+        // OOPIF network visibility probe: the closed-root clicks above
+        // fired /api/frame-hit fetches from BOTH frame origins. The
+        // webRequest log must show the cross-origin one with its
+        // frameId; the CDP Network tap (tab session) reveals whether
+        // OOPIF requests are visible for responseBody too.
+        const netRes = await runner.browserToolCall(
+          taskId, "browser.page.network",
+          { tabId: cdpFrameTabId, urlContains: "frame-hit", limit: 50 }, token, 60_000,
+        ).catch(() => null);
+        const netReqs = (netRes?.result ?? netRes ?? {}).requests ?? [];
+        const oopifNet = netReqs.filter((r) => String(r.url).includes("localhost"));
+        const sameNet = netReqs.filter((r) => String(r.url).includes("127.0.0.1"));
+        cdp.oopifNetOk = oopifNet.length >= 1 && sameNet.length >= 1 &&
+          oopifNet.every((r) => typeof r.frameId === "number" && r.frameId !== 0);
+        const rbRes = await runner.browserToolCall(
+          taskId, "browser.page.responseBody",
+          { tabId: cdpFrameTabId, urlContains: "frame-hit", limit: 50 }, token, 60_000,
+        ).catch(() => null);
+        const tapReqs = (rbRes?.result ?? rbRes ?? {}).requests ?? [];
+        cdp.oopifTapOk = tapReqs.some((r) => String(r.url).includes("localhost"));
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1136,7 +1164,8 @@ await runScenario(
       results.cdp = {
         ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true &&
           cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
-          cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true,
+          cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
+          cdp.oopifNetOk === true && cdp.oopifTapOk === true,
         ...cdp,
       };
 

@@ -4173,6 +4173,52 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.responseBody", { tabId: 509, requestId: "nope" }))).rejects.toMatchObject({ code: "browser.not_found" });
   });
 
+  test("page.responseBody taps OOPIF frame targets for cross-origin iframe requests", async () => {
+    const tabCdp = fakeCdp();
+    const frameCdp = fakeCdp({
+      "Network.getResponseBody": () => ({ body: "oopif-body", base64Encoded: false }),
+    });
+    const h = createToolHostHandler(cdpDeps(511, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 7, url: "https://ads.example.com/widget", parentFrameId: 0 },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "tab-511", type: "page", url: "https://x/" },
+        { id: "tgt-oopif", type: "iframe", url: "https://ads.example.com/widget" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    // prime the tap — syncOopifNetTaps should attach the OOPIF target
+    await h(req("browser.page.responseBody", { tabId: 511 }));
+    expect(frameCdp.sent.some((s) => s.method === "Network.enable")).toBe(true);
+    // OOPIF request events arrive on the FRAME session, not the tab's
+    frameCdp.fire("Network.requestWillBeSent", {
+      requestId: "f-req-1",
+      request: { method: "POST", url: "https://ads.example.com/api/charge" },
+      type: "Fetch",
+    });
+    frameCdp.fire("Network.responseReceived", {
+      requestId: "f-req-1",
+      response: { url: "https://ads.example.com/api/charge", status: 200, mimeType: "application/json" },
+    });
+    frameCdp.fire("Network.loadingFinished", { requestId: "f-req-1" });
+    const list = (await h(req("browser.page.responseBody", {
+      tabId: 511, urlContains: "ads.example.com",
+    }))) as { requests: Array<{ requestId: string; url: string; finished: boolean }> };
+    expect(list.requests).toHaveLength(1);
+    expect(list.requests[0].requestId).toBe("f-req-1");
+    expect(list.requests[0].finished).toBe(true);
+    // getResponseBody must route back to the FRAME session that saw it
+    const body = (await h(req("browser.page.responseBody", {
+      tabId: 511, requestId: "f-req-1",
+    }))) as { body: string };
+    expect(body.body).toBe("oopif-body");
+    expect(frameCdp.sent.some((s) => s.method === "Network.getResponseBody")).toBe(true);
+    expect(tabCdp.sent.some((s) => s.method === "Network.getResponseBody")).toBe(false);
+  });
+
   test("click trusted dispatches CDP mouse events", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(510, cdp));

@@ -1015,6 +1015,12 @@ export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
     networkTaps.delete(tabId);
     for (const un of tap.unsubs) un();
     await tap.session.send("Network.disable").catch(() => {});
+    for (const f of tap.frames.values()) {
+      for (const un of f.unsubs) un();
+      await f.session.send("Network.disable").catch(() => {});
+      await f.release?.().catch(() => {});
+    }
+    tap.frames.clear();
     // tap sessions are never released by design (bodies need the tap
     // alive); release the extra ref the tap holds now that the tab is
     // gone — cdp.ts already dropped the state, so this is a no-op guard.
@@ -8319,6 +8325,9 @@ interface NetworkTapEntry {
   ts: number;
   finished: boolean;
   failed?: boolean;
+  /** session that observed this request — OOPIF traffic lives on the
+   *  frame target's own Network domain, not the tab session's. */
+  owner?: CdpSession;
 }
 
 interface WsFrameEntry {
@@ -8360,6 +8369,14 @@ interface NetworkTap {
   /** session.on unsubscribe fns — chrome.debugger.onEvent listeners
    *  otherwise outlive the tab and accumulate per tap. */
   unsubs: Array<() => void>;
+  /** OOPIF frame-target taps keyed by debugger targetId. The tab
+   *  session's Network domain cannot see out-of-process iframe
+   *  requests — each OOPIF has its own Network agent on its own
+   *  target (verified: tab tap misses cross-origin frame fetches). */
+  frames: Map<string, { session: CdpSession; unsubs: Array<() => void>; release: (() => Promise<void>) | undefined }>;
+  /** wires one session's Network events into the shared buffers —
+   *  stored so syncOopifNetTaps can attach late-discovered OOPIFs. */
+  wireSession: (sess: CdpSession, tag: string) => Array<() => void>;
 }
 const networkTaps = new Map<number, NetworkTap>();
 
@@ -8368,111 +8385,201 @@ async function ensureNetworkTap(
   tabId: number,
 ): Promise<NetworkTap> {
   const existing = networkTaps.get(tabId);
-  if (existing) return existing;
+  if (existing) {
+    await syncOopifNetTaps(deps, tabId, existing);
+    return existing;
+  }
   const { session } = await cdpAcquire(deps, tabId);
   await session.send("Network.enable");
   const entries: NetworkTapEntry[] = [];
   const sockets: WsTapEntry[] = [];
-  const upsert = (requestId: string, patch: Partial<NetworkTapEntry>) => {
-    let e = [...entries].reverse().find((x) => x.requestId === requestId);
-    if (!e) {
-      e = {
-        requestId,
-        method: "",
-        url: "",
-        type: "",
-        ts: Date.now(),
-        finished: false,
-        ...patch,
-      };
-      entries.push(e);
-      if (entries.length > NETWORK_TAP_CAP) entries.splice(0, entries.length - NETWORK_TAP_CAP);
-    } else {
-      Object.assign(e, patch);
-    }
-  };
-  const unsubs: Array<() => void> = [];
-  unsubs.push(session.on("Network.requestWillBeSent", (p) => {
-    const req = (p.request ?? {}) as { method?: string; url?: string };
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    if (!requestId) return;
-    upsert(requestId, {
-      method: typeof req.method === "string" ? req.method : "",
-      url: typeof req.url === "string" ? req.url : "",
-      type: typeof p.type === "string" ? p.type : "",
-    });
-  }));
-  unsubs.push(session.on("Network.responseReceived", (p) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    const resp = (p.response ?? {}) as { url?: string; status?: number; mimeType?: string };
-    if (!requestId) return;
-    upsert(requestId, {
-      ...(typeof resp.url === "string" ? { url: resp.url } : {}),
-      ...(typeof resp.status === "number" ? { status: resp.status } : {}),
-      ...(typeof resp.mimeType === "string" ? { mimeType: resp.mimeType } : {}),
-    });
-  }));
-  unsubs.push(session.on("Network.loadingFinished", (p) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    if (requestId) upsert(requestId, { finished: true });
-  }));
-  unsubs.push(session.on("Network.loadingFailed", (p) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    if (requestId) upsert(requestId, { finished: true, failed: true });
-  }));
-  // WebSocket connections + frames (browser.page.webSocket). CDP reports
-  // opcode 1=text / 2=binary; `data` is the payload text (binary frames
-  // arrive base64-encoded by the protocol). Bounded per-connection and
-  // per-tap so a chatty socket cannot grow memory without limit.
-  const wsByRequest = new Map<string, WsTapEntry>();
-  const wsUpsert = (requestId: string, url: string) => {
-    let s = wsByRequest.get(requestId);
-    if (!s) {
-      s = { requestId, url, ts: Date.now(), closed: false, frames: [] };
-      wsByRequest.set(requestId, s);
-      sockets.push(s);
-      if (sockets.length > WS_TAP_CAP) {
-        const dropped = sockets.splice(0, sockets.length - WS_TAP_CAP);
-        for (const d of dropped) wsByRequest.delete(d.requestId);
+  // requestIds are session-scoped — two CDP sessions can emit the
+  // same id, so internal maps key on `${tag}:${requestId}` while the
+  // public requestId stays raw.
+  const entryKeys = new Map<string, NetworkTapEntry>();
+  const wsKeys = new Map<string, WsTapEntry>();
+
+  /** Wire one session's Network events into the shared buffers.
+   *  `tag` namespaces requestIds; `owner` stamps entries so
+   *  getResponseBody goes back to the session that saw the request. */
+  const wireSession = (sess: CdpSession, tag: string): Array<() => void> => {
+    const key = (requestId: string) => `${tag}:${requestId}`;
+    const unsubs: Array<() => void> = [];
+    const upsert = (requestId: string, patch: Partial<NetworkTapEntry>) => {
+      const k = key(requestId);
+      let e = entryKeys.get(k);
+      if (!e) {
+        e = {
+          requestId,
+          method: "",
+          url: "",
+          type: "",
+          ts: Date.now(),
+          finished: false,
+          owner: sess,
+          ...patch,
+        };
+        entryKeys.set(k, e);
+        entries.push(e);
+        if (entries.length > NETWORK_TAP_CAP) {
+          const dropped = entries.splice(0, entries.length - NETWORK_TAP_CAP);
+          for (const d of dropped) {
+            for (const [ek, ev] of entryKeys) if (ev === d) entryKeys.delete(ek);
+          }
+        }
+      } else {
+        Object.assign(e, patch);
       }
-    } else if (url && !s.url) {
-      s.url = url;
-    }
-    return s;
+    };
+    unsubs.push(sess.on("Network.requestWillBeSent", (p) => {
+      const req = (p.request ?? {}) as { method?: string; url?: string };
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      if (!requestId) return;
+      upsert(requestId, {
+        method: typeof req.method === "string" ? req.method : "",
+        url: typeof req.url === "string" ? req.url : "",
+        type: typeof p.type === "string" ? p.type : "",
+      });
+    }));
+    unsubs.push(sess.on("Network.responseReceived", (p) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      const resp = (p.response ?? {}) as { url?: string; status?: number; mimeType?: string };
+      if (!requestId) return;
+      upsert(requestId, {
+        ...(typeof resp.url === "string" ? { url: resp.url } : {}),
+        ...(typeof resp.status === "number" ? { status: resp.status } : {}),
+        ...(typeof resp.mimeType === "string" ? { mimeType: resp.mimeType } : {}),
+      });
+    }));
+    unsubs.push(sess.on("Network.loadingFinished", (p) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      if (requestId) upsert(requestId, { finished: true });
+    }));
+    unsubs.push(sess.on("Network.loadingFailed", (p) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      if (requestId) upsert(requestId, { finished: true, failed: true });
+    }));
+    // WebSocket connections + frames (browser.page.webSocket). CDP reports
+    // opcode 1=text / 2=binary; `data` is the payload text (binary frames
+    // arrive base64-encoded by the protocol). Bounded per-connection and
+    // per-tap so a chatty socket cannot grow memory without limit.
+    const wsUpsert = (requestId: string, url: string) => {
+      const k = key(requestId);
+      let s = wsKeys.get(k);
+      if (!s) {
+        s = { requestId, url, ts: Date.now(), closed: false, frames: [] };
+        wsKeys.set(k, s);
+        sockets.push(s);
+        if (sockets.length > WS_TAP_CAP) {
+          const dropped = sockets.splice(0, sockets.length - WS_TAP_CAP);
+          for (const d of dropped) {
+            for (const [wk, wv] of wsKeys) if (wv === d) wsKeys.delete(wk);
+          }
+        }
+      } else if (url && !s.url) {
+        s.url = url;
+      }
+      return s;
+    };
+    const wsFrame = (dir: "sent" | "recv") => (p: Record<string, unknown>) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      if (!requestId) return;
+      const resp = (p.response ?? {}) as { opcode?: number; payloadData?: string; data?: string };
+      const s = wsKeys.get(key(requestId));
+      if (!s || s.frames.length >= WS_FRAMES_PER_CONN_CAP) return;
+      const raw = typeof resp.payloadData === "string" ? resp.payloadData
+        : typeof resp.data === "string" ? resp.data : "";
+      const truncated = raw.length > WS_FRAME_MAX_BYTES;
+      s.frames.push({
+        dir,
+        data: truncated ? raw.slice(0, WS_FRAME_MAX_BYTES) : raw,
+        binary: resp.opcode === 2,
+        ...(typeof resp.opcode === "number" ? { opcode: resp.opcode } : {}),
+        ts: Date.now(),
+        ...(truncated ? { truncated: true } : {}),
+      });
+    };
+    unsubs.push(sess.on("Network.webSocketCreated", (p) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      const url = typeof p.url === "string" ? p.url : "";
+      if (requestId) wsUpsert(requestId, url);
+    }));
+    unsubs.push(sess.on("Network.webSocketFrameSent", wsFrame("sent")));
+    unsubs.push(sess.on("Network.webSocketFrameReceived", wsFrame("recv")));
+    unsubs.push(sess.on("Network.webSocketClosed", (p) => {
+      const requestId = typeof p.requestId === "string" ? p.requestId : "";
+      const s = requestId ? wsKeys.get(key(requestId)) : undefined;
+      if (s) s.closed = true;
+    }));
+    return unsubs;
   };
-  const wsFrame = (dir: "sent" | "recv") => (p: Record<string, unknown>) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    if (!requestId) return;
-    const resp = (p.response ?? {}) as { opcode?: number; payloadData?: string; data?: string };
-    const s = wsByRequest.get(requestId);
-    if (!s || s.frames.length >= WS_FRAMES_PER_CONN_CAP) return;
-    const raw = typeof resp.payloadData === "string" ? resp.payloadData
-      : typeof resp.data === "string" ? resp.data : "";
-    const truncated = raw.length > WS_FRAME_MAX_BYTES;
-    s.frames.push({
-      dir,
-      data: truncated ? raw.slice(0, WS_FRAME_MAX_BYTES) : raw,
-      binary: resp.opcode === 2,
-      ...(typeof resp.opcode === "number" ? { opcode: resp.opcode } : {}),
-      ts: Date.now(),
-      ...(truncated ? { truncated: true } : {}),
-    });
+
+  const unsubs = wireSession(session, "tab");
+  const tap: NetworkTap = {
+    session, entries, sockets, since: Date.now(), unsubs,
+    frames: new Map(),
+    wireSession,
   };
-  unsubs.push(session.on("Network.webSocketCreated", (p) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    const url = typeof p.url === "string" ? p.url : "";
-    if (requestId) wsUpsert(requestId, url);
-  }));
-  unsubs.push(session.on("Network.webSocketFrameSent", wsFrame("sent")));
-  unsubs.push(session.on("Network.webSocketFrameReceived", wsFrame("recv")));
-  unsubs.push(session.on("Network.webSocketClosed", (p) => {
-    const requestId = typeof p.requestId === "string" ? p.requestId : "";
-    const s = requestId ? wsByRequest.get(requestId) : undefined;
-    if (s) s.closed = true;
-  }));
-  const tap: NetworkTap = { session, entries, sockets, since: Date.now(), unsubs };
   networkTaps.set(tabId, tap);
+  await syncOopifNetTaps(deps, tabId, tap);
   return tap;
+}
+
+/** Attach Network taps to this tab's out-of-process iframe targets.
+ *  Frame→target association uses the same rule as cdpAcquireForFrame:
+ *  webNavigation frame URL === debugger target URL (type iframe/other).
+ *  Same-process subframes share the tab session and need no extra tap.
+ *  Called on tap creation and on every responseBody/webSocket read so
+ *  late-mounting OOPIFs get covered. Missing frame-target deps degrade
+ *  honestly to tab-only coverage. */
+async function syncOopifNetTaps(
+  deps: ToolHostDeps,
+  tabId: number,
+  tap: NetworkTap,
+): Promise<void> {
+  if (!deps.listFrames || !deps.listCdpTargets || !deps.acquireCdpTarget) return;
+  // null on failure (not []) — an empty target list must never be
+  // mistaken for "all OOPIFs gone" and prune live frame taps.
+  const frames = await deps.listFrames(tabId).catch(() => null);
+  const targets = await deps.listCdpTargets().catch(() => null);
+  if (!frames || !targets) return;
+  const liveTargetIds = new Set<string>();
+  for (const frame of frames) {
+    // main frame has no parentFrameId — subframes only
+    if (frame.parentFrameId === undefined) continue;
+    if (!frame.url) continue;
+    const target = targets.find(
+      (t) => (t.type === "iframe" || t.type === "other") && t.url === frame.url,
+    );
+    if (!target) continue;
+    liveTargetIds.add(target.id);
+    if (tap.frames.has(target.id)) continue;
+    try {
+      const fs = await deps.acquireCdpTarget(target.id);
+      await fs.send("Network.enable");
+      const fUnsubs = tap.wireSession(fs, `f${target.id}`);
+      tap.frames.set(target.id, {
+        session: fs,
+        unsubs: fUnsubs,
+        release: deps.releaseCdpTarget
+          ? () => deps.releaseCdpTarget!(target.id)
+          : undefined,
+      });
+    } catch {
+      // frame target raced away (navigation/close) — skip honestly;
+      // the next sync retries if it reappears
+    }
+  }
+  // Prune frame taps whose debugger target vanished (OOPIF navigated
+  // cross-origin → new targetId, or frame removed). Re-acquire happens
+  // on the next sync if the frame reappears under a new target.
+  for (const [targetId, f] of tap.frames) {
+    if (liveTargetIds.has(targetId)) continue;
+    for (const un of f.unsubs) un();
+    await f.session.send("Network.disable").catch(() => {});
+    await f.release?.().catch(() => {});
+    tap.frames.delete(targetId);
+  }
 }
 
 function decodeBody(
@@ -8540,7 +8647,9 @@ async function pageResponseBody(
     if (!entry.finished) {
       throw toolError("browser.action_failed", `request ${requestId} has not finished loading`);
     }
-    const res = (await tap.session.send("Network.getResponseBody", { requestId })) as {
+    // OOPIF requests live on the frame target's session — getResponseBody
+    // must go back to the session that observed them.
+    const res = (await (entry.owner ?? tap.session).send("Network.getResponseBody", { requestId })) as {
       body?: string;
       base64Encoded?: boolean;
     };
