@@ -1,0 +1,19 @@
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112646784}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112647286}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112647787}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112648290}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112648788}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112649292}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112649794}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112650296}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112650799}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112651300}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112651798}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112652300}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112652803}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112653304}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112653807}
+{"seq":null,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.delta","payload":{},"at":1794112654308}
+{"seq":5,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M6WQ4VH76359EX8NV3B2GE74","text":"startingworking… working… working… working… working… working… working… working… working… working… working… working… working… working… working… "},"at":1794112654735}
+{"seq":6,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M6WQ4VH76359EX8NV3B2GE74","stopReason":"end_turn"},"at":1794112654736}
+{"seq":8,"taskId":"01M6WQ4VH3S6SNRVT37M7XC4J0","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794112654737}

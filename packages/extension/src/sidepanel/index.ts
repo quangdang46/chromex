@@ -12603,13 +12603,18 @@ function isCurrentPromptWorkActive(): boolean {
   return isCurrentTurnActive() || Boolean(state.promptActivity) || isCurrentPromptRequestPending() || state.streamingAssistantMessageIds.size > 0;
 }
 
+function isPromptTurnInFlight(): boolean {
+  return Boolean(state.activeTurn) || Boolean(state.promptActivity) || isCurrentPromptRequestPending();
+}
+
 function canSendCurrentComposerMessage(
   draft = state.composerDraft,
-  options: { allowSteer?: boolean } = {},
+  options: { allowSteer?: boolean; allowQueue?: boolean } = {},
 ): boolean {
   const currentWorkActive = isCurrentPromptWorkActive();
   const steerTurnActive = Boolean(options.allowSteer && isCurrentTurnActive());
-  if (currentWorkActive && !steerTurnActive) {
+  const queueSendActive = Boolean(options.allowQueue);
+  if (currentWorkActive && !steerTurnActive && !queueSendActive) {
     return false;
   }
   if (hasPendingFileAttachmentReads()) {
@@ -12618,7 +12623,7 @@ function canSendCurrentComposerMessage(
 
   return canSendComposerMessage({
     draft,
-    turnActive: steerTurnActive,
+    turnActive: steerTurnActive || queueSendActive,
     promptActivityActive: Boolean(state.promptActivity),
     streamingAssistantActive: state.streamingAssistantMessageIds.size > 0,
     submissionStartingActive: promptSubmissionBootstrapInFlight,
@@ -14596,7 +14601,12 @@ function bindEvents(): void {
       return;
     }
     event.preventDefault();
-    if (!canSendCurrentComposerMessage(undefined, { allowSteer: isCurrentTurnActive() })) {
+    if (
+      !canSendCurrentComposerMessage(undefined, {
+        allowSteer: isCurrentTurnActive(),
+        allowQueue: isPromptTurnInFlight(),
+      })
+    ) {
       rememberComposerInteraction(event.currentTarget as HTMLTextAreaElement);
       return;
     }
@@ -15387,7 +15397,12 @@ async function sendPrompt(
   const threadIdAtSubmit = state.threadId || activeTurnAtSubmit?.threadId || undefined;
   const message = (messageOverride ?? composer?.value ?? "").trim() || defaultPromptForContext(strings);
   const displayMessage = (options.displayMessage ?? message).trim();
-  if (!canSendCurrentComposerMessage(message, { allowSteer: isDirectComposerTextSend })) {
+  if (
+    !canSendCurrentComposerMessage(message, {
+      allowSteer: isDirectComposerTextSend,
+      allowQueue: isDirectComposerTextSend && isPromptTurnInFlight(),
+    })
+  ) {
     return;
   }
 
@@ -15477,7 +15492,10 @@ async function sendPrompt(
     // steer injects mid-turn and can derail the agent's current plan;
     // the queue delivers each message as its own prompt when the turn
     // completes (flushQueuedComposerMessage on turn.completed/failed).
-    if (sendAsTurnSteer && isDirectComposerTextSend && conversationIdAtStart) {
+    // isPromptTurnInFlight (not just activeTurn) covers the window where
+    // promptActivity/pending-request is set but turn.started has not
+    // landed yet — otherwise the send guard drops the message silently.
+    if (isDirectComposerTextSend && conversationIdAtStart && isPromptTurnInFlight()) {
       enqueueQueuedComposerMessage(conversationIdAtStart, {
         id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         text: message,
