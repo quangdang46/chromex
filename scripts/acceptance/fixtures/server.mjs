@@ -190,6 +190,21 @@ setTimeout(window.__slowReady, 60000);
 <h1>Tall Page</h1><div style="height:5000px">spacer</div><p id="bottom">bottom</p>
 </body></html>`,
 
+  // wheel probe: records trusted/untrusted wheel events — proof that
+  // trusted scroll dispatches real input (synthetic scrollBy fires no
+  // wheel event at all).
+  "/wheel-probe": `<!doctype html><html><body>
+<h1>Wheel Probe</h1><div style="height:3000px">spacer</div>
+<script>
+let n = 0, lastTrusted = "none", lastDelta = 0;
+addEventListener("wheel", (e) => {
+  n++; lastTrusted = String(e.isTrusted); lastDelta = e.deltaY;
+  document.getElementById("r").textContent = "count:" + n + " trusted:" + lastTrusted + " delta:" + lastDelta;
+}, { passive: true });
+</script>
+<p id="r">count:0 trusted:none delta:0</p>
+</body></html>`,
+
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.
   "/drag": `<!doctype html><html><body>

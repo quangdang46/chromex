@@ -4502,12 +4502,17 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
           return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
+        // Trusted wheel scroll — real wheel events for infinite-scroll
+        // and wheel-gated pages. Page-level only (see trustedScroll).
+        if (tool === "browser.page.scroll" && args.trusted === true) {
+          return await trustedScroll(deps, tabId, args, expectCond, frameId);
+        }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.
         if (args.trusted === true) {
           throw toolError(
             "proto.unsupported",
-            `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type, fill, hover and drag)`,
+            `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type, fill, hover, drag and scroll)`,
           );
         }
         const step = domStepFor(tool, args);
@@ -5755,6 +5760,97 @@ async function trustedDrag(
     ok: true,
     summary: `trusted drag ${Math.round(from.x)},${Math.round(from.y)} → ${Math.round(to.x)},${Math.round(to.y)}`,
     step: { action: "drag", trusted: true, x: from.x, y: from.y, dropX: to.x, dropY: to.y, ok: true, frameId },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+/** browser.page.scroll args.trusted — Input.dispatchMouseEvent
+ *  mouseWheel produces isTrusted=true wheel events, which the DOM
+ *  scrollBy/scrollTo path cannot: wheel listeners (infinite scroll,
+ *  lazy-load triggers, scroll-jacking defenses) never fire for
+ *  programmatic scrolls. Page-level only — a wheel event lands on
+ *  whatever is under the cursor, so element targets stay on the DOM
+ *  path (honest proto.invalid rather than silently scrolling the
+ *  wrong container). */
+async function trustedScroll(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+  frameId = 0,
+): Promise<Record<string, unknown>> {
+  if (frameId !== 0) {
+    throw toolError("proto.invalid", "browser.page.scroll args.trusted is page-level only (frameId must be 0)");
+  }
+  if (str(args.ref) || str(args.selector) || str(args.label)) {
+    throw toolError("proto.invalid", "browser.page.scroll args.trusted is page-level only — drop ref/selector/label or omit trusted");
+  }
+  const dir = typeof args.direction === "string" ? args.direction : "down";
+  if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
+    throw toolError("proto.invalid", "browser.page.scroll args.direction must be up|down|left|right|top|bottom");
+  }
+  const amount =
+    typeof args.amountPx === "number" && Number.isFinite(args.amountPx)
+      ? Math.min(Math.max(args.amountPx, 0), 10_000)
+      : 600;
+  cdpRequired(deps);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const metrics = await session.send<{
+      cssVisualViewport?: { width?: number; height?: number; clientWidth?: number; clientHeight?: number };
+      visualViewport?: { width?: number; height?: number; clientWidth?: number; clientHeight?: number };
+      layoutViewport?: { width?: number; height?: number; clientWidth?: number; clientHeight?: number };
+    }>("Page.getLayoutMetrics");
+    // Viewport metrics name their extents clientWidth/clientHeight on
+    // current protocol versions (width/height on older ones).
+    const vp = metrics.cssVisualViewport ?? metrics.visualViewport ?? metrics.layoutViewport;
+    const vw = vp?.width ?? vp?.clientWidth ?? 0;
+    const vh = vp?.height ?? vp?.clientHeight ?? 0;
+    if (vw <= 0 || vh <= 0) {
+      throw toolError("browser.action_failed", "Page.getLayoutMetrics returned no viewport size");
+    }
+    // 'top'/'bottom' are edge jumps, not distances — a wheel delta far
+    // beyond the scroll range clamps at the boundary, same as a long
+    // real flick. Directional scrolls use amountPx directly.
+    const EDGE = 2_000_000;
+    const deltaX = dir === "right" ? amount : dir === "left" ? -amount : 0;
+    const deltaY =
+      dir === "down" ? amount
+      : dir === "up" ? -amount
+      : dir === "bottom" ? EDGE
+      : dir === "top" ? -EDGE
+      : 0;
+    const x = vw / 2;
+    const y = vh / 2;
+    // Chrome only routes wheel input to the page once the pointer is
+    // known to be over web contents — establish position with a
+    // mouseMoved first (same reason trusted click/hover move first).
+    await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, pointerType: "mouse" });
+    await session.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x,
+      y,
+      deltaX,
+      deltaY,
+      pointerType: "mouse",
+    });
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted scroll ${dir}`,
+    step: { action: "scroll", trusted: true, direction: dir, amountPx: amount, ok: true, frameId },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

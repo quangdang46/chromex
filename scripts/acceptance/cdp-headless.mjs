@@ -275,6 +275,47 @@ await runScenario(
         cssOutline: hovCssOutline,
       };
 
+      // --- trusted scroll: real wheel events vs programmatic scrollBy ---
+      // /wheel-probe counts wheel events + isTrusted — synthetic scrollBy
+      // fires NO wheel event; CDP mouseWheel must produce trusted:true.
+      await page.goto(fixture.url("/wheel-probe"), { waitUntil: "domcontentloaded" });
+      await page.bringToFront();
+      const untrustedScroll = await runner.browserToolCall(
+        taskId, "browser.page.scroll",
+        { direction: "down", amountPx: 300 }, token, 60_000,
+      );
+      await sleep(200);
+      const wheelAfterDom = await page.locator("#r").textContent();
+      const scrollYDom = await page.evaluate(() => window.scrollY);
+      const trustedScrollRes = await runner.browserToolCall(
+        taskId, "browser.page.scroll",
+        { direction: "down", amountPx: 300, trusted: true }, token, 60_000,
+      );
+      await sleep(300);
+      const wheelAfterTrusted = await page.locator("#r").textContent();
+      const scrollYTrusted = await page.evaluate(() => window.scrollY);
+      const scrollBadTarget = await runner.browserToolCall(
+        taskId, "browser.page.scroll",
+        { selector: "#r", trusted: true }, token, 60_000,
+      );
+      evidence.note(`scroll: dom=${wheelAfterDom} y=${scrollYDom} | trusted=${wheelAfterTrusted} y=${scrollYTrusted} | badTarget=${scrollBadTarget?.status}`);
+      results.trustedScroll = {
+        ok:
+          untrustedScroll?.status === "completed" &&
+          wheelAfterDom === "count:0 trusted:none delta:0" &&
+          scrollYDom > 0 &&
+          trustedScrollRes?.status === "completed" &&
+          /trusted:true/.test(wheelAfterTrusted ?? "") &&
+          /count:[1-9]/.test(wheelAfterTrusted ?? "") &&
+          scrollYTrusted > scrollYDom &&
+          scrollBadTarget?.status === "failed",
+        afterDom: wheelAfterDom,
+        afterTrusted: wheelAfterTrusted,
+        scrollYDom,
+        scrollYTrusted,
+        badTargetStatus: scrollBadTarget?.status,
+      };
+
       // --- trusted press: CDP key events vs synthetic DOM key events ---
       await page.goto(fixture.url("/keys"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();

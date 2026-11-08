@@ -4034,6 +4034,40 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cdp.sent.filter((s) => s.method.startsWith("Input."))).toHaveLength(0);
   });
 
+  test("scroll trusted dispatches a real mouseWheel at viewport center", async () => {
+    const cdp = fakeCdp({
+      // real protocol shape: viewport extents are clientWidth/clientHeight
+      "Page.getLayoutMetrics": () => ({ cssVisualViewport: { clientWidth: 800, clientHeight: 600 } }),
+    });
+    const h = createToolHostHandler(cdpDeps(512, cdp));
+    const res = (await h(req("browser.page.scroll", { tabId: 512, direction: "down", amountPx: 240, trusted: true }))) as {
+      ok: boolean; step?: { trusted?: boolean; direction?: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    expect(res.step?.direction).toBe("down");
+    const wheel = cdp.sent.find((s) => s.method === "Input.dispatchMouseEvent" && s.params?.type === "mouseWheel");
+    expect(wheel?.params).toMatchObject({ x: 400, y: 300, deltaX: 0, deltaY: 240 });
+  });
+
+  test("scroll trusted top/bottom use edge-clamp deltas; element target refused", async () => {
+    const cdp = fakeCdp({
+      "Page.getLayoutMetrics": () => ({ visualViewport: { clientWidth: 800, clientHeight: 600 } }),
+    });
+    const h = createToolHostHandler(cdpDeps(513, cdp));
+    await h(req("browser.page.scroll", { tabId: 513, direction: "top", trusted: true }));
+    const wheel = cdp.sent.filter((s) => s.params?.type === "mouseWheel").at(-1);
+    expect(wheel?.params?.deltaY).toBeLessThan(-100_000);
+    await expect(h(req("browser.page.scroll", { tabId: 513, selector: "#el", trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.scroll", { tabId: 513, direction: "down", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.scroll", { tabId: 513, direction: "sideways", trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("scroll trusted without CDP dep → proto.unsupported", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.scroll", { tabId: 514, trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("trusted targetless press verifies activeElement via page.dom.describe", async () => {
     const cdp = fakeCdp();
     const sentToTab: Array<Record<string, unknown>> = [];
