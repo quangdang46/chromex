@@ -414,6 +414,13 @@ try {
     String(shOut?.text ?? "").includes("shadow-clicked"),
     "click reached the open-shadow button and fired its handler",
   );
+  // wait/text conditions must also see shadow content (deep body text)
+  await call("browser.page.wait", { tabId: shId, text: "shadow-secret-text", timeoutMs: 3000 });
+  const shFind = await call("browser.page.find", { tabId: shId, text: "shadow-secret-text" });
+  assert(
+    (shFind?.matches ?? shFind?.results ?? []).length > 0 || String(JSON.stringify(shFind)).includes("shadow-secret-text"),
+    `find locates open-shadow text (${JSON.stringify(shFind).slice(0, 160)})`,
+  );
 
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });

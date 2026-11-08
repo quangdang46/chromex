@@ -657,6 +657,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     });
   }
 
+  /** Body text including open shadow-root content — innerText alone
+   *  never crosses shadow boundaries, so wait/text conditions would be
+   *  blind to web-component UIs. */
+  async #deepBodyText(page: PwPage): Promise<string> {
+    return page.locator("body").evaluate(deepInnerText).catch(() => "");
+  }
+
   async #console(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const buf = this.#ensureConsoleCapture(page);
@@ -1839,7 +1846,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (cond.goneSelector && (await count(cond.goneSelector)) !== 0) return false;
     if (cond.urlContains && !page.url().includes(cond.urlContains)) return false;
     if (cond.text) {
-      const bodyText = await page.locator("body").innerText().catch(() => "");
+      const bodyText = await this.#deepBodyText(page);
       if (!bodyText.includes(cond.text)) return false;
     }
     if (cond.readyState) {
@@ -1943,7 +1950,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         continue;
       }
       if (text !== null || textGone !== null) {
-        const bodyText = await page.locator("body").innerText().catch(() => "");
+        const bodyText = await this.#deepBodyText(page);
         if (text !== null && !bodyText.includes(text)) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
@@ -2214,7 +2221,18 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         }
         const out: Array<{ selector: string; tagName: string; role: string; text: string }> = [];
         const matched: Element[] = [];
-        const candidates = root.querySelectorAll("*");
+        // querySelectorAll never crosses shadow boundaries — walk open
+        // shadow roots recursively so web-component UIs are findable
+        // (same coverage as the extension find path).
+        const candidates: Element[] = [];
+        const collectDeep = (scope: ParentNode): void => {
+          for (const el of Array.from(scope.querySelectorAll("*"))) {
+            candidates.push(el);
+            const sr = (el as HTMLElement).shadowRoot;
+            if (sr) collectDeep(sr);
+          }
+        };
+        collectDeep(root);
         const scanned = Math.min(candidates.length, 5000);
         for (let i = 0; i < scanned && out.length < limit; i++) {
           const el = candidates[i] as HTMLElement;
