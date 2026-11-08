@@ -67,6 +67,10 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.find",
   "browser.page.history",
   "browser.page.network",
+  "browser.page.responseBody",
+  "browser.page.webSocket",
+  "browser.page.route",
+  "browser.page.unroute",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -92,6 +96,9 @@ type PwPage = import("playwright-core").Page;
 type PwDownload = import("playwright-core").Download;
 type PwRequest = import("playwright-core").Request;
 type PwCDPSession = import("playwright-core").CDPSession;
+type PwResponse = import("playwright-core").Response;
+type PwRoute = import("playwright-core").Route;
+type PwWebSocket = import("playwright-core").WebSocket;
 
 /** One observed network request — mirrors browser.page.network entries
  *  on chrome-extension (metadata only, bodies never captured). */
@@ -103,6 +110,18 @@ interface NetworkLogEntry {
   error?: string;
   mimeType?: string;
   ts: number;
+}
+
+interface IsoRouteRule {
+  id: string;
+  match: string;
+  action: "fulfill" | "abort" | "modify";
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  url?: string;
+  requestHeaders?: Record<string, string>;
+  requestBody?: string;
 }
 
 /** One observed download on the isolated backend — mirrors the fields
@@ -158,6 +177,30 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  the same commands the extension debugger tier sends. WeakMap so
    *  closed pages release their session handle. */
   readonly #cdpSessions = new WeakMap<PwPage, PwCDPSession>();
+  /** page → finished responses kept for lazy body() reads
+   *  (browser.page.responseBody). Bounded; Response objects stay
+   *  valid for body() after the event loop turns. */
+  readonly #responseBuffers = new Map<PwPage, Array<{
+    id: string; method: string; url: string; type: string;
+    status?: number; mimeType?: string; ts: number; res: PwResponse;
+  }>>();
+  #responseSeq = 0;
+  /** page → WebSocket connections + bounded frames
+   *  (browser.page.webSocket). Mirrors the extension tap caps. */
+  readonly #wsBuffers = new Map<PwPage, Array<{
+    id: string; url: string; ts: number; closed: boolean;
+    frames: Array<{ dir: "sent" | "recv"; data: string; binary: boolean; ts: number; truncated?: boolean }>;
+  }>>();
+  #wsSeq = 0;
+  /** page → interception rules (browser.page.route). One catch-all
+   *  route handler per page consults this list — first match wins,
+   *  same as the extension Fetch tier. */
+  readonly #routeRules = new Map<PwPage, IsoRouteRule[]>();
+  #routeSeq = 0;
+  /** page → bodies served by route.fulfill — playwright's
+   *  response.body() cannot read fulfilled payloads back, so the
+   *  fulfill branch records them here for responseBody lookups. */
+  readonly #fulfilledBodies = new Map<PwPage, Array<{ url: string; body: string; ts: number }>>();
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
@@ -319,6 +362,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#find(taskId, args);
       case "browser.page.network":
         return this.#network(taskId, args);
+      case "browser.page.responseBody":
+        return this.#responseBody(taskId, args);
+      case "browser.page.webSocket":
+        return this.#webSocket(taskId, args);
+      case "browser.page.route":
+        return this.#route(taskId, args);
+      case "browser.page.unroute":
+        return this.#unroute(taskId, args);
       case "browser.page.history":
         return this.#history(taskId, args);
       case "browser.downloads.list":
@@ -533,6 +584,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (typeof page.on !== "function") return page;
     this.#ensureConsoleCapture(page);
     this.#ensureNetworkCapture(page);
+    this.#ensureResponseTap(page);
+    this.#ensureWsTap(page);
     return page;
   }
 
@@ -833,6 +886,331 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       .slice(0, limit)
       .map((e) => ({ ...e }));
     return { requests: filtered, captured: true };
+  }
+
+  // ---- response bodies / web sockets / interception ----
+  // Same contracts as the extension CDP taps (tool-host.ts), backed by
+  // playwright's response/websocket/route events instead of Network.*
+  // and Fetch.* domains. Capture starts at page creation — there is no
+  // attach moment on this backend, so `capturingSince` is the page's
+  // track time rather than a tap time.
+
+  #ensureResponseTap(page: PwPage): void {
+    if (this.#responseBuffers.has(page)) return;
+    const buf: Array<{
+      id: string; method: string; url: string; type: string;
+      status?: number; mimeType?: string; ts: number; res: PwResponse;
+    }> = [];
+    this.#responseBuffers.set(page, buf);
+    page.on("response", (res) => {
+      const req = res.request();
+      // mimeType comes from the response headers directly — the
+      // network-capture listener owns #pendingRequests and may have
+      // already consumed the entry (listener order is registration
+      // order, not guaranteed).
+      const mime = res.headers()["content-type"];
+      buf.push({
+        id: `r${++this.#responseSeq}`,
+        method: req.method(),
+        url: stripQuery(res.url()).slice(0, MAX_URL_LEN),
+        type: req.resourceType(),
+        status: res.status(),
+        ...(mime ? { mimeType: mime.split(";")[0]!.slice(0, MAX_MIME_LEN) } : {}),
+        ts: Date.now(),
+        res,
+      });
+      if (buf.length > MAX_NETWORK_ENTRIES) buf.splice(0, buf.length - MAX_NETWORK_ENTRIES);
+    });
+  }
+
+  #ensureWsTap(page: PwPage): void {
+    if (this.#wsBuffers.has(page)) return;
+    const buf: Array<{
+      id: string; url: string; ts: number; closed: boolean;
+      frames: Array<{ dir: "sent" | "recv"; data: string; binary: boolean; ts: number; truncated?: boolean }>;
+    }> = [];
+    this.#wsBuffers.set(page, buf);
+    const WS_FRAME_MAX = 8 * 1024;
+    const WS_CONN_CAP = 50;
+    const WS_FRAME_CAP = 200;
+    page.on("websocket", (ws: PwWebSocket) => {
+      const conn = { id: `ws${++this.#wsSeq}`, url: stripQuery(ws.url()).slice(0, MAX_URL_LEN), ts: Date.now(), closed: false, frames: [] as typeof buf[number]["frames"] };
+      buf.push(conn);
+      if (buf.length > WS_CONN_CAP) buf.splice(0, buf.length - WS_CONN_CAP);
+      const pushFrame = (dir: "sent" | "recv", payload: string | Buffer) => {
+        if (conn.frames.length >= WS_FRAME_CAP) return;
+        const isBuffer = typeof payload !== "string";
+        const raw = isBuffer ? payload : Buffer.from(payload, "utf8");
+        const truncated = raw.length > WS_FRAME_MAX;
+        conn.frames.push({
+          dir,
+          data: isBuffer
+            ? raw.subarray(0, WS_FRAME_MAX).toString("base64")
+            : raw.subarray(0, WS_FRAME_MAX).toString("utf8"),
+          binary: isBuffer,
+          ts: Date.now(),
+          ...(truncated ? { truncated: true } : {}),
+        });
+      };
+      ws.on("framesent", (p) => pushFrame("sent", p.payload));
+      ws.on("framereceived", (p) => pushFrame("recv", p.payload));
+      ws.on("close", () => { conn.closed = true; });
+    });
+  }
+
+  async #responseBody(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    this.#ensureResponseTap(page);
+    const buf = this.#responseBuffers.get(page) ?? [];
+    const requestId = typeof args.requestId === "string" ? args.requestId : "";
+    const urlContains = typeof args.urlContains === "string" ? args.urlContains : "";
+    const maxBytes =
+      typeof args.maxBytes === "number" && Number.isFinite(args.maxBytes)
+        ? Math.min(Math.max(Math.floor(args.maxBytes), 1024), 256 * 1024)
+        : 64 * 1024;
+    const toPublic = (e: (typeof buf)[number]) => ({
+      requestId: e.id,
+      method: e.method,
+      url: e.url,
+      ...(e.type ? { type: e.type } : {}),
+      ...(e.status !== undefined ? { status: e.status } : {}),
+      ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+      finished: true,
+      ts: e.ts,
+    });
+    if (requestId) {
+      const entry = [...buf].reverse().find((e) => e.id === requestId);
+      if (!entry) {
+        throw protocolError("browser.action_failed", `no captured response with requestId ${requestId}`);
+      }
+      let body = await entry.res.body().catch(() => null);
+      if (body === null) {
+        // Fulfilled-route responses have no network body — recover the
+        // payload the fulfill rule served for this URL.
+        const fb = (this.#fulfilledBodies.get(page) ?? [])
+          .filter((f) => f.url === entry.res.url())
+          .at(-1);
+        if (fb) body = Buffer.from(fb.body, "utf8");
+      }
+      if (body === null) {
+        throw protocolError("browser.action_failed", `no response body available for ${requestId}`);
+      }
+      const truncated = body.length > maxBytes;
+      return {
+        ...toPublic(entry),
+        body: body.toString("utf8", 0, Math.min(body.length, maxBytes)),
+        bodyBytes: body.length,
+        truncated,
+      };
+    }
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+        : 50;
+    const filtered = buf.filter((e) => !urlContains || e.url.includes(urlContains));
+    return { requests: filtered.slice(-limit).map(toPublic), captured: true };
+  }
+
+  async #webSocket(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    this.#ensureWsTap(page);
+    const buf = this.#wsBuffers.get(page) ?? [];
+    const urlContains = typeof args.urlContains === "string" ? args.urlContains : "";
+    const requestId = typeof args.requestId === "string" ? args.requestId : "";
+    const toPublic = (s: (typeof buf)[number], withFrames: boolean) => ({
+      requestId: s.id,
+      url: s.url,
+      ts: s.ts,
+      closed: s.closed,
+      frameCount: s.frames.length,
+      ...(withFrames
+        ? {
+            frames: s.frames.slice(-(
+              typeof args.frameLimit === "number" && Number.isFinite(args.frameLimit)
+                ? Math.min(Math.max(Math.floor(args.frameLimit), 1), 200)
+                : 50
+            )).map((f) => ({
+              dir: f.dir,
+              data: f.data,
+              binary: f.binary,
+              ...(f.truncated ? { truncated: true } : {}),
+              ts: f.ts,
+            })),
+          }
+        : {}),
+    });
+    if (requestId) {
+      const s = [...buf].reverse().find((x) => x.id === requestId);
+      if (!s) {
+        throw protocolError("browser.action_failed", `no captured WebSocket with requestId ${requestId}`);
+      }
+      return { ...toPublic(s, true), captured: true };
+    }
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 50)
+        : 20;
+    const filtered = buf.filter((s) => !urlContains || s.url.includes(urlContains));
+    return { sockets: filtered.slice(-limit).map((s) => toPublic(s, false)), captured: true };
+  }
+
+  /** Lazily install the catch-all route handler + rule list for a page. */
+  async #ensureRoute(page: PwPage): Promise<IsoRouteRule[]> {
+    let rules = this.#routeRules.get(page);
+    if (rules) return rules;
+    rules = [];
+    this.#routeRules.set(page, rules);
+    await page.route("**/*", async (route: PwRoute) => {
+      const req = route.request();
+      const rule = rules.find((r) => req.url().includes(r.match));
+      if (!rule) return route.fallback();
+      try {
+        if (rule.action === "abort") return await route.abort();
+        if (rule.action === "modify") {
+          const overrides: Parameters<PwRoute["continue"]>[0] = {};
+          if (rule.url !== undefined) overrides.url = rule.url;
+          if (rule.requestBody !== undefined) overrides.postData = rule.requestBody;
+          if (rule.requestHeaders !== undefined) {
+            const base = await req.allHeaders().catch(() => req.headers());
+            overrides.headers = { ...base, ...rule.requestHeaders };
+          }
+          return await route.continue(overrides);
+        }
+        const headers = { ...rule.headers };
+        if (!Object.keys(headers).some((k) => k.toLowerCase() === "content-type")) {
+          headers["content-type"] = "text/plain";
+        }
+        const fulfilled = this.#fulfilledBodies.get(page) ?? [];
+        fulfilled.push({ url: req.url(), body: rule.body, ts: Date.now() });
+        if (fulfilled.length > 100) fulfilled.splice(0, fulfilled.length - 100);
+        this.#fulfilledBodies.set(page, fulfilled);
+        return await route.fulfill({ status: rule.status, headers, body: rule.body });
+      } catch {
+        return route.fallback();
+      }
+    });
+    return rules;
+  }
+
+  async #route(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const match = typeof args.match === "string" ? args.match : "";
+    if (!match || match.length > 512) {
+      throw protocolError("proto.invalid", "browser.page.route requires args.match (URL substring ≤512)");
+    }
+    const action = args.action === undefined ? "fulfill" : args.action;
+    if (action !== "fulfill" && action !== "abort" && action !== "modify") {
+      throw protocolError("proto.invalid", "browser.page.route args.action must be fulfill|abort|modify");
+    }
+    const rules = await this.#ensureRoute(page);
+    if (rules.length >= 50) {
+      throw protocolError("proto.invalid", "route rule cap reached (50) — unroute first");
+    }
+    const rule: IsoRouteRule = {
+      id: `rt${++this.#routeSeq}`,
+      match,
+      action: action as IsoRouteRule["action"],
+      status: 200,
+      headers: {},
+      body: "",
+    };
+    if (action === "fulfill") {
+      if (args.status !== undefined) {
+        if (typeof args.status !== "number" || args.status < 100 || args.status > 599) {
+          throw protocolError("proto.invalid", "args.status must be 100–599");
+        }
+        rule.status = args.status;
+      }
+      if (args.contentType !== undefined) {
+        if (typeof args.contentType !== "string" || args.contentType.length > 200) {
+          throw protocolError("proto.invalid", "args.contentType must be a string ≤200 chars");
+        }
+        rule.headers["Content-Type"] = args.contentType;
+      }
+      if (args.headers !== undefined) {
+        if (typeof args.headers !== "object" || args.headers === null || Array.isArray(args.headers)) {
+          throw protocolError("proto.invalid", "args.headers must be an object of string values");
+        }
+        for (const [k, v] of Object.entries(args.headers as Record<string, unknown>)) {
+          if (typeof v !== "string" || k.length === 0 || k.length > 100 || v.length > 8192) {
+            throw protocolError("proto.invalid", "args.headers values must be strings (name ≤100, value ≤8192 chars)");
+          }
+          rule.headers[k] = v;
+        }
+      }
+      if (args.body !== undefined) {
+        if (typeof args.body !== "string") {
+          throw protocolError("proto.invalid", "args.body must be a string");
+        }
+        if (args.body.length > 256 * 1024) {
+          throw protocolError("proto.payload_too_large", "args.body exceeds 256KiB");
+        }
+        rule.body = args.body;
+      }
+    }
+    if (action === "modify") {
+      if (args.url !== undefined) {
+        if (typeof args.url !== "string" || args.url.length > 2048) {
+          throw protocolError("proto.invalid", "args.url must be a string ≤2048 chars");
+        }
+        rule.url = args.url;
+      }
+      if (args.requestHeaders !== undefined) {
+        if (typeof args.requestHeaders !== "object" || args.requestHeaders === null || Array.isArray(args.requestHeaders)) {
+          throw protocolError("proto.invalid", "args.requestHeaders must be an object of string values");
+        }
+        const hdrs: Record<string, string> = {};
+        for (const [k, v] of Object.entries(args.requestHeaders as Record<string, unknown>)) {
+          if (typeof v !== "string" || k.length === 0 || k.length > 100 || v.length > 8192) {
+            throw protocolError("proto.invalid", "args.requestHeaders values must be strings (name ≤100, value ≤8192 chars)");
+          }
+          hdrs[k] = v;
+        }
+        if (Object.keys(hdrs).length > 0) rule.requestHeaders = hdrs;
+      }
+      if (args.requestBody !== undefined) {
+        if (typeof args.requestBody !== "string") {
+          throw protocolError("proto.invalid", "args.requestBody must be a string");
+        }
+        if (args.requestBody.length > 256 * 1024) {
+          throw protocolError("proto.payload_too_large", "args.requestBody exceeds 256KiB");
+        }
+        rule.requestBody = args.requestBody;
+      }
+      if (rule.url === undefined && rule.requestHeaders === undefined && rule.requestBody === undefined) {
+        throw protocolError("proto.invalid", "browser.page.route action:modify requires args.url, args.requestHeaders or args.requestBody");
+      }
+    }
+    rules.push(rule);
+    return { routeId: rule.id, match, action, status: rule.status, rules: rules.length };
+  }
+
+  async #unroute(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const rules = this.#routeRules.get(page);
+    const routeId = typeof args.routeId === "string" ? args.routeId : "";
+    if (!rules || rules.length === 0) {
+      return { removed: 0, remaining: 0 };
+    }
+    let removed = 0;
+    if (routeId) {
+      const idx = rules.findIndex((r) => r.id === routeId);
+      if (idx === -1) {
+        throw protocolError("browser.action_failed", `no route rule ${routeId} on this page`);
+      }
+      rules.splice(idx, 1);
+      removed = 1;
+    } else {
+      removed = rules.length;
+      rules.length = 0;
+    }
+    if (rules.length === 0) {
+      // Fully detach interception — no phantom route handler left
+      // consuming every request through fallback().
+      await page.unroute("**/*").catch(() => {});
+      this.#routeRules.delete(page);
+    }
+    return { removed, remaining: rules.length };
   }
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {

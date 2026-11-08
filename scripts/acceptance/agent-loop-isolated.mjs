@@ -297,6 +297,56 @@ try {
   const netFiltered = await call("browser.page.network", { tabId: fTab, status: "2xx", type: "fetch" });
   assert((netFiltered?.requests ?? []).some((r) => String(r.url).includes("/api/ping")), "status/type filters work");
 
+  // ── Loop 10b: route/unroute + responseBody on the isolated backend ──
+  // fulfill: /api/ping is answered from the rule, never hits the server.
+  const rt = await call("browser.page.route", {
+    tabId: fTab,
+    match: "/api/ping",
+    action: "fulfill",
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ v: "mocked" }),
+  });
+  assert(typeof rt?.routeId === "string", `route registered (${rt?.routeId})`);
+  await call("browser.page.history", { tabId: fTab, action: "reload" });
+  await call("browser.page.wait", { tabId: fTab, text: "pong:mocked", timeoutMs: 8000 });
+  const mocked = await call("browser.page.extract", { tabId: fTab, selector: "#out" });
+  assert(String(mocked?.text ?? "").includes("pong:mocked"), `route fulfill intercepted /api/ping (got "${mocked?.text}")`);
+
+  // responseBody: the fulfilled response is still observable.
+  const rbList = await call("browser.page.responseBody", { tabId: fTab, urlContains: "/api/ping" });
+  const rbEntry = (rbList?.requests ?? []).find((r) => String(r.url).includes("/api/ping"));
+  assert(!!rbEntry?.requestId, "responseBody lists the intercepted request");
+  const rbBody = await call("browser.page.responseBody", { tabId: fTab, requestId: rbEntry.requestId });
+  assert(String(rbBody?.body ?? "").includes('"mocked"'), `responseBody returns fulfilled body (got ${String(rbBody?.body).slice(0, 60)})`);
+
+  // unroute one rule → real response returns.
+  const un = await call("browser.page.unroute", { tabId: fTab, routeId: rt.routeId });
+  assert(un?.removed === 1, "unroute removed the fulfill rule");
+  await call("browser.page.history", { tabId: fTab, action: "reload" });
+  await call("browser.page.wait", { tabId: fTab, text: "pong:ok", timeoutMs: 8000 });
+
+  // modify: rewrite /api/ping → /api/pong2 (fixture returns {v:"rerouted"}).
+  await call("browser.page.route", {
+    tabId: fTab,
+    match: "/api/ping",
+    action: "modify",
+    url: fixture.url("/api/pong2"),
+  });
+  await call("browser.page.history", { tabId: fTab, action: "reload" });
+  await call("browser.page.wait", { tabId: fTab, text: "pong:rerouted", timeoutMs: 8000 });
+  const rerouted = await call("browser.page.extract", { tabId: fTab, selector: "#out" });
+  assert(String(rerouted?.text ?? "").includes("pong:rerouted"), `route modify rewrote the request URL (got "${rerouted?.text}")`);
+  await call("browser.page.unroute", { tabId: fTab });
+
+  // abort: matching requests fail → page reports fetch-failed.
+  await call("browser.page.route", { tabId: fTab, match: "/api/ping", action: "abort" });
+  await call("browser.page.history", { tabId: fTab, action: "reload" });
+  await call("browser.page.wait", { tabId: fTab, text: "fetch-failed", timeoutMs: 8000 });
+  const aborted = await call("browser.page.extract", { tabId: fTab, selector: "#out" });
+  assert(String(aborted?.text ?? "").includes("fetch-failed"), `route abort failed the request (got "${aborted?.text}")`);
+  await call("browser.page.unroute", { tabId: fTab });
+
   // ── Loop 11: open shadow DOM on the isolated backend — playwright
   //  locators pierce open roots natively; text/extract must too ─────
   const shTab = await call("browser.tab.create", { url: fixture.url("/shadow"), active: false });

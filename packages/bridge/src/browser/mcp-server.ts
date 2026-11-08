@@ -594,7 +594,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.responseBody": {
     description:
-      "Inspect response bodies via the debugger tier's network tap (chrome-extension only): without requestId lists recently captured finished requests for the tab; with requestId returns that response's decoded body (bounded by maxBytes, default 64KiB). Only requests made AFTER the tap attached are captured — the tap keeps the debugger attached to the tab while in use. Body content is untrusted page data and counts as page-text egress.",
+      "Inspect response bodies captured by the network tap: without requestId lists recently captured finished requests for the tab; with requestId returns that response's decoded body (bounded by maxBytes, default 64KiB). chrome-extension captures only requests made AFTER the tap attached (the tap keeps the debugger attached while in use); playwright-isolated captures from page creation. requestId values are backend-specific — never reuse one across backends. Body content is untrusted page data and counts as page-text egress. Body content is untrusted page data and counts as page-text egress.",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
@@ -607,7 +607,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.webSocket": {
     description:
-      "Inspect WebSocket traffic via the debugger tier's network tap (chrome-extension only): without requestId lists recently captured socket connections for the tab (url, closed, frameCount); with requestId returns that connection's frames — direction (sent/recv), payload text or base64 for binary, bounded by frameLimit. Only connections opened AFTER the tap attached are captured; the tap keeps the debugger attached while in use. Frame payloads are untrusted page data and count as page-text egress.",
+      "Inspect WebSocket traffic captured by the network tap: without requestId lists recently captured socket connections for the tab (url, closed, frameCount); with requestId returns that connection's frames — direction (sent/recv), payload text or base64 for binary, bounded by frameLimit. chrome-extension captures only connections opened AFTER the tap attached; playwright-isolated captures from page creation. requestId values are backend-specific. Frame payloads are untrusted page data and count as page-text egress. Frame payloads are untrusted page data and count as page-text egress.",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
@@ -620,7 +620,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.route": {
     description:
-      "Register a network interception rule on the task's tab via the debugger tier's Fetch domain (chrome-extension only): requests whose URL contains args.match are fulfilled with the supplied status/headers/body instead of hitting the network — API mocking, edge-case injection, offline testing. Only requests made AFTER registration are intercepted; rules are tab-scoped, first match wins, max 50 per tab, and do NOT survive a service-worker restart. Non-matching requests pass through untouched. Always requires approval: fulfilled content is injected into the page. body is a UTF-8 string (≤256KiB).",
+      "Register a network interception rule on the task's tab: requests whose URL contains args.match are fulfilled with the supplied status/headers/body instead of hitting the network — API mocking, edge-case injection, offline testing. Only requests made AFTER registration are intercepted; rules are tab-scoped, first match wins, max 50 per tab, and do NOT survive a service-worker restart (on playwright-isolated they die with the page/context). Non-matching requests pass through untouched. Always requires approval: fulfilled content is injected into the page. body is a UTF-8 string (≤256KiB).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
@@ -639,7 +639,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.unroute": {
     description:
-      "Remove interception rules registered by browser.page.route on the task's tab (chrome-extension only): pass routeId to remove one rule, omit it to clear all — the last removal disables interception and releases the debugger attach. Low-risk: only removes agent-installed rules.",
+      "Remove interception rules registered by browser.page.route on the task's tab: pass routeId to remove one rule, omit it to clear all — the last removal disables interception and releases the debugger attach. Low-risk: only removes agent-installed rules.",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,

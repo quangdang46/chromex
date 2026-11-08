@@ -90,7 +90,13 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   **tool parity additions**: playwright-isolated now also serves
   tab.duplicate (shared context = session carry-over, fresh DOM),
   page.setInputFiles (absolute paths, input-only), downloads.cancel
-  (honest no-op on finished) — verified in `agent-loop-isolated`
+  (honest no-op on finished) — verified in `agent-loop-isolated`;
+  **network tier parity**: responseBody (fulfilled bodies recovered
+  via rule-side record — playwright can't read them back), webSocket
+  frame tap (page.on websocket, 8KiB/frame caps), route/unroute
+  (fulfill/abort/modify via page.route, first-match, 50-rule cap,
+  full detach on empty) — fulfill+modify+abort+responseBody verified
+  in `agent-loop-isolated` Loop 10b
   `gateway-mcp-isolated` PASS — the full provider path without user
   Chrome: real in-process Gateway + spawned mcp-stdio.js child +
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC
