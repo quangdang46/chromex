@@ -81,7 +81,14 @@ for Testing:
   (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →
   select-all → Backspace → per-char keys), `hover` and `drag` (mouse
   move / press→moves→release). Element targets are focused/located
-  through the content script first. select/submit/scroll/focus/
+  through the content script first. Keyboard trusted ops
+  (press/type/fill) also accept `args.frameId`: focus happens in the
+  child frame's content script and CDP key events follow the focused
+  frame — verified by `cdp-headless` (`key:x,trusted:true` inside a
+  real iframe). Pointer ops (click/hover/drag) stay top-frame-only:
+  CDP `Input` is viewport-level and per-frame coordinate offset is
+  not implemented — `frameId!=0` fails `proto.unsupported` honestly.
+  select/submit/scroll/focus/
   navigate/wait/find and in-memory `browser.page.upload` stay
   programmatic — not gestures.
   `filePicker` stays `false` —

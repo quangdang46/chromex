@@ -236,6 +236,34 @@ await runScenario(
         status: dragRes?.status,
       };
 
+      // trusted keyboard inside an iframe: focus happens in the child
+      // frame's content script; CDP key events follow the focused frame.
+      await page.goto(fixture.url("/iframe-parent"), { waitUntil: "domcontentloaded" });
+      await page.bringToFront();
+      const getFrames = await runner.browserToolCall(taskId, "browser.page.get", {}, token, 60_000);
+      const frames = getFrames?.result?.frames ?? getFrames?.frames ?? [];
+      const childFrame = frames.find(
+        (f) => String(f.url ?? "").includes("127.0.0.1") && String(f.url ?? "").includes("/iframe-child"),
+      );
+      let framePress = null;
+      let koutText = null;
+      if (childFrame?.frameId) {
+        framePress = await runner.browserToolCall(
+          taskId, "browser.page.press",
+          { selector: "#fin", key: "x", trusted: true, frameId: childFrame.frameId },
+          token, 60_000,
+        );
+        await sleep(300);
+        const pwFrame = page.frames().find((f) => f.url().includes("127.0.0.1") && f.url().includes("/iframe-child"));
+        koutText = pwFrame ? await pwFrame.locator("#kout").textContent() : null;
+      }
+      evidence.note(`frame press → status=${framePress?.status} kout=${koutText}`);
+      results.trustedFramePress = {
+        ok: framePress?.status === "completed" && koutText === "key:x,trusted:true",
+        status: framePress?.status,
+        kout: koutText,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();

@@ -1320,32 +1320,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           return await trustedClick(deps, tabId, args, expectCond);
         }
+        // Keyboard trusted ops work in subframes too: the element is
+        // focused through that frame's content script and CDP key
+        // events follow the focused frame. Pointer ops (click/hover/
+        // drag) stay top-frame — CDP Input is viewport-level and frame
+        // geometry would need offset math we do not have.
         if (tool === "browser.page.press" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted press is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedPress(deps, tabId, args, expectCond);
+          return await trustedPress(deps, tabId, args, expectCond, frameId);
         }
         if (tool === "browser.page.type" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted type is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedType(deps, tabId, args, expectCond);
+          return await trustedType(deps, tabId, args, expectCond, frameId);
         }
         if (tool === "browser.page.fill" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted fill is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedFill(deps, tabId, args, expectCond);
+          return await trustedFill(deps, tabId, args, expectCond, frameId);
         }
         if (tool === "browser.page.hover" && args.trusted === true) {
           if (frameId !== 0) {
@@ -1775,13 +1762,14 @@ async function cdpLocatePoint(
   deps: ToolHostDeps,
   tabId: number,
   target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
+  frameId = 0,
 ): Promise<{ x: number; y: number; selector: string }> {
   const loc = (await deps.sendToTab(tabId, {
     type: "page.dom.locate",
     ...(target.ref ? { targetRef: target.ref } : {}),
     ...(target.selector ? { selector: target.selector } : {}),
     ...(target.label ? { label: target.label } : {}),
-  })) as { found?: boolean; reason?: string; count?: number; x?: number; y?: number; selector?: string };
+  }, { frameId })) as { found?: boolean; reason?: string; count?: number; x?: number; y?: number; selector?: string };
   if (loc?.found !== true || typeof loc.x !== "number" || typeof loc.y !== "number" || typeof loc.selector !== "string") {
     if (loc?.reason === "ambiguous") {
       throw toolError("browser.ambiguous_target", `target matches ${loc.count ?? "multiple"} elements`);
@@ -1795,12 +1783,13 @@ async function cdpLocateElement(
   deps: ToolHostDeps,
   tabId: number,
   args: Record<string, unknown>,
+  frameId = 0,
 ): Promise<{ x: number; y: number; selector: string }> {
   return cdpLocatePoint(deps, tabId, {
     ref: str(args.ref),
     selector: str(args.selector),
     label: str(args.label),
-  });
+  }, frameId);
 }
 
 const CDP_MOUSE_BUTTONS = new Set(["left", "right", "middle"]);
@@ -2138,14 +2127,15 @@ async function cdpFocusTarget(
   deps: ToolHostDeps,
   tabId: number,
   args: Record<string, unknown>,
+  frameId = 0,
 ): Promise<void> {
   const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
   if (!hasTarget) return;
-  const loc = await cdpLocateElement(deps, tabId, args);
+  const loc = await cdpLocateElement(deps, tabId, args, frameId);
   const focusRes = (await deps.sendToTab(tabId, {
     type: "page.dom.perform",
     steps: [{ action: "focus", selector: loc.selector, reason: "trusted input focus" }],
-  })) as BrowserDomActionResult;
+  }, { frameId })) as BrowserDomActionResult;
   const focusStep = focusRes?.results?.[0];
   if (focusRes?.ok === false || focusStep?.ok === false) {
     throw toolError(
@@ -2189,6 +2179,7 @@ async function trustedPress(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const key = str(args.key);
   if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");
@@ -2200,7 +2191,7 @@ async function trustedPress(
     );
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
-  await cdpFocusTarget(deps, tabId, args);
+  await cdpFocusTarget(deps, tabId, args, frameId);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2212,7 +2203,7 @@ async function trustedPress(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
@@ -2254,6 +2245,7 @@ async function trustedType(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const text = str(args.text) ?? str(args.value);
   if (text === undefined || text.length === 0) {
@@ -2261,7 +2253,7 @@ async function trustedType(
   }
   const keys = cdpResolveTypeText("browser.page.type", text);
   cdpRequired(deps);
-  await cdpFocusTarget(deps, tabId, args);
+  await cdpFocusTarget(deps, tabId, args, frameId);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -2275,7 +2267,7 @@ async function trustedType(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
@@ -2298,6 +2290,7 @@ async function trustedFill(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const text = str(args.text) ?? str(args.value);
   if (text === undefined) {
@@ -2308,8 +2301,8 @@ async function trustedFill(
   if (!del) throw toolError("proto.invalid", "internal: fill key definitions missing");
   cdpRequired(deps);
   // fill always targets an element — focus is mandatory, not optional
-  const loc = await cdpLocateElement(deps, tabId, args);
-  await cdpFocusTarget(deps, tabId, args);
+  const loc = await cdpLocateElement(deps, tabId, args, frameId);
+  await cdpFocusTarget(deps, tabId, args, frameId);
   // Select-all via the content script (input.select()/execCommand) —
   // the select-all CHORD does not survive CDP dispatch reliably on
   // every platform, and selection is not the trusted part anyway: the
@@ -2317,7 +2310,7 @@ async function trustedFill(
   const selRes = (await deps.sendToTab(tabId, {
     type: "page.dom.perform",
     steps: [{ action: "selectAll", selector: loc.selector, reason: "trusted fill select-all" }],
-  })) as BrowserDomActionResult;
+  }, { frameId })) as BrowserDomActionResult;
   const selStep = selRes?.results?.[0];
   if (selRes?.ok === false || selStep?.ok === false) {
     throw toolError(
@@ -2341,7 +2334,7 @@ async function trustedFill(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }

@@ -1572,7 +1572,11 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(downs[1]?.params).toMatchObject({ key: "!", code: "Digit1", windowsVirtualKeyCode: 49, text: "!", modifiers: 8 });
     await expect(h(req("browser.page.press", { tabId: 512, key: "F13", trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.press", { tabId: 512, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.press", { tabId: 512, key: "Enter", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    // keyboard trusted ops allow subframes (focus happens in-frame);
+    // pointer ops still reject frameId!=0
+    const sub = await h(req("browser.page.press", { tabId: 512, key: "Enter", trusted: true, frameId: 2 }));
+    expect((sub as { ok?: boolean }).ok).toBe(true);
+    await expect(h(req("browser.page.click", { tabId: 512, selector: "#b", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
   test("type trusted dispatches per-char key events; rejects non-ASCII before dispatch", async () => {

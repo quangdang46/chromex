@@ -124,7 +124,8 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <h1>Frame Child</h1>
 <button id="fb" onclick="fetch('/api/frame-hit?src='+encodeURIComponent(location.origin)).then(()=>{document.getElementById('fout').textContent='frame-hit'})">frame-btn</button>
 <p id="fout">idle</p>
-<input id="fin" />
+<input id="fin" onkeydown="document.getElementById('kout').textContent='key:'+event.key+',trusted:'+event.isTrusted" />
+<p id="kout">none</p>
 </body></html>`,
 
   // keyboard + file-input proof: echoes the last key pressed, shows
