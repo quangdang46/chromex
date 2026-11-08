@@ -15,7 +15,7 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -41,6 +41,8 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.tab.activate",
   "browser.tab.close",
   "browser.tab.create",
+  "browser.tab.duplicate",
+  "browser.page.setInputFiles",
   "browser.page.snapshot",
   "browser.page.get",
   "browser.page.extract",
@@ -67,6 +69,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.network",
   "browser.downloads.list",
   "browser.downloads.save",
+  "browser.downloads.cancel",
 ]);
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -274,6 +277,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#tabClose(taskId, args);
       case "browser.tab.create":
         return this.#tabCreate(taskId, args);
+      case "browser.tab.duplicate":
+        return this.#tabDuplicate(taskId, args);
       case "browser.page.navigate":
         return this.#withExpect(taskId, args, await this.#navigate(taskId, args));
       case "browser.page.snapshot":
@@ -308,6 +313,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#wait(taskId, args);
       case "browser.page.upload":
         return this.#withExpect(taskId, args, await this.#upload(taskId, args));
+      case "browser.page.setInputFiles":
+        return this.#setInputFiles(taskId, args);
       case "browser.page.find":
         return this.#find(taskId, args);
       case "browser.page.network":
@@ -318,6 +325,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#downloadsList(taskId, args);
       case "browser.downloads.save":
         return this.#downloadsSave(taskId, args);
+      case "browser.downloads.cancel":
+        return this.#downloadsCancel(taskId, args);
       default:
         throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
@@ -383,6 +392,28 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#activePages.set(taskId, page);
     if (url) {
       await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" });
+    }
+    const tabId = context.pages().indexOf(page);
+    return {
+      openedTabId: tabId,
+      tabId,
+      url: stripQuery(page.url()),
+      title: await page.title(),
+    };
+  }
+
+  /** browser.tab.duplicate — a new page in the SAME isolated context,
+   *  so cookies/storage (the "session") carry over automatically.
+   *  DOM state is not cloned — playwright has no session-snapshot API;
+   *  the duplicate lands on the source URL fresh. */
+  async #tabDuplicate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const context = await this.#contextFor(taskId);
+    const source = await this.#pageFor(taskId, args);
+    const url = source.url();
+    const page = this.#trackPage(await context.newPage());
+    this.#activePages.set(taskId, page);
+    if (url && url !== "about:blank") {
+      await page.goto(url, { timeout: DEFAULT_NAV_TIMEOUT_MS, waitUntil: "domcontentloaded" }).catch(() => {});
     }
     const tabId = context.pages().indexOf(page);
     return {
@@ -1621,6 +1652,30 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
   }
 
+  /** browser.downloads.cancel — playwright's Download.cancel() aborts
+   *  the transfer; the log entry flips to interrupted/canceled. A
+   *  finished download reports its real terminal state instead of
+   *  faking a cancel (same contract as the extension host). */
+  async #downloadsCancel(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const id = args.downloadId;
+    if (typeof id !== "number" || !Number.isInteger(id)) {
+      throw protocolError("proto.invalid", "browser.downloads.cancel requires args.downloadId");
+    }
+    const log = await this.#ensureDownloadLog(taskId);
+    const entry = log.find((e) => e.id === id);
+    if (!entry) {
+      throw protocolError("proto.invalid", `browser.downloads.cancel unknown downloadId ${id}`);
+    }
+    if (entry.state !== "in_progress") {
+      return { downloadId: id, cancelled: false, state: entry.state };
+    }
+    await entry.download.cancel().catch(() => {});
+    const failure = await entry.download.failure().catch(() => null);
+    entry.state = "interrupted";
+    entry.error = failure ?? "canceled";
+    return { downloadId: id, cancelled: true, state: entry.state, ...(entry.error ? { error: entry.error } : {}) };
+  }
+
   /** browser.page.find — bounded DOM text search. No content-side ref
    *  map exists on this backend, so matches carry selectors + text only
    *  (the "bounded text matches with selectors" fallback). */
@@ -1759,6 +1814,32 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       payloads,
     );
     return { uploaded: files.length, via: "drop", dispatched: dropped === true };
+  }
+
+  /** browser.page.setInputFiles — the path-based counterpart of
+   *  browser.page.upload: real filesystem paths attached through
+   *  playwright's setInputFiles (which is exactly what upload falls
+   *  back from for non-input targets is NOT — this tool is input-only,
+   *  matching the extension's DOM.setFileInputFiles contract). Paths
+   *  must be absolute and exist; approval gating lives upstream. */
+  async #setInputFiles(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const raw = Array.isArray(args.files) ? args.files : [];
+    if (raw.length === 0 || raw.length > 10) {
+      throw protocolError("proto.invalid", "browser.page.setInputFiles requires args.files[] (1–10 absolute paths)");
+    }
+    const paths = raw.map((f) => {
+      if (typeof f !== "string" || !isAbsolute(f)) {
+        throw protocolError("proto.invalid", "browser.page.setInputFiles paths must be absolute");
+      }
+      if (!existsSync(f)) {
+        throw protocolError("proto.invalid", `browser.page.setInputFiles path does not exist: ${f}`);
+      }
+      return f;
+    });
+    const selector = await this.#requireSelector(args);
+    await page.locator(selector).first().setInputFiles(paths);
+    return { ok: true, files: paths.length };
   }
 
   // ---- lifecycle ----

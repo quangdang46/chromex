@@ -249,7 +249,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.duplicate": {
     description:
-      "Clone a scoped tab with its session — fork a page to experiment without losing the original's state. The new tab enters this task's scope and is returned as openedTabId. chrome-extension backend only; always requires approval since the target URL is resolved host-side.",
+      "Clone a scoped tab with its session — fork a page to experiment without losing the original's state. The new tab enters this task's scope and is returned as openedTabId. On playwright-isolated the duplicate shares the task's isolated context (cookies/storage carry over) but lands on the source URL fresh — DOM state is not cloned. Approval may be required since the target URL is resolved host-side.",
     inputSchema: objectSchema(TAB_TARGET_PROPS),
   },
   "browser.tab.update": {
@@ -574,7 +574,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.setInputFiles": {
     description:
-      "Set local file paths on a file input via the debugger tier (CDP DOM.setFileInputFiles) — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label. Always requires approval (sensitive data entry); paths must be absolute. chrome-extension backend only; args.frameId targets a file input inside an iframe (same-process frames — out-of-process frames fail browser.element_not_found honestly).",
+      "Set local file paths on a file input — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label. Always requires approval (sensitive data entry); paths must be absolute and exist. chrome-extension uses CDP DOM.setFileInputFiles (args.frameId targets a file input inside an iframe); playwright-isolated uses locator.setInputFiles (input-only, no drop-zone fallback — use browser.page.upload for drop zones).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
@@ -697,7 +697,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.downloads.cancel": {
     description:
-      "Cancel an in-progress download by its id (from browser.downloads.list). Downloads are profile-wide — this can stop a download the user started, so it always requires approval. No-op-safe: cancelling a finished download reports its real state instead of faking success. chrome-extension backend only; not tab-scoped.",
+      "Cancel an in-progress download by its id (from browser.downloads.list). Downloads are profile-wide — this can stop a download the user started, so it always requires approval. No-op-safe: cancelling a finished download reports its real state instead of faking success. Not tab-scoped; both backends support it (playwright-isolated cancels within the task's own downloads only).",
     inputSchema: objectSchema(
       {
         downloadId: { type: "integer", description: "The download id from browser.downloads.list (required)." },

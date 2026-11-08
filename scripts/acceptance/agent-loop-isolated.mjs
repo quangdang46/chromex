@@ -242,6 +242,33 @@ try {
   });
   assert(JSON.parse(String(emuReset?.value ?? "{}")).dpr !== 2, "emulate reset cleared deviceScaleFactor");
 
+  // setInputFiles: real filesystem path → input.files (path-based
+  // counterpart of the bytes upload above).
+  const pathFile = join(homedir(), ".chromex-acceptance-setinput.txt");
+  await writeFile(pathFile, "path-attach", "utf8");
+  const sif = await call("browser.page.setInputFiles", {
+    tabId: kTab,
+    selector: "#f",
+    files: [pathFile],
+  });
+  assert(sif?.ok === true && sif?.files === 1, "setInputFiles attached one path");
+  const sifName = await call("browser.page.extract", { tabId: kTab, selector: "#fname" });
+  assert(String(sifName?.text ?? "").includes("chromex-acceptance-setinput.txt"), "file input shows path basename");
+  const sifBad = await call("browser.page.setInputFiles", {
+    tabId: kTab,
+    selector: "#f",
+    files: ["relative/path.txt"],
+  }).then(() => null).catch((e) => e);
+  assert(sifBad !== null, "setInputFiles refused a relative path");
+
+  // tab.duplicate: new page in the same isolated context — session
+  // (cookies/storage) carries over; lands on the source URL.
+  const dup = await call("browser.tab.duplicate", { tabId: kTab });
+  const dupId = dup?.openedTabId ?? dup?.tabId;
+  assert(typeof dupId === "number", `tab.duplicate returned openedTabId (${JSON.stringify(dup)})`);
+  const dupGet = await call("browser.page.get", { tabId: dupId, key: "url" });
+  assert(String(dupGet?.value ?? "").endsWith("/keys"), `duplicate page landed on source URL (got ${dupGet?.value})`);
+
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {
     url: fixture.url("/dl"),
@@ -254,6 +281,9 @@ try {
   const dlList = await call("browser.downloads.list", {});
   const listed = (dlList?.downloads ?? []).find((d) => String(d?.filename ?? "").endsWith("e2e-download.txt"));
   assert(!!listed && listed.state === "complete", "downloads.list reports the completed download");
+  // cancel on a finished download reports its real state — no fake cancel.
+  const dlCancel = await call("browser.downloads.cancel", { downloadId: listed.id });
+  assert(dlCancel?.cancelled === false && dlCancel?.state === "complete", "downloads.cancel on finished download is an honest no-op");
 
   // ── Loop 10: page.network observes the page's own /api/ping fetch ──
   const fetchTab = await call("browser.tab.create", { url: fixture.url("/fetch"), active: false });
@@ -305,7 +335,7 @@ try {
   await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");
   await expectReject("browser.downloads.save", { url: fixture.url("/dl"), filename: "../escape.txt" }, "relative path", "traversal filename refused");
   await expectReject("browser.tab.create", { url: fixture.url("/"), muted: true }, "chrome-extension only", "muted arg refused (no silent drop)");
-  await expectReject("browser.downloads.cancel", { downloadId: 1 }, "unsupported", "downloads.cancel refused on isolated backend");
+  await expectReject("browser.downloads.cancel", {}, "downloadId", "downloads.cancel without id refused");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

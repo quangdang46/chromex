@@ -86,7 +86,11 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   failure on hidden targets; **upload drop-zone fallback**: target
   without a file input gets a real dragenter/dragover/drop carrying
   File objects, reported `via:"drop"` (acceptance page-defined) on
-  both extension and playwright-isolated backends (62 asserts)
+  both extension and playwright-isolated backends (62 asserts);
+  **tool parity additions**: playwright-isolated now also serves
+  tab.duplicate (shared context = session carry-over, fresh DOM),
+  page.setInputFiles (absolute paths, input-only), downloads.cancel
+  (honest no-op on finished) — verified in `agent-loop-isolated`
   `gateway-mcp-isolated` PASS — the full provider path without user
   Chrome: real in-process Gateway + spawned mcp-stdio.js child +
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC

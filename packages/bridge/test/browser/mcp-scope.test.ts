@@ -68,21 +68,18 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
 
   test("playwright-isolated omits tools it cannot execute", () => {
     const tools = supportedToolsForBackend("playwright-isolated");
-    expect(tools).not.toContain("browser.tab.duplicate");
     expect(tools).not.toContain("browser.windows.list");
     expect(tools).not.toContain("browser.windows.create");
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.update");
     expect(tools).not.toContain("browser.tab.discard");
-    expect(tools).not.toContain("browser.downloads.cancel");
     // CDP-tier tools are chrome-extension only (docs/adr/debugger-tier.md)
     expect(tools).not.toContain("browser.page.dialog");
-    expect(tools).not.toContain("browser.page.setInputFiles");
     expect(tools).not.toContain("browser.page.responseBody");
     expect(tools).not.toContain("browser.page.webSocket");
     expect(tools).not.toContain("browser.page.route");
     expect(tools).not.toContain("browser.page.unroute");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 13);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 10);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 
