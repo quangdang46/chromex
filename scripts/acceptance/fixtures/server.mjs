@@ -104,6 +104,16 @@ const PAGES = {
 <p id="out">idle</p>
 </body></html>`,
 
+  // popup acquisition: target=_blank implies noopener in modern Chrome —
+  // the opened tab has no openerTabId, so detection must be time-based.
+  "/popup": `<!doctype html><html><body>
+<h1>Popup Source</h1>
+<a id="pop" href="/popup-target" target="_blank">open popup</a>
+</body></html>`,
+  "/popup-target": `<!doctype html><html><head><title>Popup Target Page</title></head><body>
+<h1>Popup Target</h1>
+</body></html>`,
+
   // S2/S6: deliberate bug — the "Fix" button throws and never updates status;
   // a broken inline handler references a missing function.
   "/buggy": `<!doctype html><html><head><title>Buggy Page</title></head><body>

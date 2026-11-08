@@ -162,6 +162,17 @@ export interface ToolHostDeps {
     tabId: number,
   ): Promise<Array<{ frameId: number; url: string; parentFrameId?: number }>>;
   queryTabs(): Promise<chrome.tabs.Tab[]>;
+  /** Recent chrome.tabs.onCreated entries (index.ts ring buffer).
+   *  Page actions can open popups (target=_blank, window.open) that the
+   *  task's tab scope would otherwise never see — reporting them lets
+   *  the gateway acquire the new tab into scope. */
+  recentTabCreations?(): Array<{
+    tabId: number;
+    openerTabId?: number;
+    url?: string;
+    title?: string;
+    at: number;
+  }>;
   activateTab(tabId: number): Promise<void>;
   closeTab(tabId: number): Promise<void>;
   activeTabId(): Promise<number | null>;
@@ -1735,6 +1746,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
         const step = domStepFor(tool, args);
         if (expectedTarget) step.expectedTarget = expectedTarget;
+        const actionDispatchedAt = Date.now();
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
           steps: [step],
@@ -1758,12 +1770,17 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           else if (check.met === false) verified = false;
           else verified = verified ?? "unknown";
         }
+        const openedTabs =
+          tool === "browser.page.click" || tool === "browser.page.submit"
+            ? await collectOpenedTabs(deps, tabId, actionDispatchedAt)
+            : [];
         return {
           ok: true,
           summary: result.summary,
           step: first,
           ...(verified !== undefined ? { verified } : {}),
           ...(expectInfo ? { expect: expectInfo } : {}),
+          ...(openedTabs.length > 0 ? { openedTabs } : {}),
           resolvedTabId: tabId,
         };
       }
@@ -1998,6 +2015,47 @@ async function runExpectCondition(
   } catch {
     return { met: "unknown" };
   }
+}
+
+/** Tabs a page action may have opened (target=_blank, window.open).
+ *  Modern Chrome opens target=_blank with noopener, so openerTabId is
+ *  often absent — match on creation time alone, bounded to a short
+ *  grace window after dispatch. Reported as openedTabs[]; the tool
+ *  server harvests the nested tabIds into the task's tab scope so the
+ *  agent can actually drive the popup it created. */
+const OPENED_TAB_GRACE_MS = 600;
+const OPENED_TAB_QUIET_MS = 150;
+
+async function collectOpenedTabs(
+  deps: ToolHostDeps,
+  actedTabId: number,
+  sinceMs: number,
+): Promise<Array<{ tabId: number; url?: string; title?: string; openerTabId?: number }>> {
+  const read = deps.recentTabCreations;
+  if (!read) return [];
+  const seen = new Map<number, { tabId: number; url?: string; title?: string; openerTabId?: number }>();
+  const deadline = Date.now() + OPENED_TAB_GRACE_MS;
+  let quietSince = 0;
+  while (Date.now() < deadline) {
+    let added = false;
+    for (const t of read()) {
+      if (t.tabId === actedTabId || t.at < sinceMs || seen.has(t.tabId)) continue;
+      seen.set(t.tabId, {
+        tabId: t.tabId,
+        ...(t.url ? { url: t.url } : {}),
+        ...(t.title ? { title: t.title } : {}),
+        ...(typeof t.openerTabId === "number" ? { openerTabId: t.openerTabId } : {}),
+      });
+      added = true;
+    }
+    if (added) {
+      quietSince = Date.now();
+    } else if (seen.size > 0 && Date.now() - quietSince >= OPENED_TAB_QUIET_MS) {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return [...seen.values()];
 }
 
 const UPLOAD_MAX_FILES = 8;
@@ -2297,6 +2355,7 @@ async function trustedClick(
       : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
+  const actionDispatchedAt = Date.now();
   try {
     const btn = (button ?? "left") as "left" | "right" | "middle";
     await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
@@ -2329,12 +2388,14 @@ async function trustedClick(
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
+  const openedTabs = await collectOpenedTabs(deps, tabId, actionDispatchedAt);
   return {
     ok: true,
     summary: `trusted click at ${Math.round(point.x)},${Math.round(point.y)}`,
     step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true, frameId },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
+    ...(openedTabs.length > 0 ? { openedTabs } : {}),
     resolvedTabId: tabId,
   };
 }

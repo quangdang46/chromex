@@ -103,6 +103,62 @@ await runScenario(
         /Fixture Home/.test(textA) &&
         /Fixture Form/.test(textB);
 
+      // popup acquisition: task A clicks a target=_blank link — the
+      // opened tab must be reported in the click result AND acquired
+      // into A's scope (harvestTabRefs), while staying foreign to B.
+      let popupOk = false;
+      let popupDetail = "";
+      try {
+        await runner.browserToolCall(
+          A.taskId,
+          "browser.page.navigate",
+          { url: fixture.url("/popup") },
+          A.token,
+          60_000,
+        );
+        await sleep(500);
+        const clickOut = await runner.browserToolCall(
+          A.taskId,
+          "browser.page.click",
+          { selector: "#pop" },
+          A.token,
+          60_000,
+        );
+        const opened = clickOut?.result?.openedTabs ?? clickOut?.result?.step?.openedTabs ?? null;
+        const popupTabId = Array.isArray(opened) ? opened[0]?.tabId : null;
+        evidence.note(`A popup click → ${JSON.stringify(clickOut?.result ?? clickOut)?.slice(0, 400)}`);
+        if (typeof popupTabId === "number") {
+          await sleep(800);
+          const popGet = await runner.browserToolCall(
+            A.taskId,
+            "browser.page.get",
+            { tabId: popupTabId },
+            A.token,
+            30_000,
+          );
+          const popText = JSON.stringify(popGet?.result ?? {});
+          const bOnPopup = await runner
+            .browserToolCall(B.taskId, "browser.page.get", { tabId: popupTabId }, B.token, 30_000)
+            .then((r) => ({ status: r?.status, err: JSON.stringify(r?.error ?? r?.result ?? {}).slice(0, 200) }))
+            .catch((e) => ({ rpcError: String(e?.message ?? e).slice(0, 200) }));
+          evidence.note(`A→popup get: ${popGet?.status} ${popText.slice(0, 200)}; B→popup: ${JSON.stringify(bOnPopup)}`);
+          const bDenied =
+            bOnPopup.rpcError ||
+            bOnPopup.status === "failed" ||
+            /not_in_scope|denied|outside/.test(JSON.stringify(bOnPopup));
+          popupOk =
+            popGet?.status === "completed" &&
+            /Popup Target/.test(popText) &&
+            bDenied;
+          popupDetail = `popupTabId=${popupTabId} aGet=${popGet?.status} bDenied=${bDenied}`;
+        } else {
+          popupDetail = `no openedTabs in click result: ${JSON.stringify(clickOut?.result ?? clickOut)?.slice(0, 300)}`;
+        }
+      } catch (e) {
+        popupDetail = `popup leg error: ${String(e?.message ?? e).slice(0, 200)}`;
+      }
+      evidence.note(`popup acquisition: ${popupDetail}`);
+
       // screenshots of both real tabs for evidence
       const pages = browser.context.pages();
       for (const [i, p] of pages.entries()) {
@@ -111,13 +167,13 @@ await runScenario(
         }
       }
 
-      const pass = ownOk && crossDenied && !sawB;
+      const pass = ownOk && crossDenied && !sawB && popupOk;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "two tasks held isolated tab scopes; cross-task tab access refused"
-          : `ownOk=${ownOk} crossDenied=${crossDenied} sawB=${sawB}`,
-        details: { tabA, tabB, ownOk, crossDenied, sawB, cross, getA: getA?.status, getB: getB?.status },
+          ? "two tasks held isolated tab scopes; cross-task tab access refused; popup acquired into opener's scope"
+          : `ownOk=${ownOk} crossDenied=${crossDenied} sawB=${sawB} popupOk=${popupOk} (${popupDetail})`,
+        details: { tabA, tabB, ownOk, crossDenied, sawB, popupOk, popupDetail, cross, getA: getA?.status, getB: getB?.status },
       };
     } finally {
       await fixture.close();

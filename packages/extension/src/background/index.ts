@@ -249,6 +249,7 @@ const toolHostHandler = createToolHostHandler({
       }));
     },
     queryTabs: async () => chrome.tabs.query({}),
+    recentTabCreations: () => [...recentTabCreations],
     activateTab: async (tabId) => {
       await chrome.tabs.update(tabId, { active: true });
       const tab = await chrome.tabs.get(tabId);
@@ -752,6 +753,33 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
   state.browserWindowId = tab.windowId;
   void broadcastActiveTabSnapshot();
+});
+
+// Ring buffer of recent tab creations — the tool host polls it after
+// click/submit dispatch to report popups the action opened (target=
+// _blank / window.open) so the gateway can acquire them into the
+// task's tab scope. openerTabId is often absent (noopener implied).
+const RECENT_TAB_CREATIONS_MAX = 100;
+const recentTabCreations: Array<{
+  tabId: number;
+  openerTabId?: number;
+  url?: string;
+  title?: string;
+  at: number;
+}> = [];
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (typeof tab.id !== "number") return;
+  recentTabCreations.push({
+    tabId: tab.id,
+    ...(typeof tab.openerTabId === "number" ? { openerTabId: tab.openerTabId } : {}),
+    ...(tab.url ? { url: tab.url } : {}),
+    ...(tab.title ? { title: tab.title } : {}),
+    at: Date.now(),
+  });
+  if (recentTabCreations.length > RECENT_TAB_CREATIONS_MAX) {
+    recentTabCreations.splice(0, recentTabCreations.length - RECENT_TAB_CREATIONS_MAX);
+  }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
