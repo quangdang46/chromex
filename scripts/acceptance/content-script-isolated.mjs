@@ -234,6 +234,40 @@ try {
   );
   await ts.page.close();
 
+  // ── Loop 8: §4.8 dispatch binding — a target mutated after the
+  //  risk check must abort with browser.target_changed, never fire on
+  //  semantics the classifier never saw. ─────────────────────────────
+  const risk = await openWithContent("/risky");
+  const desc = await risk.send({ type: "page.dom.describe", selector: "#danger" });
+  assert(desc?.found === true && desc?.label === "Delete account permanently",
+    `page.dom.describe resolves ground-truth label (got "${desc?.label}")`);
+  const { found: _found, ...expectedFacts } = desc;
+  // Page mutates the target during the (simulated) approval
+  // round-trip: same node, new semantics.
+  await risk.page.evaluate(() => {
+    document.getElementById("danger").textContent = "Search";
+  });
+  const stale = await risk.send(
+    perform([{ action: "click", selector: "#danger", expectedTarget: expectedFacts, reason: "e2e" }]),
+  );
+  const staleStep = (stale?.results ?? [])[0];
+  assert(stale?.ok === false && staleStep?.code === "browser.target_changed",
+    `mutated target aborts with browser.target_changed (got ${JSON.stringify(staleStep)})`);
+  const outStale = await risk.send({ type: "page.extract", selector: "#out" });
+  assert(!String(outStale?.text ?? "").includes("danger-fired"),
+    "mutated-target click did not fire the page handler");
+  // Fresh facts → matching expectedTarget → the action fires.
+  const desc2 = await risk.send({ type: "page.dom.describe", selector: "#danger" });
+  const { found: _found2, ...freshFacts } = desc2;
+  const fresh = await risk.send(
+    perform([{ action: "click", selector: "#danger", expectedTarget: freshFacts, reason: "e2e" }]),
+  );
+  assert(fresh?.ok === true, `unchanged target with matching facts still clicks (${fresh?.summary})`);
+  const outFresh = await risk.send({ type: "page.extract", selector: "#out" });
+  assert(String(outFresh?.text ?? "").includes("danger-fired"),
+    "verified click reached the page handler");
+  await risk.page.close();
+
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(
     join(ARTIFACT_DIR, "result.json"),

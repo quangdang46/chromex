@@ -5,7 +5,7 @@
  * action and dictation.
  */
 
-import type { BrowserDomActionStep } from "@codex-sidepanel/shared";
+import type { BrowserDomActionStep, BrowserTargetFacts } from "@codex-sidepanel/shared";
 
 const domActionElementRefs = new Map<string, HTMLElement>();
 
@@ -216,6 +216,72 @@ export function getElementLabel(element: HTMLElement): string {
   ).slice(0, 160);
 }
 
+
+/** §4.8 ground-truth facts for ONE resolved element, computed inside
+ *  the page. Single source for page.dom.describe (risk preflight) and
+ *  the dispatch-time expectedTarget re-check — the two must never
+ *  drift or the comparison lies. pageOrigin/pageUrl come from THIS
+ *  frame's location so subframe actions verify against the origin the
+ *  classifier actually saw. */
+export function describeDomElementFacts(el: HTMLElement): BrowserTargetFacts {
+  const form = el.closest("form");
+  const anchor = el instanceof HTMLAnchorElement ? el : el.querySelector("a[href]");
+  let formAction = "";
+  const formActionRaw = form?.getAttribute("action") ?? "";
+  if (formActionRaw) {
+    try {
+      const u = new URL(formActionRaw, location.href);
+      formAction = `${u.origin}${u.pathname}`;
+    } catch {
+      formAction = "";
+    }
+  }
+  let href = "";
+  if (anchor instanceof HTMLAnchorElement && anchor.href) {
+    try {
+      const u = new URL(anchor.href);
+      href = `${u.origin}${u.pathname}`;
+    } catch {
+      href = "";
+    }
+  }
+  return {
+    label: getElementLabel(el),
+    tagName: el.tagName.toLowerCase(),
+    ...(el.getAttribute("role") ? { role: el.getAttribute("role")! } : {}),
+    ...(el instanceof HTMLInputElement ? { inputType: el.type || "text" } : {}),
+    ...(el instanceof HTMLButtonElement || el instanceof HTMLInputElement
+      ? { controlType: (el.getAttribute("type") || "submit").toLowerCase() }
+      : {}),
+    ...(form ? { formMethod: (form.getAttribute("method") || "get").toLowerCase() } : {}),
+    ...(formAction ? { formAction } : {}),
+    ...(href ? { href } : {}),
+    pageOrigin: location.origin,
+    pageUrl: `${location.origin}${location.pathname}`,
+  };
+}
+
+/** §4.8 dispatch gate: the facts the classifier approved must still
+ *  hold for the element about to receive the action. Any drift —
+ *  relabelled button, retargeted form/link, moved frame origin —
+ *  aborts with browser.target_changed so the agent re-observes and the
+ *  action is re-classified instead of firing on mutated semantics. */
+export function domElementFactsMatch(expected: BrowserTargetFacts, el: HTMLElement): boolean {
+  const actual = describeDomElementFacts(el);
+  const keys: Array<keyof BrowserTargetFacts> = [
+    "label",
+    "tagName",
+    "role",
+    "inputType",
+    "controlType",
+    "formMethod",
+    "formAction",
+    "href",
+    "pageOrigin",
+    "pageUrl",
+  ];
+  return keys.every((k) => (expected[k] ?? "") === (actual[k] ?? ""));
+}
 
 export function getElementPlaceholder(element: HTMLElement): string {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {

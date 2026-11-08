@@ -74,6 +74,42 @@ describe("tool host (P1-09)", () => {
     expect(msg.steps[0]).toMatchObject({ action: "click", targetRef: "e1" });
   });
 
+  test("page.click forwards sanitized expectedTarget for §4.8 dispatch re-check", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h({
+      ...req("browser.page.click", { ref: "e1" }),
+      expectedTarget: {
+        label: "Delete account permanently",
+        tagName: "button",
+        controlType: "submit",
+        pageOrigin: "https://x",
+        pageUrl: "https://x/path",
+        bogusKey: "dropped",
+        nested: { evil: true },
+      },
+    });
+    const msg = d.sent[0].message as { steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0].expectedTarget).toEqual({
+      label: "Delete account permanently",
+      tagName: "button",
+      controlType: "submit",
+      pageOrigin: "https://x",
+      pageUrl: "https://x/path",
+    });
+  });
+
+  test("page.click drops malformed expectedTarget (no verification, still dispatches)", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await h({ ...req("browser.page.click", { ref: "e1" }), expectedTarget: "not-an-object" });
+    const msg = d.sent[0].message as { steps: Array<Record<string, unknown>> };
+    expect(msg.steps[0].expectedTarget).toBeUndefined();
+    await h({ ...req("browser.page.click", { ref: "e1" }), expectedTarget: { label: 42 } });
+    const msg2 = d.sent[1].message as { steps: Array<Record<string, unknown>> };
+    expect(msg2.steps[0].expectedTarget).toBeUndefined();
+  });
+
   test("page.click coordinate args map to x/y step; mixing with target rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

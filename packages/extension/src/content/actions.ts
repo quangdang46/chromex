@@ -12,6 +12,7 @@ import type {
 
 import {
   collectInteractiveElements,
+  domElementFactsMatch,
   getElementLabel,
   isDomActionElementDisabled,
   isTextEntryCandidate,
@@ -372,6 +373,30 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         code: "browser.element_not_visible",
         message: "Target element is covered by another element — a real pointer could not reach it",
       };
+    }
+
+    // §4.8 dispatch binding: the risk classifier approved specific
+    // ground-truth facts (label/input type/form method/origin). The
+    // page could have mutated the target during the approval round-trip
+    // — re-derive the same facts from the resolved element NOW, in the
+    // same synchronous turn as the action, and abort on drift instead of
+    // firing on semantics the user never approved. Runs after the
+    // scrollIntoView settle so lazy-load/observer mutations are caught.
+    if (step.expectedTarget && typeof step.expectedTarget === "object") {
+      const verifyEl =
+        actionTarget ??
+        (step.action === "press"
+          ? (document.body ?? document.documentElement)
+          : document.activeElement);
+      if (!(verifyEl instanceof HTMLElement) || !domElementFactsMatch(step.expectedTarget, verifyEl)) {
+        return {
+          step,
+          ok: false,
+          code: "browser.target_changed",
+          message:
+            "Target changed since the action was risk-checked — take a fresh browser.page.snapshot and retry",
+        };
+      }
     }
 
     // Every action reaching the switch below has a resolved element except

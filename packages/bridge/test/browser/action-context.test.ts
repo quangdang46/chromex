@@ -456,6 +456,35 @@ describe("BrowserToolServer — §4.8 ground-truth target preflight", () => {
     expect(approvals[0]!.details.targetLabel).toBe("Delete account permanently");
   });
 
+  it("dispatch payload carries expectedTarget facts for content-script re-verification", async () => {
+    const { server, token, sent } = makePreflightServer({
+      found: true,
+      label: "Delete account permanently",
+      tagName: "button",
+      controlType: "submit",
+      pageOrigin: "https://app.example.com",
+      pageUrl: "https://app.example.com/settings",
+      resolvedTabId: 3,
+      unexpectedNested: { dropped: true },
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { ref: "e7", snapshotId: "snap:1" }),
+      token,
+      toolCallId: "tc-bind",
+    });
+    expect(out.status).toBe("completed");
+    const dispatch = sent.find((s) => s.tool === "browser.page.click") as
+      | { expectedTarget?: Record<string, string> }
+      | undefined;
+    expect(dispatch?.expectedTarget).toEqual({
+      label: "Delete account permanently",
+      tagName: "button",
+      controlType: "submit",
+      pageOrigin: "https://app.example.com",
+      pageUrl: "https://app.example.com/settings",
+    });
+  });
+
   it("preflight failure fails open — dispatch surfaces the real error", async () => {
     const tokens = ToolTokenManager.forTest(SECRET);
     const { token } = tokens.issue({

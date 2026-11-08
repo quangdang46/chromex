@@ -18,6 +18,7 @@ import {
 import {
   EDITOR_LIKE_SELECTOR,
   buildElementSelector,
+  describeDomElementFacts,
   getElementLabel,
   isDomActionElementVisible,
   isTextEntryCandidate,
@@ -424,40 +425,7 @@ function chromexRuntimeMessageListener(
       sendResponse({ found: false, reason: "not_found" });
       return false;
     }
-    const form = el.closest("form");
-    const anchor = el instanceof HTMLAnchorElement ? el : el.querySelector("a[href]");
-    let formAction = "";
-    const formActionRaw = form?.getAttribute("action") ?? "";
-    if (formActionRaw) {
-      try {
-        const u = new URL(formActionRaw, location.href);
-        formAction = `${u.origin}${u.pathname}`;
-      } catch {
-        formAction = "";
-      }
-    }
-    let href = "";
-    if (anchor instanceof HTMLAnchorElement && anchor.href) {
-      try {
-        const u = new URL(anchor.href);
-        href = `${u.origin}${u.pathname}`;
-      } catch {
-        href = "";
-      }
-    }
-    sendResponse({
-      found: true,
-      label: getElementLabel(el),
-      tagName: el.tagName.toLowerCase(),
-      role: el.getAttribute("role") ?? "",
-      ...(el instanceof HTMLInputElement ? { inputType: el.type || "text" } : {}),
-      ...(el instanceof HTMLButtonElement || el instanceof HTMLInputElement
-        ? { controlType: (el.getAttribute("type") || "submit").toLowerCase() }
-        : {}),
-      ...(form ? { formMethod: (form.getAttribute("method") || "get").toLowerCase() } : {}),
-      ...(formAction ? { formAction } : {}),
-      ...(href ? { href } : {}),
-    });
+    sendResponse({ found: true, ...describeDomElementFacts(el) });
     return false;
   }
 

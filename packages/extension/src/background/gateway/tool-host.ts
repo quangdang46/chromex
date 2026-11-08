@@ -371,11 +371,52 @@ async function describeTargetForRisk(
     // non-http(s) or empty tab url — origin stays unresolved, which
     // fails closed inside the classifier for financial checks.
   }
-  return { ...(res ?? { found: false, reason: "no_response" }), pageOrigin, pageUrl, resolvedTabId: tabId };
+  // The content script reports THIS frame's location — prefer it over
+  // the tab url so subframe actions classify against the frame origin
+  // (and so expectedTarget matches what dispatch-time re-verification
+  // will compute inside the same frame). Tab url is the fallback for
+  // not-found/no-response describes.
+  const frameOrigin = res && typeof res.pageOrigin === "string" ? res.pageOrigin : "";
+  const frameUrl = res && typeof res.pageUrl === "string" ? res.pageUrl : "";
+  return {
+    ...(res ?? { found: false, reason: "no_response" }),
+    pageOrigin: frameOrigin || pageOrigin,
+    pageUrl: frameUrl || pageUrl,
+    resolvedTabId: tabId,
+  };
 }
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+/** §4.8 expectedTarget payload → bounded fact map for the content
+ *  script's dispatch-time re-check. Only the known BrowserTargetFacts
+ *  keys survive, strings only, each capped — the payload crosses a
+ *  process boundary so it is treated as untrusted shape even though
+ *  only the tool server produces it. */
+const EXPECTED_TARGET_KEYS = [
+  "label",
+  "tagName",
+  "role",
+  "inputType",
+  "controlType",
+  "formMethod",
+  "formAction",
+  "href",
+  "pageOrigin",
+  "pageUrl",
+] as const;
+
+function sanitizeExpectedTarget(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const src = v as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const key of EXPECTED_TARGET_KEYS) {
+    const val = src[key];
+    if (typeof val === "string" && val) out[key] = val.slice(0, 2048);
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /** args.frameId — which frame inside the tab a page.* call targets.
@@ -518,6 +559,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       turnId?: string;
       tool?: string;
       args?: Record<string, unknown>;
+      expectedTarget?: unknown;
     };
     const tool = req.tool ?? "";
     const args = req.args ?? {};
@@ -1685,6 +1727,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           );
         }
         const step = domStepFor(tool, args);
+        // §4.8 dispatch binding: facts the tool server's risk
+        // classifier approved — the content script re-derives them from
+        // the resolved element synchronously before acting and aborts
+        // with browser.target_changed on drift. Sanitized to known
+        // string keys; anything malformed is dropped (no verification
+        // is honest — the action still runs unbound).
+        const expectedTarget = sanitizeExpectedTarget(req.expectedTarget);
+        if (expectedTarget) step.expectedTarget = expectedTarget;
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
           steps: [step],

@@ -609,11 +609,33 @@ export interface BrowserDomSnapshot {
   };
 }
 
+/** Ground-truth facts about the element an action will hit, resolved
+ *  inside the page (browser.internal.describeTarget / page.dom.describe).
+ *  Drives §4.8 risk classification and dispatch-time re-verification —
+ *  agent-supplied args never carry these. */
+export interface BrowserTargetFacts {
+  label?: string;
+  tagName?: string;
+  role?: string;
+  inputType?: string;
+  controlType?: string;
+  formMethod?: string;
+  formAction?: string;
+  href?: string;
+  pageOrigin?: string;
+  pageUrl?: string;
+}
+
 export interface BrowserDomActionStep {
   action: BrowserDomActionKind;
   targetRef?: string;
   selector?: string;
   label?: string;
+  /** §4.8 dispatch-time binding: facts the risk classifier approved.
+   *  The content script re-derives them from the resolved element
+   *  synchronously before acting and aborts with browser.target_changed
+   *  on mismatch — closes the describe→dispatch mutation window. */
+  expectedTarget?: BrowserTargetFacts;
   value?: string;
   /** select: multiple values for <select multiple> — mutually exclusive
    *  with `value` at the tool boundary. */

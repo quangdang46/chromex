@@ -101,6 +101,31 @@ function applyTargetDescription(actx: ActionContext, desc: Record<string, unknow
   }
 }
 
+/** Facts carried to the host for dispatch-time re-verification —
+ *  strings only, bounded by the describe contract (label ≤160 chars,
+ *  urls are origin+path). */
+const TARGET_FACT_KEYS = [
+  "label",
+  "tagName",
+  "role",
+  "inputType",
+  "controlType",
+  "formMethod",
+  "formAction",
+  "href",
+  "pageOrigin",
+  "pageUrl",
+] as const;
+
+function pickTargetFacts(desc: Record<string, unknown>): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const key of TARGET_FACT_KEYS) {
+    const v = desc[key];
+    if (typeof v === "string" && v) out[key] = v.slice(0, 2048);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Approval details.argsPreview bounds — the preview is persisted to the
  *  approvals table and broadcast to every client, so it must stay small
  *  and never carry credential values. */
@@ -701,10 +726,20 @@ export class BrowserToolServer {
         explicitTabId === null &&
         this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs)
       );
+    let desc: Record<string, unknown> | null = null;
     if (preflightRelevant) {
-      const desc = await this.describeActionTarget(host, req, riskTabScope).catch(() => null);
+      desc = await this.describeActionTarget(host, req, riskTabScope).catch(() => null);
       if (desc) applyTargetDescription(actx, desc);
     }
+    // §4.8 dispatch binding: carry the described facts to the host so
+    // the content script can re-verify them against the resolved
+    // element synchronously before acting. Without this the page can
+    // mutate the target (relabel, retarget form/href, swap origin)
+    // during the approval round-trip and the action fires on semantics
+    // the classifier never saw. Attached for EVERY preflight-covered
+    // call — a "low" verdict is equally stale after mutation.
+    const expectedTarget =
+      preflightRelevant && desc?.found === true ? pickTargetFacts(desc) : undefined;
     const verdict = classifyActionRisk(actx);
     this.deps.onClassified?.(req.taskId, actx, verdict);
     // scope denials are terminal — never approval-bypassable (§4.8).
@@ -800,10 +835,14 @@ export class BrowserToolServer {
     }
 
     // 6. Dispatch with per-tool timeout.
-    return this.dispatch(host, req);
+    return this.dispatch(host, req, expectedTarget);
   }
 
-  private dispatch(host: ToolHostChannel, req: ToolCallRequest): Promise<ToolCallOutcome> {
+  private dispatch(
+    host: ToolHostChannel,
+    req: ToolCallRequest,
+    expectedTarget?: Record<string, string>,
+  ): Promise<ToolCallOutcome> {
     const timeoutMs =
       PER_TOOL_TIMEOUT_MS[req.tool] ?? this.deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
     return new Promise<ToolCallOutcome>((resolve) => {
@@ -843,6 +882,7 @@ export class BrowserToolServer {
         turnId: req.turnId,
         tool: req.tool,
         args: req.args,
+        ...(expectedTarget ? { expectedTarget } : {}),
         ...(tabScope ? { tabScope } : {}),
       })
         .then((result) => {
