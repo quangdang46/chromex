@@ -340,6 +340,31 @@ await runScenario(
         bytes: shotResult?.bytes,
       };
 
+      // in-memory upload inside the iframe: DataTransfer works in any
+      // frame's content script — no CDP needed.
+      let frameUpload = null;
+      let fout2b = null;
+      if (childFrame?.frameId) {
+        frameUpload = await runner.browserToolCall(
+          taskId, "browser.page.upload",
+          {
+            selector: "#ffile",
+            frameId: childFrame.frameId,
+            files: [{ name: "mem.txt", mimeType: "text/plain", base64: "aGVsbG8=" }],
+          },
+          token, 60_000,
+        );
+        await sleep(300);
+        const pwFr4 = page.frames().find((f) => f.url().includes("127.0.0.1") && f.url().includes("/iframe-child"));
+        fout2b = pwFr4 ? await pwFr4.locator("#fout2").textContent() : null;
+      }
+      evidence.note(`frame upload → status=${frameUpload?.status} fout2=${fout2b}`);
+      results.frameUpload = {
+        ok: frameUpload?.status === "completed" && fout2b === "files:mem.txt",
+        status: frameUpload?.status,
+        fout2: fout2b,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
