@@ -15353,17 +15353,20 @@ function persistQueuedComposerMessages(): void {
   try {
     const serialized = serializeQueuedComposerMessages();
     console.log("[chromex-queue] persist", JSON.stringify(Object.keys(serialized)));
-    void chrome.storage.session
+    // storage.local, not session: chrome.runtime.reload() wipes
+    // storage.session, which would silently drop queued work exactly
+    // when restart-recovery matters most.
+    void chrome.storage.local
       .set({ [QUEUED_COMPOSER_MESSAGES_STORAGE_KEY]: serialized })
       .catch(() => undefined);
   } catch {
-    // storage.session unavailable — queue stays in-memory only
+    // storage unavailable — queue stays in-memory only
   }
 }
 
 async function hydrateQueuedComposerMessages(): Promise<void> {
   try {
-    const stored = await chrome.storage.session.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
+    const stored = await chrome.storage.local.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
     const entries = stored?.[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
     console.log("[chromex-queue] hydrate", JSON.stringify(entries ?? null)?.slice(0, 300));
     if (entries && typeof entries === "object") {

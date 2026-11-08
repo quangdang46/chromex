@@ -989,6 +989,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         case "gateway.tasks": {
           const rt = await getGatewayRuntime();
+          // cold SW: don't report an empty list before hello seeds views
+          if (rt) await Promise.race([rt.ready?.() ?? Promise.resolve(), sleepMs(10_000)]);
           sendResponse({
             enabled: Boolean(rt),
             state: rt?.state() ?? "disabled",
@@ -1517,7 +1519,11 @@ async function gatewayActiveTurnForThread(threadId: string | null): Promise<Code
   if (!threadId) return null;
   try {
     const rt = await getGatewayRuntime();
-    const activeTurnId = rt?.tasks.getTask(threadId)?.activeTurnId;
+    if (!rt) return null;
+    // Cold SW: task views are seeded by hello+syncAll — wait for them or
+    // activeTurnId reads as missing and the panel thinks the turn ended.
+    await Promise.race([rt.ready?.() ?? Promise.resolve(), sleepMs(10_000)]);
+    const activeTurnId = rt.tasks.getTask(threadId)?.activeTurnId;
     return activeTurnId ? { threadId, turnId: activeTurnId } : null;
   } catch {
     return null;

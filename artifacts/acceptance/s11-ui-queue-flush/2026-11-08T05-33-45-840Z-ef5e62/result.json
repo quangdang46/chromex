@@ -1,0 +1,29 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T05-33-45-840Z-ef5e62",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 37549,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T05:33:50.353Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T05:33:54.400Z] turn 1 active",
+    "[2026-11-08T05:33:54.414Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794116034407-x8mpg8\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T05:33:54.416Z] second message queued",
+    "[2026-11-08T05:33:56.237Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794116034407-x8mpg8\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n        \\n        <div class=\\\"composer-frame   \\\">\\n          <input id=\\\"file-attachment-input\\\" type=\\\"file\\\" multiple=\\\"\\\" hidden=\\\"\\\">\\n          \\n          \\n          \\n              <div class=\\\"composer-tray\\\">\\n                        <div class=\\\"context-summary composer-context-summary\\\">\\n                          \\n      <div class=\\\"composer-context-group\\\" data-composer-context-group=\\\"references\",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WTC8HZ4PCXAJ1175KA4QZK\\\",\\\"threadId\\\":\\\"01M6WTC8HSE378WG27QNYXFFHQ\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\",\"activeTurn\":{\"turnId\":\"01M6WTC8HZ4PCXAJ1175KA4QZK\",\"threadId\":\"01M6WTC8HSE378WG27QNYXFFHQ\"},\"promptActivity\":true,\"queued\":{\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\":[{\"fileAttachments\":[],\"id\":\"queued-1794116034407-x8mpg8\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
+    "[2026-11-08T05:33:56.237Z] queue console: [\"[chromex-queue] hydrate null\",\"[chromex-queue] reconcile  inFlight: false queued: -1\",\"[chromex-queue] hydrate null\",\"[chromex-queue] reconcile 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlight: true queued: 0\",\"[chromex-queue] persist [\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\"]\",\"[chromex-queue] hydrate {\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794116034407-x8mpg8\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}\",\"[chromex-queue] reconcile 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlight: true queued: 1\"]",
+    "[2026-11-08T05:33:56.240Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-08T05:33:57.240Z] task 01M6WTC8HSE378WG27QNYXFFHQ",
+    "[2026-11-08T05:34:23.334Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T05:34:23.376Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-08T05:34:23.376Z] queue console final: [\"[chromex-queue] hydrate null\",\"[chromex-queue] reconcile  inFlight: false queued: -1\",\"[chromex-queue] hydrate null\",\"[chromex-queue] reconcile 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlight: true queued: 0\",\"[chromex-queue] persist [\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\"]\",\"[chromex-queue] hydrate {\\\"0fb24d68-e5e0-4085-8da3-c93106f0b7ab\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794116034407-x8mpg8\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}\",\"[chromex-queue] reconcile 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlight: true queued: 1\",\"[chromex-queue] flush? 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlightTurn: false queued: 1\",\"[chromex-queue] persist []\",\"[chromex-queue] flush? 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlightTurn: false queued: 0\",\"[chromex-queue] flush? 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlightTurn: false queued: 0\",\"[chromex-queue] persist []\",\"[chromex-queue] flush? 0fb24d68-e5e0-4085-8da3-c93106f0b7ab inFlightTurn: false queued: 0\",\"[chromex-queue] persist []\"]"
+  ]
+}

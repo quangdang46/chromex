@@ -68,7 +68,7 @@ await runScenario(
       const early = await sp.evaluate(async () => ({
         queuePresent: Boolean(document.querySelector(".composer-queue")),
         queueText: (document.querySelector(".composer-queue")?.textContent ?? "").slice(0, 120),
-        stored: await chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
+        stored: await chrome.storage.local.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
       }));
       evidence.note(`early after send2: ${JSON.stringify(early)}`);
       try {
@@ -85,7 +85,7 @@ await runScenario(
       }
       evidence.note("second message queued");
 
-      // queue must survive a sidepanel reload (chrome.storage.session +
+      // queue must survive a sidepanel reload (chrome.storage.local +
       // hydrate on init) and still flush when turn 1 completes
       // turn 1 must outlive the reload window so the queue is still
       // pending when the panel comes back; turn.completed then drives
@@ -96,7 +96,7 @@ await runScenario(
       // restored from ui.init, and the queue must NOT have flushed early
       await sp.waitForSelector("#stop-turn", { timeout: 15_000 });
       const postReload = await sp.evaluate(async () => ({
-        stored: await chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
+        stored: await chrome.storage.local.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
         queuePresent: Boolean(document.querySelector(".composer-queue")),
         composerValue: document.querySelector("#composer")?.value ?? "",
         frameClass: document.querySelector(".composer-frame")?.className ?? "",
@@ -153,7 +153,7 @@ await runScenario(
       await evidence.screenshot(sp, "s11-final");
 
       const storedQueue = await sp.evaluate(() =>
-        chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r)),
+        chrome.storage.local.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r)),
       );
       evidence.note(`storedQueue=${storedQueue}`);
       evidence.note(`queue console final: ${JSON.stringify(consoleLines.slice(-20))}`);

@@ -35,6 +35,7 @@ const TOKENLESS = new Set([
   "s9-interrupt-queue",
   "s10-ui-queue-stop",
   "s11-ui-queue-flush",
+  "s12-sw-turn-recovery",
 ]);
 const ALL = [
   "agent-loop-isolated",
@@ -58,6 +59,7 @@ const ALL = [
   "s9-interrupt-queue",
   "s10-ui-queue-stop",
   "s11-ui-queue-flush",
+  "s12-sw-turn-recovery",
 ];
 const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
 

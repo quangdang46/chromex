@@ -109,7 +109,7 @@ await runScenario(
         queueText: (document.querySelector(".composer-queue")?.textContent ?? "").slice(0, 160),
         stopVisible: Boolean(document.querySelector("#stop-turn")),
         errorText: (document.querySelector(".init-error, .error-banner, [class*=error]")?.textContent ?? "").slice(0, 200),
-        storedQueue: await chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
+        storedQueue: await chrome.storage.local.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
       }));
       evidence.note(`after stop: ${JSON.stringify(afterStop)}`);
       await evidence.screenshot(sp, "s10-after-stop");

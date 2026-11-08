@@ -26,6 +26,9 @@ export interface GatewayRuntime {
   onEvent(listener: (env: Envelope) => void): () => void;
   /** subscribe to snapshot rebuilds (P1-10 UI resync) */
   onSnapshotRebuilt(listener: (taskId: string, snapshot: InlineTaskSnapshot) => void): () => void;
+  /** resolves once hello + syncAll have seeded task views — await before
+   *  reading tasks.* state on a cold SW (activeTurnId, statuses) */
+  ready(): Promise<void>;
 }
 
 let runtime: GatewayRuntime | null = null;
@@ -124,13 +127,15 @@ async function build(): Promise<GatewayRuntime | null> {
   // durable events + rebuilds pruned snapshots. Lazy: runs once at
   // startup when the flag is on; failures leave client in
   // starting/unresponsive and the next request() retries.
-  void client
+  const readyPromise = client
     .connect()
     .then((hello) => tasks.onHello(hello))
     .then(() => tasks.syncAll())
+    .then(() => undefined)
     .catch(() => {
       /* connect failure is surfaced via client.state + next request retry */
     });
+  void readyPromise;
 
   return {
     client,
@@ -145,6 +150,7 @@ async function build(): Promise<GatewayRuntime | null> {
       snapshotListeners.add(listener);
       return () => snapshotListeners.delete(listener);
     },
+    ready: () => readyPromise,
   };
 }
 
