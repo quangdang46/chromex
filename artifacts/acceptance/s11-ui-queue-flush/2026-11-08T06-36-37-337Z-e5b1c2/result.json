@@ -1,0 +1,16 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T06-36-37-337Z-e5b1c2",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n",
+  "durationMs": 28847,
+  "error": "page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:120:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T06:36:43.425Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:36:46.903Z] turn 1 active",
+    "[2026-11-08T06:36:48.694Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"96c2dec7-0f05-46cd-b9a9-cd482a5219fd\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794119808693-twtjcu\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T06:36:48.718Z] second message queued",
+    "[2026-11-08T06:36:51.136Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"96c2dec7-0f05-46cd-b9a9-cd482a5219fd\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"96c2dec7-0f05-46cd-b9a9-cd482a5219fd\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WXZFGRKA1XP1DYX066PQX6\\\",\\\"threadId\\\":\\\"01M6WXZFGJ9F7PJRRYP4G34XA0\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"96c2dec7-0f05-46cd-b9a9-cd482a5219fd\",\"activeTurn\":{\"threadId\":\"01M6WXZFGJ9F7PJRRYP4G34XA0\",\"turnId\":\"01M6WXZFGRKA1XP1DYX066PQX6\"},\"promptActivity\":true,\"queued\":{}}}",
+    "[2026-11-08T06:36:51.136Z] queue console: []"
+  ]
+}

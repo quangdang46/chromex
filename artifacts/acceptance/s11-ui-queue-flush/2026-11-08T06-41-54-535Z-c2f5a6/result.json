@@ -1,0 +1,29 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T06-41-54-535Z-c2f5a6",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 38067,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T06:41:58.972Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:42:03.518Z] turn 1 active",
+    "[2026-11-08T06:42:03.527Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"0555da4f-0fd5-4983-87d5-70453b0a89d3\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794120123525-11ao82\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T06:42:03.551Z] second message queued",
+    "[2026-11-08T06:42:05.505Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"0555da4f-0fd5-4983-87d5-70453b0a89d3\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794120123525-11ao82\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n        \\n        <div class=\\\"composer-frame   \\\">\\n          <input id=\\\"file-attachment-input\\\" type=\\\"file\\\" multiple=\\\"\\\" hidden=\\\"\\\">\\n          \\n          \\n          \\n              <div class=\\\"composer-tray\\\">\\n                        <div class=\\\"context-summary composer-context-summary\\\">\\n                          \\n      <div class=\\\"composer-context-group\\\" data-composer-context-group=\\\"references\",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"0555da4f-0fd5-4983-87d5-70453b0a89d3\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"0555da4f-0fd5-4983-87d5-70453b0a89d3\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WY91ZEW04Z4JAWYFN1P9B3\\\",\\\"threadId\\\":\\\"01M6WY91ZAW0XTTGMRN6K919E0\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"0555da4f-0fd5-4983-87d5-70453b0a89d3\",\"activeTurn\":{\"turnId\":\"01M6WY91ZEW04Z4JAWYFN1P9B3\",\"threadId\":\"01M6WY91ZAW0XTTGMRN6K919E0\"},\"promptActivity\":true,\"queued\":{\"0555da4f-0fd5-4983-87d5-70453b0a89d3\":[{\"fileAttachments\":[],\"id\":\"queued-1794120123525-11ao82\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
+    "[2026-11-08T06:42:05.505Z] queue console: []",
+    "[2026-11-08T06:42:05.507Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-08T06:42:06.508Z] task 01M6WY91ZAW0XTTGMRN6K919E0",
+    "[2026-11-08T06:42:32.541Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T06:42:32.589Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-08T06:42:32.589Z] queue console final: [\"[chromex-queue] flush gw check: {boundThreadId: 01M6WY91ZAW0XTTGMRN6K919E0, found: true, activeTurnId: null, taskCount: 1}\",\"[chromex-queue] flush PROCEEDING for 0555da4f-0fd5-4983-87d5-70453b0a89d3\",\"[chromex-queue] flush gw check: {boundThreadId: 01M6WY91ZAW0XTTGMRN6K919E0, found: true, activeTurnId: null, taskCount: 1}\",\"[chromex-queue] flush PROCEEDING for 0555da4f-0fd5-4983-87d5-70453b0a89d3\",\"[chromex-queue] flush gw check: {boundThreadId: 01M6WY91ZAW0XTTGMRN6K919E0, found: true, activeTurnId: null, taskCount: 1}\",\"[chromex-queue] flush PROCEEDING for 0555da4f-0fd5-4983-87d5-70453b0a89d3\",\"[chromex-queue] flush gw check: {boundThreadId: 01M6WY91ZAW0XTTGMRN6K919E0, found: true, activeTurnId: null, taskCount: 1}\",\"[chromex-queue] flush PROCEEDING for 0555da4f-0fd5-4983-87d5-70453b0a89d3\"]"
+  ]
+}

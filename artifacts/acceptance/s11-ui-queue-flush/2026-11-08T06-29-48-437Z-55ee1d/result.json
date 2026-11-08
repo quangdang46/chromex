@@ -1,0 +1,29 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T06-29-48-437Z-55ee1d",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 36724,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T06:29:52.204Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:29:56.196Z] turn 1 active",
+    "[2026-11-08T06:29:56.220Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794119396204-1kx6ef\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T06:29:56.224Z] second message queued",
+    "[2026-11-08T06:29:57.987Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794119396204-1kx6ef\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WXJV9JKG09SHFB7HH0A5H8\\\",\\\"threadId\\\":\\\"01M6WXJV9DH6FKZNA612NA1ZM5\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\",\"activeTurn\":{\"turnId\":\"01M6WXJV9JKG09SHFB7HH0A5H8\",\"threadId\":\"01M6WXJV9DH6FKZNA612NA1ZM5\"},\"promptActivity\":true,\"queued\":{\"ffd3f12e-7bbd-4f45-84f4-50e35686964e\":[{\"fileAttachments\":[],\"id\":\"queued-1794119396204-1kx6ef\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
+    "[2026-11-08T06:29:57.987Z] queue console: []",
+    "[2026-11-08T06:29:57.989Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-08T06:29:58.992Z] task 01M6WXJV9DH6FKZNA612NA1ZM5",
+    "[2026-11-08T06:30:25.112Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T06:30:25.153Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-08T06:30:25.153Z] queue console final: []"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "scenario": "gateway-host-routing",
+  "status": "PASS",
+  "asserts": 21,
+  "taskId": "01M6WX68H8M8Z4BQAR5X9B3QRG",
+  "hostRequests": 3
+}

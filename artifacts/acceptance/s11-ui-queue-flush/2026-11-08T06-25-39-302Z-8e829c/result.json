@@ -1,0 +1,16 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T06-25-39-302Z-8e829c",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n",
+  "durationMs": 25127,
+  "error": "page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:120:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T06:25:43.131Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:25:47.187Z] turn 1 active",
+    "[2026-11-08T06:25:47.217Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"1d3e42df-2ee8-4eea-b4fc-adc7252beb17\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794119147205-z004xy\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T06:25:47.223Z] second message queued",
+    "[2026-11-08T06:25:49.328Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"1d3e42df-2ee8-4eea-b4fc-adc7252beb17\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794119147205-z004xy\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n        \\n        <div class=\\\"composer-frame   \\\">\\n          <input id=\\\"file-attachment-input\\\" type=\\\"file\\\" multiple=\\\"\\\" hidden=\\\"\\\">\\n          \\n          \\n          \\n              <div class=\\\"composer-tray\\\">\\n                        <div class=\\\"context-summary composer-context-summary\\\">\\n                          \\n      <div class=\\\"composer-context-group\\\" data-composer-context-group=\\\"references\",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"1d3e42df-2ee8-4eea-b4fc-adc7252beb17\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"1d3e42df-2ee8-4eea-b4fc-adc7252beb17\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6WXB976KCAPR5DE3652DJD5\\\",\\\"threadId\\\":\\\"01M6WXB96VWEEQFJQVX71VY9E6\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"1d3e42df-2ee8-4eea-b4fc-adc7252beb17\",\"activeTurn\":{\"turnId\":\"01M6WXB976KCAPR5DE3652DJD5\",\"threadId\":\"01M6WXB96VWEEQFJQVX71VY9E6\"},\"promptActivity\":true,\"queued\":{}}}",
+    "[2026-11-08T06:25:49.328Z] queue console: []"
+  ]
+}
