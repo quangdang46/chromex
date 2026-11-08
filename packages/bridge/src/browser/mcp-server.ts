@@ -968,8 +968,12 @@ export class BrowserMcpServer {
   }
 
   #toolError(id: string | number | null, message: string): string {
+    // Error text is fenced like success results: backend error messages
+    // can embed page-controlled strings (a page-thrown evaluate
+    // exception, a playwright error quoting the full URL). isError is
+    // the signal; the payload is still data, never instructions.
     return this.#ok(id, {
-      content: [{ type: "text", text: message }],
+      content: [{ type: "text", text: fenceBrowserToolResult(JSON.stringify(message)) }],
       isError: true,
     });
   }
