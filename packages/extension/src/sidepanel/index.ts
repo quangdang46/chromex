@@ -1768,7 +1768,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     }
     scheduleConversationPersist();
     flushConversationPersist();
-    if (state.currentConversationId) {
+    // turn.cancelled arrives here as turn.completed + stopReason
+    // "cancelled" (legacy-events mapping) — a user stop must NOT
+    // auto-restart queued work.
+    if (state.currentConversationId && !("stopReason" in event && event.stopReason === "cancelled")) {
       void flushQueuedComposerMessage(state.currentConversationId);
     }
     shouldRender = true;
@@ -3805,18 +3808,27 @@ function bindComposerPrimaryActionButton(button: HTMLButtonElement): void {
 async function cancelActivePromptFromComposer(): Promise<void> {
   const activePromptRequestId = state.promptActivity?.clientRequestId || getCurrentPendingPromptRequestId();
   const activeTurn = state.activeTurn;
-  if (!activeTurn && !activePromptRequestId) {
+  // Fall back to the conversation's thread (= gateway taskId): when
+  // activeTurn desyncs (reload, missed turn.started) the interrupt
+  // must still reach the provider — the gateway resolves the task's
+  // active turn itself when turnId is omitted.
+  const interruptThreadId = activeTurn?.threadId || state.threadId || undefined;
+  if (!activeTurn && !activePromptRequestId && !interruptThreadId) {
     return;
   }
   if (activePromptRequestId) {
     cancelledPromptRequestIds.add(activePromptRequestId);
   }
-  await chrome.runtime.sendMessage({
+  const response = (await chrome.runtime.sendMessage({
     type: "prompt.cancel",
     clientRequestId: activePromptRequestId,
-    threadId: activeTurn?.threadId,
+    threadId: interruptThreadId,
     turnId: activeTurn?.turnId,
-  });
+  })) as { interrupt?: { error?: string; skipped?: boolean } } | undefined;
+  const interruptError = response?.interrupt && "error" in response.interrupt ? response.interrupt.error : undefined;
+  if (interruptError) {
+    state.initError = interruptError;
+  }
   state.activeTurn = null;
   state.promptActivity = null;
   state.streamingAssistantMessageIds.clear();

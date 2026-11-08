@@ -2085,27 +2085,34 @@ async function handlePromptCancel(clientRequestId?: unknown, threadId?: unknown,
 
   await stopCurrentAiControlIndicator(0);
 
-  if (typeof threadId === "string" && typeof turnId === "string") {
-    await handleTurnInterrupt(threadId, turnId).catch(() => undefined);
+  let interrupt: unknown = { skipped: true };
+  if (typeof threadId === "string" && threadId) {
+    // turnId is optional gateway-side — the session manager falls back
+    // to the task's active turn, so a desynced UI still interrupts.
+    interrupt = await handleTurnInterrupt(threadId, typeof turnId === "string" ? turnId : undefined).catch(
+      (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+    );
   }
 
-  return { cancelled: true };
+  return { cancelled: true, interrupt };
 }
 
 async function handleTurnInterrupt(threadId?: string, turnId?: string) {
   await stopCurrentAiControlIndicator(0);
-  if (!threadId || !turnId) {
+  if (!threadId) {
     return { cancelled: true };
   }
 
+  const resolvedTurnId =
+    turnId ?? (state.activeTurn?.threadId === threadId ? state.activeTurn.turnId : undefined);
   const result = await bridge.request<{ threadId: string; turnId: string }>("turn.interrupt", {
     threadId,
-    turnId,
+    ...(resolvedTurnId ? { turnId: resolvedTurnId } : {}),
   });
-  const conversationId = conversationRuntime.completeTurn(threadId, turnId);
+  const conversationId = conversationRuntime.completeTurn(threadId, resolvedTurnId);
   if (conversationId) {
     syncCurrentRuntimeState(conversationId);
-  } else if (state.activeTurn?.turnId === turnId) {
+  } else if (resolvedTurnId && state.activeTurn?.turnId === resolvedTurnId) {
     state.activeTurn = null;
   }
   return result;
