@@ -72,6 +72,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.windows.create");
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.discard");
+    expect(tools).not.toContain("browser.tab.highlight"); // no tab strip on isolated
     expect(tools).not.toContain("browser.tabGroups");
     expect(tools).toContain("browser.sessions"); // per-task recently-closed log parity
     expect(tools).not.toContain("browser.proxy");
@@ -91,7 +92,7 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.downloads.resume");
     expect(tools).not.toContain("browser.downloads.erase");
     expect(tools).not.toContain("browser.windows.remove");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 24);
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 25);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

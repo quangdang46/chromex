@@ -297,6 +297,7 @@ function schemaValid(schema: Schema, value: unknown): boolean {
 const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.tabs.list": {},
   "browser.tab.activate": { tabId: 3 },
+  "browser.tab.highlight": { tabId: 3 },
   "browser.tab.close": { tabId: 3 },
   "browser.tab.create": { url: "https://example.com", active: false },
   "browser.tab.duplicate": { tabId: 3 },

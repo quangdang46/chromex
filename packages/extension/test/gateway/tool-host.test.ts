@@ -993,6 +993,20 @@ describe("tool host (P1-09)", () => {
     expect(created[0]).toEqual({ active: false });
   });
 
+  test("tab.highlight resolves the tab's window and refuses without dep", async () => {
+    const d = deps();
+    d.getTab = vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, index: 2, active: true }));
+    const calls: Array<[number, number]> = [];
+    d.highlightTab = async (w, i) => { calls.push([w, i]); };
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tab.highlight", { tabId: 7 }))) as { highlighted: number; windowId: number; index: number };
+    expect(res).toMatchObject({ highlighted: 7, windowId: 3, index: 2 });
+    // chrome.tabs.highlight takes window-relative tab INDICES, not ids
+    expect(calls).toEqual([[3, 2]]);
+    const d2 = deps();
+    await expect(createToolHostHandler(d2)(req("browser.tab.highlight", { tabId: 7 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("tab.close refuses a window's last tab on headless Chromium", async () => {
     const d = deps({ headlessChrome: true });
     d.getTab = vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true }));

@@ -279,6 +279,7 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
   switch (ctx.action) {
     case "browser.page.scroll":
     case "browser.tab.activate":
+    case "browser.tab.highlight":
     case "browser.page.history":
     case "browser.page.emulate":
       // Emulation overrides are local, reversible (reset:true) and have

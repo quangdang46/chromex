@@ -262,6 +262,10 @@ const toolHostHandler = createToolHostHandler({
       const tab = await chrome.tabs.get(tabId);
       if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true });
     },
+    highlightTab: async (windowId, index) => {
+      // chrome.tabs.highlight's `tabs` are window-relative indices, not ids
+      await chrome.tabs.highlight({ windowId, tabs: [index] });
+    },
     closeTab: async (tabId) => {
       await chrome.tabs.remove(tabId);
     },

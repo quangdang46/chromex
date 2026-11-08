@@ -1384,6 +1384,42 @@ await runScenario(
         ...mv,
       };
 
+      // --- tab.highlight: chrome.tabs.highlight selects the tab in its
+      // window's strip — verify via tabs.list highlighted round-trip.
+      // Headless note: strip selection coincides with activation there
+      // (active flips true — verified CfT 158); headed Chrome selects
+      // without activating. We assert the highlight itself, record the
+      // active side-effect honestly. ---
+      const hl = {};
+      const hlCreate = await runner.browserToolCall(
+        taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+      );
+      const hlTabId = (hlCreate?.result ?? hlCreate ?? {}).openedTabId ??
+        (hlCreate?.result ?? hlCreate ?? {}).tabId;
+      hl.createOk = typeof hlTabId === "number";
+      if (hl.createOk) {
+        const hlRes = await runner.browserToolCall(
+          taskId, "browser.tab.highlight", { tabId: hlTabId }, token, 60_000,
+        );
+        hl.callOk = (hlRes?.result ?? hlRes ?? {}).highlighted === hlTabId;
+        await sleep(300);
+        const hlList = await runner.browserToolCall(taskId, "browser.tabs.list", {}, token, 30_000);
+        const hlTabs = (hlList?.result ?? hlList ?? {}).tabs ?? [];
+        const hlTab = hlTabs.find((t) => t.id === hlTabId);
+        hl.highlightedOk = hlTab?.highlighted === true;
+        hl.activeAfter = hlTab?.active; // headless: expected true (selection==activation)
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: hlTabId }, token, 60_000,
+        ).catch(() => null);
+      } else {
+        hl.callOk = hl.highlightedOk = false;
+      }
+      evidence.note(`tab.highlight → ${JSON.stringify(hl).slice(0, 300)}`);
+      results.tabHighlight = {
+        ok: hl.createOk === true && hl.callOk === true && hl.highlightedOk === true,
+        ...hl,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

@@ -393,6 +393,11 @@ export interface ToolHostDeps {
     at: number;
   }>;
   activateTab(tabId: number): Promise<void>;
+  /** chrome.tabs.highlight — select a tab in its window's strip WITHOUT
+   *  activating it or focusing the window (agent marks its working set
+   *  quietly). Chrome's `tabs` arg is a list of tab INDICES within the
+   *  window, not tab ids. Absent dep → proto.unsupported. */
+  highlightTab?(windowId: number, index: number): Promise<void>;
   closeTab(tabId: number): Promise<void>;
   /** True on headless Chromium builds (UA contains "HeadlessChrome").
    *  Window teardown crashes those builds outright — tab.close refuses
@@ -491,6 +496,7 @@ const FRAME_SCOPED_TOOLS = new Set([
 const SUPPORTED = new Set([
   "browser.tabs.list",
   "browser.tab.activate",
+  "browser.tab.highlight",
   "browser.tab.close",
   "browser.tab.create",
   "browser.tab.duplicate",
@@ -985,6 +991,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               // unloaded and which are protected from auto-discard.
               ...(typeof t.discarded === "boolean" ? { discarded: t.discarded } : {}),
               ...(typeof t.autoDiscardable === "boolean" ? { autoDiscardable: t.autoDiscardable } : {}),
+              // strip selection state — browser.tab.highlight sets it;
+              // the agent reads it back to verify its mark landed.
+              ...(typeof t.highlighted === "boolean" ? { highlighted: t.highlighted } : {}),
             };
           }),
         };
@@ -993,6 +1002,22 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         await deps.activateTab(tabId);
         return { activated: tabId, resolvedTabId: tabId };
+      }
+      case "browser.tab.highlight": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (!deps.highlightTab) {
+          throw toolError("proto.unsupported", "tab highlight is not available on this host");
+        }
+        const tab = await deps.getTab(tabId);
+        const windowId = tab?.windowId;
+        // chrome.tabs.highlight takes tab INDICES within the window, not
+        // tab ids — passing the id throws "No tab at index".
+        const index = tab?.index;
+        if (typeof windowId !== "number" || typeof index !== "number") {
+          throw toolError("browser.action_failed", `tab ${tabId} has no window/index`);
+        }
+        await deps.highlightTab(windowId, index);
+        return { highlighted: tabId, windowId, index, resolvedTabId: tabId };
       }
       case "browser.tab.close": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);

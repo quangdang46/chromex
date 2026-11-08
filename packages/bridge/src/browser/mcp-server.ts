@@ -234,6 +234,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       "Bring a tab to the front. tabId optional — defaults to the task's bound tab, then the active tab; out-of-scope tabs are refused, never silently redirected.",
     inputSchema: objectSchema(TAB_TARGET_PROPS),
   },
+  "browser.tab.highlight": {
+    description:
+      "Select a tab in its window's tab strip (chrome.tabs.highlight) — the agent marks its working set. On headed Chrome this does NOT activate the tab or focus the window; on headless Chromium builds strip selection coincides with activation, so the tab also becomes the window's active tab (verified CfT 158). Read back via browser.tabs.list highlighted field. tabId optional like other tab tools. Low-risk reversible UI state; isolated → proto.unsupported (no tab strip).",
+    inputSchema: objectSchema(TAB_TARGET_PROPS),
+  },
   "browser.tab.close": {
     description:
       "Close a tab inside this task's scope. Irreversible — prefer leaving tabs open unless the user asked for it closed. On headless Chromium builds, closing a window's LAST tab is refused with proto.unsupported (window teardown crashes the browser process there) — open a sibling tab in the same window first, then close the target.",
