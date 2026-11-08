@@ -1278,6 +1278,7 @@ if (new URLSearchParams(window.location.search).has("debug")) {
     activeTurn: state.activeTurn,
     promptActivity: Boolean(state.promptActivity),
     queued: serializeQueuedComposerMessages(),
+    lastFlushDecision: lastQueueFlushDecision,
   });
 }
 
@@ -3991,9 +3992,8 @@ function scheduleDiskBuildCheck(): void {
 
 function ownBuildId(): string {
   try {
-    const src =
-      document.querySelector<HTMLScriptElement>('script[src*="sidepanel.js"]')?.src ?? import.meta.url;
-    return new URL(src, window.location.href).searchParams.get("v") ?? "";
+    const src = document.querySelector<HTMLScriptElement>('script[src*="sidepanel.js"]')?.src ?? "";
+    return src ? new URL(src, window.location.href).searchParams.get("v") ?? "" : "";
   } catch {
     return "";
   }
@@ -15623,17 +15623,50 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
     state.threadId ||
     conversationThreadIdsById.get(conversationId) ||
     activeTurnsByConversationId.get(conversationId)?.threadId ||
+    queuedComposerMessagesFor(conversationId)[0]?.threadId ||
     "";
-  if (boundThreadId) {
+  let gwTasks: Array<{ taskId?: string; id?: string; activeTurnId?: string | null }> | null = null;
+  if (boundThreadId || sidepanelDebugEnabled) {
     const gw = await sendRuntimeMessage<{
+      enabled?: boolean;
       tasks?: Array<{ taskId?: string; id?: string; activeTurnId?: string | null }>;
     }>({ type: "gateway.tasks" }).catch(() => null);
-    // Can't verify gateway truth (SW restarting / gateway down) — hold
-    // the queue rather than risk leaking the message into a new task.
-    if (!gw) return;
-    const task = (gw?.tasks ?? []).find((t) => (t.taskId ?? t.id) === boundThreadId);
+    gwTasks = gw?.tasks ?? null;
+    noteQueueFlushDecision({
+      conversationId,
+      boundThreadId,
+      stateThreadId: state.threadId,
+      mappedThreadId: conversationThreadIdsById.get(conversationId) ?? null,
+      queuedThreadId: queuedComposerMessagesFor(conversationId)[0]?.threadId ?? null,
+      activeTurn: state.activeTurn,
+      promptActivity: Boolean(state.promptActivity),
+      gwEnabled: gw?.enabled ?? null,
+      gwTasks: (gwTasks ?? []).map((t) => ({ taskId: t.taskId ?? t.id, activeTurnId: t.activeTurnId ?? null })),
+    });
+    // Can't verify gateway truth (SW restarting / gateway down / task
+    // views not yet seeded) — hold the queue rather than risk leaking
+    // the message into a new task, and retry once views catch up.
+    if (!gw || gw.enabled === false) {
+      scheduleQueueFlushRetry(conversationId);
+      return;
+    }
+    const task = boundThreadId
+      ? (gwTasks ?? []).find((t) => (t.taskId ?? t.id) === boundThreadId)
+      : undefined;
+    if (boundThreadId && !task) {
+      scheduleQueueFlushRetry(conversationId);
+      return;
+    }
+    // No binding anywhere AND the gateway reports zero tasks — a queue
+    // entry implies a send already happened, so this is an unseeded/
+    // degraded view, not "nothing running". Hold until views catch up.
+    if (!boundThreadId && (gwTasks ?? []).length === 0) {
+      scheduleQueueFlushRetry(conversationId);
+      return;
+    }
     if (task?.activeTurnId) return;
   }
+  queueFlushRetryAtByConversationId.delete(conversationId);
   const next = dequeueQueuedComposerMessage(conversationId);
   if (next) {
     // Excluded from delayed re-hydrate merges: if the post-dequeue
@@ -15681,6 +15714,28 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
 // events) would see "no turn in flight" and leak the queued message
 // into a brand-new gateway task while the real turn still runs.
 let sidepanelInitSettled = false;
+const sidepanelDebugEnabled = new URLSearchParams(window.location.search).has("debug");
+let lastQueueFlushDecision: Record<string, unknown> | null = null;
+const queueFlushRetryAtByConversationId = new Map<string, { at: number; count: number }>();
+const QUEUE_FLUSH_RETRY_INTERVAL_MS = 2_500;
+const QUEUE_FLUSH_RETRY_MAX = 40;
+
+/** Bounded re-poll while gateway truth is unverifiable (cold SW, task
+ *  views not yet seeded). reconcile re-checks every guard, so this only
+ *  spins while the queue is genuinely stuck unverifiable; after ~100s
+ *  the queue simply stays put for the user to send manually. */
+function scheduleQueueFlushRetry(conversationId: string): void {
+  const prev = queueFlushRetryAtByConversationId.get(conversationId) ?? { at: 0, count: 0 };
+  if (prev.count >= QUEUE_FLUSH_RETRY_MAX || Date.now() - prev.at < QUEUE_FLUSH_RETRY_INTERVAL_MS) {
+    return;
+  }
+  queueFlushRetryAtByConversationId.set(conversationId, { at: Date.now(), count: prev.count + 1 });
+  setTimeout(() => reconcileQueuedComposerFlush(), QUEUE_FLUSH_RETRY_INTERVAL_MS);
+}
+
+function noteQueueFlushDecision(decision: Record<string, unknown>): void {
+  lastQueueFlushDecision = { ...decision, at: Date.now() };
+}
 
 /** Re-deliver a persisted queue entry whose turn.end event may have been
  *  missed while the panel was reloading or another conversation was
@@ -15818,6 +15873,11 @@ async function sendPrompt(
         text: message,
         fileAttachments: [...state.fileAttachments],
         profileId: activeProfileId,
+        threadId:
+          threadIdAtSubmit ||
+          conversationThreadIdsById.get(conversationIdAtStart) ||
+          activeTurnsByConversationId.get(conversationIdAtStart)?.threadId ||
+          undefined,
       });
       // Await the storage commit before the queue strip renders: a
       // reload after the strip is visible must find the message.

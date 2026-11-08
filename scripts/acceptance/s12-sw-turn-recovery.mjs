@@ -32,6 +32,19 @@ await runScenario(
           return p;
         };
       });
+      // The usage-notice onboarding hides the composer until accepted —
+      // on hosts with an authenticated codex account it gates first paint.
+      // Accept via the real button when present, then wait for the composer.
+      await sp
+        .waitForSelector("#composer, [data-usage-notice-accept]", { timeout: 20_000 })
+        .catch(() => {});
+      const noticeAccepted = await sp.evaluate(() => {
+        const btn = document.querySelector("[data-usage-notice-accept]");
+        if (!btn) return false;
+        btn.click();
+        return true;
+      });
+      evidence.note(`usage notice accept clicked=${noticeAccepted}`);
       await sp.waitForSelector("#composer", { timeout: 20_000 });
       await sleep(1500);
 

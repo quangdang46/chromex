@@ -5,6 +5,10 @@ export interface QueuedComposerMessage {
   text: string;
   fileAttachments: UserFileAttachment[];
   profileId: string | undefined;
+  /** Gateway thread the message was queued under — survives reloads so a
+   *  post-reload flush can still verify turn state against gateway truth
+   *  even before conversation/thread bindings re-hydrate. */
+  threadId?: string | undefined;
 }
 
 const queuesByConversationId = new Map<string, QueuedComposerMessage[]>();
