@@ -1730,6 +1730,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
           return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
+        // type/fill/hover/drag cannot trigger navigation — no popup
+        // collection (would only add the grace-window latency).
         if (tool === "browser.page.type" && args.trusted === true) {
           return await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
         }

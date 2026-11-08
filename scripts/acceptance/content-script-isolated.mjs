@@ -341,12 +341,19 @@ try {
     `page.dom.find scans open shadow trees (${shFind?.matches?.length} matches)`,
   );
 
+  const shTextWait = await sh.send({ type: "page.dom.wait", text: "shadow-secret-text", timeoutMs: 3000 });
+  assert(shTextWait?.ok === true, "text wait sees open-shadow content");
+  const shNestedTextWait = await sh.send({ type: "page.dom.wait", text: "Nested Shadow Button", timeoutMs: 3000 });
+  assert(shNestedTextWait?.ok === true, "text wait sees nested-shadow content");
+
   const shWaitGone = await sh.page.evaluate(() => {
     document.getElementById("host")?.shadowRoot?.getElementById("stext")?.remove();
   });
   void shWaitGone;
   const shGone = await sh.send({ type: "page.dom.wait", selectorGone: "#stext", timeoutMs: 5000 });
   assert(shGone?.ok === true, "selectorGone sees open-shadow removal");
+  const shTextGone = await sh.send({ type: "page.dom.wait", textGone: "shadow-secret-text", timeoutMs: 5000 });
+  assert(shTextGone?.ok === true, "textGone sees open-shadow removal");
   const shVis = await sh.send({ type: "page.dom.wait", visibleSelector: "#sin", timeoutMs: 3000 });
   assert(shVis?.ok === true, "visibleSelector sees open-shadow input");
 

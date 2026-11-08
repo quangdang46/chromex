@@ -1,0 +1,5 @@
+{
+  "scenario": "content-script-isolated",
+  "status": "PASS",
+  "asserts": 59
+}

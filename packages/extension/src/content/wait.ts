@@ -8,7 +8,7 @@
  */
 
 import { isPointerReachableElement } from "./actions.js";
-import { querySelectorAllDeep } from "./refs.js";
+import { collectOpenShadowRoots, querySelectorAllDeep } from "./refs.js";
 
 export interface PageWaitConditions {
   /** substring that must appear in the page's visible text */
@@ -39,8 +39,22 @@ export interface PageWaitResult {
 
 const POLL_INTERVAL_MS = 100;
 
+/** innerText does not cross shadow boundaries — body.innerText alone
+ *  leaves web-component UIs invisible to text/textGone waits. Each
+ *  open shadow root contributes its top-level children's innerText;
+ *  nested roots are covered by their own entries in the root list. */
 function pageText(): string {
-  return (document.body?.innerText ?? "").slice(0, 500_000);
+  const parts: string[] = [];
+  const bodyText = document.body?.innerText ?? "";
+  if (bodyText) parts.push(bodyText);
+  for (const sr of collectOpenShadowRoots(document)) {
+    for (const child of Array.from(sr.children)) {
+      if (child instanceof HTMLElement && child.innerText) {
+        parts.push(child.innerText);
+      }
+    }
+  }
+  return parts.join("\n").slice(0, 500_000);
 }
 
 function conditionsMet(conds: Required<PageWaitConditions>): boolean {
