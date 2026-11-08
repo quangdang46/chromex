@@ -2223,6 +2223,21 @@ await runScenario(
             } else {
               pj.focusCallOk = pj.focusValOk = false;
             }
+            // element scroll inside the closed root — scrollable
+            // container's scrollTop must actually move
+            const psc = elements.find((e) => e.id === "pscroller");
+            pj.scrollOk = typeof psc?.ref === "string";
+            if (pj.scrollOk) {
+              const scrRes = await runner.browserToolCall(
+                taskId, "browser.page.scroll",
+                { tabId: pjTab, ref: psc.ref, direction: "down", amountPx: 100 }, token, 60_000,
+              ).catch(() => null);
+              const scrStep = (scrRes?.result ?? scrRes ?? {}).step ?? {};
+              pj.scrollCallOk = (scrRes?.result ?? scrRes ?? {}).pierced === true;
+              pj.scrollValOk = Number(scrStep.scrollTop ?? 0) > 0;
+            } else {
+              pj.scrollCallOk = pj.scrollValOk = false;
+            }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
@@ -2230,6 +2245,8 @@ await runScenario(
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
             pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
+          pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
+            pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
             pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2239,6 +2256,7 @@ await runScenario(
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
           pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
+          pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
           pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2255,6 +2273,7 @@ await runScenario(
           pj.shotOk === true &&
           pj.submitOk === true && pj.submitCallOk === true && pj.submitValOk === true &&
           pj.focusOk === true && pj.focusCallOk === true && pj.focusValOk === true &&
+          pj.scrollOk === true && pj.scrollCallOk === true && pj.scrollValOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
           pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
           pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&

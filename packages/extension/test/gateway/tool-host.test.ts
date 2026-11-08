@@ -4521,6 +4521,55 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       .rejects.toMatchObject({ code: "browser.action_failed" });
   });
 
+  test("pz ref scroll routes through node-scoped scrollBy", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{ nodeType: 1, nodeName: "DIV", backendNodeId: 44, attributes: ["id", "scroller"] }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 44, role: { value: "generic" }, name: { value: "scroller" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [0, 0, 50, 0, 50, 30, 0, 30] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-s" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: { top: 100, left: 0 } } }),
+    });
+    const h = createToolHostHandler(cdpDeps(526, cdp));
+    const pz = (await h(req("browser.page.pierce", { tabId: 526 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    const res = (await h(req("browser.page.scroll", {
+      tabId: 526, ref: pz.elements[0]!.ref, direction: "down", amountPx: 100,
+    }))) as { ok: boolean; pierced?: boolean; step?: { scrollTop?: number } };
+    expect(res.ok).toBe(true);
+    expect(res.pierced).toBe(true);
+    expect(res.step?.scrollTop).toBe(100);
+    const fn = cdp.sent.find(
+      (s) => s.method === "Runtime.callFunctionOn" && String(s.params?.functionDeclaration ?? "").includes("scrollBy"),
+    );
+    expect(fn).toBeDefined();
+    expect(fn?.params?.awaitPromise).toBe(true);
+    const args = fn?.params?.arguments as Array<{ value?: unknown }> | undefined;
+    expect(args?.[0]?.value).toBe("down");
+    expect(args?.[1]?.value).toBe(100);
+    // bad direction refused before any CDP traffic
+    const before = cdp.sent.length;
+    await expect(h(req("browser.page.scroll", {
+      tabId: 526, ref: pz.elements[0]!.ref, direction: "sideways",
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(cdp.sent.length).toBe(before);
+  });
+
   test("pz ref type/fill/press route through DOM.focus + trusted keys", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({

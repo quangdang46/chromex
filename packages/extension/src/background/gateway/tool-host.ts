@@ -4897,6 +4897,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if ((tool === "browser.page.focus" || tool === "browser.page.submit") && pierceRefTarget) {
           return await pierceFocusSubmit(deps, tabId, tool, args, expectCond, frameId, expectedTarget);
         }
+        // Element scroll inside a closed root — same node-scoped
+        // scrollBy the content script performs, minus the content
+        // script that can't see the node. (trusted scroll stays
+        // page-level and refuses element targets above.)
+        if (tool === "browser.page.scroll" && pierceRefTarget) {
+          return await pierceScroll(deps, tabId, args, expectCond, frameId);
+        }
         const step = domStepFor(tool, args);
         if (expectedTarget) step.expectedTarget = expectedTarget;
         const actionDispatchedAt = Date.now();
@@ -6822,6 +6829,84 @@ async function pierceFocusSubmit(
     ...(openedTabs.length > 0 ? { openedTabs } : {}),
     resolvedTabId: tabId,
   };
+}
+
+/** browser.page.scroll on a pz ref — element scroll inside a closed
+ *  root. Mirrors performScrollAction's element branch: scrollBy with
+ *  smooth behavior, amountPx default 75% of the owning frame's
+ *  viewport height, direction top/bottom are page-level only so they
+ *  produce a zero delta on an element (same as the content-script
+ *  path). Returns the post-scroll offsets as evidence. */
+async function pierceScroll(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+  frameId: number,
+): Promise<Record<string, unknown>> {
+  const ref = str(args.ref);
+  if (ref === undefined || !PIERCE_REF_RE.test(ref)) {
+    throw toolError("proto.invalid", "browser.page.scroll pz path requires args.ref");
+  }
+  if (frameId !== 0) {
+    throw toolError("proto.invalid", "pierce refs carry their own frame — drop args.frameId");
+  }
+  if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+    throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+  }
+  const direction = typeof args.direction === "string" ? args.direction : "down";
+  if (!["up", "down", "left", "right", "top", "bottom"].includes(direction)) {
+    throw toolError("proto.invalid", "browser.page.scroll args.direction must be up|down|left|right|top|bottom");
+  }
+  const amountPx = args.amountPx;
+  if (amountPx !== undefined && (typeof amountPx !== "number" || !Number.isFinite(amountPx) || amountPx <= 0)) {
+    throw toolError("proto.invalid", "browser.page.scroll args.amountPx must be a positive finite number");
+  }
+  const hit = pierceHit(tabId, ref);
+  cdpRequired(deps);
+  const { session, release } = await pierceAcquire(deps, hit);
+  try {
+    const node = (await session.send("DOM.resolveNode", { backendNodeId: hit.backendNodeId })) as {
+      object?: { objectId?: string };
+    };
+    const objectId = node?.object?.objectId;
+    if (!objectId) {
+      throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+    }
+    const res = (await session.send("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration:
+        "async function(dir,amount){" +
+        "var a=(typeof amount==='number'&&isFinite(amount)&&amount>0)?amount:Math.round((window.innerHeight||800)*0.75);" +
+        "this.scrollBy({left:dir==='left'?-a:dir==='right'?a:0,top:dir==='up'?-a:dir==='down'?a:0,behavior:'smooth'});" +
+        // smooth scroll animates — let it settle before sampling the
+        // offsets, same idea as the content script's action tick.
+        "await new Promise(function(r){setTimeout(r,350)});" +
+        "return {top:this.scrollTop,left:this.scrollLeft}}",
+      arguments: [{ value: direction }, { value: amountPx ?? null }],
+      returnByValue: true,
+      awaitPromise: true,
+    })) as { result?: { value?: { top?: number; left?: number } } };
+    const pos = res?.result?.value ?? {};
+    let verified: boolean | "unknown" | undefined;
+    let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+    if (expectCond) {
+      const check = await runExpectCondition(deps, tabId, expectCond, frameId);
+      expectInfo = check;
+      verified = check.met === true ? true : check.met === false ? false : "unknown";
+    }
+    return {
+      ok: true,
+      summary: `pierce scroll ${direction}`,
+      step: { action: "scroll", direction, ok: true, scrollTop: pos.top, scrollLeft: pos.left },
+      pierced: true,
+      ...(verified !== undefined ? { verified } : {}),
+      ...(expectInfo ? { expect: expectInfo } : {}),
+      resolvedTabId: tabId,
+    };
+  } finally {
+    await release();
+  }
 }
 
 /** browser.page.drag args.trusted — CDP mouse press → interpolated

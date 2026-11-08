@@ -260,6 +260,9 @@ sr.innerHTML = \`
     <input name="q" value="pierce-q">
     <button id="psubmit" type="submit">pierce-submit</button>
   </form>
+  <div id="pscroller" style="width:200px;height:60px;overflow-y:scroll;margin-top:8px">
+    <div style="height:400px">scroll-space</div>
+  </div>
 \`;
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
