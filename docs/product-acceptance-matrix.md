@@ -51,8 +51,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   JS dialog accept, setInputFiles by path, responseBody tap+get; see
   docs/adr/debugger-tier.md). Trusted paths now cover click, press,
   type, fill, hover and drag — including inside same-origin and
-  cross-origin iframes via the content-script geometry chain. Native
-  file picker still unreachable; headful re-verify pending
+  cross-origin iframes via the content-script geometry chain.
+  `setInputFiles` reaches out-of-process iframes through their own
+  debugger targets (`cdp-headless` `oopifSetInputFiles` PASS).
+  Native file picker still unreachable; headful re-verify pending
   (real Chrome S1–S8 gated on acceptance token)
 - Agent loop proof: `agent-loop-isolated` scenario PASS — scripted
   provider-style iteration on headless chromium (form submit verified

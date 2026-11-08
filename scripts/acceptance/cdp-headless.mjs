@@ -43,6 +43,8 @@ await runScenario(
     const fixture = await startFixtureServer();
     const uploadDir = mkdtempSync(join(tmpdir(), "chromex-cdp-"));
     const uploadPath = join(uploadDir, "chromex-cdp-upload.txt");
+    const crossPath = join(uploadDir, "cross.txt");
+    writeFileSync(crossPath, "oopif upload");
     writeFileSync(uploadPath, "cdp-upload-proof\n");
     try {
       const taskId = await runner.createTask({
@@ -363,6 +365,24 @@ await runScenario(
         ok: frameUpload?.status === "completed" && fout2b === "files:mem.txt",
         status: frameUpload?.status,
         fout2: fout2b,
+      };
+
+      // OOPIF setInputFiles: cross-origin iframe lives in its own
+      // debugger target — the pierced tab DOM cannot see it.
+      let oopifFout = null;
+      if (crossFrame?.frameId) {
+        const oof = await runner.browserToolCall(
+          taskId, "browser.page.setInputFiles",
+          { selector: "#ffile", frameId: crossFrame.frameId, files: [crossPath] },
+          token, 60_000,
+        ).catch((e) => ({ error: String(e) }));
+        const pwFr5 = page.frames().find((f) => f.url().includes("localhost") && f.url().includes("/iframe-child"));
+        oopifFout = pwFr5 ? await pwFr5.locator("#fout2").textContent() : null;
+        evidence.note(`oopif setInputFiles → ${JSON.stringify(oof).slice(0, 200)} fout2=${oopifFout}`);
+      }
+      results.oopifSetInputFiles = {
+        ok: oopifFout === "files:cross.txt",
+        fout2: oopifFout,
       };
 
       // responseBody sees subframe requests: prime the tap, click the

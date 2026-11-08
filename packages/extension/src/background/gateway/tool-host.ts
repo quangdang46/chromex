@@ -159,6 +159,10 @@ export interface ToolHostDeps {
    *  fails proto.unsupported — never silently degrades to untrusted. */
   acquireCdp?(tabId: number): Promise<CdpSession>;
   releaseCdp?(tabId: number): Promise<void>;
+  /** Out-of-process iframe targets (chrome.debugger.getTargets). */
+  acquireCdpTarget?(targetId: string): Promise<CdpSession>;
+  releaseCdpTarget?(targetId: string): Promise<void>;
+  listCdpTargets?(): Promise<Array<{ id: string; type: string; url: string }>>;
 }
 
 function toolError(code: string, message: string): Error {
@@ -2596,6 +2600,58 @@ function findMarkedNodeId(
   return findMarkedNodeId(node.contentDocument, attr, value);
 }
 
+/** OOPIF path for setInputFiles: locate the frame's debugger target by
+ *  URL and run DOM.setFileInputFiles inside it. Returns nodeId used or
+ *  undefined when no target matched / element absent. */
+async function setInputFilesViaFrameTarget(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  frameId: number,
+  files: string[],
+): Promise<boolean> {
+  const frames = deps.listFrames ? await deps.listFrames(tabId) : [];
+  const frame = frames.find((f) => f.frameId === frameId);
+  if (!frame?.url) return false;
+  const targets = await deps.listCdpTargets!();
+  // OOPIF targets report type "iframe" on some builds and "other" on
+  // others — URL equality with the webNavigation frame is the real key.
+  const candidates = targets.filter(
+    (t) => (t.type === "iframe" || t.type === "other") && t.url === frame.url,
+  );
+  if (candidates.length === 0) return false;
+  const loc = await cdpLocateElement(deps, tabId, args, frameId);
+  for (const t of candidates) {
+    const { session, release } = await cdpTargetAcquire(deps, t.id);
+    try {
+      await session.send("DOM.enable");
+      const doc = (await session.send("DOM.getDocument", { depth: 1 })) as { root?: { nodeId?: number } };
+      const rootId = doc?.root?.nodeId;
+      if (typeof rootId !== "number") continue;
+      const q = (await session.send("DOM.querySelector", { nodeId: rootId, selector: loc.selector })) as { nodeId?: number };
+      if (typeof q?.nodeId !== "number") continue;
+      await session.send("DOM.setFileInputFiles", { nodeId: q.nodeId, files });
+      return true;
+    } finally {
+      await release();
+    }
+  }
+  return false;
+}
+
+async function cdpTargetAcquire(
+  deps: ToolHostDeps,
+  targetId: string,
+): Promise<{ session: CdpSession; release: () => Promise<void> }> {
+  let session: CdpSession;
+  try {
+    session = await deps.acquireCdpTarget!(targetId);
+  } catch {
+    throw toolError("proto.unsupported", `debugger attach to frame target failed`);
+  }
+  return { session, release: () => deps.releaseCdpTarget!(targetId) };
+}
+
 async function setInputFiles(
   deps: ToolHostDeps,
   tabId: number,
@@ -2650,13 +2706,20 @@ async function setInputFiles(
   try {
     await session.send("DOM.enable");
     let nodeId: number | undefined;
+    let oopifHandled = false;
     if (markerValue !== null) {
       const doc = (await session.send("DOM.getDocument", {
         depth: -1,
         pierce: true,
       })) as { root?: CdpDomNode };
       nodeId = findMarkedNodeId(doc?.root, markerAttr, markerValue);
-      if (nodeId === undefined) {
+      if (nodeId === undefined && deps.acquireCdpTarget && deps.releaseCdpTarget && deps.listCdpTargets) {
+        // Out-of-process iframe: invisible to the tab's DOM agent, but
+        // it is its own debugger target whose DOM sees only its own
+        // document. Match the frame's URL to an iframe target.
+        oopifHandled = await setInputFilesViaFrameTarget(deps, tabId, args, frameId, files);
+      }
+      if (!oopifHandled && nodeId === undefined) {
         throw toolError(
           "browser.element_not_found",
           "marked element not visible to the DOM domain (out-of-process iframe?)",
@@ -2678,7 +2741,9 @@ async function setInputFiles(
       }
       nodeId = q.nodeId;
     }
-    await session.send("DOM.setFileInputFiles", { nodeId, files });
+    if (!oopifHandled) {
+      await session.send("DOM.setFileInputFiles", { nodeId: nodeId as number, files });
+    }
   } finally {
     await release();
     if (markerValue !== null) {

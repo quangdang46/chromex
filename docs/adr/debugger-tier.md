@@ -104,8 +104,14 @@ for Testing:
   `args.frameId`: the content script marks the resolved element
   (`page.dom.mark`) and a pierced `DOM.getDocument` finds the node —
   verified inside a same-origin iframe (`cdp-headless`). Out-of-process
-  iframes are invisible to the tab's DOM agent and fail
-  `browser.element_not_found` honestly.
+  iframes are invisible to the tab's DOM agent, so the handler falls
+  back to the frame's own debugger target: `chrome.debugger.getTargets`
+  is matched to the frame's webNavigation URL (OOPIF targets report
+  type `iframe` or `other` depending on build), the target is attached
+  as `{targetId}`, and its DOM domain — scoped to that frame's document
+  — runs the same querySelector + setFileInputFiles. Verified
+  end-to-end against a cross-origin (localhost vs 127.0.0.1) iframe
+  fixture (`cdp-headless` `oopifSetInputFiles`).
   `browser.page.screenshot` also accepts an element target
   (ref/selector/label, optional `args.frameId`): the element is
   scrolled into view, located through the same geometry path, and

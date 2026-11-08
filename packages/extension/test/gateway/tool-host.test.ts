@@ -1479,6 +1479,69 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(set?.params).toMatchObject({ nodeId: 42, files: ["/tmp/report.pdf"] });
   });
 
+  test("page.setInputFiles falls back to the OOPIF frame target", async () => {
+    const tabCdp = fakeCdp({
+      "DOM.getDocument": () => ({ root: { nodeId: 1 } }), // pierced tree: no marker
+    });
+    const frameCdp = fakeCdp({
+      "DOM.getDocument": () => ({ root: { nodeId: 7 } }),
+      "DOM.querySelector": () => ({ nodeId: 77 }),
+      "DOM.setFileInputFiles": () => ({}),
+    });
+    const h = createToolHostHandler(cdpDeps(511, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 9, url: "https://pay.example/frame" },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-page", type: "page", url: "https://x/" },
+        { id: "t-frame", type: "other", url: "https://pay.example/frame" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.mark") return { found: true };
+        if (message.type === "page.dom.locate") {
+          return { found: true, x: 1, y: 2, width: 3, height: 4, selector: "input[type=file]", tagName: "input", visible: true };
+        }
+        return { ok: true };
+      }),
+    }));
+    const res = (await h(req("browser.page.setInputFiles", {
+      tabId: 511,
+      frameId: 9,
+      selector: "input[type=file]",
+      files: ["/tmp/up.png"],
+    }))) as { ok: boolean };
+    expect(res.ok).toBe(true);
+    const set = frameCdp.sent.find((s) => s.method === "DOM.setFileInputFiles");
+    expect(set?.params).toMatchObject({ nodeId: 77, files: ["/tmp/up.png"] });
+    // the tab session must NOT get a second setFileInputFiles
+    expect(tabCdp.sent.filter((s) => s.method === "DOM.setFileInputFiles")).toHaveLength(0);
+  });
+
+  test("page.setInputFiles in an unreachable frame still fails element_not_found", async () => {
+    const tabCdp = fakeCdp({
+      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
+    });
+    const h = createToolHostHandler(cdpDeps(512, tabCdp, {
+      listFrames: vi.fn(async () => [{ frameId: 9, url: "https://gone.example/" }]),
+      listCdpTargets: vi.fn(async () => []),
+      acquireCdpTarget: vi.fn(async () => { throw new Error("unused"); }),
+      releaseCdpTarget: vi.fn(async () => {}),
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.mark") return { found: true };
+        if (message.type === "page.dom.locate") {
+          return { found: true, x: 1, y: 2, width: 3, height: 4, selector: "input", tagName: "input", visible: true };
+        }
+        return { ok: true };
+      }),
+    }));
+    await expect(h(req("browser.page.setInputFiles", {
+      tabId: 512, frameId: 9, selector: "input", files: ["/tmp/up.png"],
+    }))).rejects.toMatchObject({ code: "browser.element_not_found" });
+  });
+
   test("page.responseBody lists captured requests then returns a body", async () => {
     const cdp = fakeCdp({
       "Network.getResponseBody": () => ({ body: "hello-body", base64Encoded: false }),

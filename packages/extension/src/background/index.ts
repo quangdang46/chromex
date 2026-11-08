@@ -106,7 +106,7 @@ import {
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
 import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
-import { acquireCdp, releaseCdp } from "./cdp.js";
+import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
@@ -374,6 +374,15 @@ const toolHostHandler = createToolHostHandler({
     },
     acquireCdp,
     releaseCdp,
+    acquireCdpTarget,
+    releaseCdpTarget,
+    listCdpTargets: () =>
+      new Promise((resolve, reject) => {
+        chrome.debugger.getTargets((targets) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve((targets ?? []).map((t) => ({ id: t.id, type: t.type, url: t.url })));
+        });
+      }),
     captureVisibleTab: async (windowId, opts) =>
       chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: opts?.quality ?? 70 }),
     uploadArtifact: async (input) => {

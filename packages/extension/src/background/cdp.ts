@@ -1,13 +1,18 @@
 /**
  * background/cdp.ts — chrome.debugger (CDP) tier client.
  *
- * Lazy per-tab sessions: attach on first use, refcounted, idempotent
+ * Lazy per-target sessions: attach on first use, refcounted, idempotent
  * re-attach ("already attached" is success). Sessions belong to the
  * extension, not the service worker — an SW restart does not drop them;
  * if Chrome does detach (tab close, chrome://detach), onDetach clears
  * state and the next call re-attaches. chrome.debugger.onEvent listeners
  * are extension-scoped and survive detach/reattach, so `on()` needs no
  * re-registration.
+ *
+ * Two debuggee kinds share the same session machinery:
+ *  - tab targets ({tabId}) — the page plus same-process frames
+ *  - frame targets ({targetId}) — out-of-process iframes, which appear
+ *    as separate chrome.debugger targets (see docs/adr/debugger-tier.md)
  *
  * Used only for what the DOM tier cannot do (docs/adr/debugger-tier.md):
  * trusted input, JS dialogs, file inputs, response bodies, AX tree.
@@ -19,21 +24,21 @@ export interface CdpSession {
   on(method: string, cb: (params: Record<string, unknown>) => void): () => void;
 }
 
-interface TabState {
+interface TargetState {
   refs: number;
   attached: boolean;
-  pageEnabled: boolean;
+  debuggee: chrome.debugger.Debuggee;
 }
 
 const CDP_VERSION = "1.3";
-const states = new Map<number, TabState>();
+const states = new Map<string, TargetState>();
 let lifecycleListenerInstalled = false;
 
-function stateFor(tabId: number): TabState {
-  let s = states.get(tabId);
+function stateFor(key: string, debuggee: chrome.debugger.Debuggee): TargetState {
+  let s = states.get(key);
   if (!s) {
-    s = { refs: 0, attached: false, pageEnabled: false };
-    states.set(tabId, s);
+    s = { refs: 0, attached: false, debuggee };
+    states.set(key, s);
   }
   return s;
 }
@@ -42,21 +47,23 @@ function ensureLifecycleListener(): void {
   if (lifecycleListenerInstalled || typeof chrome === "undefined" || !chrome.debugger?.onDetach) return;
   lifecycleListenerInstalled = true;
   chrome.debugger.onDetach.addListener((src) => {
-    if (typeof src.tabId !== "number") return;
-    const s = states.get(src.tabId);
-    if (s) {
-      s.attached = false;
-      s.pageEnabled = false;
-    }
+    // Debuggee echoes back whichever id kind we attached with.
+    const key =
+      typeof src.tabId === "number" ? `tab:${src.tabId}`
+      : typeof src.targetId === "string" ? `tgt:${src.targetId}`
+      : null;
+    if (key === null) return;
+    const s = states.get(key);
+    if (s) s.attached = false;
   });
   chrome.tabs?.onRemoved?.addListener((tabId) => {
-    states.delete(tabId);
+    states.delete(`tab:${tabId}`);
   });
 }
 
-async function rawAttach(tabId: number): Promise<void> {
+async function rawAttach(debuggee: chrome.debugger.Debuggee): Promise<void> {
   try {
-    await chrome.debugger.attach({ tabId }, CDP_VERSION);
+    await chrome.debugger.attach(debuggee, CDP_VERSION);
   } catch (e) {
     // already attached (by us after SW restart, or another client) —
     // only that specific failure is safe to treat as success.
@@ -65,13 +72,31 @@ async function rawAttach(tabId: number): Promise<void> {
   }
 }
 
-/** Acquire a CDP session for a tab. Caller must releaseCdp() when done. */
-export async function acquireCdp(tabId: number): Promise<CdpSession> {
+function makeSession(key: string, debuggee: chrome.debugger.Debuggee): CdpSession {
+  const matches = (src: chrome.debugger.Debuggee) =>
+    typeof debuggee.tabId === "number"
+      ? src.tabId === debuggee.tabId
+      : src.targetId === debuggee.targetId;
+  return {
+    send: <T>(method: string, params?: Record<string, unknown>) =>
+      chrome.debugger.sendCommand(debuggee, method, params ?? {}) as Promise<T>,
+    on: (method, cb) => {
+      const wrapped = (src: chrome.debugger.Debuggee, m: string, p?: object) => {
+        if (matches(src) && m === method) cb((p ?? {}) as Record<string, unknown>);
+      };
+      chrome.debugger.onEvent.addListener(wrapped);
+      return () => chrome.debugger.onEvent.removeListener(wrapped);
+    },
+  };
+  void key;
+}
+
+async function acquire(key: string, debuggee: chrome.debugger.Debuggee): Promise<CdpSession> {
   ensureLifecycleListener();
-  const s = stateFor(tabId);
+  const s = stateFor(key, debuggee);
   s.refs += 1;
   if (!s.attached) {
-    await rawAttach(tabId);
+    await rawAttach(debuggee);
     s.attached = true;
     // Enable the Page domain eagerly, once per attach. Page agents only
     // track javascriptDialogOpening / serve handleJavaScriptDialog after
@@ -80,41 +105,49 @@ export async function acquireCdp(tabId: number): Promise<CdpSession> {
     // Fire-and-forget: a dialog already open at first contact leaves
     // this pending; the dialog tool then fails honestly (no_dialog)
     // instead of deadlocking the 15s host timeout.
-    if (!s.pageEnabled) {
-      s.pageEnabled = true;
-      void chrome.debugger
-        .sendCommand({ tabId }, "Page.enable", {})
-        .catch(() => {
-          s.pageEnabled = false;
-        });
-    }
+    void chrome.debugger
+      .sendCommand(debuggee, "Page.enable", {})
+      .catch(() => {
+        // Page.enable can hang behind an open modal — the dialog tool
+        // probes handleJavaScriptDialog first and reports no_dialog.
+      });
   }
-  return {
-    send: <T>(method: string, params?: Record<string, unknown>) =>
-      chrome.debugger.sendCommand({ tabId }, method, params ?? {}) as Promise<T>,
-    on: (method, cb) => {
-      const wrapped = (src: chrome.debugger.Debuggee, m: string, p?: object) => {
-        if (src.tabId === tabId && m === method) cb((p ?? {}) as Record<string, unknown>);
-      };
-      chrome.debugger.onEvent.addListener(wrapped);
-      return () => chrome.debugger.onEvent.removeListener(wrapped);
-    },
-  };
+  return makeSession(key, debuggee);
 }
 
-/** Release a session acquired via acquireCdp. Detaches at refcount 0. */
-export async function releaseCdp(tabId: number): Promise<void> {
-  const s = states.get(tabId);
+async function release(key: string): Promise<void> {
+  const s = states.get(key);
   if (!s) return;
   s.refs = Math.max(0, s.refs - 1);
   if (s.refs === 0 && s.attached) {
     s.attached = false;
     try {
-      await chrome.debugger.detach({ tabId });
+      await chrome.debugger.detach(s.debuggee);
     } catch {
       /* already detached */
     }
   }
+}
+
+/** Acquire a CDP session for a tab. Caller must releaseCdp() when done. */
+export async function acquireCdp(tabId: number): Promise<CdpSession> {
+  return acquire(`tab:${tabId}`, { tabId });
+}
+
+/** Release a session acquired via acquireCdp/acquireCdpTarget. */
+export async function releaseCdp(tabId: number): Promise<void> {
+  return release(`tab:${tabId}`);
+}
+
+/** Acquire a CDP session for an out-of-process iframe target
+ *  (chrome.debugger.getTargets() type "iframe"). Its DOM/Runtime domains
+ *  see only that frame's document — no piercing needed. */
+export async function acquireCdpTarget(targetId: string): Promise<CdpSession> {
+  return acquire(`tgt:${targetId}`, { targetId });
+}
+
+export async function releaseCdpTarget(targetId: string): Promise<void> {
+  return release(`tgt:${targetId}`);
 }
 
 /** One-shot helper: attach → fn(session) → release. */
