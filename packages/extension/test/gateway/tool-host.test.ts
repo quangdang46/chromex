@@ -210,6 +210,49 @@ describe("tool host (P1-09)", () => {
     await expect(h(sreq({}))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("tab.update windowId moves across windows; windowId alone means end of strip", async () => {
+    const d = deps();
+    const moves: Array<[number, number, number | undefined]> = [];
+    d.moveTab = async (id, idx, w) => { moves.push([id, idx, w]); };
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    const sreq = (args: Record<string, unknown>) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool: "browser.tab.update", args, tabScope: scope });
+    const res = (await h(sreq({ windowId: 4 }))) as { windowId: number };
+    expect(moves).toEqual([[7, -1, 4]]); // windowId alone → end of target strip
+    expect(res.windowId).toBe(4);
+    await h(sreq({ windowId: 4, index: 2 }));
+    expect(moves[1]).toEqual([7, 2, 4]); // positioned cross-window move
+    await expect(h(sreq({ windowId: 1.5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(moves).toHaveLength(2); // rejected calls never dispatched
+  });
+
+  test("tab.update cross-window move refuses last-tab-out on headless", async () => {
+    const d = deps({ headlessChrome: true });
+    const moves: Array<[number, number, number | undefined]> = [];
+    d.moveTab = async (id, idx, w) => { moves.push([id, idx, w]); };
+    d.getTab = vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3 }));
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    const sreq = (args: Record<string, unknown>) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool: "browser.tab.update", args, tabScope: scope });
+    // sole tab in source window → moving it out tears the window down → crash
+    d.queryTabs = vi.fn(async () => [{ id: 7, url: "https://x", windowId: 3 }]);
+    await expect(h(sreq({ windowId: 4 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    expect(moves).toHaveLength(0);
+    // a sibling stays behind → the move is safe
+    d.queryTabs = vi.fn(async () => [
+      { id: 7, url: "https://x", windowId: 3 },
+      { id: 8, url: "https://y", windowId: 3 },
+    ]);
+    await h(sreq({ windowId: 4 }));
+    expect(moves).toEqual([[7, -1, 4]]);
+    // same-window "move" never tears anything down — no guard needed
+    moves.length = 0;
+    await h(sreq({ windowId: 3, index: 0 }));
+    expect(moves).toEqual([[7, 0, 3]]);
+  });
+
   test("tab.update frozen sends Page.setWebLifecycleState via CDP", async () => {
     const sent: Array<{ method: string; params: unknown }> = [];
     const d = deps({

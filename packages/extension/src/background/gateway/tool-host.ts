@@ -68,8 +68,9 @@ export interface ToolHostDeps {
   updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean; autoDiscardable?: boolean }): Promise<unknown>;
   /** chrome.tabs.discard — tab.discard tool (memory hygiene). */
   discardTab?(tabId: number): Promise<unknown>;
-  /** chrome.tabs.move — tab.update index (strip reorder). */
-  moveTab?(tabId: number, index: number): Promise<unknown>;
+  /** chrome.tabs.move — tab.update index (strip reorder); windowId moves
+   *  the tab into another window (cross-window relocate). */
+  moveTab?(tabId: number, index: number, windowId?: number): Promise<unknown>;
   /** chrome.tabs.setZoom — tab.update zoomFactor (0.25–5). */
   setTabZoom?(tabId: number, zoomFactor: number): Promise<unknown>;
   /** chrome.tabs.duplicate — clone a tab preserving its session
@@ -1058,8 +1059,18 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (args.index !== undefined && index === undefined) {
           throw toolError("proto.invalid", "browser.tab.update args.index must be an integer >= -1 (-1 = end of strip)");
         }
-        if (pinned === undefined && muted === undefined && autoDiscardable === undefined && frozen === undefined && zoomFactor === undefined && index === undefined) {
-          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.autoDiscardable, args.frozen, args.zoomFactor and/or args.index");
+        // windowId retargets the move into another window (chrome.tabs.move
+        // cross-window). Alone it means "end of that window's strip".
+        const windowId =
+          typeof args.windowId === "number" && Number.isInteger(args.windowId)
+            ? args.windowId
+            : undefined;
+        if (args.windowId !== undefined && windowId === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update args.windowId must be an integer");
+        }
+        const wantsMove = index !== undefined || windowId !== undefined;
+        if (pinned === undefined && muted === undefined && autoDiscardable === undefined && frozen === undefined && zoomFactor === undefined && !wantsMove) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.autoDiscardable, args.frozen, args.zoomFactor, args.index and/or args.windowId");
         }
         if ((pinned !== undefined || muted !== undefined || autoDiscardable !== undefined) && !deps.updateTab) {
           throw toolError("proto.unsupported", "tab update is not available on this host");
@@ -1067,7 +1078,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (zoomFactor !== undefined && !deps.setTabZoom) {
           throw toolError("proto.unsupported", "tab zoom is not available on this host");
         }
-        if (index !== undefined && !deps.moveTab) {
+        if (wantsMove && !deps.moveTab) {
           throw toolError("proto.unsupported", "tab reorder is not available on this host");
         }
         if (pinned !== undefined || muted !== undefined || autoDiscardable !== undefined) {
@@ -1080,8 +1091,26 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (zoomFactor !== undefined) {
           await deps.setTabZoom!(tabId, zoomFactor);
         }
-        if (index !== undefined) {
-          await deps.moveTab!(tabId, index);
+        if (wantsMove) {
+          // windowId alone → end of the target window's strip.
+          const moveIndex = index ?? -1;
+          // Headless Chromium crashes on window teardown — moving a
+          // window's LAST tab into another window destroys the source
+          // window (same BUS_ADRALN class as tab.close/windows.remove).
+          // Refuse rather than kill the browser.
+          if (deps.headlessChrome && windowId !== undefined) {
+            const [tab, all] = await Promise.all([deps.getTab(tabId), deps.queryTabs()]);
+            if (windowId !== tab?.windowId) {
+              const siblings = all.filter((t) => t.windowId === tab?.windowId);
+              if (siblings.length <= 1) {
+                throw toolError(
+                  "proto.unsupported",
+                  "moving the last tab out of a window tears the window down, which crashes headless Chromium — leave a sibling tab in the source window first",
+                );
+              }
+            }
+          }
+          await deps.moveTab!(tabId, moveIndex, windowId);
         }
         if (frozen !== undefined) {
           // WICG web-lifecycle freeze via CDP Page domain — Page is NOT
@@ -1118,6 +1147,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(frozen !== undefined ? { frozen } : {}),
           ...(zoomFactor !== undefined ? { zoomFactor } : {}),
           ...(index !== undefined ? { index } : {}),
+          ...(windowId !== undefined ? { windowId } : {}),
         };
       }
       case "browser.tab.discard": {

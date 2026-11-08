@@ -263,7 +263,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.update": {
     description:
-      "Update a scoped tab's chrome state — pinned, muted, autoDiscardable (protect from/prevent Chrome memory-management discard), frozen (WICG web-lifecycle freeze via CDP Page.setWebLifecycleState — halts the page's event loop: timers/rAF/input stop without unloading; false resumes), zoomFactor (0.25–5), and/or index (strip position, integer >= -1 where -1 moves to the end). tabId optional (defaults like other tab tools). Low-risk reversible op. frozen works on BOTH backends via CDP (real parity); pinned/muted/index/autoDiscardable are chrome-extension only, zoomFactor works on both.",
+      "Update a scoped tab's chrome state — pinned, muted, autoDiscardable (protect from/prevent Chrome memory-management discard), frozen (WICG web-lifecycle freeze via CDP Page.setWebLifecycleState — halts the page's event loop: timers/rAF/input stop without unloading; false resumes), zoomFactor (0.25–5), index (strip position, integer >= -1 where -1 moves to the end), and/or windowId (move the tab into another window — with index it lands at that position, alone it goes to the end of the target strip; get target ids from browser.windows.list). tabId optional (defaults like other tab tools). Low-risk reversible op. frozen works on BOTH backends via CDP (real parity); pinned/muted/index/windowId/autoDiscardable are chrome-extension only, zoomFactor works on both. On headless Chromium, moving a window's LAST tab into another window is refused with proto.unsupported (window teardown crashes the browser there) — leave a sibling behind first.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       pinned: { type: "boolean", description: "Pin or unpin the tab." },
@@ -272,6 +272,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       frozen: { type: "boolean", description: "Freeze (true) or resume (false) the page via CDP Page.setWebLifecycleState. WICG semantics: only HIDDEN/occluded pages actually halt — a visible page accepts the command as a no-op. Works on both backends." },
       zoomFactor: { type: "number", description: "Page zoom factor 0.25–5 (chrome.tabs.setZoom / CDP page scale)." },
       index: { type: "integer", description: "New strip position (chrome.tabs.move); -1 moves to the end." },
+      windowId: { type: "integer", description: "Target window for a cross-window move (chrome.tabs.move); combine with index for a position, omit for end of strip." },
     }),
   },
   "browser.tab.discard": {

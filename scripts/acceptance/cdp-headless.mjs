@@ -1420,6 +1420,86 @@ await runScenario(
         ...hl,
       };
 
+      // --- tab.update windowId: cross-window move (chrome.tabs.move
+      // {windowId}) — relocate a task tab into another window, verify
+      // via tabs.list, move back, and prove the headless last-tab-out
+      // guard refuses window teardown ---
+      const mw = {};
+      try {
+        const wc = await runner.browserToolCall(
+          taskId, "browser.windows.create", { url: fixture.url("/keys"), focused: false }, token, 60_000,
+        );
+        const wres = wc?.result ?? wc ?? {};
+        const w2 = wres.windowId ?? wres.id;
+        const t1 = wres.openedTabId ?? wres.tabId ?? wres.tabs?.[0]?.id;
+        mw.createOk = typeof w2 === "number" && typeof t1 === "number";
+        // sibling in W2 so moving T1 out cannot tear the window down
+        const sib = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/"), windowId: w2, active: false }, token, 60_000,
+        );
+        const t2 = sib?.result?.openedTabId ?? sib?.result?.tabId ?? sib?.openedTabId ?? sib?.tabId;
+        mw.siblingOk = typeof t2 === "number";
+        // target = the main task window (any scoped tab in a different window)
+        const tl = await runner.browserToolCall(taskId, "browser.tabs.list", {}, token, 30_000);
+        const tTabs = (tl?.result ?? tl ?? {}).tabs ?? [];
+        const w1 = tTabs.find((t) => t.windowId !== w2)?.windowId;
+        mw.targetOk = typeof w1 === "number" && w1 !== w2;
+        if (mw.createOk && mw.siblingOk && mw.targetOk) {
+          // windowId alone → end of target strip
+          const mv1 = await runner.browserToolCall(
+            taskId, "browser.tab.update", { tabId: t1, windowId: w1 }, token, 60_000,
+          );
+          mw.callOk = (mv1?.result ?? mv1 ?? {}).windowId === w1;
+          await sleep(300);
+          const tl2 = await runner.browserToolCall(taskId, "browser.tabs.list", {}, token, 30_000);
+          const t1After = ((tl2?.result ?? tl2 ?? {}).tabs ?? []).find((t) => t.id === t1);
+          mw.movedOk = t1After?.windowId === w1;
+          // move back (windowId + explicit index) — W2 still has T2, safe
+          await runner.browserToolCall(
+            taskId, "browser.tab.update", { tabId: t1, windowId: w2, index: 0 }, token, 60_000,
+          ).catch(() => null);
+          await sleep(300);
+          const tl3 = await runner.browserToolCall(taskId, "browser.tabs.list", {}, token, 30_000);
+          const t1Back = ((tl3?.result ?? tl3 ?? {}).tabs ?? []).find((t) => t.id === t1);
+          mw.backOk = t1Back?.windowId === w2 && t1Back?.index === 0;
+          // cleanup: close T1 (W2 keeps T2 — no teardown); T2 stays as
+          // W2's last tab, browser teardown handles it at scenario end
+          await runner.browserToolCall(
+            taskId, "browser.tab.close", { tabId: t1 }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          mw.callOk = mw.movedOk = mw.backOk = false;
+        }
+        // headless guard: a window whose ONLY tab is moved out would
+        // tear down → crash. Dedicated 1-tab window must be refused.
+        const wc2 = await runner.browserToolCall(
+          taskId, "browser.windows.create", { url: fixture.url("/"), focused: false }, token, 60_000,
+        );
+        const w3r = wc2?.result ?? wc2 ?? {};
+        const w3 = w3r.windowId ?? w3r.id;
+        const t3 = w3r.openedTabId ?? w3r.tabId ?? w3r.tabs?.[0]?.id;
+        if (typeof w3 === "number" && typeof t3 === "number" && typeof w1 === "number") {
+          const guard = await runner.browserToolCall(
+            taskId, "browser.tab.update", { tabId: t3, windowId: w1 }, token, 60_000,
+          );
+          mw.guardOk = (guard?.error?.code ?? "") === "proto.unsupported";
+          // browser must still be alive — W3 still listed
+          const wl = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 30_000).catch(() => null);
+          const wlist = (wl?.result ?? wl ?? {}).windows ?? [];
+          mw.aliveOk = wlist.some((w) => (w.id ?? w.windowId) === w3);
+        } else {
+          mw.guardOk = mw.aliveOk = false;
+        }
+      } catch (e) {
+        mw.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`tabMoveWindow → ${JSON.stringify(mw).slice(0, 300)}`);
+      results.tabMoveWindow = {
+        ok: mw.createOk === true && mw.siblingOk === true && mw.targetOk === true && mw.callOk === true
+          && mw.movedOk === true && mw.backOk === true && mw.guardOk === true && mw.aliveOk === true,
+        ...mw,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for
