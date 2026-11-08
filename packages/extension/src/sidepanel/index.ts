@@ -15352,7 +15352,6 @@ const QUEUED_COMPOSER_MESSAGES_STORAGE_KEY = "chromex.sidepanel.queuedComposerMe
 function persistQueuedComposerMessages(): void {
   try {
     const serialized = serializeQueuedComposerMessages();
-    console.log("[chromex-queue] persist", JSON.stringify(Object.keys(serialized)));
     // storage.local, not session: chrome.runtime.reload() wipes
     // storage.session, which would silently drop queued work exactly
     // when restart-recovery matters most.
@@ -15368,12 +15367,10 @@ async function hydrateQueuedComposerMessages(): Promise<void> {
   try {
     const stored = await chrome.storage.local.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
     const entries = stored?.[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
-    console.log("[chromex-queue] hydrate", JSON.stringify(entries ?? null)?.slice(0, 300));
     if (entries && typeof entries === "object") {
       restoreQueuedComposerMessages(entries as Record<string, QueuedComposerMessage[]>);
     }
-  } catch (error) {
-    console.log("[chromex-queue] hydrate failed", String(error));
+  } catch {
     // storage unavailable — start with an empty queue
   }
 }
@@ -15390,7 +15387,6 @@ function removeQueuedComposerMessageForCurrentConversation(id: string): void {
  *  when the active turn ends; re-queues if a new turn already started
  *  (e.g. the user sent a fresh prompt while the flush was in flight). */
 async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
-  console.log("[chromex-queue] flush?", conversationId, "inFlightTurn:", isPromptTurnInFlight(), "queued:", queuedComposerMessagesFor(conversationId).length);
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || isPromptTurnInFlight()) return;
   const next = dequeueQueuedComposerMessage(conversationId);
@@ -15435,7 +15431,6 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
  *  so this is safe to call whenever turn state is (re)hydrated. */
 function reconcileQueuedComposerFlush(): void {
   const conversationId = state.currentConversationId;
-  console.log("[chromex-queue] reconcile", conversationId, "inFlight:", isPromptTurnInFlight(), "queued:", conversationId ? queuedComposerMessagesFor(conversationId).length : -1);
   if (!conversationId || isPromptTurnInFlight()) {
     return;
   }
