@@ -1903,8 +1903,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.invalid", "browser.page.snapshot args.mode must be dom|aria");
         }
         if (mode === "aria") {
-          // CDP Accessibility.getFullAXTree — whole-page tree (all frames);
-          // no DOM refs are minted, so args.frameId is meaningless here.
+          // CDP Accessibility.getFullAXTree — the tab target's tree
+          // covers the MAIN frame only: Iframe nodes exist but their
+          // childIds stay empty (verified on CfT 158 — Accessibility.
+          // enable does not change this, and Page-style per-frame AX
+          // is unavailable for same-process subframes). OOPIF iframe
+          // targets DO serve their own full AX tree, so merge each
+          // live OOPIF's tree under an Iframe marker. Same-process
+          // subframe content stays reachable via mode:"dom" frameId.
           if (frameId !== 0) {
             throw toolError("proto.invalid", "args.frameId is meaningless for snapshot mode aria");
           }
@@ -1912,11 +1918,38 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           try {
             const res = (await session.send("Accessibility.getFullAXTree")) as { nodes?: AxNode[] };
             const formatted = formatAxTree(Array.isArray(res?.nodes) ? res.nodes : []);
+            let tree = formatted.tree;
+            let nodeCount = formatted.nodeCount;
+            let truncated = formatted.truncated;
+            let oopifFrames = 0;
+            if (deps.acquireCdpTarget && deps.releaseCdpTarget) {
+              const matches = await matchOopifFrameTargets(deps, tabId).catch(() => null);
+              for (const { frame, target } of (matches ?? []).slice(0, AX_OOPIF_MAX)) {
+                try {
+                  const fs = await deps.acquireCdpTarget(target.id);
+                  try {
+                    const fres = (await fs.send("Accessibility.getFullAXTree")) as { nodes?: AxNode[] };
+                    const ff = formatAxTree(Array.isArray(fres?.nodes) ? fres.nodes : []);
+                    const label = String(frame.url ?? target.id).replace(/"/g, '\\"');
+                    const body = ff.tree.split("\n").map((l) => `  ${l}`).join("\n");
+                    tree += `\n- Iframe "${label}"${body ? `\n${body}` : ""}`;
+                    nodeCount += ff.nodeCount;
+                    truncated = truncated || ff.truncated;
+                    oopifFrames += 1;
+                  } finally {
+                    await deps.releaseCdpTarget(target.id).catch(() => {});
+                  }
+                } catch {
+                  // frame target raced away or rejected the domain — skip
+                }
+              }
+            }
             return {
               mode: "aria",
-              tree: formatted.tree,
-              nodeCount: formatted.nodeCount,
-              truncated: formatted.truncated,
+              tree,
+              nodeCount,
+              truncated,
+              oopifFrames,
               resolvedTabId: tabId,
             };
           } finally {
@@ -5427,6 +5460,9 @@ interface AxNode {
 
 const AX_MAX_LINES = 400;
 const AX_SKIP_ROLES = new Set(["none", "generic", "InlineTextBox"]);
+/** Cap on OOPIF AX trees merged into one aria snapshot — each merge is
+ *  a separate debugger-target attach + getFullAXTree round-trip. */
+const AX_OOPIF_MAX = 8;
 
 /** Accessibility.getFullAXTree → playwright-style indented `- role "name"`
  *  lines. Iterative DFS (trees can be very deep); nodes with generic roles

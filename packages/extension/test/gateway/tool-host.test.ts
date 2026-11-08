@@ -3903,6 +3903,46 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cdp.sent.map((s) => s.method)).toContain("Accessibility.getFullAXTree");
   });
 
+  test("snapshot mode:aria merges OOPIF frame-target AX trees", async () => {
+    const tabCdp = fakeCdp({
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [
+          { nodeId: "1", role: { value: "RootWebArea" }, name: { value: "Top" }, childIds: ["2"] },
+          { nodeId: "2", role: { value: "Iframe" }, name: { value: "" }, childIds: [] },
+        ],
+      }),
+    });
+    const frameCdp = fakeCdp({
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [
+          { nodeId: "f1", role: { value: "RootWebArea" }, name: { value: "Widget" }, childIds: ["f2"] },
+          { nodeId: "f2", role: { value: "button" }, name: { value: "Pay now" }, childIds: [] },
+        ],
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(5042, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 7, url: "https://pay.example.com/widget", parentFrameId: 0 },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "tab-5042", type: "page", url: "https://x/" },
+        { id: "tgt-pay", type: "iframe", url: "https://pay.example.com/widget" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    const res = (await h(req("browser.page.snapshot", { tabId: 5042, mode: "aria" }))) as {
+      tree: string; nodeCount: number; oopifFrames?: number;
+    };
+    expect(res.oopifFrames).toBe(1);
+    expect(res.nodeCount).toBe(4);
+    expect(res.tree).toContain('- Iframe "https://pay.example.com/widget"');
+    expect(res.tree).toContain('- button "Pay now"');
+    // the frame tree was fetched on the FRAME session, not the tab's
+    expect(frameCdp.sent.some((s) => s.method === "Accessibility.getFullAXTree")).toBe(true);
+  });
+
   test("snapshot mode:aria rejects a non-zero frameId", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(503, cdp));

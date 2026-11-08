@@ -1187,6 +1187,15 @@ await runScenario(
         await runner.browserToolCall(
           taskId, "browser.page.unroute", { tabId: cdpFrameTabId }, token, 60_000,
         ).catch(() => null);
+        // AX aggregation: getFullAXTree on the tab target is browser-
+        // side — it must include the OOPIF's open-DOM nodes (the
+        // iframe-child <h1>Frame Child</h1> exists in BOTH frames).
+        const ariaFr = await runner.browserToolCall(
+          taskId, "browser.page.snapshot",
+          { tabId: cdpFrameTabId, mode: "aria" }, token, 60_000,
+        ).catch(() => null);
+        const ariaFrText = JSON.stringify(ariaFr?.result ?? ariaFr ?? {});
+        cdp.ariaOopifOk = /Frame Child/.test(ariaFrText);
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1198,7 +1207,8 @@ await runScenario(
         ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true &&
           cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
           cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
-          cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true,
+          cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
+          cdp.ariaOopifOk === true,
         ...cdp,
       };
 
