@@ -2044,8 +2044,8 @@ function insertTextIntoEditableTarget(element: HTMLElement | HTMLInputElement | 
     setNativeTextControlValue(element, nextValue);
     const caret = start + value.length;
     element.setSelectionRange(caret, caret);
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
 
@@ -2079,8 +2079,8 @@ function insertTextIntoEditableTarget(element: HTMLElement | HTMLInputElement | 
   } else {
     element.textContent = `${element.textContent ?? ""}${value}`;
   }
-  element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
+  element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
+  element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
 }
 
 

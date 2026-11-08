@@ -309,6 +309,14 @@ try {
     String(shOut1?.text ?? "").includes("shadow-clicked"),
     `shadow click fired the page handler (got "${shOut1?.text}")`,
   );
+  const shComposed = await sh.page.evaluate(() => ({
+    clicks: window.__docClicks,
+    composed: window.__lastClickComposed,
+  }));
+  assert(
+    shComposed?.clicks > 0 && shComposed?.composed === true,
+    `shadow click propagated to document listeners as composed (got ${JSON.stringify(shComposed)})`,
+  );
 
   const shNested = await sh.send(
     perform([{ action: "click", label: "Nested Shadow Button", reason: "e2e" }]),

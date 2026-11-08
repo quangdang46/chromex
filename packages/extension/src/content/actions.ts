@@ -438,7 +438,7 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
           const rect = element.getBoundingClientRect();
           element.dispatchEvent(
             new MouseEvent("dblclick", {
-              bubbles: true,
+              bubbles: true, composed: true,
               cancelable: true,
               clientX: rect.left + rect.width / 2,
               clientY: rect.top + rect.height / 2,
@@ -588,12 +588,12 @@ export async function fillDomActionElement(element: HTMLElement, value: string):
  *  default actions (Enter submit, Tab focus) do NOT run. */
 function dispatchCharKeyEvents(target: EventTarget, ch: string): void {
   if (ch === "\n" || ch === "\r") {
-    const init: KeyboardEventInit = { key: "Enter", code: "Enter", bubbles: true, cancelable: true };
+    const init: KeyboardEventInit = { key: "Enter", code: "Enter", bubbles: true, composed: true, cancelable: true };
     target.dispatchEvent(new KeyboardEvent("keydown", init));
     target.dispatchEvent(new KeyboardEvent("keyup", init));
     return;
   }
-  const init: KeyboardEventInit = { key: ch, bubbles: true, cancelable: true };
+  const init: KeyboardEventInit = { key: ch, bubbles: true, composed: true, cancelable: true };
   target.dispatchEvent(new KeyboardEvent("keydown", init));
   target.dispatchEvent(new KeyboardEvent("keypress", init));
   target.dispatchEvent(new KeyboardEvent("keyup", init));
@@ -624,10 +624,10 @@ export async function typeDomActionElement(element: HTMLElement, value: string):
       dispatchCharKeyEvents(target, ch);
       setNativeTextControlValue(target, target.value + ch);
       target.dispatchEvent(
-        new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
+        new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
       );
     }
-    target.dispatchEvent(new Event("change", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
   if (target.isContentEditable) {
@@ -643,16 +643,16 @@ export async function typeDomActionElement(element: HTMLElement, value: string):
         target.textContent = (target.textContent ?? "") + ch;
       }
       target.dispatchEvent(
-        new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
+        new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: ch === "\n" || ch === "\r" ? "\n" : ch }),
       );
     }
-    target.dispatchEvent(new Event("change", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
   if (isTextEntryCandidate(target)) {
     target.textContent = (target.textContent ?? "") + value;
-    target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    target.dispatchEvent(new Event("change", { bubbles: true }));
+    target.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
+    target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
   throw new Error("Target element cannot be typed into.");
@@ -663,8 +663,8 @@ export function setEditableTargetValue(element: HTMLElement | HTMLInputElement |
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     element.focus();
     setNativeTextControlValue(element, value);
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
   if (isTextEntryCandidate(element)) {
@@ -681,8 +681,8 @@ export function setEditableTargetValue(element: HTMLElement | HTMLInputElement |
     } else {
       element.textContent = value;
     }
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: value }));
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     return;
   }
   throw new Error("Target element cannot be filled.");
@@ -721,8 +721,8 @@ export function selectDomActionElement(element: HTMLElement, value: string, valu
       element.value = matches[0]!.value;
     }
   }
-  element.dispatchEvent(new Event("input", { bubbles: true }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
+  element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
 }
 
 
@@ -786,7 +786,7 @@ export function dispatchHoverSequence(element: HTMLElement): void {
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
+  const common = { bubbles: true, composed: true, cancelable: true, clientX: x, clientY: y, view: window };
   element.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new PointerEvent("pointerenter", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mouseover", common));
@@ -806,7 +806,7 @@ export function dispatchClickSequence(element: HTMLElement, modifiers?: readonly
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
   const common = {
-    bubbles: true,
+    bubbles: true, composed: true,
     cancelable: true,
     clientX: x,
     clientY: y,
@@ -831,7 +831,7 @@ export function dispatchButtonSequence(element: HTMLElement, button: "right" | "
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: buttonCode };
+  const common = { bubbles: true, composed: true, cancelable: true, clientX: x, clientY: y, view: window, button: buttonCode };
   element.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse" }));
   element.dispatchEvent(new MouseEvent("mousedown", common));
   if (button === "right") {
@@ -861,7 +861,7 @@ export function dispatchDragSequence(source: HTMLElement, target: HTMLElement): 
   const sy = sourceRect.top + sourceRect.height / 2;
   const tx = targetRect.left + targetRect.width / 2;
   const ty = targetRect.top + targetRect.height / 2;
-  const common = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+  const common = { bubbles: true, composed: true, cancelable: true, view: window, button: 0, buttons: 1 };
 
   dispatchHoverSequence(source);
   source.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerType: "mouse", clientX: sx, clientY: sy }));
@@ -871,12 +871,12 @@ export function dispatchDragSequence(source: HTMLElement, target: HTMLElement): 
   for (let i = 1; i <= steps; i++) {
     const x = sx + ((tx - sx) * i) / steps;
     const y = sy + ((ty - sy) * i) / steps;
-    const under = (document.elementFromPoint(x, y) as HTMLElement | null) ?? source;
+    const under = hitTestAtPoint(x, y) ?? source;
     under.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse", clientX: x, clientY: y }));
     under.dispatchEvent(new MouseEvent("mousemove", { ...common, clientX: x, clientY: y }));
   }
 
-  const dropUnder = (document.elementFromPoint(tx, ty) as HTMLElement | null) ?? target;
+  const dropUnder = hitTestAtPoint(tx, ty) ?? target;
   dropUnder.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse", buttons: 0, clientX: tx, clientY: ty }));
   dropUnder.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0, clientX: tx, clientY: ty }));
 
@@ -885,7 +885,7 @@ export function dispatchDragSequence(source: HTMLElement, target: HTMLElement): 
   if (dragSource) {
     try {
       const dataTransfer = new DataTransfer();
-      const dragInit = { bubbles: true, cancelable: true, view: window, dataTransfer };
+      const dragInit = { bubbles: true, composed: true, cancelable: true, view: window, dataTransfer };
       dragSource.dispatchEvent(new DragEvent("dragstart", dragInit));
       dropUnder.dispatchEvent(new DragEvent("dragenter", dragInit));
       dropUnder.dispatchEvent(new DragEvent("dragover", dragInit));
@@ -911,12 +911,9 @@ export function dispatchClickAtPoint(
 ): void {
   const button = opts.button ?? "left";
   const buttonCode = button === "right" ? 2 : button === "middle" ? 1 : 0;
-  const el =
-    (document.elementFromPoint(x, y) as HTMLElement | null) ??
-    document.body ??
-    document.documentElement;
+  const el = hitTestAtPoint(x, y) ?? document.body ?? document.documentElement;
   const common = {
-    bubbles: true,
+    bubbles: true, composed: true,
     cancelable: true,
     clientX: x,
     clientY: y,
@@ -967,9 +964,9 @@ export function dispatchDragAtPoints(
   tx: number,
   ty: number,
 ): void {
-  const common = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+  const common = { bubbles: true, composed: true, cancelable: true, view: window, button: 0, buttons: 1 };
   const at = (x: number, y: number): HTMLElement =>
-    (document.elementFromPoint(x, y) as HTMLElement | null) ?? document.body ?? document.documentElement;
+    hitTestAtPoint(x, y) ?? document.body ?? document.documentElement;
 
   const startEl = at(sx, sy);
   startEl.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse", clientX: sx, clientY: sy }));
@@ -1061,11 +1058,8 @@ export function isPointerHitTarget(element: HTMLElement): boolean {
  * no down/up), for canvas tooltips and surface hover states. UNTRUSTED.
  */
 export function dispatchHoverAtPoint(x: number, y: number): void {
-  const el =
-    (document.elementFromPoint(x, y) as HTMLElement | null) ??
-    document.body ??
-    document.documentElement;
-  const common = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
+  const el = hitTestAtPoint(x, y) ?? document.body ?? document.documentElement;
+  const common = { bubbles: true, composed: true, cancelable: true, clientX: x, clientY: y, view: window, button: 0 };
   el.dispatchEvent(new PointerEvent("pointerover", { ...common, pointerType: "mouse" }));
   el.dispatchEvent(new MouseEvent("mouseover", common));
   el.dispatchEvent(new PointerEvent("pointermove", { ...common, pointerType: "mouse" }));
@@ -1110,7 +1104,7 @@ export function dispatchPressSequence(target: EventTarget, step: BrowserDomActio
   }
   const init: KeyboardEventInit = {
     key,
-    bubbles: true,
+    bubbles: true, composed: true,
     cancelable: true,
     ...pressModifierInit(step.modifiers),
   };
@@ -1182,8 +1176,8 @@ export async function performUploadAction(
     dataTransfer.items.add(new File([bytes], f.name, { type: typeof f.mimeType === "string" ? f.mimeType : "" }));
   }
   input.files = dataTransfer.files;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
   return files.length;
 }
 

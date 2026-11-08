@@ -141,6 +141,14 @@ const PAGES = {
   var croot = closed.attachShadow({mode:'closed'});
   croot.innerHTML = '<button id="cbtn">Closed Shadow Button</button>';
   croot.getElementById('cbtn').addEventListener('click', function(){ out('closed-fired'); });
+  // Real user events are composed — they cross the shadow boundary and
+  // reach document-level delegated listeners. Synthetic events must
+  // match or delegation-based apps never see agent clicks.
+  window.__docClicks = 0;
+  document.addEventListener('click', function(e){
+    window.__docClicks += 1;
+    window.__lastClickComposed = e.composed === true;
+  });
 })();
 </script>
 </body></html>`,
