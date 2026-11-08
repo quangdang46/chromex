@@ -1327,6 +1327,8 @@ export interface ActionContext {
 | Ngoài tab scope / khác profile | **deny** |
 | `evaluate` | ~~hard block~~ → **đã mở sau CDP tier**: mọi call = `external_mutation` approval (expression preview trong argsPreview), result = page-text egress; residual: JS đã duyệt vẫn có thể gây side-effect trong page (fetch…) ngoài tầm tool gate — chấp nhận có chủ đích, xem `docs/adr/debugger-tier.md` + `tool-server.ts` |
 | đọc cookie/localStorage (tool riêng), tải binary | **hard block** (evaluate đã cover cookie/localStorage dưới approval) |
+| `route` (fulfill/abort/modify — inject/sửa/chặn response) | `external_mutation` (**approval**, không allow_task); `unroute` = `low` |
+| `webSocket`, `responseBody`, `network`, `console`, `find`, `get`… | `read` + `agentEgress:"page-text"` (như extract/find) |
 
 **Ba quy tắc bắt buộc (fail-closed):**
 
