@@ -451,6 +451,28 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       return verdict("read", { reason: "storage key list (values withheld)" });
     }
 
+    case "browser.page.indexedDB": {
+      const op = ctx.storageOp ?? "listDbs";
+      if (op === "put" || op === "delete" || op === "clear" || op === "createStore") {
+        // IDB mutation corrupts app state — never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "indexedDB mutation changes page state",
+        });
+      }
+      if (op === "get" || ctx.storageValues === true) {
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "agent_egress",
+          allowTaskEligible: false,
+          reason: "indexedDB values are page data — per-call approval",
+        });
+      }
+      return verdict("read", { reason: "indexedDB metadata/key list" });
+    }
+
     case "browser.windows.update":
       // Focus/state changes are reversible window chrome ops — no page
       // mutation, no egress.

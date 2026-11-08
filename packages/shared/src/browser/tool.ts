@@ -45,6 +45,7 @@ export type BrowserToolName =
   | "browser.page.history"
   | "browser.page.cookies"
   | "browser.page.localStorage"
+  | "browser.page.indexedDB"
   | "browser.history.search"
   | "browser.downloads.list"
   | "browser.downloads.save"
@@ -93,6 +94,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
+  "browser.page.indexedDB",
   "browser.history.search",
   "browser.downloads.list",
   "browser.downloads.save",

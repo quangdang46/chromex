@@ -114,6 +114,10 @@ try {
   const sTab = slow?.tabId ?? slow?.id;
   const early = await call("browser.page.extract", { tabId: sTab, selector: "#status" });
   assert(String(early?.text ?? "").includes("pending"), "slow page observed while pending");
+  // deterministic readiness — the 60s auto-flip keeps the pending
+  // observation window immune to gateway warmup latency; the explicit
+  // trigger keeps the wait-text path real (polls until DOM changes).
+  await call("browser.page.evaluate", { tabId: sTab, expression: "window.__slowReady()" });
   await call("browser.page.wait", { tabId: sTab, text: "ready", timeoutMs: 8000 });
   const late = await call("browser.page.extract", { tabId: sTab, selector: "#status" });
   assert(String(late?.text ?? "").includes("ready"), "wait text=ready resolved after delay");
@@ -532,6 +536,57 @@ try {
   assert((hsNone?.count ?? -1) === 0, "no-match search returns empty honestly");
   const hsLimit = await call("browser.history.search", { limit: 1 });
   assert((hsLimit?.visits ?? []).length === 1, "limit bounds results");
+
+  // ── Loop 16: page.indexedDB — createStore/put/get/keys/delete ──────
+  // Read ops must not create a missing DB (exists:false, no side effect).
+  const idbMissing = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "keys",
+  });
+  assert(idbMissing?.exists === false, "keys on missing DB reports exists:false without creating it");
+  const idbCreate = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "createStore",
+  });
+  assert(idbCreate?.created === true, "createStore created the object store");
+  const idbPut = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv",
+    action: "put", key: "doc1", value: { title: "Agent Doc", rev: 3 },
+  });
+  assert(idbPut?.put === true, "put stored the record");
+  const idbGet = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "get", key: "doc1",
+  });
+  assert(
+    idbGet?.found === true && idbGet?.value?.title === "Agent Doc" && idbGet?.value?.rev === 3,
+    `get returned the stored value (got ${JSON.stringify(idbGet?.value).slice(0, 80)})`,
+  );
+  const idbKeys = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "keys",
+  });
+  assert((idbKeys?.keys ?? []).includes("doc1"), "keys lists the stored key");
+  // in-page proof: the app's own indexedDB sees the same record
+  const idbDom = await call("browser.page.evaluate", {
+    tabId: ckId,
+    expression: `new Promise((res) => {
+      const r = indexedDB.open('chromex-test');
+      r.onsuccess = () => {
+        const tx = r.result.transaction('kv').objectStore('kv').get('doc1');
+        tx.onsuccess = () => res(tx.result?.title ?? 'missing');
+      };
+      r.onerror = () => res('open-failed');
+    })`,
+  });
+  assert(String(idbDom?.value ?? "") === "Agent Doc", "in-page indexedDB sees the tool write");
+  await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "delete", key: "doc1",
+  });
+  const idbAfter = await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "get", key: "doc1",
+  });
+  assert(idbAfter?.found === false, "delete removed the record");
+  await call("browser.page.indexedDB", {
+    tabId: ckId, database: "chromex-test", store: "kv", action: "clear",
+  });
+  await expectReject("browser.page.indexedDB", { tabId: ckId, database: "chromex-test", action: "keys" }, "args.store", "store-scoped op without store refused");
 
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });

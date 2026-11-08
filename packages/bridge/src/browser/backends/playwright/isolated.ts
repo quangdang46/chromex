@@ -70,6 +70,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
+  "browser.page.indexedDB",
   "browser.history.search",
   "browser.page.network",
   "browser.page.responseBody",
@@ -410,6 +411,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#cookies(taskId, args);
       case "browser.page.localStorage":
         return this.#storage(taskId, args);
+      case "browser.page.indexedDB":
+        return this.#idb(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.downloads.list":
@@ -2250,6 +2253,159 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       [area, action, key, value, includeValues] as [string, string, string, string, boolean],
     )) as Record<string, unknown> | undefined;
     return { ...(out ?? {}), area };
+  }
+
+  // ---- indexedDB ----
+
+  /** Same contract as the extension backend's chromexIdbOp — fixed
+   *  in-page function, agent supplies names/keys/values never code.
+   *  Read ops never create a missing database. */
+  async #idb(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "listDbs";
+    const VALID = ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"];
+    if (!VALID.includes(action)) {
+      throw protocolError("proto.invalid", `browser.page.indexedDB args.action must be ${VALID.join("|")}`);
+    }
+    const database = typeof args.database === "string" ? args.database : "";
+    const store = typeof args.store === "string" ? args.store : "";
+    if (action !== "listDbs" && !database) {
+      throw protocolError("proto.invalid", `browser.page.indexedDB ${action} requires args.database`);
+    }
+    if (!["listDbs", "listStores"].includes(action) && !store) {
+      throw protocolError("proto.invalid", `browser.page.indexedDB ${action} requires args.store`);
+    }
+    if ((action === "get" || action === "delete") && args.key === undefined) {
+      throw protocolError("proto.invalid", `browser.page.indexedDB ${action} requires args.key`);
+    }
+    if (action === "put" && args.value === undefined) {
+      throw protocolError("proto.invalid", "browser.page.indexedDB put requires args.value");
+    }
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+        : 100;
+    const out = (await page.evaluate(
+      async ([db, st, act, k, v, kp, lim]: [string, string, string, unknown, unknown, string, number]) => {
+        const VALUE_CHAR_CAP = 32 * 1024;
+        const RESULT_CHAR_CAP = 200 * 1024;
+        const bounded = (val: unknown): unknown => {
+          if (val === undefined) return { __missing: true };
+          try {
+            const s = JSON.stringify(val);
+            if (s === undefined) return null;
+            if (s.length > RESULT_CHAR_CAP) return { __truncated: true, preview: s.slice(0, VALUE_CHAR_CAP) };
+            return JSON.parse(s);
+          } catch {
+            return { __unserializable: true };
+          }
+        };
+        const reqP = <T,>(req: IDBRequest<T>): Promise<T> =>
+          new Promise<T>((res, rej) => {
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error ?? new Error("indexedDB request failed"));
+          });
+        try {
+          if (act === "listDbs") {
+            const dbs = await indexedDB.databases();
+            return { databases: dbs.map((d) => ({ name: d.name ?? null, version: d.version })) };
+          }
+          const dbExists = async () =>
+            (await indexedDB.databases()).some((d) => d.name === db);
+          const openDb = () =>
+            new Promise<IDBDatabase>((res, rej) => {
+              const req = indexedDB.open(db);
+              req.onsuccess = () => res(req.result);
+              req.onerror = () => rej(req.error ?? new Error("indexedDB.open failed"));
+              req.onblocked = () => rej(new Error("indexedDB.open blocked"));
+            });
+          if (act === "listStores") {
+            if (!(await dbExists())) return { database: db, exists: false, stores: [] };
+            const idb = await openDb();
+            try {
+              return { database: db, version: idb.version, stores: Array.from(idb.objectStoreNames) };
+            } finally {
+              idb.close();
+            }
+          }
+          if (act === "createStore") {
+            const cur = (await indexedDB.databases()).find((d) => d.name === db);
+            const idb = await new Promise<IDBDatabase>((res, rej) => {
+              const req = indexedDB.open(db, (cur?.version ?? 0) + 1);
+              req.onupgradeneeded = () => {
+                const d = req.result;
+                if (!d.objectStoreNames.contains(st)) {
+                  d.createObjectStore(st, kp ? { keyPath: kp } : undefined);
+                }
+              };
+              req.onsuccess = () => res(req.result);
+              req.onerror = () => rej(req.error ?? new Error("indexedDB.open failed"));
+              req.onblocked = () => rej(new Error("indexedDB.open blocked"));
+            });
+            idb.close();
+            return { database: db, store: st, created: true };
+          }
+          if (!(await dbExists())) return { database: db, store: st, exists: false };
+          const idb = await openDb();
+          try {
+            if (!Array.from(idb.objectStoreNames).includes(st)) {
+              return { database: db, store: st, exists: false };
+            }
+            const readOnly = act === "get" || act === "keys";
+            const tx = idb.transaction(st, readOnly ? "readonly" : "readwrite");
+            const os = tx.objectStore(st);
+            const txDone = () =>
+              new Promise<void>((res, rej) => {
+                tx.oncomplete = () => res();
+                tx.onerror = () => rej(tx.error ?? new Error("transaction failed"));
+                tx.onabort = () => rej(tx.error ?? new Error("transaction aborted"));
+              });
+            if (act === "keys") {
+              const keys = (await reqP(os.getAllKeys())) as IDBValidKey[];
+              return {
+                database: db, store: st,
+                keys: keys.slice(0, lim).map((kk) =>
+                  typeof kk === "object" ? JSON.stringify(kk) : (kk as string | number)),
+                truncated: keys.length > lim,
+              };
+            }
+            if (act === "get") {
+              const val = await reqP(os.get(k as IDBValidKey));
+              return { database: db, store: st, key: k, found: val !== undefined, value: bounded(val) };
+            }
+            if (act === "put") {
+              if (k === undefined || k === null) await reqP(os.put(v));
+              else await reqP(os.put(v, k as IDBValidKey));
+              await txDone();
+              return { database: db, store: st, put: true, key: k };
+            }
+            if (act === "delete") {
+              await reqP(os.delete(k as IDBValidKey));
+              await txDone();
+              return { database: db, store: st, deleted: k };
+            }
+            if (act === "clear") {
+              await reqP(os.clear());
+              await txDone();
+              return { database: db, store: st, cleared: true };
+            }
+            throw new Error(`unknown action: ${act}`);
+          } finally {
+            idb.close();
+          }
+        } catch (e) {
+          return { __error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+      [database, store, action, args.key ?? null, args.value ?? null, typeof args.keyPath === "string" ? args.keyPath : "", limit] as [
+        string, string, string, unknown, unknown, string, number,
+      ],
+    )) as Record<string, unknown> | undefined;
+    if (out?.__error) {
+      throw protocolError("browser.action_failed", `indexedDB op failed: ${String(out.__error)}`);
+    }
+    const { __error: _drop, ...rest } = out ?? {};
+    return rest;
   }
 
   // ---- downloads ----

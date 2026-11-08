@@ -763,11 +763,74 @@ await runScenario(
         ...ls,
       };
 
+      // --- indexedDB: fixed-shape MAIN-world access (chromexIdbOp) ---
+      // put/get/delete are approval-gated (auto-answered); read ops
+      // never create a missing database. In-page check proves the
+      // extension wrote real IndexedDB, not a parallel store.
+      let idb = {};
+      try {
+        const idbMissing = await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "keys" }, token, 60_000,
+        );
+        idb.noCreate = (idbMissing?.result ?? idbMissing ?? {}).exists === false;
+        const idbCreate = await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "createStore" }, token, 60_000,
+        );
+        idb.createOk = (idbCreate?.result ?? idbCreate ?? {}).created === true;
+        await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "put",
+            key: "doc1", value: { title: "CDP Doc", rev: 7 } }, token, 60_000,
+        );
+        const idbGet = await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "get", key: "doc1" }, token, 60_000,
+        );
+        const idbVal = (idbGet?.result ?? idbGet ?? {}).value;
+        idb.getOk = idbVal?.title === "CDP Doc" && idbVal?.rev === 7;
+        const idbKeys = await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "keys" }, token, 60_000,
+        );
+        idb.keysOk = ((idbKeys?.result ?? idbKeys ?? {}).keys ?? []).includes("doc1");
+        const idbDom = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: `new Promise((res) => {
+            const r = indexedDB.open('cdp-idb');
+            r.onsuccess = () => {
+              const tx = r.result.transaction('kv').objectStore('kv').get('doc1');
+              tx.onsuccess = () => res(tx.result?.title ?? 'missing');
+            };
+            r.onerror = () => res('open-failed');
+          })` }, token, 60_000,
+        );
+        idb.domOk = String(idbDom?.result?.value ?? idbDom?.value ?? "") === "CDP Doc";
+        await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "delete", key: "doc1" }, token, 60_000,
+        );
+        const idbAfter = await runner.browserToolCall(
+          taskId, "browser.page.indexedDB",
+          { database: "cdp-idb", store: "kv", action: "get", key: "doc1" }, token, 60_000,
+        );
+        idb.deleteOk = (idbAfter?.result ?? idbAfter ?? {}).found === false;
+      } catch (e) {
+        idb.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`indexedDB → ${JSON.stringify(idb).slice(0, 300)}`);
+      results.indexedDB = {
+        ok: idb.noCreate === true && idb.createOk === true && idb.getOk === true &&
+          idb.keysOk === true && idb.domOk === true && idb.deleteOk === true,
+        ...idb,
+      };
+
       const pass = Object.values(results).every((r) => r.ok === true);
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

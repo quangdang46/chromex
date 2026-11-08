@@ -37,6 +37,7 @@ import type {
 import { chromexConsoleCollect } from "../../content/console-capture.js";
 import { chromexEvaluate } from "../../content/evaluate.js";
 import { chromexStorageOp } from "../../content/storage.js";
+import { chromexIdbOp } from "../../content/idb.js";
 import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
@@ -271,6 +272,7 @@ const SUPPORTED = new Set([
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
+  "browser.page.indexedDB",
   "browser.history.search",
   "browser.downloads.list",
   "browser.downloads.save",
@@ -1328,6 +1330,59 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `storage op failed: ${res?.error ?? "no result"}`);
+        }
+        return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+      }
+      case "browser.page.indexedDB": {
+        // Same fixed-shape pattern as localStorage — agent supplies
+        // names/keys/values, never code. Read ops never create a
+        // missing database (verified inside chromexIdbOp).
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "indexedDB access requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.indexedDB is tab-scoped; args.frameId is not supported");
+        }
+        const action = str(args.action) ?? "listDbs";
+        const VALID = ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"];
+        if (!VALID.includes(action)) {
+          throw toolError("proto.invalid", `browser.page.indexedDB args.action must be ${VALID.join("|")}`);
+        }
+        const database = str(args.database);
+        const store = str(args.store);
+        if (action !== "listDbs" && !database) {
+          throw toolError("proto.invalid", `browser.page.indexedDB ${action} requires args.database`);
+        }
+        if (!["listDbs", "listStores"].includes(action) && !store) {
+          throw toolError("proto.invalid", `browser.page.indexedDB ${action} requires args.store`);
+        }
+        if ((action === "get" || action === "delete") && args.key === undefined) {
+          throw toolError("proto.invalid", `browser.page.indexedDB ${action} requires args.key`);
+        }
+        if (action === "put" && args.value === undefined) {
+          throw toolError("proto.invalid", "browser.page.indexedDB put requires args.value");
+        }
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+            : 100;
+        const res = (await deps.runInMainWorld!(
+          tabId,
+          chromexIdbOp as (...fnArgs: unknown[]) => unknown,
+          [
+            database ?? "",
+            store ?? "",
+            action,
+            args.key ?? null,
+            args.value ?? null,
+            str(args.keyPath) ?? "",
+            limit,
+          ],
+          [0],
+        )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
+        if (!res || res.ok !== true) {
+          throw toolError("browser.action_failed", `indexedDB op failed: ${res?.error ?? "no result"}`);
         }
         return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
       }

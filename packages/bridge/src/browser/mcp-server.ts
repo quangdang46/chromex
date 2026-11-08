@@ -710,6 +710,22 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.page.indexedDB": {
+    description:
+      "Read and manage the page's IndexedDB — the storage modern SPAs/PWAs use that Web Storage tools cannot see. args.database names the DB (required except listDbs); args.store names the object store (required except listDbs/listStores/createStore needs store too). action=listDbs (default) lists databases {name,version}; listStores lists object stores in the DB; keys returns up to limit store keys; get returns one key's value (args.key required); put writes args.value (JSON-serializable, args.key required for out-of-line-key stores); delete removes a key; clear empties the store; createStore creates args.store (args.keyPath optional — omit for out-of-line keys). Read ops never create a missing database. Values are page data — get and includeValues-style reads always require approval; put/delete/clear/createStore are approval-gated mutations. Both backends support it (chrome-extension via chrome.scripting MAIN world, playwright-isolated via page.evaluate).",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        database: { type: "string", description: "IndexedDB database name (required for all actions except listDbs)." },
+        store: { type: "string", description: "Object store name (required except listDbs/listStores)." },
+        action: { type: "string", enum: ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"], description: "IDB operation (default listDbs)." },
+        key: { description: "IDB key (string or number) — required for get/put/delete.", anyOf: [{ type: "string" }, { type: "number" }] },
+        value: { description: "JSON-serializable value to store — required for put.", anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "object" }, { type: "array" }, { type: "null" }] },
+        keyPath: { type: "string", description: "createStore only: key path for in-line keys (omit for out-of-line keys)." },
+        limit: { type: "integer", description: "keys only: max keys returned (1–1000, default 100)." },
+      },
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",

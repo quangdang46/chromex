@@ -1,0 +1,194 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T10-56-05-492Z-3ea3cb",
+  "status": "PASS",
+  "summary": "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage",
+  "durationMs": 36122,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": true,
+        "snippet": "{\"requestId\":\"32535.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:60019/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794135373862,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"body"
+      },
+      "webSocket": {
+        "ok": true,
+        "frames": 2,
+        "snippet": "sent:hello-agent | recv:echo:hello-agent"
+      },
+      "route": {
+        "ok": true,
+        "mocked": "pong:mocked",
+        "real": "pong:ok",
+        "aborted": "fetch-failed",
+        "modified": "pong:rerouted"
+      },
+      "aria": {
+        "ok": true
+      },
+      "trustedClick": {
+        "ok": true,
+        "untrusted": "isTrusted:false",
+        "trusted": "isTrusted:true",
+        "clickStatus": "completed"
+      },
+      "trustedHover": {
+        "ok": true,
+        "mouseover": "isTrusted:true",
+        "cssOutline": "solid"
+      },
+      "trustedPress": {
+        "ok": true,
+        "untrusted": "key:a,trusted:false",
+        "trusted": "key:Enter,trusted:true"
+      },
+      "trustedType": {
+        "ok": true,
+        "status": "completed",
+        "value": "Hi!",
+        "out": "key:!,trusted:true"
+      },
+      "trustedFill": {
+        "ok": true,
+        "status": "completed",
+        "value": "xy"
+      },
+      "trustedDrag": {
+        "ok": true,
+        "down": "isTrusted:true",
+        "out": "up@360,80",
+        "status": "completed"
+      },
+      "trustedFramePress": {
+        "ok": true,
+        "status": "completed",
+        "kout": "key:x,trusted:true"
+      },
+      "trustedFrameClick": {
+        "ok": true,
+        "same": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        },
+        "cross": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        }
+      },
+      "frameSetInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:chromex-cdp-upload.txt"
+      },
+      "frameElementScreenshot": {
+        "ok": true,
+        "status": "completed",
+        "bytes": 1530
+      },
+      "frameUpload": {
+        "ok": true,
+        "status": "completed",
+        "fout2": "files:mem.txt"
+      },
+      "oopifSetInputFiles": {
+        "ok": true,
+        "fout2": "files:cross.txt"
+      },
+      "frameResponseBody": {
+        "ok": true,
+        "body": "{\"ok\":true}"
+      },
+      "pdf": {
+        "ok": true,
+        "bytes": 64801,
+        "artifactRef": "present"
+      },
+      "emulate": {
+        "ok": true,
+        "check": {
+          "dark": true,
+          "w": 390
+        },
+        "reset": "completed"
+      },
+      "dialog": {
+        "ok": true,
+        "handled": true,
+        "pageText": "confirm:true"
+      },
+      "alertDialog": {
+        "ok": true,
+        "pageText": "alert-done"
+      },
+      "setInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fname": "chromex-cdp-upload.txt"
+      },
+      "cookies": {
+        "ok": true,
+        "setOk": true,
+        "echo": "cdpack=cv1",
+        "listOk": true,
+        "httpOnlyOk": true,
+        "valuesOk": true,
+        "clearOk": true
+      },
+      "localStorage": {
+        "ok": true,
+        "keysOk": true,
+        "getOk": true,
+        "domOk": true,
+        "sessionOk": true,
+        "clearOk": true
+      },
+      "indexedDB": {
+        "ok": true,
+        "noCreate": true,
+        "createOk": true,
+        "getOk": true,
+        "keysOk": true,
+        "domOk": true,
+        "deleteOk": true
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T10:56:13.352Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T10:56:13.852Z] responseBody prime → {\"toolCallId\":\"rpc-mw7pvm6t-3cotf8\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794135373851,\"resolvedTabId\":1661679564}}",
+    "[2026-11-08T10:56:14.391Z] responseBody → {\"requestId\":\"32535.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:60019/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794135373862,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1661679564}",
+    "[2026-11-08T10:56:15.687Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+    "[2026-11-08T10:56:16.581Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+    "[2026-11-08T10:56:16.846Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1661679564}",
+    "[2026-11-08T10:56:17.134Z] trusted snap=completed snapId=snap:21cf0cf3-ea2e-4d31-8312-9aef0185ef7b",
+    "[2026-11-08T10:56:18.783Z] untrusted click → {\"toolCallId\":\"rpc-mw7pvoxa-lh65a3\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T10:56:18.783Z] trusted click → {\"toolCallId\":\"rpc-mw7pvpou-205p5m\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T10:56:18.801Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T10:56:19.227Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T10:56:20.981Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T10:56:20.981Z] press statuses: completed/completed",
+    "[2026-11-08T10:56:20.998Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T10:56:21.015Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T10:56:22.073Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T10:56:23.291Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T10:56:24.235Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T10:56:25.207Z] frame click cross → status=completed pout=down:true up:true",
+    "[2026-11-08T10:56:25.781Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+    "[2026-11-08T10:56:26.150Z] frame screenshot → status=completed bytes=1530",
+    "[2026-11-08T10:56:26.722Z] frame upload → status=completed fout2=files:mem.txt",
+    "[2026-11-08T10:56:26.997Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw7pvwbm-95py6u\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":1661679564}} fout2=files:cross.txt",
+    "[2026-11-08T10:56:28.388Z] frame responseBody → {\"requestId\":\"32535.20\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:60019/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794135387259,\"body\":\"{\\\"ok\\\":true}\",",
+    "[2026-11-08T10:56:30.770Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":64801,\"sha256\":\"323b7ac0dc68a49b1223c77f75db113bac74532bd82ed465311cc10706fd9fa7\",\"resolvedTabId\":1661679564,\"artifactRef\":\"artifact:art-01M6XCTYHFCRN4F",
+    "[2026-11-08T10:56:31.675Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":1661679564} check={\"dark\":true,\"w\":390}",
+    "[2026-11-08T10:56:31.956Z] dialog snap=completed snapId=snap:2869fa04-6f5f-404a-a52d-e583e0d4c703",
+    "[2026-11-08T10:56:32.839Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1661679564}",
+    "[2026-11-08T10:56:32.851Z] dialog result text=confirm:true",
+    "[2026-11-08T10:56:33.989Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1661679564} page=alert-done",
+    "[2026-11-08T10:56:34.538Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":1661679564}",
+    "[2026-11-08T10:56:34.547Z] fname=chromex-cdp-upload.txt",
+    "[2026-11-08T10:56:37.359Z] cookies → {\"setOk\":true,\"echo\":\"cdpack=cv1\",\"listOk\":true,\"httpOnlyOk\":true,\"valuesOk\":true,\"clearOk\":true}",
+    "[2026-11-08T10:56:39.305Z] localStorage → {\"keysOk\":true,\"getOk\":true,\"domOk\":true,\"sessionOk\":true,\"clearOk\":true}",
+    "[2026-11-08T10:56:41.614Z] indexedDB → {\"noCreate\":true,\"createOk\":true,\"getOk\":true,\"keysOk\":true,\"domOk\":true,\"deleteOk\":true}"
+  ]
+}

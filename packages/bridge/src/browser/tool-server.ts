@@ -423,9 +423,9 @@ export function buildActionContext(
           cookieValues: args.includeValues === true,
         }
       : {}),
-    ...(req.tool === "browser.page.localStorage"
+    ...(req.tool === "browser.page.localStorage" || req.tool === "browser.page.indexedDB"
       ? {
-          storageOp: typeof args.action === "string" ? args.action : "list",
+          storageOp: typeof args.action === "string" ? args.action : (req.tool === "browser.page.indexedDB" ? "listDbs" : "list"),
           storageValues: args.action === "get" || args.includeValues === true,
         }
       : {}),

@@ -218,6 +218,25 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     ).toBe("agent_egress");
   });
 
+  test("browser.page.indexedDB: metadata/keys read; get/mutations always approval", () => {
+    for (const op of ["listDbs", "listStores", "keys"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.indexedDB", storageOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    for (const op of ["get", "put", "delete", "clear", "createStore"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.indexedDB", storageOp: op }));
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+    }
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.indexedDB", storageOp: "put" })).kind,
+    ).toBe("browser_action");
+    expect(
+      classifyActionRisk(ctx({ action: "browser.page.indexedDB", storageOp: "get", storageValues: true })).kind,
+    ).toBe("agent_egress");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

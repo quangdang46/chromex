@@ -172,7 +172,10 @@ const PAGES = {
   // page that sets text after a delay (for wait/observe scenarios)
   "/slow": `<!doctype html><html><body>
 <h1>Slow Page</h1><p id="status">pending</p>
-<script>setTimeout(() => { document.getElementById('status').textContent = 'ready'; }, 3000);</script>
+<script>
+window.__slowReady = () => { document.getElementById('status').textContent = 'ready'; };
+setTimeout(window.__slowReady, 60000);
+</script>
 </body></html>`,
 
   // fixed-position target for coordinate (x,y) click proof — non-DOM

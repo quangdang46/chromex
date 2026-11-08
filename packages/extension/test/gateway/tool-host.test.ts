@@ -972,6 +972,37 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.localStorage", { tabId: 42, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.indexedDB marshals args into chromexIdbOp + validates", async () => {
+    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
+        calls.push({ funcName: func.name, args });
+        return { ok: true, result: { databases: [{ name: "app", version: 1 }] } };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.indexedDB", { tabId: 42 }))) as {
+      databases: Array<{ name: string }>;
+    };
+    expect(res.databases[0]!.name).toBe("app");
+    expect(calls[0]).toMatchObject({ funcName: "chromexIdbOp" });
+    expect(calls[0]!.args?.slice(0, 3)).toEqual(["", "", "listDbs"]);
+    // put marshals value through
+    await h(req("browser.page.indexedDB", {
+      tabId: 42, database: "app", store: "kv", action: "put", key: "k1", value: { a: 1 },
+    }));
+    expect(calls[1]!.args?.slice(0, 5)).toEqual(["app", "kv", "put", "k1", { a: 1 }]);
+    // validation refuses
+    await expect(h(req("browser.page.indexedDB", { tabId: 42, action: "get", database: "d", store: "s" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.indexedDB", { tabId: 42, action: "keys", store: "s" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.indexedDB", { tabId: 42, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.indexedDB", { tabId: 42, frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("browser.history.search marshals query and normalizes times", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const d = deps({
