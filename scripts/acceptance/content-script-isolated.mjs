@@ -196,6 +196,31 @@ try {
   assert(!!badStep, "failed step carries an honest result entry");
   await form2.page.close();
 
+  // ── Loop 6: occlusion gate — covered button must fail honestly ──────
+  const occ = await openWithContent("/occluded");
+  const covered = await occ.send(
+    perform([{ action: "click", selector: "#covered", reason: "e2e" }]),
+  );
+  const coveredStep = (covered?.results ?? []).find((r) => r?.ok === false);
+  assert(covered?.ok === false && !!coveredStep, "click on overlay-covered element reports failure");
+  assert(
+    String(coveredStep?.code ?? coveredStep?.message ?? "").includes("element_not_visible") ||
+      String(coveredStep?.message ?? "").includes("covered by another element"),
+    `occluded click reports element_not_visible (got ${JSON.stringify(coveredStep)})`,
+  );
+  const outAfterCovered = await occ.send({ type: "page.extract", selector: "#out" });
+  assert(
+    !String(outAfterCovered?.text ?? "").includes("covered-clicked"),
+    "occluded click did not fire the page handler",
+  );
+  const free = await occ.send(
+    perform([{ action: "click", selector: "#free", reason: "e2e" }]),
+  );
+  assert(free?.ok === true, `uncovered click still succeeds (${free?.summary})`);
+  const outAfterFree = await occ.send({ type: "page.extract", selector: "#out" });
+  assert(String(outAfterFree?.text ?? "").includes("free-clicked"), "uncovered click reached the page");
+  await occ.page.close();
+
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(
     join(ARTIFACT_DIR, "result.json"),

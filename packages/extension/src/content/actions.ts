@@ -329,7 +329,10 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
     }
 
     if (resolvedElement) {
-      resolvedElement.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      // Instant, not smooth: the pointer-hit gate below runs
+      // elementFromPoint immediately after this, and a smooth scroll
+      // would still be animating — every hit test would lie.
+      resolvedElement.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
       await waitForDomActionTick();
     }
 
@@ -348,6 +351,26 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         ok: false,
         code: "browser.element_not_visible",
         message: "Target element is not visible — a real pointer could not reach it",
+      };
+    }
+
+    // Occlusion gate: a modal/overlay painted over the target passes the
+    // visibility check but a real click lands on the overlay — synthetic
+    // dispatch would fire handlers on an element no pointer can reach.
+    // Hit-test the element's center; descendant/ancestor hits still
+    // resolve to the target through bubbling. Out-of-viewport or
+    // undetermined hits stay lenient — scrollIntoView may still be
+    // settling on heavy pages.
+    if (
+      resolvedElement &&
+      (step.action === "click" || step.action === "hover" || step.action === "drag") &&
+      !isPointerHitTarget(resolvedElement)
+    ) {
+      return {
+        step,
+        ok: false,
+        code: "browser.element_not_visible",
+        message: "Target element is covered by another element — a real pointer could not reach it",
       };
     }
 
@@ -938,6 +961,25 @@ export function isPointerReachableElement(element: HTMLElement): boolean {
   if (element.getClientRects().length === 0) return false;
   const style = window.getComputedStyle(element);
   return style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse";
+}
+
+/** Occlusion check for hit-test actions: elementFromPoint at the
+ *  element's center must resolve to the element itself or a descendant
+ *  (events bubble up to it). An ANCESTOR hit means the target is painted
+ *  under its own parent at that point — a real click lands on the
+ *  ancestor and the target's handlers never fire, so that counts as
+ *  obscured (same strictness as playwright's hit-target check).
+ *  Returns true when the hit test cannot prove occlusion — off-viewport,
+ *  zero-size, or no hit — so the gate only fires on a definitive
+ *  "something else is on top". */
+export function isPointerHitTarget(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return true;
+  const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (!hit) return true;
+  return hit === element || element.contains(hit);
 }
 
 /**

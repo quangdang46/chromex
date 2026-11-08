@@ -44,6 +44,15 @@ const PAGES = {
 
   "/submit-ok": `<!doctype html><html><body><h1>Submitted</h1><p id="done">ok</p></body></html>`,
 
+  // occlusion gate: #covered is painted under #veil — a real pointer
+  // hits the veil, synthetic dispatch must refuse honestly.
+  "/occluded": `<!doctype html><html><body>
+<button id="covered" style="position:absolute;left:100px;top:100px;width:140px;height:40px" onclick="document.getElementById('out').textContent='covered-clicked'">Covered</button>
+<div id="veil" style="position:absolute;left:100px;top:100px;width:140px;height:40px;background:rgba(200,0,0,.4);z-index:5"></div>
+<button id="free" style="position:absolute;left:100px;top:200px;width:140px;height:40px" onclick="document.getElementById('out').textContent='free-clicked'">Free</button>
+<div id="out"></div>
+</body></html>`,
+
   // S2/S6: deliberate bug — the "Fix" button throws and never updates status;
   // a broken inline handler references a missing function.
   "/buggy": `<!doctype html><html><head><title>Buggy Page</title></head><body>
