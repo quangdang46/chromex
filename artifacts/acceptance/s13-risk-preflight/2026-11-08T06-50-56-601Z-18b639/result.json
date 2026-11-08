@@ -1,0 +1,87 @@
+{
+  "scenario": "s13-risk-preflight",
+  "runId": "2026-11-08T06-50-56-601Z-18b639",
+  "status": "PASS",
+  "summary": "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired",
+  "durationMs": 10244,
+  "details": {
+    "denied": true,
+    "dangerNotFired": true,
+    "approved": true,
+    "dangerFired": true,
+    "benignOk": true,
+    "noNewApproval": true,
+    "benignFired": true,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw7h4c8b-ja7fb0",
+      "tool": "browser.page.click",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "approveOutcome": {
+      "toolCallId": "rpc-mw7h4cux-j1u862",
+      "tool": "browser.page.click",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "reason": "gateway tool browser.page.click",
+            "targetRef": "dom-2",
+            "action": "click"
+          },
+          "ok": true,
+          "message": "Clicked Delete account permanently.",
+          "verified": "unknown"
+        },
+        "verified": "unknown",
+        "resolvedTabId": 1108046688
+      },
+      "verified": "unknown"
+    },
+    "benignOutcome": {
+      "toolCallId": "rpc-mw7h4dim-l3q8pu",
+      "tool": "browser.page.click",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "reason": "gateway tool browser.page.click",
+            "targetRef": "dom-1",
+            "action": "click"
+          },
+          "ok": true,
+          "message": "Clicked Search.",
+          "verified": "unknown"
+        },
+        "verified": "unknown",
+        "resolvedTabId": 1108046688
+      },
+      "verified": "unknown"
+    }
+  },
+  "notes": [
+    "[2026-11-08T06:51:02.296Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:51:02.323Z] task 01M6WYSF9EJ6CN71BCZ1CXBVE6",
+    "[2026-11-08T06:51:02.327Z] browser.mcp scope acquired",
+    "[2026-11-08T06:51:02.633Z] tab.create → tabId=1108046688",
+    "[2026-11-08T06:51:03.740Z] permission.respond appr-mw7h4brt-3o8jwn → allow_egress_task (agent_egress)",
+    "[2026-11-08T06:51:04.042Z] snapshot elements=2 dangerRef=dom-2 benignRef=dom-1",
+    "[2026-11-08T06:51:04.343Z] permission.requested id=appr-mw7h4c8g-dxm7th kind=browser_action tool=browser.page.click targetLabel=Delete account permanently options=[\"allow_once\",\"deny\"]",
+    "[2026-11-08T06:51:04.345Z] permission.respond appr-mw7h4c8g-dxm7th → deny (browser_action)",
+    "[2026-11-08T06:51:04.552Z] deny outcome={\"toolCallId\":\"rpc-mw7h4c8b-ja7fb0\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-08T06:51:04.856Z] post-deny #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:61274/risky\",\"title\":\"\",\"resolvedTabId\":1108046688}",
+    "[2026-11-08T06:51:05.156Z] approve-leg permission.requested id=appr-mw7h4cv3-xd95em kind=browser_action",
+    "[2026-11-08T06:51:05.158Z] permission.respond appr-mw7h4cv3-xd95em → allow_once (browser_action)",
+    "[2026-11-08T06:51:05.407Z] approve outcome={\"toolCallId\":\"rpc-mw7h4cux-j1u862\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-2\",\"action\":\"click\"},\"ok\":true,\"message\":\"Clicked Delete account perman",
+    "[2026-11-08T06:51:05.709Z] post-approve #out={\"text\":\"danger-fired\",\"truncated\":false,\"url\":\"http://127.0.0.1:61274/risky\",\"title\":\"\",\"resolvedTabId\":1108046688}",
+    "[2026-11-08T06:51:06.512Z] benign click outcome=completed pending approvals 0→0",
+    "[2026-11-08T06:51:06.813Z] post-click #out={\"text\":\"benign-ok\",\"truncated\":false,\"url\":\"http://127.0.0.1:61274/risky\",\"title\":\"\",\"resolvedTabId\":1108046688}"
+  ]
+}
