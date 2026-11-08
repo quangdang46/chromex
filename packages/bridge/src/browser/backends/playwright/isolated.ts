@@ -467,6 +467,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return {
       tabs: pages.map((p, i) => ({
         tabId: i,
+        index: i,
         url: stripQuery(p.url()),
         title: titles[i] ?? "",
         active: p === active,
@@ -552,12 +553,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   /** browser.tab.update — zoomFactor maps to CDP
    *  Emulation.setPageScaleFactor (same zoom the extension's
-   *  tabs.setZoom produces). pinned/muted are chrome tab-strip state
-   *  with no playwright equivalent — refused, never silently dropped. */
+   *  tabs.setZoom produces). pinned/muted/index are chrome tab-strip
+   *  state with no playwright equivalent — refused, never silently
+   *  dropped. */
   async #tabUpdate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    if (args.pinned !== undefined || args.muted !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot pin or mute tabs; args.pinned/args.muted are chrome-extension only");
+    if (args.pinned !== undefined || args.muted !== undefined || args.index !== undefined) {
+      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, or reorder tabs; args.pinned/args.muted/args.index are chrome-extension only");
     }
     const zoomFactor =
       typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
@@ -567,7 +569,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.tab.update args.zoomFactor must be a number in [0.25, 5]");
     }
     if (zoomFactor === undefined) {
-      throw protocolError("proto.invalid", "browser.tab.update requires args.zoomFactor (pinned/muted unsupported on this backend)");
+      throw protocolError("proto.invalid", "browser.tab.update requires args.zoomFactor (pinned/muted/index unsupported on this backend)");
     }
     const session = await this.#emulationSession(page);
     await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: zoomFactor });

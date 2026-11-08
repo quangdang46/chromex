@@ -53,6 +53,8 @@ export interface ToolHostDeps {
   updateTab?(tabId: number, opts: { pinned?: boolean; muted?: boolean }): Promise<unknown>;
   /** chrome.tabs.discard — tab.discard tool (memory hygiene). */
   discardTab?(tabId: number): Promise<unknown>;
+  /** chrome.tabs.move — tab.update index (strip reorder). */
+  moveTab?(tabId: number, index: number): Promise<unknown>;
   /** chrome.tabs.setZoom — tab.update zoomFactor (0.25–5). */
   setTabZoom?(tabId: number, zoomFactor: number): Promise<unknown>;
   /** chrome.tabs.duplicate — clone a tab preserving its session
@@ -793,6 +795,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               status: t.status ?? "complete",
               ...(typeof t.pinned === "boolean" ? { pinned: t.pinned } : {}),
               ...(typeof t.groupId === "number" ? { groupId: t.groupId } : {}),
+              // strip position — the agent needs it to reason about
+              // tab.update index moves (chrome.tabs.move counts every
+              // tab in the window, including foreign ones).
+              ...(typeof t.index === "number" ? { index: t.index } : {}),
             };
           }),
         };
@@ -818,14 +824,24 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (args.zoomFactor !== undefined && (zoomFactor === undefined || zoomFactor < 0.25 || zoomFactor > 5)) {
           throw toolError("proto.invalid", "browser.tab.update args.zoomFactor must be a number in [0.25, 5]");
         }
-        if (pinned === undefined && muted === undefined && zoomFactor === undefined) {
-          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted and/or args.zoomFactor");
+        const index =
+          typeof args.index === "number" && Number.isInteger(args.index) && args.index >= -1
+            ? args.index
+            : undefined;
+        if (args.index !== undefined && index === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update args.index must be an integer >= -1 (-1 = end of strip)");
+        }
+        if (pinned === undefined && muted === undefined && zoomFactor === undefined && index === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.zoomFactor and/or args.index");
         }
         if ((pinned !== undefined || muted !== undefined) && !deps.updateTab) {
           throw toolError("proto.unsupported", "tab update is not available on this host");
         }
         if (zoomFactor !== undefined && !deps.setTabZoom) {
           throw toolError("proto.unsupported", "tab zoom is not available on this host");
+        }
+        if (index !== undefined && !deps.moveTab) {
+          throw toolError("proto.unsupported", "tab reorder is not available on this host");
         }
         if (pinned !== undefined || muted !== undefined) {
           await deps.updateTab!(tabId, {
@@ -836,12 +852,16 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (zoomFactor !== undefined) {
           await deps.setTabZoom!(tabId, zoomFactor);
         }
+        if (index !== undefined) {
+          await deps.moveTab!(tabId, index);
+        }
         return {
           updated: tabId,
           resolvedTabId: tabId,
           ...(pinned !== undefined ? { pinned } : {}),
           ...(muted !== undefined ? { muted } : {}),
           ...(zoomFactor !== undefined ? { zoomFactor } : {}),
+          ...(index !== undefined ? { index } : {}),
         };
       }
       case "browser.tab.discard": {

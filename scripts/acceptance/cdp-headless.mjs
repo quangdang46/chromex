@@ -1107,6 +1107,68 @@ await runScenario(
         ...tg,
       };
 
+      // --- tab.update index: real chrome.tabs.move reorder on the extension ---
+      let mv = {};
+      try {
+        const mvA = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+        );
+        const mvB = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/form"), active: false }, token, 60_000,
+        );
+        const mvAId = mvA?.result?.tabId ?? mvA?.result?.openedTabId ?? mvA?.tabId;
+        const mvBId = mvB?.result?.tabId ?? mvB?.result?.openedTabId ?? mvB?.tabId;
+        // fresh tabs lag in tabScope registration — tabs.list filters
+        // foreignTabIds, so a just-created tab can be invisible for a
+        // few ms. Poll until both appear with a real strip index.
+        const idxOf = async (tid) => {
+          for (let i = 0; i < 40; i++) {
+            const l = await runner.browserToolCall(
+              taskId, "browser.tabs.list", {}, token, 60_000,
+            );
+            const tabs = (l?.result ?? l ?? {}).tabs ?? [];
+            const idx = tabs.find((t) => (t.id ?? t.tabId) === tid)?.index;
+            if (typeof idx === "number") return idx;
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          return undefined;
+        };
+        const beforeA = await idxOf(mvAId);
+        const beforeB = await idxOf(mvBId);
+        // strip order is not guaranteed by creation order — pick the
+        // later tab as the mover and the earlier one's index as target
+        const first = beforeA <= beforeB ? { id: mvAId, idx: beforeA } : { id: mvBId, idx: beforeB };
+        const second = beforeA <= beforeB ? { id: mvBId, idx: beforeB } : { id: mvAId, idx: beforeA };
+        mv.listOk = typeof first.idx === "number" && typeof second.idx === "number";
+        // move the later tab onto the earlier one's position — the
+        // earlier tab must shift by exactly one slot
+        await runner.browserToolCall(
+          taskId, "browser.tab.update", { tabId: second.id, index: first.idx }, token, 60_000,
+        );
+        const afterFirst = await idxOf(first.id);
+        const afterSecond = await idxOf(second.id);
+        mv.moveOk = afterSecond === first.idx &&
+          typeof afterFirst === "number" && Math.abs(afterFirst - first.idx) === 1;
+        // bogus index refused host-side
+        const mvBad = await runner.browserToolCall(
+          taskId, "browser.tab.update", { tabId: second.id, index: -5 }, token, 60_000,
+        );
+        mv.badIndexOk = (mvBad?.error?.code ?? "") === "proto.invalid";
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: mvAId }, token, 60_000,
+        );
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: mvBId }, token, 60_000,
+        );
+      } catch (e) {
+        mv.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`tabMove → ${JSON.stringify(mv).slice(0, 300)}`);
+      results.tabMove = {
+        ok: mv.listOk === true && mv.moveOk === true && mv.badIndexOk === true,
+        ...mv,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

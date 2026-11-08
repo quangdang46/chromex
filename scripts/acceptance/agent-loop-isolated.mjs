@@ -288,6 +288,8 @@ try {
   assert(typeof zoomCheck?.value === "number", "page still evaluates after zoom");
   const zoomBad = await call("browser.tab.update", { tabId: dupId, muted: true }).then(() => null).catch((e) => e);
   assert(zoomBad !== null, "tab.update refused muted on isolated backend");
+  const idxBad = await call("browser.tab.update", { tabId: dupId, index: 0 }).then(() => null).catch((e) => e);
+  assert(idxBad !== null, "tab.update refused index on isolated backend");
 
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {

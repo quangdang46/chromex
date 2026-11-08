@@ -185,6 +185,27 @@ describe("tool host (P1-09)", () => {
     expect(zooms).toHaveLength(1); // rejected calls never dispatched
   });
 
+  test("tab.update index dispatches moveTab with bounds check", async () => {
+    const d = deps();
+    const moves: Array<[number, number]> = [];
+    d.moveTab = async (id, idx) => { moves.push([id, idx]); };
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    const sreq = (args: Record<string, unknown>) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool: "browser.tab.update", args, tabScope: scope });
+    const res = (await h(sreq({ index: 0 }))) as { index: number };
+    expect(moves).toEqual([[7, 0]]);
+    expect(res.index).toBe(0);
+    await h(sreq({ index: -1 }));
+    expect(moves).toEqual([[7, 0], [7, -1]]);
+    await expect(h(sreq({ index: 1.5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq({ index: -2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq({ index: "first" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(moves).toHaveLength(2); // rejected calls never dispatched
+    // index alone satisfies the "at least one arg" requirement
+    await expect(h(sreq({}))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.wait forwards visibleSelector as a wait condition", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

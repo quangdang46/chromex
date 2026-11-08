@@ -1,0 +1,33 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T13-08-39-285Z-e7dbeb",
+  "status": "FAIL",
+  "summary": "harness error: ERR_SQLITE_ERROR: ",
+  "durationMs": 78905,
+  "error": "GatewayClientError: ERR_SQLITE_ERROR: \n    at errorFromProtocol (file:///Users/tranquangdang21/Projects/chromex/packages/native-host/dist/gateway-client.js:345:20)\n    at GatewayConnection.onData (file:///Users/tranquangdang21/Projects/chromex/packages/native-host/dist/gateway-client.js:311:34)\n    at Socket.<anonymous> (file:///Users/tranquangdang21/Projects/chromex/packages/native-host/dist/gateway-client.js:148:43)\n    at Socket.emit (node:events:509:20)\n    at addChunk (node:internal/streams/readable:568:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:519:3)\n    at Readable.push (node:internal/streams/readable:399:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)",
+  "notes": [
+    "[2026-11-08T13:09:24.465Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T13:09:29.115Z] responseBody prime → {\"toolCallId\":\"rpc-mw7umzbs-mglz7y\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794143369100,\"resolvedTabId\":1865022843}}",
+    "[2026-11-08T13:09:29.848Z] responseBody → {\"requestId\":\"51710.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:55632/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794143369180,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1865022843}",
+    "[2026-11-08T13:09:31.203Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+    "[2026-11-08T13:09:32.475Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+    "[2026-11-08T13:09:40.300Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1865022843}",
+    "[2026-11-08T13:09:40.938Z] trusted snap=completed snapId=snap:99e63bd2-829a-49f4-a21b-0199176d25b5",
+    "[2026-11-08T13:09:42.661Z] untrusted click → {\"toolCallId\":\"rpc-mw7un8p7-58jiu4\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T13:09:42.661Z] trusted click → {\"toolCallId\":\"rpc-mw7un9hr-c183o8\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T13:09:42.691Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T13:09:43.194Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T13:09:45.113Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T13:09:45.113Z] press statuses: completed/completed",
+    "[2026-11-08T13:09:45.155Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T13:09:45.187Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T13:09:46.290Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T13:09:47.723Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T13:09:48.699Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T13:09:56.522Z] frame click cross → status=completed pout=down:true up:true",
+    "[2026-11-08T13:09:57.155Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+    "[2026-11-08T13:09:57.567Z] frame screenshot → status=completed bytes=1530",
+    "[2026-11-08T13:09:58.157Z] frame upload → status=completed fout2=files:mem.txt",
+    "[2026-11-08T13:09:58.178Z] oopif setInputFiles → {\"error\":\"GatewayClientError: ERR_SQLITE_ERROR: \"} fout2=none"
+  ]
+}
