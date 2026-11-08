@@ -422,6 +422,37 @@ try {
     `find locates open-shadow text (${JSON.stringify(shFind).slice(0, 160)})`,
   );
 
+  // ── Loop 12: popup tab (target=_blank) joins the task context and is
+  //  fully instrumented — console/network capture must work on it ────
+  const popTab = await call("browser.tab.create", { url: fixture.url("/popup"), active: false });
+  const popId = popTab?.tabId ?? popTab?.id;
+  await call("browser.page.click", { tabId: popId, selector: "#pop" });
+  let popIdx = -1;
+  for (let i = 0; i < 20 && popIdx < 0; i++) {
+    const tl = await call("browser.tabs.list", {});
+    const rows = tl?.tabs ?? (Array.isArray(tl) ? tl : []);
+    popIdx = rows.findIndex((t) => String(t.url ?? "").includes("/popup-target"));
+    if (popIdx < 0) await new Promise((r) => setTimeout(r, 250));
+  }
+  assert(popIdx >= 0, "target=_blank click produced a popup tab in the task context");
+  const popTitle = await call("browser.page.get", { tabId: popIdx, key: "title" });
+  assert(
+    String(popTitle?.value ?? "").includes("Popup Target"),
+    `popup tab is drivable by index (title=${popTitle?.value})`,
+  );
+  // popup pages must carry the same observation listeners as tab.create
+  // pages — console capture on the popup proves context "page" tracking.
+  await call("browser.page.evaluate", {
+    tabId: popIdx,
+    expression: "console.log('popup-console-marker'); 'ok'",
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const popConsole = await call("browser.page.console", { tabId: popIdx });
+  assert(
+    JSON.stringify(popConsole ?? {}).includes("popup-console-marker"),
+    "console capture works on agent-opened popup tab",
+  );
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

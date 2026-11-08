@@ -1730,19 +1730,32 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
           return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
-        // type/fill/hover/drag cannot trigger navigation — no popup
-        // collection (would only add the grace-window latency).
+        // Enter inside type/fill text submits forms — a target=_blank
+        // form or JS handler can open a popup, so collect openedTabs
+        // only when the text can produce a newline. Hover cannot click;
+        // drag drop handlers can window.open — always collect there.
         if (tool === "browser.page.type" && args.trusted === true) {
-          return await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const startedAt = Date.now();
+          const res = await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const maySubmit = String(args.text ?? args.value ?? "").includes("\n");
+          const openedTabs = maySubmit ? await collectOpenedTabs(deps, tabId, startedAt) : [];
+          return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
         if (tool === "browser.page.fill" && args.trusted === true) {
-          return await trustedFill(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const startedAt = Date.now();
+          const res = await trustedFill(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const maySubmit = String(args.text ?? args.value ?? "").includes("\n");
+          const openedTabs = maySubmit ? await collectOpenedTabs(deps, tabId, startedAt) : [];
+          return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
         if (tool === "browser.page.hover" && args.trusted === true) {
           return await trustedHover(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         if (tool === "browser.page.drag" && args.trusted === true) {
-          return await trustedDrag(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const startedAt = Date.now();
+          const res = await trustedDrag(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
+          return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.

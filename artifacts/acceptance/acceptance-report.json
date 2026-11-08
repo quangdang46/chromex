@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-08T09:52:40.628Z",
+  "generatedAt": "2026-11-08T10:05:25.246Z",
   "results": [
     {
       "scenario": "agent-loop-isolated",
@@ -436,13 +436,13 @@
     },
     {
       "scenario": "s1-build-feature",
-      "runId": "2026-11-08T08-45-40-376Z-915b92",
+      "runId": "2026-11-08T09-52-55-894Z-cbf654",
       "status": "PASS",
       "summary": "provider iterated real-extension browser tools observe→act→observe",
-      "durationMs": 41420,
+      "durationMs": 110085,
       "details": {
-        "taskId": "01M6X5BK7GB1FTPF4GHE6M1RVF",
-        "turnId": "01M6X5BK7RQH03DHR2S71QGAXP",
+        "taskId": "01M6X96VZQYFXCFB6WH72T2MSJ",
+        "turnId": "01M6X96VZYSXP0JN3CTWZBBJFK",
         "terminal": "turn.completed",
         "actions": [
           "browser.page.navigate",
@@ -450,20 +450,20 @@
           "browser.page.click",
           "browser.page.get",
           "browser.page.extract",
-          "browser.page.extract"
+          "browser.page.evaluate"
         ],
         "classified": 6,
-        "browserDone": 6,
-        "browserSucceeded": 6,
+        "browserDone": 5,
+        "browserSucceeded": 5,
         "mcpDone": 0
       },
       "notes": [
-        "[2026-11-08T08:45:47.433Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T08:45:47.634Z] task 01M6X5BK7GB1FTPF4GHE6M1RVF provider=claude model=xxx",
-        "[2026-11-08T08:45:47.638Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-jd7LRp/mcp/01M6X5BK7GB1FTPF4GHE6M1RVF.json",
-        "[2026-11-08T08:45:47.668Z] turn 01M6X5BK7RQH03DHR2S71QGAXP"
+        "[2026-11-08T09:53:06.872Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T09:53:07.066Z] task 01M6X96VZQYFXCFB6WH72T2MSJ provider=codex model=xxx",
+        "[2026-11-08T09:53:07.069Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-Er8w91/mcp/01M6X96VZQYFXCFB6WH72T2MSJ.json",
+        "[2026-11-08T09:53:07.247Z] turn 01M6X96VZYSXP0JN3CTWZBBJFK"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s1-build-feature/2026-11-08T08-45-40-376Z-915b92"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s1-build-feature/2026-11-08T09-52-55-894Z-cbf654"
     },
     {
       "scenario": "s10-ui-queue-stop",
@@ -685,59 +685,59 @@
     },
     {
       "scenario": "s14-windows",
-      "runId": "2026-11-08T09-07-56-029Z-0ced70",
+      "runId": "2026-11-08T09-58-05-215Z-a6d07a",
       "status": "PASS",
       "summary": "agent created a dedicated window, drove its tab in-scope, targeted tab.create at windowId, maximized+restored window state, bogus state refused, window closed with its tabs",
-      "durationMs": 39694,
+      "durationMs": 20513,
       "details": {
-        "windowId": 985562664,
-        "winTabId": 985562665,
-        "tab2Id": 985562666,
+        "windowId": 736870928,
+        "winTabId": 736870929,
+        "tab2Id": 736870930,
         "beforeCount": 1
       },
       "notes": [
-        "[2026-11-08T09:08:30.740Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T09:08:31.145Z] task 01M6X6N6RS8WR75W6AKVBQM8Q5",
-        "[2026-11-08T09:08:31.152Z] browser.mcp scope acquired",
-        "[2026-11-08T09:08:31.166Z] windows before=1 ids=985562662",
-        "[2026-11-08T09:08:31.347Z] windows.create → windowId=985562664 tabId=985562665 tabs=1",
-        "[2026-11-08T09:08:32.449Z] page.get on window tab → {\"id\":985562665,\"tabId\":985562665,\"url\":\"http://127.0.0.1:56160/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":985562665,\"value\":\"Fixture Home\",\"windowI",
-        "[2026-11-08T09:08:32.464Z] tab.create windowId=985562664 → tabId=985562666",
-        "[2026-11-08T09:08:32.478Z] tabs.list row for tab2 → {\"id\":985562666,\"title\":\"127.0.0.1:56160/slow\",\"url\":\"http://127.0.0.1:56160/slow\",\"origin\":\"http://127.0.0.1:56160\",\"active\":false,\"windowId\":985562664,\"status\":\"loading\",\"pinned\":false,\"groupId\":-1}",
-        "[2026-11-08T09:08:33.334Z] windows.update maximized → state=maximized",
-        "[2026-11-08T09:08:34.001Z] bogus state refused → proto.invalid",
-        "[2026-11-08T09:08:35.122Z] post-cleanup window present=false"
+        "[2026-11-08T09:58:21.525Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T09:58:21.546Z] task 01M6X9GF34XGYJKRZHW6Y7XT5G",
+        "[2026-11-08T09:58:21.552Z] browser.mcp scope acquired",
+        "[2026-11-08T09:58:21.563Z] windows before=1 ids=736870926",
+        "[2026-11-08T09:58:21.709Z] windows.create → windowId=736870928 tabId=736870929 tabs=1",
+        "[2026-11-08T09:58:22.807Z] page.get on window tab → {\"id\":736870929,\"tabId\":736870929,\"url\":\"http://127.0.0.1:54695/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":736870929,\"value\":\"Fixture Home\",\"windowI",
+        "[2026-11-08T09:58:22.816Z] tab.create windowId=736870928 → tabId=736870930",
+        "[2026-11-08T09:58:22.827Z] tabs.list row for tab2 → {\"id\":736870930,\"title\":\"127.0.0.1:54695/slow\",\"url\":\"http://127.0.0.1:54695/slow\",\"origin\":\"http://127.0.0.1:54695\",\"active\":false,\"windowId\":736870928,\"status\":\"loading\",\"pinned\":false,\"groupId\":-1}",
+        "[2026-11-08T09:58:23.602Z] windows.update maximized → state=maximized",
+        "[2026-11-08T09:58:23.970Z] bogus state refused → proto.invalid",
+        "[2026-11-08T09:58:25.191Z] post-cleanup window present=false"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s14-windows/2026-11-08T09-07-56-029Z-0ced70"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s14-windows/2026-11-08T09-58-05-215Z-a6d07a"
     },
     {
       "scenario": "s2-debug-live",
-      "runId": "2026-11-08T08-46-29-925Z-a4f491",
+      "runId": "2026-11-08T09-54-46-960Z-5d0ba3",
       "status": "PASS",
       "summary": "agent edited code, re-drove real browser, verified token end-to-end",
-      "durationMs": 49388,
+      "durationMs": 37553,
       "details": {
-        "taskId": "01M6X5D54MPWC9100HYC2HPQNT",
-        "turnId": "01M6X5D54WJW5CEBJBB3J9X55B",
+        "taskId": "01M6X9A55HTHG151887PNDTAFY",
+        "turnId": "01M6X9A55V7QMF4VQ7T76ZKAR8",
         "terminal": "turn.completed",
         "actions": [
           "browser.page.navigate",
           "browser.page.snapshot",
           "browser.page.get",
           "browser.page.navigate",
-          "browser.page.get",
-          "browser.page.snapshot"
+          "browser.page.extract",
+          "browser.page.evaluate"
         ],
         "onDiskHasToken": true,
         "servedHasToken": true
       },
       "notes": [
-        "[2026-11-08T08:46:38.403Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T08:46:38.405Z] fixture /var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-s2-6qvA5i/index.html at http://127.0.0.1:51476/ token CHROMEX-VERIFIED-5E6F4A44",
-        "[2026-11-08T08:46:38.744Z] task 01M6X5D54MPWC9100HYC2HPQNT",
-        "[2026-11-08T08:46:38.747Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-2tYy7D/mcp/01M6X5D54MPWC9100HYC2HPQNT.json"
+        "[2026-11-08T09:54:54.669Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T09:54:54.672Z] fixture /var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-s2-ow6RyN/index.html at http://127.0.0.1:54209/ token CHROMEX-VERIFIED-02D840E7",
+        "[2026-11-08T09:54:54.773Z] task 01M6X9A55HTHG151887PNDTAFY",
+        "[2026-11-08T09:54:54.777Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-bdxmrd/mcp/01M6X9A55HTHG151887PNDTAFY.json"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s2-debug-live/2026-11-08T08-46-29-925Z-a4f491"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s2-debug-live/2026-11-08T09-54-46-960Z-5d0ba3"
     },
     {
       "scenario": "s3-multitab",

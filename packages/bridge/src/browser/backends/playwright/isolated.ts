@@ -213,6 +213,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     dialog: PwDialog; type: string; message: string; defaultPrompt: string;
   } | null>();
 
+  /** Pages already wired with observation listeners — popup pages arrive
+   *  via context "page" events and must not be double-tracked. */
+  readonly #trackedPages = new WeakSet<PwPage>();
+
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
   }
@@ -254,6 +258,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (existing) return existing;
     const browser = await this.#ensureBrowser();
     const context = await browser.newContext();
+    // Popup tabs (target=_blank, window.open) join the same context and
+    // surface here as new pages — track them at birth so console,
+    // network, WS, dialog and route capture work on agent-opened tabs.
+    if (typeof context.on === "function") {
+      context.on("page", (page) => this.#trackPage(page));
+    }
     this.#contexts.set(taskId, context);
     return context;
   }
@@ -621,7 +631,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  very first page load. */
   #trackPage(page: PwPage): PwPage {
     // fake pages in unit tests may not implement the event emitter API
-    if (typeof page.on !== "function") return page;
+    if (typeof page.on !== "function" || this.#trackedPages.has(page)) return page;
+    this.#trackedPages.add(page);
     this.#ensureConsoleCapture(page);
     this.#ensureNetworkCapture(page);
     this.#ensureResponseTap(page);

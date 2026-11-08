@@ -633,3 +633,54 @@ describe("PlaywrightIsolatedBackend §4.8 dispatch binding", () => {
     expect(clicks.n).toBe(1);
   });
 });
+
+describe("PlaywrightIsolatedBackend popup tracking", () => {
+  test("context 'page' events attach listeners once; popup stays drivable", async () => {
+    const listenerCounts = new Map<string, number>();
+    const popup = {
+      url: () => "https://popup.example/",
+      title: async () => "Popup",
+      evaluate: async () => ({}),
+      on: (ev: string) => {
+        listenerCounts.set(ev, (listenerCounts.get(ev) ?? 0) + 1);
+      },
+    };
+    const pages: unknown[] = [popup];
+    const contextHandlers = new Map<string, (p: unknown) => void>();
+    const context = {
+      pages: () => pages,
+      newPage: async () => {
+        throw new Error("unexpected newPage");
+      },
+      on: (ev: string, fn: (p: unknown) => void) => {
+        contextHandlers.set(ev, fn);
+      },
+      close: async () => {},
+    };
+    const browser = {
+      isConnected: () => true,
+      newContext: async () => context,
+      close: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => ({ chromium: { launch: async () => browser } }) as never,
+    });
+    // first tool call creates the context and registers the page handler
+    await backend.execute("t1", "browser.tabs.list", {});
+    const onPage = contextHandlers.get("page");
+    expect(onPage).toBeTypeOf("function");
+    onPage!(popup);
+    // duplicate emission (e.g. page later surfaces via context.pages() and
+    // gets re-tracked) must not double-attach listeners
+    onPage!(popup);
+    expect(listenerCounts.get("console")).toBe(1);
+    expect(listenerCounts.get("pageerror")).toBe(1);
+    expect(listenerCounts.get("close")).toBe(1);
+    const res = (await backend.execute("t1", "browser.page.get", {
+      tabId: 0,
+      key: "title",
+    })) as { value: string };
+    expect(res.value).toBe("Popup");
+    await backend.close();
+  });
+});
