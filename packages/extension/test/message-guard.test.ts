@@ -17,13 +17,22 @@ describe("classifyMessageSender", () => {
     ).toBe("extension-page");
   });
 
-  it("content script: own id + tab present", () => {
+  it("content script: own id + web page URL + tab present", () => {
     expect(
       classifyMessageSender(
-        { id: RID, url: `chrome-extension://${RID}/content.js`, tab: { id: 1 } },
+        { id: RID, url: "https://example.com/page", tab: { id: 1 } },
         RID,
       ),
     ).toBe("content-script");
+  });
+
+  it("extension page opened as a tab stays extension-page", () => {
+    expect(
+      classifyMessageSender(
+        { id: RID, url: `chrome-extension://${RID}/sidepanel.html`, tab: { id: 7 } },
+        RID,
+      ),
+    ).toBe("extension-page");
   });
 
   it("untrusted: wrong sender id", () => {

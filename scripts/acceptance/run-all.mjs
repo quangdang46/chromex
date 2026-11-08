@@ -33,6 +33,7 @@ const TOKENLESS = new Set([
   "s7-approval",
   "s8-deliverable",
   "s9-interrupt-queue",
+  "s10-ui-queue-stop",
 ]);
 const ALL = [
   "agent-loop-isolated",
@@ -54,6 +55,7 @@ const ALL = [
   "s7-approval",
   "s8-deliverable",
   "s9-interrupt-queue",
+  "s10-ui-queue-stop",
 ];
 const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
 

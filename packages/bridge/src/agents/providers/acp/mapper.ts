@@ -249,7 +249,12 @@ export class AcpEventMapper {
     const t = this.active;
     if (!t || t.sawTerminal) return;
     t.sawTerminal = true;
-    if (turnFailed) {
+    if (turnFailed && this.interruptRequested) {
+      // The prompt RPC rejected because we cancelled — the truthful
+      // terminal is cancelled, not failed (a failure flush would wrongly
+      // auto-send queued composer messages).
+      this.#emit({ type: "turn.cancelled", turnId: t.gatewayTurnId, reason: "interrupted" });
+    } else if (turnFailed) {
       this.#emit({
         type: "turn.failed",
         turnId: t.gatewayTurnId,

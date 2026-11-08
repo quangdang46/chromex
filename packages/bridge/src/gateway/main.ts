@@ -1026,7 +1026,11 @@ async function handleGatewayRequest(
       const p = parsePayload(taskCreateSchema, req.payload) as z.infer<typeof taskCreateSchema>;
       const cfg = ctx.getConfig();
       const task = ctx.sessionManager.createTask({
-        profileId: p.profileId ?? "codex",
+        // profileId defaults to the bare providerId: registry.resolve()
+        // accepts a provider id directly, and defaulting to "codex" here
+        // silently rerouted every non-codex providerId (ACP agents,
+        // claude) to the codex provider.
+        profileId: p.profileId ?? p.providerId ?? "codex",
         providerId: (p.providerId as never) ?? "codex",
         ...(p.conversationKey ? { conversationKey: p.conversationKey } : {}),
         cwd: p.cwd,
@@ -1155,16 +1159,18 @@ async function handleGatewayRequest(
       const task = ctx.sessionManager.setBackend(p.taskId, validated);
       return { taskId: task.taskId, backend: task.backend };
     }
-    case "turn.interrupt": {
-      const p = parsePayload(turnInterruptSchema, req.payload) as z.infer<typeof turnInterruptSchema>;
-      await ctx.sessionManager.interruptTurn(p.taskId, p.turnId);
-      return { ok: true };
-    }
+    case "turn.interrupt":
     case "task.interrupt": {
-      // legacy alias kept for in-flight clients during migration
-      const p = parsePayload(turnInterruptSchema, req.payload) as z.infer<typeof turnInterruptSchema>;
+      // These explicit cases shadow the LEGACY_COMPAT rewrite, so accept
+      // the legacy `threadId` field (= taskId) here as well as `taskId`.
+      const raw = (req.payload ?? {}) as Record<string, unknown>;
+      const payload =
+        raw.taskId === undefined && typeof raw.threadId === "string"
+          ? { ...raw, taskId: raw.threadId }
+          : raw;
+      const p = parsePayload(turnInterruptSchema, payload) as z.infer<typeof turnInterruptSchema>;
       await ctx.sessionManager.interruptTurn(p.taskId, p.turnId);
-      return { ok: true };
+      return { ok: true, threadId: p.taskId, turnId: p.turnId };
     }
     case "permission.respond": {
       const p = parsePayload(permissionRespondSchema, req.payload) as z.infer<typeof permissionRespondSchema>;

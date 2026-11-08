@@ -48,7 +48,8 @@ await runScenario(
     const turnId2 = s2.turnId ?? s2.turn?.turnId;
     evidence.note(`send2 → turnId=${turnId2} queued=${s2.queued}`);
     if (s2.queued !== true || !turnId2) {
-      return { status: "FAIL", summary: "second send was not queued behind the running turn", details: { s2 } };
+      const evs = runner.eventsFor(taskId).map((e) => `${e.seq}:${e.type}${e.payload?.error?.message ? `(${String(e.payload.error.message).slice(0, 80)})` : ""}`);
+      return { status: "FAIL", summary: "second send was not queued behind the running turn", details: { s2, events: evs } };
     }
 
     // Stop path exactly as the sidepanel issues it: taskId only, no turnId.
@@ -116,7 +117,7 @@ await runScenario(
         enabled: true,
         command: process.execPath,
         args: [FAKE_AGENT],
-        env: { FAKE_ACP_TURN_MS: "90_000" },
+        env: { FAKE_ACP_TURN_MS: "90000" },
         models: null,
         additionalModels: null,
         defaultModel: null,

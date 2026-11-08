@@ -33,11 +33,15 @@ export function classifyMessageSender(
   runtimeId: string,
 ): MessageSenderClass {
   if (!sender || sender.id !== runtimeId) return "untrusted";
-  // Content scripts always carry sender.tab; extension pages do not.
-  if (sender.tab) return "content-script";
+  // Extension pages keep their chrome-extension:// sender.url even when
+  // opened as a regular tab (sidepanel "open in tab" / test harness), where
+  // sender.tab is set. Check the URL before the tab heuristic so those
+  // pages aren't demoted to the content-script allowlist.
   if (typeof sender.url === "string" && sender.url.startsWith(`${EXTENSION_SCHEME}${runtimeId}/`)) {
     return "extension-page";
   }
+  // Content scripts always carry sender.tab; extension pages do not.
+  if (sender.tab) return "content-script";
   // No tab and no extension-page URL — could be the offscreen document or
   // another extension context; treat as untrusted for allowlist purposes.
   return "untrusted";

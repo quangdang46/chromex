@@ -10,7 +10,7 @@ if (process.argv.includes("--version")) {
   process.exit(0);
 }
 
-const TURN_MS = Number(process.env.FAKE_ACP_TURN_MS ?? 60_000);
+const TURN_MS = Number(process.env.FAKE_ACP_TURN_MS ?? 60_000) || 60_000;
 const SESSION_ID = "fake-acp-session-1";
 
 let promptCount = 0;
