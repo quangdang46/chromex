@@ -117,6 +117,9 @@ const CLASSIFICATION: Partial<Record<ProtocolErrorCode, ProtocolErrorClassificat
   "browser.ambiguous_target": { retryable: false, requiresUserAction: true, sideEffectState: "none" },
   "browser.stale_binding": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   "browser.stale_snapshot": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
+  // Detected before dispatch (re-verify approved facts) — nothing was
+  // sent; re-snapshot and retry is safe.
+  "browser.target_changed": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   // Detected before dispatch (re-resolve target / re-snapshot) — safe to retry.
   "browser.element_not_found": { retryable: true, requiresUserAction: false, sideEffectState: "none" },
   // Pointer-hit gate fires before dispatch — page may just be mid-render;

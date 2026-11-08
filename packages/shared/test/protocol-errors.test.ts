@@ -22,6 +22,8 @@ const PLAN_CLASSIFIED: Array<
   ["browser.ambiguous_target", { retryable: false, requiresUserAction: true, sideEffectState: "none" }],
   ["browser.stale_binding", { retryable: true, requiresUserAction: false, sideEffectState: "none" }],
   ["browser.stale_snapshot", { retryable: true, requiresUserAction: false, sideEffectState: "none" }],
+  // §4.8 dispatch binding — pre-dispatch drift check; re-snapshot + retry.
+  ["browser.target_changed", { retryable: true, requiresUserAction: false, sideEffectState: "none" }],
   // ⚠️ rows → retryable:true (conditional; caller decides via sideEffectState)
   ["browser.timeout", { retryable: true, requiresUserAction: false, sideEffectState: "unknown" }],
   ["browser.no_host", { retryable: true, requiresUserAction: false, sideEffectState: "none" }],
