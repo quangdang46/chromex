@@ -337,6 +337,43 @@ async function resolveScopedTabId(
   return candidate;
 }
 
+/** §4.8 preflight for the tool server's risk classifier: resolve the
+ *  pending action's target inside the page and report ground-truth
+ *  facts (real label, input type, form method/action, page origin).
+ *  Agent args are untrusted steering — classification must use what
+ *  the element actually is. Read-only: never mutates the page. */
+async function describeTargetForRisk(
+  deps: ToolHostDeps,
+  args: Record<string, unknown>,
+  scope: TabScopePayload | null,
+): Promise<unknown> {
+  const tabId = await resolveScopedTabId(deps, args, scope);
+  const frameId = frameIdArg(args);
+  const res = (await deps.sendToTab(
+    tabId,
+    {
+      type: "page.dom.describe",
+      ...(typeof args.ref === "string" ? { targetRef: args.ref } : {}),
+      ...(typeof args.selector === "string" ? { selector: args.selector } : {}),
+      ...(typeof args.label === "string" ? { label: args.label } : {}),
+      ...(typeof args.snapshotId === "string" ? { snapshotId: args.snapshotId } : {}),
+    },
+    { frameId },
+  )) as Record<string, unknown> | undefined;
+  const tab = await deps.getTab(tabId).catch(() => null);
+  let pageOrigin = "";
+  let pageUrl = "";
+  try {
+    const u = new URL(tab?.url ?? "");
+    pageOrigin = u.origin;
+    pageUrl = `${u.origin}${u.pathname}`;
+  } catch {
+    // non-http(s) or empty tab url — origin stays unresolved, which
+    // fails closed inside the classifier for financial checks.
+  }
+  return { ...(res ?? { found: false, reason: "no_response" }), pageOrigin, pageUrl, resolvedTabId: tabId };
+}
+
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
@@ -485,6 +522,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
     const tool = req.tool ?? "";
     const args = req.args ?? {};
     const tabScope = parseTabScope(payload);
+    // §4.8 risk preflight — NOT an agent tool: the tool server calls this
+    // internally before classification so the verdict sees ground-truth
+    // element/page facts instead of only agent-supplied args. Resolves
+    // the same scoped tab + target the action would hit.
+    if (tool === "browser.internal.describeTarget") {
+      return describeTargetForRisk(deps, args, tabScope);
+    }
     if (!SUPPORTED.has(tool)) {
       throw toolError("proto.unsupported", `browser tool ${tool} is not implemented in the extension host`);
     }

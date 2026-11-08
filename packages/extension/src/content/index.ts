@@ -18,6 +18,7 @@ import {
 import {
   EDITOR_LIKE_SELECTOR,
   buildElementSelector,
+  getElementLabel,
   isDomActionElementVisible,
   isTextEntryCandidate,
   resolveDomActionTargetDetailed,
@@ -386,6 +387,76 @@ function chromexRuntimeMessageListener(
       selector: buildElementSelector(el),
       tagName: el.tagName.toLowerCase(),
       visible: isDomActionElementVisible(el),
+    });
+    return false;
+  }
+
+  if (message.type === "page.dom.describe") {
+    // §4.8 risk preflight: resolve the SAME target the pending action
+    // would hit and report ground-truth facts. The classifier must not
+    // rely on agent-supplied labels — a "Delete account" button targeted
+    // by snapshot ref carries no label in args.
+    const hasTarget =
+      typeof message.targetRef === "string" ||
+      typeof message.selector === "string" ||
+      typeof message.label === "string";
+    let el: HTMLElement | null = null;
+    if (hasTarget) {
+      const resolved = resolveDomActionTargetDetailed({
+        action: "click",
+        ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
+        ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+        ...(typeof message.label === "string" ? { label: message.label } : {}),
+        reason: "describe",
+      });
+      if (resolved.status === "ambiguous") {
+        sendResponse({ found: false, reason: "ambiguous", count: resolved.count });
+        return false;
+      }
+      el = resolved.status === "resolved" ? resolved.element : null;
+    } else {
+      // No explicit target (e.g. page.press): the action lands on
+      // whatever is focused — describe document.activeElement.
+      const active = document.activeElement;
+      el = active instanceof HTMLElement ? active : null;
+    }
+    if (!el) {
+      sendResponse({ found: false, reason: "not_found" });
+      return false;
+    }
+    const form = el.closest("form");
+    const anchor = el instanceof HTMLAnchorElement ? el : el.querySelector("a[href]");
+    let formAction = "";
+    const formActionRaw = form?.getAttribute("action") ?? "";
+    if (formActionRaw) {
+      try {
+        const u = new URL(formActionRaw, location.href);
+        formAction = `${u.origin}${u.pathname}`;
+      } catch {
+        formAction = "";
+      }
+    }
+    let href = "";
+    if (anchor instanceof HTMLAnchorElement && anchor.href) {
+      try {
+        const u = new URL(anchor.href);
+        href = `${u.origin}${u.pathname}`;
+      } catch {
+        href = "";
+      }
+    }
+    sendResponse({
+      found: true,
+      label: getElementLabel(el),
+      tagName: el.tagName.toLowerCase(),
+      role: el.getAttribute("role") ?? "",
+      ...(el instanceof HTMLInputElement ? { inputType: el.type || "text" } : {}),
+      ...(el instanceof HTMLButtonElement || el instanceof HTMLInputElement
+        ? { controlType: (el.getAttribute("type") || "submit").toLowerCase() }
+        : {}),
+      ...(form ? { formMethod: (form.getAttribute("method") || "get").toLowerCase() } : {}),
+      ...(formAction ? { formAction } : {}),
+      ...(href ? { href } : {}),
     });
     return false;
   }

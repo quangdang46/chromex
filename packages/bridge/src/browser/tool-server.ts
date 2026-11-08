@@ -58,6 +58,49 @@ export const HARD_BLOCKED_TOOLS: ReadonlySet<string> = new Set([
   "browser.page.download",
 ]);
 
+/** §4.8: mutating element actions whose risk verdict depends on WHAT the
+ *  target actually is (label, input type, form method, page origin).
+ *  Agent args alone cannot see those facts — a ref-targeted click
+ *  carries no label — so the extension backend gets a ground-truth
+ *  preflight (browser.internal.describeTarget) before classification. */
+const TARGET_DESCRIBE_TOOLS: ReadonlySet<string> = new Set([
+  "browser.page.click",
+  "browser.page.submit",
+  "browser.page.hover",
+  "browser.page.press",
+  "browser.page.drag",
+  "browser.page.fill",
+  "browser.page.type",
+  "browser.page.select",
+]);
+
+/** Merge host-resolved element/page facts into the ActionContext.
+ *  Ground truth overrides agent-supplied hints: the real label drives
+ *  the destructive-word check, the real input type drives the
+ *  password/payment check, the real form method drives the
+ *  external-mutation check, and the real page origin drives the
+ *  financial-origin check (args.url is empty for element actions). */
+function applyTargetDescription(actx: ActionContext, desc: Record<string, unknown>): void {
+  if (desc.found !== true) return;
+  const t = (actx.target ??= {});
+  const label = typeof desc.label === "string" ? desc.label : "";
+  if (label) t.label = label;
+  const inputType = typeof desc.inputType === "string" ? desc.inputType : "";
+  if (inputType) {
+    t.inputType = inputType;
+    if (inputType === "password") t.isPassword = true;
+  }
+  const formMethod = typeof desc.formMethod === "string" ? desc.formMethod.toUpperCase() : "";
+  if (formMethod) t.method = formMethod;
+  const formAction = typeof desc.formAction === "string" ? desc.formAction : "";
+  if (formAction) t.formAction = formAction;
+  const pageOrigin = typeof desc.pageOrigin === "string" ? desc.pageOrigin : "";
+  if (pageOrigin) {
+    actx.origin = pageOrigin;
+    if (!actx.url) actx.url = pageOrigin;
+  }
+}
+
 /** Approval details.argsPreview bounds — the preview is persisted to the
  *  approvals table and broadcast to every client, so it must stay small
  *  and never carry credential values. */
@@ -631,6 +674,30 @@ export class BrowserToolServer {
       ...(this.deps.agentEgressDestination ? { destination: this.deps.agentEgressDestination } : {}),
       ...(this.deps.sensitiveOrigins ? { sensitiveOrigins: this.deps.sensitiveOrigins } : {}),
     });
+    // tabScope payload for the host — computed once here so the §4.8
+    // preflight below resolves the same scoped tab set the dispatch
+    // will enforce (chromex-9e3).
+    const riskTabScope =
+      backendId === "chrome-extension"
+        ? this.tabScope.payloadFor(req.taskId, scopeNs)
+        : undefined;
+    // §4.8 ground truth: args-only context is blind for element
+    // actions — enrich with the facts the host resolves inside the
+    // page (real label/input type/form method/page origin) BEFORE
+    // classifying. Fail-open on preflight errors: the dispatch itself
+    // surfaces stale-ref/not-found honestly; blocking here would only
+    // mask the real error behind an approval prompt. Skipped entirely
+    // when the call is already terminal (out of scope) or ambiguous —
+    // no point spending a host round-trip on a denied request.
+    const preflightRelevant =
+      backendId === "chrome-extension" &&
+      withinTabScope &&
+      TARGET_DESCRIBE_TOOLS.has(req.tool) &&
+      !(explicitTabId === null && this.tabScope.implicitTargetAmbiguous(req.taskId, scopeNs));
+    if (preflightRelevant) {
+      const desc = await this.describeActionTarget(host, req, riskTabScope).catch(() => null);
+      if (desc) applyTargetDescription(actx, desc);
+    }
     const verdict = classifyActionRisk(actx);
     this.deps.onClassified?.(req.taskId, actx, verdict);
     // scope denials are terminal — never approval-bypassable (§4.8).
@@ -921,6 +988,24 @@ export class BrowserToolServer {
       if (recorded) outcomes.push(recorded);
     }
     return outcomes;
+  }
+
+  /** §4.8 preflight: ask the extension host to describe the pending
+   *  action's resolved target (real label/input type/form method) plus
+   *  the page origin. Internal pseudo-tool — never agent-visible. */
+  private async describeActionTarget(
+    host: ToolHostChannel,
+    req: ToolCallRequest,
+    tabScope: unknown,
+  ): Promise<Record<string, unknown> | null> {
+    const res = await host.send("browser.tool.request", {
+      toolCallId: `${req.toolCallId}:describe`,
+      taskId: req.taskId,
+      tool: "browser.internal.describeTarget",
+      args: req.args ?? {},
+      ...(tabScope ? { tabScope } : {}),
+    });
+    return res !== null && typeof res === "object" ? (res as Record<string, unknown>) : null;
   }
 
   private finish(outcome: ToolCallOutcome): ToolCallOutcome {

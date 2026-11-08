@@ -292,3 +292,148 @@ describe("BrowserToolServer — agentEgress approval + allow_task digest (chrome
     expect(egressGrantCalls).toHaveLength(0);
   });
 });
+
+describe("BrowserToolServer — §4.8 ground-truth target preflight", () => {
+  const SECRET = "cd".repeat(32);
+  const NOW = 1_700_000_000_000;
+
+  function makePreflightServer(describeResult: Record<string, unknown>) {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = tokens.issue({
+      taskId: "task-1",
+      profileId: "profile-1",
+      backendId: "chrome-extension",
+      allowedTools: ["browser.page.click", "browser.page.fill"],
+      now: NOW,
+    });
+    const sent: Array<{ tool?: string; args?: Record<string, unknown> }> = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async (_method, payload) => {
+        const p = payload as { tool?: string; args?: Record<string, unknown> };
+        sent.push(p);
+        if (p.tool === "browser.internal.describeTarget") return describeResult;
+        return { ok: true, resolvedTabId: 3 };
+      },
+      onDisconnect: () => {},
+    };
+    const approvals: ToolApprovalRequest[] = [];
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      requestApproval: async (ctx) => {
+        approvals.push(ctx);
+        return { verdict: "approved" as const };
+      },
+      now: () => NOW,
+    });
+    return { server, token, approvals, sent };
+  }
+
+  it("ref-targeted click on a destructive-labeled element requires approval — args carried no label", async () => {
+    const { server, token, approvals, sent } = makePreflightServer({
+      found: true,
+      label: "Delete account permanently",
+      tagName: "button",
+      pageOrigin: "https://app.example.com",
+      pageUrl: "https://app.example.com/settings",
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { ref: "e7", snapshotId: "snap:1" }),
+      token,
+    });
+    expect(out.status).toBe("completed");
+    // preflight went to the host BEFORE dispatch
+    expect(sent.map((s) => s.tool)).toEqual(["browser.internal.describeTarget", "browser.page.click"]);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ kind: "browser_action", risk: "external_mutation" });
+    // the approval preview shows the REAL label, not agent args
+    expect(approvals[0]!.details.targetLabel).toBe("Delete account permanently");
+  });
+
+  it("click on a financial origin requires approval even with a benign label", async () => {
+    const { server, token, approvals } = makePreflightServer({
+      found: true,
+      label: "Continue",
+      tagName: "button",
+      pageOrigin: "https://www.paypal.com",
+      pageUrl: "https://www.paypal.com/checkout",
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { ref: "e2" }),
+      token,
+      toolCallId: "tc-pay",
+    });
+    expect(out.status).toBe("completed");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ risk: "financial" });
+  });
+
+  it("fill into a real password input is data_entry_sensitive — agent never said so", async () => {
+    const { server, token, approvals } = makePreflightServer({
+      found: true,
+      label: "Password",
+      tagName: "input",
+      inputType: "password",
+      pageOrigin: "https://app.example.com",
+      pageUrl: "https://app.example.com/login",
+    });
+    const out = await server.execute({
+      ...req("browser.page.fill", { ref: "e3", text: "hunter2" }),
+      token,
+      toolCallId: "tc-pw",
+    });
+    expect(out.status).toBe("completed");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ kind: "data_entry_sensitive", risk: "data_entry_sensitive" });
+  });
+
+  it("benign click on a resolved element stays approval-free", async () => {
+    const { server, token, approvals } = makePreflightServer({
+      found: true,
+      label: "Search",
+      tagName: "button",
+      pageOrigin: "https://shop.example.com",
+      pageUrl: "https://shop.example.com/",
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { ref: "e4" }),
+      token,
+      toolCallId: "tc-ok",
+    });
+    expect(out.status).toBe("completed");
+    expect(approvals).toHaveLength(0);
+  });
+
+  it("preflight failure fails open — dispatch surfaces the real error", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = tokens.issue({
+      taskId: "task-1",
+      profileId: "profile-1",
+      backendId: "chrome-extension",
+      allowedTools: ["browser.page.click"],
+      now: NOW,
+    });
+    const host: ToolHostChannel = {
+      hostInstanceId: "h1",
+      send: async (_m, payload) => {
+        const p = payload as { tool?: string };
+        if (p.tool === "browser.internal.describeTarget") throw new Error("tab gone");
+        return { ok: false, error: "browser.element_not_found" };
+      },
+      onDisconnect: () => {},
+    };
+    const server = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      now: () => NOW,
+    });
+    const out = await server.execute({
+      ...req("browser.page.click", { ref: "e9" }),
+      token,
+      toolCallId: "tc-failopen",
+    });
+    // no approval was demanded; the dispatch result flows through
+    expect(out.status).toBe("completed");
+  });
+});
