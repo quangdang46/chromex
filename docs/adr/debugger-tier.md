@@ -82,9 +82,11 @@ for Testing:
   (`browser.page.webSocket` — connections + sent/recv frame payloads,
   captured only after the tap attaches, per-frame 8KiB truncation),
   `requestInterception: true` (`browser.page.route`/`unroute` — CDP
-  Fetch.enable request-stage interception fulfilled with agent-supplied
-  responses; rules tab-scoped, ≤50/tab, held session like emulation,
-  do not survive SW restart). `trustedGesture` is `true` — every
+  Fetch.enable request-stage interception: fulfill with agent-supplied
+  responses, abort via failRequest, or modify via continueRequest
+  (url rewrite / request header injection / body swap); rules
+  tab-scoped, ≤50/tab, held session like emulation, do not survive
+  SW restart). `trustedGesture` is `true` — every
   gesture-bearing tool has a verified `args.trusted` path:
   `browser.page.click` (Input.dispatchMouseEvent), `press`/`type`/`fill`
   (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →

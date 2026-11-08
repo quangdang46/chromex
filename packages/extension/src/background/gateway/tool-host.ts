@@ -2913,10 +2913,14 @@ async function applyEmulationReset(session: CdpSession): Promise<void> {
 interface RouteRule {
   id: string;
   match: string;
-  action: "fulfill" | "abort";
+  action: "fulfill" | "abort" | "modify";
   status: number;
   headers: Record<string, string>;
   bodyBase64: string;
+  /** modify action: continueRequest overrides */
+  url?: string;
+  requestHeaders?: Record<string, string>;
+  requestBodyBase64?: string;
 }
 
 interface RouteHold {
@@ -2973,6 +2977,27 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
         .catch(() => {});
       return;
     }
+    if (rule.action === "modify") {
+      let rewritten: string | undefined;
+      if (rule.url) {
+        try {
+          rewritten = new URL(rule.url, url).href;
+        } catch {
+          rewritten = undefined;
+        }
+      }
+      void session
+        .send("Fetch.continueRequest", {
+          requestId,
+          ...(rewritten ? { url: rewritten } : {}),
+          ...(rule.requestHeaders
+            ? { headers: Object.entries(rule.requestHeaders).map(([name, value]) => ({ name, value })) }
+            : {}),
+          ...(rule.requestBodyBase64 ? { postData: rule.requestBodyBase64 } : {}),
+        })
+        .catch(() => {});
+      return;
+    }
     const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
     void session
       .send("Fetch.fulfillRequest", {
@@ -3015,8 +3040,36 @@ async function addPageRoute(
     throw toolError("proto.invalid", "browser.page.route requires args.match (URL substring)");
   }
   const action = args.action === undefined ? "fulfill" : str(args.action);
-  if (action !== "fulfill" && action !== "abort") {
-    throw toolError("proto.invalid", "browser.page.route args.action must be fulfill|abort");
+  if (action !== "fulfill" && action !== "abort" && action !== "modify") {
+    throw toolError("proto.invalid", "browser.page.route args.action must be fulfill|abort|modify");
+  }
+  // modify overrides — url rewrite, request header injection, body swap
+  const modUrl = action === "modify" ? strArg(args.url, "url", 2048) : undefined;
+  const modHeadersRaw = action === "modify" ? args.requestHeaders : undefined;
+  const modHeaders: Record<string, string> = {};
+  if (modHeadersRaw !== undefined) {
+    if (typeof modHeadersRaw !== "object" || modHeadersRaw === null || Array.isArray(modHeadersRaw)) {
+      throw toolError("proto.invalid", "args.requestHeaders must be an object of string values");
+    }
+    for (const [k, v] of Object.entries(modHeadersRaw as Record<string, unknown>)) {
+      if (typeof v !== "string" || k.length === 0 || k.length > 100 || v.length > 8192) {
+        throw toolError("proto.invalid", "args.requestHeaders values must be strings (name ≤100, value ≤8192 chars)");
+      }
+      modHeaders[k] = v;
+    }
+  }
+  let modBodyBase64: string | undefined;
+  if (action === "modify" && args.requestBody !== undefined) {
+    if (typeof args.requestBody !== "string") {
+      throw toolError("proto.invalid", "args.requestBody must be a string");
+    }
+    if (args.requestBody.length > ROUTE_BODY_MAX) {
+      throw toolError("proto.payload_too_large", `args.requestBody exceeds ${ROUTE_BODY_MAX} chars`);
+    }
+    modBodyBase64 = utf8ToBase64(args.requestBody);
+  }
+  if (action === "modify" && modUrl === undefined && Object.keys(modHeaders).length === 0 && modBodyBase64 === undefined) {
+    throw toolError("proto.invalid", "browser.page.route action:modify requires args.url, args.requestHeaders or args.requestBody");
   }
   const status = numArg(args.status, "status", 100, 599) ?? 200;
   const contentType = strArg(args.contentType, "contentType", 200);
@@ -3049,7 +3102,12 @@ async function addPageRoute(
     throw toolError("proto.invalid", `route rule cap reached (${ROUTE_RULES_MAX}) — unroute first`);
   }
   const id = crypto.randomUUID();
-  hold.rules.set(id, { id, match, action: action as "fulfill" | "abort", status, headers, bodyBase64 });
+  hold.rules.set(id, {
+    id, match, action: action as "fulfill" | "abort" | "modify", status, headers, bodyBase64,
+    ...(modUrl !== undefined ? { url: modUrl } : {}),
+    ...(Object.keys(modHeaders).length > 0 ? { requestHeaders: modHeaders } : {}),
+    ...(modBodyBase64 !== undefined ? { requestBodyBase64: modBodyBase64 } : {}),
+  });
   return { routeId: id, match, action, status, rules: hold.rules.size, resolvedTabId: tabId };
 }
 

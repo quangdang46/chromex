@@ -624,7 +624,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       {
         ...TAB_TARGET_PROPS,
         match: { type: "string", description: "URL substring to intercept (required, ≤512 chars)." },
-        action: { type: "string", enum: ["fulfill", "abort"], description: "fulfill (default) returns the supplied response; abort fails matching requests (BlockedByClient) — status/headers/body are ignored for abort." },
+        action: { type: "string", enum: ["fulfill", "abort", "modify"], description: "fulfill (default) returns the supplied response; abort fails matching requests (BlockedByClient); modify forwards the request with overrides — args.url rewrites the URL, args.requestHeaders injects headers, args.requestBody swaps the body (UTF-8 → base64 postData). status/headers/body apply to fulfill only; url/requestHeaders/requestBody to modify only." },
+        url: { type: "string", description: "modify only: rewrite the request URL before it is sent." },
+        requestHeaders: { type: "object", additionalProperties: { type: "string" }, description: "modify only: request headers to set/override." },
+        requestBody: { type: "string", description: "modify only: replacement request body as UTF-8 string (≤256KiB)." },
         status: { type: "integer", description: "Response status code (100–599, default 200)." },
         contentType: { type: "string", description: "Content-Type response header." },
         headers: { type: "object", additionalProperties: { type: "string" }, description: "Extra response headers (name → value)." },

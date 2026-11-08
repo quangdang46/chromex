@@ -191,6 +191,13 @@ export async function startFixtureServer() {
       res.end(JSON.stringify({ v: "ok" }));
       return;
     }
+    // route-modify target — a rewrite of /api/ping lands here
+    if (url.pathname === "/api/pong2") {
+      requests.push({ method: "GET", path: "/api/pong2", at: Date.now() });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ v: "rerouted" }));
+      return;
+    }
     // iframe parent: one same-origin child (127.0.0.1) and one
     // cross-origin child (localhost — different origin, same server).
     if (url.pathname === "/iframe-parent") {
