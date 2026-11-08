@@ -1307,24 +1307,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // chromex-0fza: validate args.expect BEFORE dispatch — a
         // malformed expectation must not run the action and then fail.
         const expectCond = parseExpectCondition(args.expect);
-        // CDP tier: args.trusted on click switches dispatch from the
-        // content script (isTrusted=false) to Input.dispatchMouseEvent
-        // (isTrusted=true). Never silently downgrades — absent CDP dep
-        // or a subframe target fails proto.unsupported.
+        // CDP tier: args.trusted switches dispatch from the content
+        // script (isTrusted=false) to CDP Input.* (isTrusted=true).
+        // Element targets inside subframes are converted to absolute
+        // viewport coords via DOM.getContentQuads. Never silently
+        // downgrades — absent CDP dep fails proto.unsupported.
         if (tool === "browser.page.click" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted click is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedClick(deps, tabId, args, expectCond);
+          return await trustedClick(deps, tabId, args, expectCond, frameId);
         }
         // Keyboard trusted ops work in subframes too: the element is
         // focused through that frame's content script and CDP key
-        // events follow the focused frame. Pointer ops (click/hover/
-        // drag) stay top-frame — CDP Input is viewport-level and frame
-        // geometry would need offset math we do not have.
+        // events follow the focused frame. Pointer ops also work in
+        // subframes — element targets resolve to absolute viewport
+        // coordinates via CDP DOM quads before dispatch.
         if (tool === "browser.page.press" && args.trusted === true) {
           return await trustedPress(deps, tabId, args, expectCond, frameId);
         }
@@ -1335,22 +1330,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           return await trustedFill(deps, tabId, args, expectCond, frameId);
         }
         if (tool === "browser.page.hover" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted hover is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedHover(deps, tabId, args, expectCond);
+          return await trustedHover(deps, tabId, args, expectCond, frameId);
         }
         if (tool === "browser.page.drag" && args.trusted === true) {
-          if (frameId !== 0) {
-            throw toolError(
-              "proto.unsupported",
-              "trusted drag is only supported in the top frame (CDP Input is viewport-level)",
-            );
-          }
-          return await trustedDrag(deps, tabId, args, expectCond);
+          return await trustedDrag(deps, tabId, args, expectCond, frameId);
         }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.
@@ -1792,6 +1775,36 @@ async function cdpLocateElement(
   }, frameId);
 }
 
+/** Element target inside a subframe → top-viewport coordinates via the
+ *  content script's postMessage frame-geometry chain (frame-geometry.ts).
+ *  Needed because CDP Input.dispatchMouseEvent takes whole-page viewport
+ *  coords while content-script rects are frame-relative. */
+async function frameAbsolutePoint(
+  deps: ToolHostDeps,
+  tabId: number,
+  target: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined },
+  frameId: number,
+): Promise<{ x: number; y: number }> {
+  const res = (await deps.sendToTab(tabId, {
+    type: "page.geom.absolute",
+    ...(target.ref ? { targetRef: target.ref } : {}),
+    ...(target.selector ? { selector: target.selector } : {}),
+    ...(target.label ? { label: target.label } : {}),
+  }, { frameId })) as {
+    found?: boolean; reason?: string; count?: number; x?: number; y?: number;
+  };
+  if (res?.found !== true || typeof res.x !== "number" || typeof res.y !== "number") {
+    if (res?.reason === "ambiguous") {
+      throw toolError("browser.ambiguous_target", `target matches ${res.count ?? "multiple"} elements`);
+    }
+    if (res?.reason === "frame_geometry_unavailable") {
+      throw toolError("browser.timeout", "could not resolve iframe geometry for trusted dispatch");
+    }
+    throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+  }
+  return { x: res.x, y: res.y };
+}
+
 const CDP_MOUSE_BUTTONS = new Set(["left", "right", "middle"]);
 // CDP modifier bitmask is shared by Input.dispatchMouseEvent and
 // Input.dispatchKeyEvent: Alt=1, Control=2, Meta=4, Shift=8.
@@ -1811,6 +1824,7 @@ async function trustedClick(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const button = str(args.button);
   if (button !== undefined && !CDP_MOUSE_BUTTONS.has(button)) {
@@ -1844,7 +1858,11 @@ async function trustedClick(
 
   const point = xArg !== undefined
     ? { x: xArg, y: yArg! }
-    : await cdpLocateElement(deps, tabId, args);
+    : frameId !== 0
+      ? await frameAbsolutePoint(deps, tabId, {
+          ref: str(args.ref), selector: str(args.selector), label: str(args.label),
+        }, frameId)
+      : await cdpLocateElement(deps, tabId, args);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -1875,14 +1893,14 @@ async function trustedClick(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
   return {
     ok: true,
     summary: `trusted click at ${Math.round(point.x)},${Math.round(point.y)}`,
-    step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true },
+    step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true, frameId },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,
@@ -1897,6 +1915,7 @@ async function trustedHover(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const xArg = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
   const yArg = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
@@ -1910,7 +1929,11 @@ async function trustedHover(
   cdpRequired(deps);
   const point = xArg !== undefined
     ? { x: xArg, y: yArg! }
-    : await cdpLocateElement(deps, tabId, args);
+    : frameId !== 0
+      ? await frameAbsolutePoint(deps, tabId, {
+          ref: str(args.ref), selector: str(args.selector), label: str(args.label),
+        }, frameId)
+      : await cdpLocateElement(deps, tabId, args);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -1922,14 +1945,14 @@ async function trustedHover(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
   return {
     ok: true,
     summary: `trusted hover at ${Math.round(point.x)},${Math.round(point.y)}`,
-    step: { action: "hover", trusted: true, x: point.x, y: point.y, ok: true },
+    step: { action: "hover", trusted: true, x: point.x, y: point.y, ok: true, frameId },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,
@@ -1946,6 +1969,7 @@ async function trustedDrag(
   tabId: number,
   args: Record<string, unknown>,
   expectCond: BrowserExpectCondition | null,
+  frameId = 0,
 ): Promise<Record<string, unknown>> {
   const coordFields = [args.x, args.y, args.dropX, args.dropY];
   const coordCount = coordFields.filter((v) => v !== undefined && v !== null).length;
@@ -1965,14 +1989,21 @@ async function trustedDrag(
     if (!str(args.toRef) && !str(args.toSelector) && !str(args.toLabel)) {
       throw toolError("proto.invalid", "browser.page.drag requires a drop target: toRef, toSelector, or toLabel");
     }
-    const src = await cdpLocatePoint(deps, tabId, {
+    const srcTarget = {
       ref: str(args.ref), selector: str(args.selector), label: str(args.label),
-    });
-    const dst = await cdpLocatePoint(deps, tabId, {
+    };
+    const dstTarget = {
       ref: str(args.toRef), selector: str(args.toSelector), label: str(args.toLabel),
-    });
-    from = { x: src.x, y: src.y };
-    to = { x: dst.x, y: dst.y };
+    };
+    if (frameId !== 0) {
+      from = await frameAbsolutePoint(deps, tabId, srcTarget, frameId);
+      to = await frameAbsolutePoint(deps, tabId, dstTarget, frameId);
+    } else {
+      const src = await cdpLocatePoint(deps, tabId, srcTarget);
+      const dst = await cdpLocatePoint(deps, tabId, dstTarget);
+      from = { x: src.x, y: src.y };
+      to = { x: dst.x, y: dst.y };
+    }
   }
   cdpRequired(deps);
 
@@ -2004,14 +2035,14 @@ async function trustedDrag(
   let verified: boolean | "unknown" | undefined;
   let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
   if (expectCond) {
-    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    const check = await runExpectCondition(deps, tabId, expectCond, frameId);
     expectInfo = check;
     verified = check.met === true ? true : check.met === false ? false : "unknown";
   }
   return {
     ok: true,
     summary: `trusted drag ${Math.round(from.x)},${Math.round(from.y)} → ${Math.round(to.x)},${Math.round(to.y)}`,
-    step: { action: "drag", trusted: true, x: from.x, y: from.y, dropX: to.x, dropY: to.y, ok: true },
+    step: { action: "drag", trusted: true, x: from.x, y: from.y, dropX: to.x, dropY: to.y, ok: true, frameId },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

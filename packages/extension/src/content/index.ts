@@ -24,6 +24,7 @@ import {
   safeRemoveElement,
   setNativeTextControlValue,
 } from "./refs.js";
+import { askFrameOffset, installFrameGeometryResponder } from "./frame-geometry.js";
 import { extractCssImageUrls, sortEditablePageImageCandidates, type EditablePageImageCandidate } from "../page-image-target.js";
 import { createSelectedTextContextExcerpt } from "../page-selection-context.js";
 import { resolveImagePreviewRefForUi } from "../sidepanel/image-preview-assets.js";
@@ -105,6 +106,9 @@ chromexContentGlobal[CHROMEX_CONTENT_CLEANUP_KEY] = cleanupContentScriptInstance
 
 registerChromexRuntimeMessageListener();
 startContentScriptRuntimeWatchdog();
+// Frame geometry must be live in EVERY frame — the responder chain is
+// what lets a subframe element report top-viewport coordinates.
+installFrameGeometryResponder();
 // With all_frames injection every frame runs this script, but the
 // user-facing bridges (selection context, dictation target tracking,
 // image prompt hover) only make sense in the top frame — page.* tool
@@ -349,6 +353,42 @@ function chromexRuntimeMessageListener(
       visible: isDomActionElementVisible(el),
     });
     return false;
+  }
+
+  if (message.type === "page.geom.absolute") {
+    // Element target → top-viewport coordinates. In the top frame the
+    // rect is already absolute; in a subframe askFrameOffset walks the
+    // iframe chain via postMessage (works cross-origin/OOPIF).
+    void (async () => {
+      const resolved = resolveDomActionTargetDetailed({
+        action: "click",
+        ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
+        ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+        ...(typeof message.label === "string" ? { label: message.label } : {}),
+        reason: "locate",
+      });
+      if (resolved.status !== "resolved") {
+        sendResponse({
+          found: false,
+          reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
+          ...(resolved.status === "ambiguous" ? { count: resolved.count } : {}),
+        });
+        return;
+      }
+      const rect = resolved.element.getBoundingClientRect();
+      const offset = await askFrameOffset();
+      if (offset === null) {
+        sendResponse({ found: false, reason: "frame_geometry_unavailable" });
+        return;
+      }
+      sendResponse({
+        found: true,
+        x: rect.left + rect.width / 2 + offset.left,
+        y: rect.top + rect.height / 2 + offset.top,
+        selector: buildElementSelector(resolved.element),
+      });
+    })();
+    return true;
   }
 
   if (message.type === "page.dom.wait") {

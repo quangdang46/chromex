@@ -245,6 +245,9 @@ await runScenario(
       const childFrame = frames.find(
         (f) => String(f.url ?? "").includes("127.0.0.1") && String(f.url ?? "").includes("/iframe-child"),
       );
+      const crossFrame = frames.find(
+        (f) => String(f.url ?? "").includes("localhost") && String(f.url ?? "").includes("/iframe-child"),
+      );
       let framePress = null;
       let koutText = null;
       if (childFrame?.frameId) {
@@ -262,6 +265,40 @@ await runScenario(
         ok: framePress?.status === "completed" && koutText === "key:x,trusted:true",
         status: framePress?.status,
         kout: koutText,
+      };
+
+      // trusted pointer inside iframes — same-origin AND cross-origin
+      // (possibly out-of-process): element targets resolve to absolute
+      // viewport coords via the content-script postMessage geometry
+      // chain, then CDP Input dispatches isTrusted=true events.
+      const frameClickResults = {};
+      for (const [name, fr, urlMatch] of [
+        ["same", childFrame, "127.0.0.1"],
+        ["cross", crossFrame, "localhost"],
+      ]) {
+        let clickRes = null;
+        let pout = null;
+        if (fr?.frameId) {
+          clickRes = await runner.browserToolCall(
+            taskId, "browser.page.click",
+            { selector: "#pb", trusted: true, frameId: fr.frameId },
+            token, 60_000,
+          );
+          await sleep(300);
+          const pwFr = page.frames().find((f) => f.url().includes(urlMatch) && f.url().includes("/iframe-child"));
+          pout = pwFr ? await pwFr.locator("#pout").textContent() : null;
+        }
+        frameClickResults[name] = {
+          ok: clickRes?.status === "completed" && pout === "down:true up:true",
+          status: clickRes?.status,
+          pout,
+        };
+        evidence.note(`frame click ${name} → status=${clickRes?.status} pout=${pout}`);
+      }
+      results.trustedFrameClick = {
+        ok: frameClickResults.same?.ok === true && frameClickResults.cross?.ok === true,
+        same: frameClickResults.same,
+        cross: frameClickResults.cross,
       };
 
       // --- dialog: click schedules confirm(), CDP handles it ---

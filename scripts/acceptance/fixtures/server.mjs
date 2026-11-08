@@ -126,6 +126,8 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <p id="fout">idle</p>
 <input id="fin" onkeydown="document.getElementById('kout').textContent='key:'+event.key+',trusted:'+event.isTrusted" />
 <p id="kout">none</p>
+<button id="pb" style="position:absolute;left:20px;top:120px;width:80px;height:30px" onmousedown="document.getElementById('pout').textContent='down:'+event.isTrusted" onmouseup="document.getElementById('pout').textContent+=' up:'+event.isTrusted">ptr-btn</button>
+<p id="pout">none</p>
 </body></html>`,
 
   // keyboard + file-input proof: echoes the last key pressed, shows

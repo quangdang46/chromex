@@ -1518,7 +1518,7 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.responseBody", { tabId: 509, requestId: "nope" }))).rejects.toMatchObject({ code: "browser.not_found" });
   });
 
-  test("click trusted dispatches CDP mouse events; frameId!=0 unsupported", async () => {
+  test("click trusted dispatches CDP mouse events", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(510, cdp));
     const res = (await h(req("browser.page.click", { tabId: 510, selector: "#btn", trusted: true }))) as {
@@ -1528,7 +1528,47 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(res.step?.trusted).toBe(true);
     const types = cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent").map((s) => s.params?.type);
     expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
-    await expect(h(req("browser.page.click", { tabId: 510, selector: "#b", trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("click trusted in a subframe resolves absolute coords via page.geom.absolute", async () => {
+    const cdp = fakeCdp();
+    const sentToTab: Array<{ message: Record<string, unknown>; options?: { frameId?: number } }> = [];
+    const h = createToolHostHandler(cdpDeps(510, cdp, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>, options?: { frameId?: number }) => {
+        sentToTab.push({ message, options });
+        if (message.type === "page.geom.absolute") {
+          return { found: true, x: 60, y: 70, selector: "#btn" };
+        }
+        return { ok: true };
+      }),
+    }));
+    const res = (await h(req("browser.page.click", {
+      tabId: 510, selector: "#btn", trusted: true, frameId: 3,
+    }))) as { ok: boolean };
+    expect(res.ok).toBe(true);
+    // geometry ask went to the subframe, not the top frame
+    expect(sentToTab[0]?.message.type).toBe("page.geom.absolute");
+    expect(sentToTab[0]?.options).toEqual({ frameId: 3 });
+    const press = cdp.sent.find(
+      (s) => s.method === "Input.dispatchMouseEvent" && s.params?.type === "mousePressed",
+    );
+    expect(press?.params).toMatchObject({ x: 60, y: 70 });
+    // geometry unavailable → honest typed failure, nothing dispatched
+    const cdp2 = fakeCdp();
+    const sent2: string[] = [];
+    const h2 = createToolHostHandler(cdpDeps(510, cdp2, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        sent2.push(String(message.type));
+        if (message.type === "page.geom.absolute") {
+          return { found: false, reason: "frame_geometry_unavailable" };
+        }
+        return { ok: true };
+      }),
+    }));
+    await expect(h2(req("browser.page.click", {
+      tabId: 510, selector: "#btn", trusted: true, frameId: 3,
+    }))).rejects.toMatchObject({ code: "browser.timeout" });
+    expect(cdp2.sent.filter((s) => s.method.startsWith("Input."))).toHaveLength(0);
   });
 
   test("press trusted dispatches keyDown/keyUp and focuses an element target", async () => {
@@ -1572,11 +1612,15 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(downs[1]?.params).toMatchObject({ key: "!", code: "Digit1", windowsVirtualKeyCode: 49, text: "!", modifiers: 8 });
     await expect(h(req("browser.page.press", { tabId: 512, key: "F13", trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.press", { tabId: 512, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
-    // keyboard trusted ops allow subframes (focus happens in-frame);
-    // pointer ops still reject frameId!=0
+    // keyboard trusted ops allow subframes (focus happens in-frame)
     const sub = await h(req("browser.page.press", { tabId: 512, key: "Enter", trusted: true, frameId: 2 }));
     expect((sub as { ok?: boolean }).ok).toBe(true);
-    await expect(h(req("browser.page.click", { tabId: 512, selector: "#b", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    // pointer ops accept frameId too — subframe elements resolve to
+    // absolute viewport coords via page.geom.absolute; the default
+    // sendToTab mock returns no geometry → browser.element_not_found
+    await expect(h(req("browser.page.click", {
+      tabId: 512, selector: "#b", trusted: true, frameId: 2,
+    }))).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
   test("type trusted dispatches per-char key events; rejects non-ASCII before dispatch", async () => {
@@ -1614,7 +1658,11 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await h(req("browser.page.hover", { tabId: 514, x: 5, y: 6, trusted: true }));
     expect(cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent")).toHaveLength(2);
     await expect(h(req("browser.page.hover", { tabId: 514, selector: "#b", x: 1, y: 2, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.hover", { tabId: 514, trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    // frameId is accepted — the subframe path resolves absolute coords
+    // via page.geom.absolute; default mock has no geometry → typed fail
+    await expect(h(req("browser.page.hover", {
+      tabId: 514, selector: "#b", trusted: true, frameId: 3,
+    }))).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
   test("fill trusted sends select-all + delete + per-char keys", async () => {
@@ -1655,8 +1703,11 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.drag", {
       tabId: 516, selector: "#s", trusted: true,
     }))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.drag", {
+    // coordinate drag is viewport-level — frameId is irrelevant but
+    // accepted; element form in a subframe resolves via CDP quads
+    const coord = (await h(req("browser.page.drag", {
       tabId: 516, x: 1, y: 2, dropX: 3, dropY: 4, trusted: true, frameId: 3,
-    }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    }))) as { ok: boolean };
+    expect(coord.ok).toBe(true);
   });
 });

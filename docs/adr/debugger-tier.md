@@ -81,13 +81,20 @@ for Testing:
   (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →
   select-all → Backspace → per-char keys), `hover` and `drag` (mouse
   move / press→moves→release). Element targets are focused/located
-  through the content script first. Keyboard trusted ops
-  (press/type/fill) also accept `args.frameId`: focus happens in the
-  child frame's content script and CDP key events follow the focused
-  frame — verified by `cdp-headless` (`key:x,trusted:true` inside a
-  real iframe). Pointer ops (click/hover/drag) stay top-frame-only:
-  CDP `Input` is viewport-level and per-frame coordinate offset is
-  not implemented — `frameId!=0` fails `proto.unsupported` honestly.
+  through the content script first. All six trusted ops accept
+  `args.frameId`. Keyboard ops (press/type/fill) focus the element
+  through that frame's content script and CDP key events follow the
+  focused frame. Pointer ops (click/hover/drag) resolve element
+  targets to absolute viewport coordinates through a content-script
+  postMessage geometry chain (`content/frame-geometry.ts`) — every
+  frame answers "where is the iframe hosting you?" with its rect plus
+  its own cumulative offset, so nested, cross-origin and
+  out-of-process iframes all resolve in one hop; `page.geom.absolute`
+  fails `browser.timeout` honestly when the chain cannot be reached.
+  Verified by `cdp-headless`: `key:x,trusted:true` and
+  `down:true up:true` (isTrusted mousedown/mouseup) inside both the
+  same-origin and cross-origin iframe fixtures. Coordinate-form
+  pointer args are already viewport pixels and ignore frameId.
   select/submit/scroll/focus/
   navigate/wait/find and in-memory `browser.page.upload` stay
   programmatic — not gestures.
