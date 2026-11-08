@@ -2416,6 +2416,52 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.action marshals get/set/clear + validates badge args", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const badge = {
+      get: vi.fn(async () => {
+        calls.push({ op: "get", args: [] });
+        return { text: "3", title: "Chromex tasks need attention" };
+      }),
+      set: vi.fn(async (state: unknown) => {
+        calls.push({ op: "set", args: [state] });
+      }),
+    };
+    const h = createToolHostHandler(deps({ actionBadge: badge }));
+    // get is the default and returns LIVE display values
+    const cur = (await h(req("browser.action", {}))) as { text: string; title: string };
+    expect(cur).toEqual({ text: "3", title: "Chromex tasks need attention" });
+    // set validates text/color/title before delegating
+    const s = (await h(req("browser.action", { action: "set", text: "working", color: "#336699", title: "agent busy" }))) as { set: boolean };
+    expect(s.set).toBe(true);
+    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "working", color: "#336699", title: "agent busy" }] });
+    // minimal set — only text
+    await h(req("browser.action", { action: "set", text: "ok" }));
+    expect(calls.at(-1)).toEqual({ op: "set", args: [{ text: "ok" }] });
+    // clear passes null
+    const cl = (await h(req("browser.action", { action: "clear" }))) as { cleared: boolean };
+    expect(cl.cleared).toBe(true);
+    expect(calls.at(-1)).toEqual({ op: "set", args: [null] });
+    // validation rejects BEFORE any chrome call
+    calls.length = 0;
+    await expect(h(req("browser.action", { action: "set" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.action", { action: "set", text: "" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.action", { action: "set", text: "x".repeat(33) })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.action", { action: "set", text: "ok", color: "red" })))
+      .rejects.toMatchObject({ code: "proto.invalid", message: expect.stringContaining("#rrggbb") });
+    await expect(h(req("browser.action", { action: "set", text: "ok", title: "t".repeat(129) })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.action", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    expect(calls).toEqual([]);
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.action", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.dns marshals resolve/permission + validates hostname", async () => {
     const calls: Array<{ op: string; args: unknown[] }> = [];
     const dns = {

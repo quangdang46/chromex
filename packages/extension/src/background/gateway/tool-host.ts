@@ -331,6 +331,14 @@ export interface ToolHostDeps {
     request(permissions: string[]): Promise<boolean | null>;
     remove(permissions: string[]): Promise<boolean | null>;
   } | undefined;
+  /** chrome.action badge/title (browser.action) — the agent's status
+   *  channel on the toolbar icon. set(null) clears the agent badge;
+   *  the host merges it with the attention count so a pending
+   *  approval can never be hidden by agent text. */
+  actionBadge?: {
+    get(): Promise<{ text: string; title: string }>;
+    set(state: { text: string; color?: string; title?: string } | null): Promise<void>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -514,6 +522,7 @@ const SUPPORTED = new Set([
   "browser.power",
   "browser.runtime",
   "browser.permissions",
+  "browser.action",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -3612,6 +3621,49 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return { removed, permissions: perms };
           }
         }
+      }
+      case "browser.action": {
+        // chrome.action badge/title — the agent's always-visible status
+        // channel on the toolbar icon. Not tab-scoped. get reads the
+        // LIVE display values (attention count may override agent
+        // text); set/clear write the agent badge which the host merges
+        // under the attention count.
+        if (!deps.actionBadge) {
+          throw toolError("proto.unsupported", "action badge control is not available on this host");
+        }
+        const api = deps.actionBadge;
+        const action = str(args.action) ?? "get";
+        if (action !== "get" && action !== "set" && action !== "clear") {
+          throw toolError("proto.invalid", "browser.action args.action must be get|set|clear");
+        }
+        if (action === "get") {
+          const cur = await api.get();
+          return { text: cur.text, title: cur.title };
+        }
+        if (action === "clear") {
+          await api.set(null);
+          return { cleared: true };
+        }
+        const text = args.text;
+        if (typeof text !== "string" || text.length === 0 || text.length > 32) {
+          throw toolError("proto.invalid", "browser.action set requires args.text (1-32 chars)");
+        }
+        let color: string | undefined;
+        if (args.color !== undefined && args.color !== null) {
+          if (typeof args.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(args.color)) {
+            throw toolError("proto.invalid", "browser.action args.color must be #rrggbb");
+          }
+          color = args.color;
+        }
+        let title: string | undefined;
+        if (args.title !== undefined && args.title !== null) {
+          if (typeof args.title !== "string" || args.title.length > 128) {
+            throw toolError("proto.invalid", "browser.action args.title must be ≤128 chars");
+          }
+          title = args.title;
+        }
+        await api.set({ text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}) });
+        return { set: true, text, ...(color ? { color } : {}), ...(title !== undefined ? { title } : {}) };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

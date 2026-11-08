@@ -1074,6 +1074,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       origins: { type: "array", items: { type: "string" }, description: "Unsupported — host-origin grants are refused proto.invalid." },
     }),
   },
+  "browser.action": {
+    description:
+      "Toolbar badge/title control (chrome.action) — the agent's always-visible status channel on the browser chrome: show 'working', progress, or warnings without opening any UI. args.action: 'get' (default) returns the LIVE display {text,title} (may show the attention count when approvals are pending — agent text is merged UNDER it, never over it); 'set' writes the agent badge {text required 1–32 chars, optional color #rrggbb, optional title ≤128 chars}; 'clear' removes the agent badge. Set/clear are low-risk cosmetic mutations — no approval needed, task-eligible. On playwright-isolated → proto.unsupported (no browser chrome).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["get", "set", "clear"], description: "Operation (default get)." },
+      text: { type: "string", description: "set: badge text (1–32 chars — Chrome visually truncates beyond ~4)." },
+      color: { type: "string", description: "set: badge background #rrggbb." },
+      title: { type: "string", description: "set: tooltip title (≤128 chars)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

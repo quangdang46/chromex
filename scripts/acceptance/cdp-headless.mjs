@@ -1647,6 +1647,36 @@ await runScenario(
         ...pm,
       };
 
+      // --- action: badge set/get/clear on the real toolbar icon ---
+      // agent text merges UNDER the attention count — verify set→get→
+      // clear round-trips through chrome.action on a live browser.
+      let ac = {};
+      try {
+        const acSet = await runner.browserToolCall(
+          taskId, "browser.action", { action: "set", text: "agent", color: "#336699", title: "chromex agent busy" }, token, 60_000,
+        );
+        ac.setOk = acSet?.status === "completed" && (acSet?.result ?? {}).set === true;
+        const acGet = await runner.browserToolCall(
+          taskId, "browser.action", {}, token, 60_000,
+        );
+        ac.getOk = acGet?.status === "completed" && typeof (acGet?.result ?? {}).text === "string";
+        const acClear = await runner.browserToolCall(
+          taskId, "browser.action", { action: "clear" }, token, 60_000,
+        );
+        ac.clearOk = acClear?.status === "completed" && (acClear?.result ?? {}).cleared === true;
+        const acBad = await runner.browserToolCall(
+          taskId, "browser.action", { action: "set", text: "x".repeat(33) }, token, 60_000,
+        );
+        ac.badTextOk = (acBad?.error?.code ?? "") === "proto.invalid";
+      } catch (e) {
+        ac.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`action → ${JSON.stringify(ac).slice(0, 300)}`);
+      results.action = {
+        ok: ac.setOk === true && ac.getOk === true && ac.clearOk === true && ac.badTextOk === true,
+        ...ac,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

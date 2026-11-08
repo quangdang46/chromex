@@ -492,6 +492,21 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     }
   });
 
+  test("browser.action: get reads free, set/clear low-risk task-eligible", () => {
+    const g = classifyActionRisk(ctx({ action: "browser.action", actionOp: "get" }));
+    expect(g.risk).toBe("read");
+    expect(g.needsApproval).toBe(false);
+    for (const op of ["set", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.action", actionOp: op }));
+      expect(v.risk).toBe("low");
+      expect(v.needsApproval).toBe(false);
+      expect(v.allowTaskEligible).not.toBe(false);
+    }
+    // default op (absent) is get → read
+    const d = classifyActionRisk(ctx({ action: "browser.action" }));
+    expect(d.risk).toBe("read");
+  });
+
   test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
     expect(v.risk).toBe("read");

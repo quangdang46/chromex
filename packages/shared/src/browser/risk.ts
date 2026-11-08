@@ -96,6 +96,9 @@ export interface ActionContext {
    *  state, request shows the user a permission prompt, remove revokes
    *  an optional grant. */
   permissionsOp?: string;
+  /** browser.action sub-action — get reads badge/title; set/clear
+   *  write the toolbar badge (cosmetic, trivially reversible). */
+  actionOp?: string;
   /** browser.userScripts sub-action — list/worlds read script and world
    *  state, register/unregister/update/configureWorld/resetWorld mutate
    *  persistent injections, execute runs one-shot page script. */
@@ -745,6 +748,21 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         reason: op === "request"
           ? "permission request shows a user-visible grant prompt"
           : "permission remove revokes a granted capability",
+      });
+    }
+
+    case "browser.action": {
+      const op = ctx.actionOp ?? "get";
+      if (op === "get") {
+        return verdict("read", { reason: "action badge/title read" });
+      }
+      // Badge text/color/title is cosmetic browser-chrome state —
+      // trivially reversible, no data leaves the browser. Attention
+      // count takes precedence over agent text (see runtime.ts), so a
+      // busy approval can never be hidden by a status badge.
+      return verdict("low", {
+        allowTaskEligible: true,
+        reason: "toolbar badge/title write",
       });
     }
 

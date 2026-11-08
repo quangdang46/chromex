@@ -103,7 +103,7 @@ import {
   contentScriptMaySend,
   validateRuntimeMessage,
 } from "./message-guard.js";
-import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
+import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
 import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets } from "./cdp.js";
@@ -1298,6 +1298,20 @@ const toolHostHandler = createToolHostHandler({
       remove: async (permissions: string[]) => {
         const r = await chrome.permissions.remove({ permissions });
         return typeof r === "boolean" ? r : null;
+      },
+    },
+    actionBadge: {
+      // Merged under the attention count in runtime.renderBadge —
+      // a pending approval always outranks agent status text.
+      get: async () => {
+        const [text, title] = await Promise.all([
+          chrome.action.getBadgeText({}),
+          chrome.action.getTitle({}),
+        ]);
+        return { text: text ?? "", title: title ?? "" };
+      },
+      set: async (state) => {
+        setAgentBadge(state);
       },
     },
     activeTabId: async () => {

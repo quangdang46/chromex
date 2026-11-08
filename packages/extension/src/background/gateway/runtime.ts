@@ -45,6 +45,33 @@ export function setGatewayServerRequestHandler(
   serverRequestHandler = fn;
 }
 
+/** Agent status badge (browser.action) — merged UNDER the attention
+ *  count so a pending approval can never be hidden by agent text. */
+let agentBadge: { text: string; color?: string; title?: string } | null = null;
+let attentionCount = 0;
+
+function renderBadge(): void {
+  const pending = attentionCount;
+  const text = pending > 0 ? String(pending) : agentBadge?.text ?? "";
+  void chrome.action.setBadgeText({ text });
+  if (pending > 0) {
+    void chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+    void chrome.action.setTitle({ title: "Chromex tasks need attention" }).catch(() => undefined);
+  } else if (agentBadge) {
+    void chrome.action.setBadgeBackgroundColor({ color: agentBadge.color ?? "#5f6368" });
+    if (agentBadge.title) {
+      void chrome.action.setTitle({ title: agentBadge.title }).catch(() => undefined);
+    }
+  }
+}
+
+/** browser.action set/clear — writes the agent badge. Attention count
+ *  takes precedence over agent text; clearing only removes agent text. */
+export function setAgentBadge(state: { text: string; color?: string; title?: string } | null): void {
+  agentBadge = state;
+  renderBadge();
+}
+
 async function build(): Promise<GatewayRuntime | null> {
   const settings = await getStoredSettings();
   if (!settings.gatewayMode) return null;
@@ -119,11 +146,8 @@ async function build(): Promise<GatewayRuntime | null> {
       // the action badge is the only always-visible surface. Count of
       // attention-bearing tasks; clears itself when attention resolves.
       try {
-        const pending = tasks.listTasks().filter((t) => t.attention !== null).length;
-        void chrome.action.setBadgeText({ text: pending > 0 ? String(pending) : "" });
-        if (pending > 0) {
-          void chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
-        }
+        attentionCount = tasks.listTasks().filter((t) => t.attention !== null).length;
+        renderBadge();
       } catch {
         /* chrome.action unavailable (tests/stubbed runtime) */
       }
