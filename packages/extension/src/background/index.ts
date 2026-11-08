@@ -523,7 +523,23 @@ const toolHostHandler = createToolHostHandler({
         ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
         ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.UpdateInfo["state"]> } : {}),
       }),
-    removeWindow: async (windowId) => chrome.windows.remove(windowId),
+    // Window destruction crashes headless Chromium outright — both
+    // chrome.windows.remove AND last-tab-close (BUS_ADRALN, reproduced
+    // on CfT 158). Omit the dep on headless so the tool refuses with
+    // proto.unsupported instead of killing the browser.
+    ...(navigator.userAgent.includes("HeadlessChrome")
+      ? {}
+      : {
+          removeWindow: async (windowId: number) => {
+            const tabs = await chrome.tabs.query({ windowId });
+            const removedId = await chrome.windows.remove(windowId);
+            return {
+              windowId: removedId,
+              removed: true,
+              tabsClosed: tabs.filter((t) => typeof t.id === "number").length,
+            };
+          },
+        }),
     ...(chrome.tabGroups
       ? {
           tabGroups: {

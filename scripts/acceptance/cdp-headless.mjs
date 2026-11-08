@@ -1673,12 +1673,21 @@ await runScenario(
         ok: wg.listOk === true && wg.byIdOk === true && wg.lastFocusedOk === true && wg.badIdOk === true,
         ...wg,
       };
-      // NOTE: browser.windows.remove is exercised in s14-windows
-      // (headful). On headless Chrome for Testing, chrome.windows.remove
-      // crashes the whole browser process (BUS_ADRALN — a Chromium
-      // headless-windowing bug, reproduced by calling the API directly
-      // from the SW, unrelated to which window is removed). A leg here
-      // would kill the suite's browser mid-run.
+      // --- windows.remove: window teardown crashes headless Chromium
+      // (chrome.windows.remove AND last-tab-close both BUS_ADRALN) —
+      // the dep is omitted on HeadlessChrome so the tool must refuse
+      // with proto.unsupported instead of killing the browser. ---
+      const wrRes = await runner.browserToolCall(
+        taskId, "browser.windows.remove", { windowId: 1 }, token, 60_000,
+      );
+      const wrErr = wrRes?.error ?? {};
+      results.windowsRemove = {
+        ok: wrRes?.status === "failed" && wrErr.code === "proto.unsupported",
+        status: wrRes?.status ?? null,
+        code: wrErr.code ?? null,
+        msg: String(wrErr.message ?? "").slice(0, 160),
+      };
+      evidence.note(`windows.remove headless → ${JSON.stringify(results.windowsRemove).slice(0, 300)}`);
 
       // --- runtime: no permission needed — verify REAL host info ---
       const rtRes = await runner.browserToolCall(

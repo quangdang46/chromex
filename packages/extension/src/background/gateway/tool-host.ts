@@ -169,7 +169,11 @@ export interface ToolHostDeps {
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
   updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
-  /** chrome.windows.remove — closes the window and every tab in it. */
+  /** chrome.windows.remove — closes the window and every tab in it.
+   *  Absent on headless Chromium (window teardown crashes the browser
+   *  process there — the dep is not registered, so the tool refuses
+   *  with proto.unsupported). Returns {removed, tabsClosed} or throws
+   *  for an unknown windowId. */
   removeWindow?(windowId: number): Promise<unknown>;
   /** chrome.windows.get / getLastFocused (browser.windows.get) —
    *  single-window chrome state, same sanitized shape as listWindows;
@@ -3971,7 +3975,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.windows.remove": {
         // Not tab-scoped: closes the window AND every tab inside it —
         // blast radius is tab.close × N, so risk classification keeps
-        // it approval-gated and never task-eligible.
+        // it approval-gated and never task-eligible. The dep closes
+        // the window's tabs (chrome.windows.remove itself crashes
+        // headless Chromium) and reports what actually happened.
         if (!deps.removeWindow) {
           throw toolError("proto.unsupported", "window remove is not available on this host");
         }
@@ -3979,8 +3985,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (typeof windowId !== "number" || !Number.isInteger(windowId)) {
           throw toolError("proto.invalid", "browser.windows.remove requires integer args.windowId");
         }
-        await deps.removeWindow(windowId);
-        return { removed: windowId };
+        const res = await deps.removeWindow(windowId);
+        return typeof res === "object" && res !== null ? res : { removed: windowId };
       }
       case "browser.page.network": {
         // Requests span frames — args.frameId filters to requests a

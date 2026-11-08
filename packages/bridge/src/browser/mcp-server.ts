@@ -1169,7 +1169,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.windows.remove": {
     description:
-      "Close an entire window and every tab inside it (chrome.windows.remove). windowId comes from browser.windows.list. IRREVERSIBLE for all tabs in the window — always requires approval and is never task-eligible. Not tab-scoped. CAUTION on headless Chromium builds: chrome.windows.remove crashes the browser process there (Chromium headless bug) — on such hosts prefer closing the window's tabs via browser.tab.close instead. On playwright-isolated → proto.unsupported.",
+      "Close an entire window and every tab inside it (chrome.windows.remove). Returns {removed, tabsClosed}. windowId comes from browser.windows.list. IRREVERSIBLE for all tabs in the window — always requires approval and is never task-eligible. Not tab-scoped. On headless Chromium builds → proto.unsupported: window teardown crashes the whole browser process there (Chromium headless bug — reproduced on Chrome for Testing; closing the last tab crashes it too, so there is no safe in-browser fallback). On playwright-isolated → proto.unsupported.",
     inputSchema: objectSchema(
       {
         windowId: { type: "integer", description: "Window id from browser.windows.list (required)." },

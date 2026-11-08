@@ -362,10 +362,10 @@ describe("tool host (P1-09)", () => {
   test("windows.remove requires integer windowId and forwards to chrome.windows.remove", async () => {
     const d = deps();
     const calls: number[] = [];
-    d.removeWindow = async (id) => { calls.push(id); };
+    d.removeWindow = async (id) => { calls.push(id); return { windowId: id, removed: true, tabsClosed: 2 }; };
     const h = createToolHostHandler(d);
     const res = await h(req("browser.windows.remove", { windowId: 7 }));
-    expect(res).toEqual({ removed: 7 });
+    expect(res).toEqual({ windowId: 7, removed: true, tabsClosed: 2 });
     expect(calls).toEqual([7]);
     await expect(h(req("browser.windows.remove", {}))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.windows.remove", { windowId: "x" }))).rejects.toMatchObject({ code: "proto.invalid" });

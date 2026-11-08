@@ -121,7 +121,7 @@ await runScenario(
       const afterRm = result(await call("browser.windows.list"));
       const stillThere = (afterRm.windows ?? []).some((w) => w.id === windowId);
       evidence.note(`post-remove window present=${stillThere} (host alive = list answered)`);
-      if (rmRes?.status === "failed" || rmResult.removed !== windowId) {
+      if (rmRes?.status === "failed" || rmResult.removed !== true) {
         return { status: "FAIL", summary: `windows.remove failed (${JSON.stringify(rmRes).slice(0, 200)})`, details: { rmRes } };
       }
       if (stillThere) {
