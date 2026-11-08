@@ -2059,7 +2059,7 @@ async function cdpLocatePoint(
     if (loc?.reason === "ambiguous") {
       throw toolError("browser.ambiguous_target", `target matches ${loc.count ?? "multiple"} elements`);
     }
-    throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+    throw toolError("browser.element_not_found", "no element matched ref/selector/label — take a fresh browser.page.snapshot and target a returned ref/label instead of guessing selectors");
   }
   return {
     x: loc.x,
@@ -2112,7 +2112,7 @@ async function frameAbsolutePoint(
     if (res?.reason === "frame_geometry_unavailable") {
       throw toolError("browser.timeout", "could not resolve iframe geometry for trusted dispatch");
     }
-    throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+    throw toolError("browser.element_not_found", "no element matched ref/selector/label — take a fresh browser.page.snapshot and target a returned ref/label instead of guessing selectors");
   }
   return {
     x: res.x,
@@ -3298,7 +3298,7 @@ async function setInputFiles(
       if (markRes?.reason === "ambiguous") {
         throw toolError("browser.ambiguous_target", `target matches ${markRes.count ?? "multiple"} elements`);
       }
-      throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+      throw toolError("browser.element_not_found", "no element matched ref/selector/label — take a fresh browser.page.snapshot and target a returned ref/label instead of guessing selectors");
     }
   }
 

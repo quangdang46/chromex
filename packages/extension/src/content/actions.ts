@@ -307,7 +307,13 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
         ? document.activeElement
         : null);
     if (!resolvedElement && step.action !== "scroll" && step.action !== "press" && step.action !== "selectAll") {
-      return { step, ok: false, message: "Target element was not found.", code: "browser.element_not_found" };
+      return {
+        step,
+        ok: false,
+        message:
+          "Target element was not found — take a fresh browser.page.snapshot and target a returned ref/label instead of guessing selectors.",
+        code: "browser.element_not_found",
+      };
     }
 
     if (step.action === "scroll") {

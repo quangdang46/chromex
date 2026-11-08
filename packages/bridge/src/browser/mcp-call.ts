@@ -122,7 +122,10 @@ async function main(): Promise<void> {
           description?: string;
           inputSchema?: {
             required?: string[];
-            properties?: Record<string, { description?: string }>;
+            properties?: Record<
+              string,
+              { description?: string; enum?: Array<string | number> }
+            >;
           };
         }>;
       })?.tools) ?? [];
@@ -130,8 +133,17 @@ async function main(): Promise<void> {
       const desc = (t.description ?? "").split("\n")[0]?.slice(0, 100) ?? "";
       const schema = t.inputSchema;
       const args = schema?.properties
-        ? Object.keys(schema.properties)
-            .map((k) => (schema.required?.includes(k) ? `${k}*` : k))
+        ? Object.entries(schema.properties)
+            .map(([k, prop]) => {
+              const req = schema.required?.includes(k) ? "*" : "";
+              // enum values inline — models kept guessing invalid args
+              // (e.g. snapshot mode:"compact") because --list hid them.
+              const variants =
+                Array.isArray(prop?.enum) && prop.enum.length > 0
+                  ? `(${prop.enum.join("|")})`
+                  : "";
+              return `${k}${req}${variants}`;
+            })
             .join(",")
         : "";
       process.stdout.write(`${t.name} — ${desc}${args ? ` [args: ${args}]` : ""}\n`);
