@@ -1,0 +1,72 @@
+{
+  "scenario": "iframe-headless",
+  "runId": "2026-11-08T08-14-57-992Z-b74ac9",
+  "status": "FAIL",
+  "summary": "same={\"ok\":true,\"clickStatus\":\"completed\",\"frameId\":3} cross={\"ok\":true,\"clickStatus\":\"completed\",\"frameId\":4} shadow={\"snapStatus\":\"completed\",\"snapId\":\"snap:7b584ddb-09a3-4ba6-9210-6af2e4de1972\",\"ref\":null} sameHit=true crossHit=true rejected=true badFrameFailed=true",
+  "durationMs": 11388,
+  "details": {
+    "results": {
+      "same-origin": {
+        "ok": true,
+        "clickStatus": "completed",
+        "frameId": 3
+      },
+      "cross-origin": {
+        "ok": true,
+        "clickStatus": "completed",
+        "frameId": 4
+      },
+      "evaluate": {
+        "ok": true,
+        "top": "/iframe-parent",
+        "frame": "http://localhost:58691"
+      }
+    },
+    "shadow": {
+      "snapStatus": "completed",
+      "snapId": "snap:7b584ddb-09a3-4ba6-9210-6af2e4de1972",
+      "ref": null
+    },
+    "sameHit": true,
+    "crossHit": true,
+    "rejected": true,
+    "badFrameFailed": true,
+    "hits": [
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "at": 1794125704163
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "src": "http://127.0.0.1:58691",
+        "at": 1794125704163
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "at": 1794125705045
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "src": "http://localhost:58691",
+        "at": 1794125705046
+      }
+    ]
+  },
+  "notes": [
+    "[2026-11-08T08:15:03.393Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T08:15:03.834Z] frames=[{\"frameId\":0,\"url\":\"http://127.0.0.1:58691/iframe-parent\",\"parentFrameId\":-1},{\"frameId\":3,\"url\":\"http://127.0.0.1:58691/iframe-child\",\"parentFrameId\":0},{\"frameId\":4,\"url\":\"http://localhost:58691/iframe-child\",\"parentFrameId\":0}]",
+    "[2026-11-08T08:15:04.110Z] same-origin frame=3 snapshot=completed snapId=snap:a76359ff-83d1-4da6-96f3-32931c991e8d ref=dom-1",
+    "[2026-11-08T08:15:04.776Z] same-origin click → {\"toolCallId\":\"rpc-mw7k4d67-7hdaal\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+    "[2026-11-08T08:15:05.035Z] cross-origin frame=4 snapshot=completed snapId=snap:d84616a1-277f-4a4c-b9ca-ad8d76aba002 ref=dom-1",
+    "[2026-11-08T08:15:05.651Z] cross-origin click → {\"toolCallId\":\"rpc-mw7k4dvv-wycsh4\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+    "[2026-11-08T08:15:05.651Z] frame-hit beacons=[{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794125704163},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://127.0.0.1:58691\",\"at\":1794125704163},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794125705045},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://localhost:58691\",\"at\":1794125705046}]",
+    "[2026-11-08T08:15:05.912Z] shadow-in-frame click → {\"snapStatus\":\"completed\",\"snapId\":\"snap:7b584ddb-09a3-4ba6-9210-6af2e4de1972\",\"ref\":null}",
+    "[2026-11-08T08:15:06.437Z] cross-frame snapshotId click → {\"toolCallId\":\"rpc-mw7k4eyk-5xoz15\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot was captured in a different frame; call browser.page.snapshot with the same args.frameId\"}}",
+    "[2026-11-08T08:15:08.235Z] evaluate top=\"/iframe-parent\" frame=\"http://localhost:58691\"",
+    "[2026-11-08T08:15:09.379Z] frameId=99999 → {\"toolCallId\":\"rpc-mw7k4gcs-sa0gux\",\"tool\":\"browser.page.snapshot\",\"status\":\"failed\",\"error\":{\"code\":\"internal\",\"message\":\"internal: No frame with id 99999 in tab with id 484959283\"}}"
+  ]
+}

@@ -240,6 +240,16 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <p id="pout">none</p>
 <input id="ffile" type="file" onchange="document.getElementById('fout2').textContent='files:'+Array.from(event.target.files).map(f=>f.name).join(',')" />
 <p id="fout2">none</p>
+<div id="sh-host" style="position:absolute;top:8px;right:8px"></div>
+<script>
+(function(){
+  var r = document.getElementById('sh-host').attachShadow({mode:'open'});
+  r.innerHTML = '<button id="sfb">shadow-child-btn</button><input id="sfin">';
+  r.getElementById('sfb').addEventListener('click', function(){
+    document.getElementById('fout').textContent = 'shadow-child-hit';
+  });
+})();
+</script>
 </body></html>`,
 
   // keyboard + file-input proof: echoes the last key pressed, shows

@@ -98,6 +98,35 @@ await runScenario(
       const sameHit = hits.some((h) => h.src === `http://127.0.0.1:${fixture.port}`);
       const crossHit = hits.some((h) => h.src === `http://localhost:${fixture.port}`);
 
+      // open shadow DOM inside the same-origin frame: the frame's own
+      // content script must deep-query its document for snapshot,
+      // target resolution and dispatch.
+      const shSnap = await runner.browserToolCall(
+        taskId, "browser.page.snapshot", { frameId: sameFrame.frameId }, token, 60_000,
+      );
+      const shSnapId = findSnapshotId(shSnap);
+      const shRef = refForLabel(shSnap, "shadow-child-btn");
+      let shadowOk = false;
+      let shadowDetail = null;
+      if (shSnapId && shRef) {
+        const shClick = await runner.browserToolCall(
+          taskId, "browser.page.click",
+          { ref: shRef, snapshotId: shSnapId, frameId: sameFrame.frameId },
+          token, 60_000,
+        );
+        const shOut = await runner.browserToolCall(
+          taskId, "browser.page.extract",
+          { selector: "#fout", frameId: sameFrame.frameId },
+          token, 60_000,
+        );
+        const outText = shOut?.result?.text ?? shOut?.text ?? "";
+        shadowOk = shClick?.status === "completed" && String(outText).includes("shadow-child-hit");
+        shadowDetail = { click: shClick?.status, out: String(outText).slice(0, 80) };
+      } else {
+        shadowDetail = { snapStatus: shSnap?.status, snapId: shSnapId, ref: shRef };
+      }
+      evidence.note(`shadow-in-frame click → ${JSON.stringify(shadowDetail)}`);
+
       // negative: top-frame snapshotId must not drive a child frame
       const topSnap = await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
       const topSnapId = findSnapshotId(topSnap);
@@ -165,13 +194,14 @@ await runScenario(
         results["same-origin"]?.ok === true &&
         results["cross-origin"]?.ok === true &&
         results.evaluate?.ok === true &&
+        shadowOk &&
         sameHit && crossHit && rejected && badFrameFailed;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "frameId end-to-end on real extension: snapshot+click/evaluate inside same- AND cross-origin iframes (incl. OOPIF MAIN world); cross-frame snapshotId refused; bad frameId fails honestly"
-          : `same=${JSON.stringify(results["same-origin"])} cross=${JSON.stringify(results["cross-origin"])} sameHit=${sameHit} crossHit=${crossHit} rejected=${rejected} badFrameFailed=${badFrameFailed}`,
-        details: { results, sameHit, crossHit, rejected, badFrameFailed, hits },
+          ? "frameId end-to-end on real extension: snapshot+click/evaluate inside same- AND cross-origin iframes (incl. OOPIF MAIN world + open shadow DOM); cross-frame snapshotId refused; bad frameId fails honestly"
+          : `same=${JSON.stringify(results["same-origin"])} cross=${JSON.stringify(results["cross-origin"])} shadow=${JSON.stringify(shadowDetail)} sameHit=${sameHit} crossHit=${crossHit} rejected=${rejected} badFrameFailed=${badFrameFailed}`,
+        details: { results, shadow: shadowDetail, sameHit, crossHit, rejected, badFrameFailed, hits },
       };
     } finally {
       await fixture.close();
