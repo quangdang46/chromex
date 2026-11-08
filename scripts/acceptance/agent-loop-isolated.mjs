@@ -215,6 +215,33 @@ try {
   const dzOut = await call("browser.page.extract", { tabId: kTab, selector: "#dzout" });
   assert(String(dzOut?.text ?? "").includes("agent-drop.bin"), `drop zone received file (got "${dzOut?.text}")`);
 
+  // Emulation parity: UA/timezone/metrics go through the page's CDP
+  // session — same Emulation.* commands the extension debugger tier sends.
+  const emu = await call("browser.page.emulate", {
+    tabId: kTab,
+    userAgent: "ChromexAcceptance/1.0",
+    timezoneId: "America/New_York",
+    width: 800,
+    height: 600,
+    deviceScaleFactor: 2,
+    mobile: true,
+  });
+  assert(emu?.ok === true && emu?.applied?.includes("userAgent"), `emulate applied (${JSON.stringify(emu?.applied)})`);
+  const emuCheck = await call("browser.page.evaluate", {
+    tabId: kTab,
+    expression: "JSON.stringify({ua:navigator.userAgent,t2:Intl.DateTimeFormat().resolvedOptions().timeZone,dpr:window.devicePixelRatio})",
+  });
+  const emuState = JSON.parse(String(emuCheck?.value ?? "{}"));
+  assert(emuState.ua === "ChromexAcceptance/1.0", `userAgent emulated (got ${emuState.ua})`);
+  assert(emuState.t2 === "America/New_York", `timezone emulated (got ${emuState.t2})`);
+  assert(emuState.dpr === 2, `deviceScaleFactor emulated (dpr=${emuState.dpr})`);
+  await call("browser.page.emulate", { tabId: kTab, reset: true });
+  const emuReset = await call("browser.page.evaluate", {
+    tabId: kTab,
+    expression: "JSON.stringify({dpr:window.devicePixelRatio})",
+  });
+  assert(JSON.parse(String(emuReset?.value ?? "{}")).dpr !== 2, "emulate reset cleared deviceScaleFactor");
+
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {
     url: fixture.url("/dl"),

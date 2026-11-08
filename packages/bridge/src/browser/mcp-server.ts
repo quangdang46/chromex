@@ -332,7 +332,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.emulate": {
     description:
-      "Apply browser emulation overrides to the tab via the debugger tier (chrome-extension backend): viewport (width/height/deviceScaleFactor/mobile/screenWidth/screenHeight), userAgent, timezoneId, geolocation {latitude,longitude,accuracy?}, media (colorScheme light|dark|no-preference, reducedMotion reduce|no-preference), cpuThrottle (1–20), network {offline,latency,downloadThroughput,uploadThroughput}. Overrides persist until args.reset:true or tab close — the debugging infobar stays while active. Tab-scoped; args.frameId unsupported.",
+      "Apply browser emulation overrides to the tab: viewport (width/height/deviceScaleFactor/mobile/screenWidth/screenHeight), userAgent, timezoneId, geolocation {latitude,longitude,accuracy?}, media (colorScheme light|dark|no-preference, reducedMotion reduce|no-preference), cpuThrottle (1–20), network {offline,latency,downloadThroughput,uploadThroughput}. Both backends implement the full set — chrome-extension via the debugger tier, playwright-isolated via a per-page CDP session (same Emulation.* commands). Overrides persist until args.reset:true or tab close — on chrome-extension the debugging infobar stays while active. Tab-scoped; args.frameId unsupported.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       reset: { type: "boolean", description: "Clear all emulation overrides and release the debugger session." },

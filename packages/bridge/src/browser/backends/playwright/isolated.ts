@@ -88,6 +88,7 @@ type PwBrowserContext = import("playwright-core").BrowserContext;
 type PwPage = import("playwright-core").Page;
 type PwDownload = import("playwright-core").Download;
 type PwRequest = import("playwright-core").Request;
+type PwCDPSession = import("playwright-core").CDPSession;
 
 /** One observed network request — mirrors browser.page.network entries
  *  on chrome-extension (metadata only, bodies never captured). */
@@ -149,6 +150,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** in-flight request → its log entry, for status/error/mime backfill */
   readonly #pendingRequests = new Map<PwRequest, NetworkLogEntry>();
   #closed = false;
+  /** page → CDP session for Emulation.* overrides — playwright's own
+   *  viewport/media API covers only a subset; the rest map 1:1 onto
+   *  the same commands the extension debugger tier sends. WeakMap so
+   *  closed pages release their session handle. */
+  readonly #cdpSessions = new WeakMap<PwPage, PwCDPSession>();
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
@@ -552,30 +558,111 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return { ok: true, value: JSON.parse(serialized) as unknown, truncated: false };
   }
 
+  /** Lazily attach a CDP session to the page — Emulation.* overrides
+   *  beyond playwright's viewport/media subset go through the same
+   *  commands the extension debugger tier sends. */
+  async #emulationSession(page: PwPage): Promise<PwCDPSession> {
+    const cached = this.#cdpSessions.get(page);
+    if (cached) return cached;
+    const session = await page.context().newCDPSession(page);
+    this.#cdpSessions.set(page, session);
+    return session;
+  }
+
   async #emulate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
-    // Honest subset: playwright gives per-page viewport + media
-    // emulation only. UA/timezone/geo/cpu/network are context- or
-    // CDP-level — refuse rather than silently drop.
-    const unsupported = ["userAgent", "timezoneId", "geolocation", "cpuThrottle", "network", "deviceScaleFactor", "mobile", "screenWidth", "screenHeight"]
-      .filter((k) => args[k] !== undefined);
-    if (unsupported.length > 0) {
-      throw protocolError("proto.unsupported", `playwright-isolated cannot emulate ${unsupported.join(", ")} (viewport/colorScheme/reducedMotion only)`);
-    }
     const applied: string[] = [];
+    let cdpSession: PwCDPSession | null = null;
+    const cdp = async (): Promise<PwCDPSession> =>
+      (cdpSession ??= await this.#emulationSession(page));
+
     if (args.reset === true) {
-      // playwright accepts null to restore the context default viewport.
-      await (page.setViewportSize as unknown as (v: null) => Promise<void>)(null);
-      await page.emulateMedia({});
-      return { ok: true, reset: true, applied: ["viewport", "media"] };
+      // playwright's setViewportSize/emulateMedia are themselves CDP
+      // Emulation.* overrides under the hood — clearing them via the
+      // session covers every path (including width/height-only calls
+      // that never touched this session).
+      const s = await cdp();
+      await Promise.allSettled([
+        s.send("Emulation.clearDeviceMetricsOverride"),
+        s.send("Emulation.setTimezoneOverride", { timezoneId: "" }),
+        s.send("Emulation.setGeolocationOverride", {}),
+        s.send("Emulation.setEmulatedMedia", { features: [] }),
+        s.send("Emulation.setCPUThrottlingRate", { rate: 1 }),
+        s.send("Network.emulateNetworkConditions", {
+          offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+        }),
+        // {} clears the override — same as the extension reset path;
+        // the protocol type marks userAgent required but accepts {}.
+        s.send("Emulation.setUserAgentOverride", {} as never),
+      ]);
+      return { ok: true, reset: true, applied: ["viewport", "media", "device", "network"] };
     }
-    const width = args.width, height = args.height;
-    if (width !== undefined || height !== undefined) {
-      if (typeof width !== "number" || typeof height !== "number") {
-        throw protocolError("proto.invalid", "emulate width/height must be numbers provided together");
+
+    const emuNum = (v: unknown, name: string, min: number, max: number): number | undefined => {
+      if (v === undefined || v === null) return undefined;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) {
+        throw protocolError("proto.invalid", `args.${name} must be a number in [${min}, ${max}]`);
       }
-      await page.setViewportSize({ width, height });
+      return v;
+    };
+    const emuStr = (v: unknown, name: string, max = 512): string | undefined => {
+      if (v === undefined || v === null) return undefined;
+      if (typeof v !== "string" || v.length === 0 || v.length > max) {
+        throw protocolError("proto.invalid", `args.${name} must be a non-empty string ≤${max} chars`);
+      }
+      return v;
+    };
+
+    // Metrics group: width/height alone stay on playwright's viewport
+    // API; deviceScaleFactor/mobile/screen* need CDP setDeviceMetricsOverride
+    // (same command playwright itself sends) — and like the extension
+    // tier, any metrics arg requires width+height together.
+    const width = emuNum(args.width, "width", 100, 7680);
+    const height = emuNum(args.height, "height", 100, 7680);
+    const dsf = emuNum(args.deviceScaleFactor, "deviceScaleFactor", 0.5, 4);
+    const mobile = typeof args.mobile === "boolean" ? args.mobile : undefined;
+    const screenWidth = emuNum(args.screenWidth, "screenWidth", 100, 7680);
+    const screenHeight = emuNum(args.screenHeight, "screenHeight", 100, 7680);
+    if (width !== undefined || height !== undefined || dsf !== undefined || mobile !== undefined || screenWidth !== undefined || screenHeight !== undefined) {
+      if (width === undefined || height === undefined) {
+        throw protocolError("proto.invalid", "emulate width/height must be provided together");
+      }
+      if (dsf !== undefined || mobile !== undefined || screenWidth !== undefined || screenHeight !== undefined) {
+        await (await cdp()).send("Emulation.setDeviceMetricsOverride", {
+          width, height,
+          deviceScaleFactor: dsf ?? 1,
+          mobile: mobile ?? false,
+          ...(screenWidth !== undefined ? { screenWidth } : {}),
+          ...(screenHeight !== undefined ? { screenHeight } : {}),
+        });
+      } else {
+        await page.setViewportSize({ width, height });
+      }
       applied.push("viewport");
+    }
+
+    const ua = emuStr(args.userAgent, "userAgent", 1024);
+    if (ua !== undefined) {
+      await (await cdp()).send("Emulation.setUserAgentOverride", { userAgent: ua });
+      applied.push("userAgent");
+    }
+    const tz = emuStr(args.timezoneId, "timezoneId", 128);
+    if (tz !== undefined) {
+      await (await cdp()).send("Emulation.setTimezoneOverride", { timezoneId: tz });
+      applied.push("timezone");
+    }
+    const geo = args.geolocation as Record<string, unknown> | undefined;
+    if (geo !== undefined) {
+      const latitude = emuNum(geo?.latitude, "geolocation.latitude", -90, 90);
+      const longitude = emuNum(geo?.longitude, "geolocation.longitude", -180, 180);
+      const accuracy = emuNum(geo?.accuracy, "geolocation.accuracy", 0, 100000);
+      if (latitude === undefined || longitude === undefined) {
+        throw protocolError("proto.invalid", "args.geolocation requires latitude and longitude");
+      }
+      await (await cdp()).send("Emulation.setGeolocationOverride", {
+        latitude, longitude, accuracy: accuracy ?? 100,
+      });
+      applied.push("geolocation");
     }
     const media: { colorScheme?: "light" | "dark" | "no-preference"; reducedMotion?: "reduce" | "no-preference" } = {};
     if (args.colorScheme !== undefined) {
@@ -593,6 +680,22 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (Object.keys(media).length > 0) {
       await page.emulateMedia(media);
       applied.push("media");
+    }
+    const cpu = emuNum(args.cpuThrottle, "cpuThrottle", 1, 20);
+    if (cpu !== undefined) {
+      await (await cdp()).send("Emulation.setCPUThrottlingRate", { rate: cpu });
+      applied.push("cpuThrottle");
+    }
+    const net = args.network as Record<string, unknown> | undefined;
+    if (net !== undefined) {
+      const offline = net.offline === true;
+      const latency = emuNum(net.latency, "network.latency", 0, 60000) ?? -1;
+      const down = emuNum(net.downloadThroughput, "network.downloadThroughput", -1, 1e10) ?? -1;
+      const up = emuNum(net.uploadThroughput, "network.uploadThroughput", -1, 1e10) ?? -1;
+      await (await cdp()).send("Network.emulateNetworkConditions", {
+        offline, latency, downloadThroughput: down, uploadThroughput: up,
+      });
+      applied.push("network");
     }
     if (applied.length === 0) {
       throw protocolError("proto.invalid", "browser.page.emulate requires at least one override arg (or args.reset)");
