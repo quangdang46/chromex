@@ -1,0 +1,40 @@
+{
+  "scenario": "s3-multitab",
+  "runId": "2026-11-08T08-19-21-040Z-7894ac",
+  "status": "PASS",
+  "summary": "two tasks held isolated tab scopes; cross-task tab access refused; popup acquired into opener's scope",
+  "durationMs": 7613,
+  "details": {
+    "tabA": 2131349600,
+    "tabB": 2131349601,
+    "ownOk": true,
+    "crossDenied": true,
+    "sawB": false,
+    "popupOk": true,
+    "popupDetail": "popupTabId=2131349602 aGet=completed bDenied=true",
+    "cross": {
+      "toolCallId": "rpc-mw7k9znr-shzlqf",
+      "tool": "browser.page.get",
+      "status": "failed",
+      "error": {
+        "code": "browser.not_in_scope",
+        "message": "tab 2131349601 is outside this task's tab scope"
+      }
+    },
+    "getA": "completed",
+    "getB": "completed"
+  },
+  "notes": [
+    "[2026-11-08T08:19:25.179Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T08:19:25.191Z] taskA=01M6X3V9W0CA3D0QJ8RPW9XQ5R taskB=01M6X3V9W5GS8ZZ6PKS4TRGRJ1",
+    "[2026-11-08T08:19:25.207Z] taskA tab.create → {\"toolCallId\":\"rpc-mw7k9ymf-vpmzj5\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":2131349600,\"tabId\":2131349600,\"resolvedTabId\":2131349600,\"id\":2131349600,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+    "[2026-11-08T08:19:25.217Z] taskB tab.create → {\"toolCallId\":\"rpc-mw7k9ymw-prhkt1\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":2131349601,\"tabId\":2131349601,\"resolvedTabId\":2131349601,\"id\":2131349601,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+    "[2026-11-08T08:19:25.217Z] tabA=2131349600 tabB=2131349601",
+    "[2026-11-08T08:19:26.534Z] A sees: {\"id\":2131349600,\"tabId\":2131349600,\"url\":\"http://127.0.0.1:59297/\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":2131349600,\"windowId\":2131349598,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":720,",
+    "[2026-11-08T08:19:26.534Z] B sees: {\"id\":2131349601,\"tabId\":2131349601,\"url\":\"http://127.0.0.1:59297/form\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":2131349601,\"windowId\":2131349598,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":",
+    "[2026-11-08T08:19:26.536Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw7k9znr-shzlqf\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.not_in_scope\",\"message\":\"tab 2131349601 is outside this task's tab scope\"}}",
+    "[2026-11-08T08:19:27.499Z] A popup click → {\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"selector\":\"#pop\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"open popup\",\"tagName\":\"a\",\"href\":\"http://127.0.0.1:59297/popup-target\",\"pageOrigin\":\"http://127.0.0.1:59297\",\"pageUrl\":\"http://127.0.0.1:59297/popup\"}},\"ok\":true,\"message\":\"Clicked open popup.\",\"verified\":\"unknown\"},\"ver",
+    "[2026-11-08T08:19:28.561Z] A→popup get: completed {\"id\":2131349602,\"tabId\":2131349602,\"url\":\"http://127.0.0.1:59297/popup-target\",\"title\":\"Popup Target Page\",\"active\":true,\"resolvedTabId\":2131349602,\"windowId\":2131349598,\"status\":\"complete\",\"pinned\":; B→popup: {\"status\":\"failed\",\"err\":\"{\\\"code\\\":\\\"browser.not_in_scope\\\",\\\"message\\\":\\\"tab 2131349602 is outside this task's tab scope\\\"}\"}",
+    "[2026-11-08T08:19:28.561Z] popup acquisition: popupTabId=2131349602 aGet=completed bDenied=true"
+  ]
+}
