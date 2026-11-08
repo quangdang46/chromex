@@ -11,13 +11,15 @@ describe("backend capabilities", () => {
     const caps = DEFAULT_BACKEND_CAPABILITIES["chrome-extension"];
     expect(caps.iframe).toBe("all");
     // CDP tier (docs/adr/debugger-tier.md, cdp-headless verified):
-    // real AX tree + JS dialog handling. trustedGesture/filePicker
-    // stay false — only click has a trusted path; the native picker
-    // is still unreachable.
+    // real AX tree + JS dialog handling + trusted paths on every
+    // gesture tool. filePicker stays false — the native picker is
+    // still unreachable.
     expect(caps.nativeDialogs).toBe(true);
     expect(caps.accessibility).toBe(true);
     expect(caps.networkBodies).toBe(true);
-    expect(caps.trustedGesture).toBe(false);
+    // Every gesture-bearing tool has a verified args.trusted CDP path;
+    // select/submit/scroll/etc. are programmatic, not gestures.
+    expect(caps.trustedGesture).toBe(true);
     expect(caps.filePicker).toBe(false);
     expect(caps.existingUserTabs).toBe(true);
   });

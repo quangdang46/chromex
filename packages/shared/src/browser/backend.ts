@@ -106,9 +106,11 @@ export interface BrowserBackendCapabilities {
  * (Input.dispatchMouseEvent/dispatchKeyEvent → isTrusted=true), file
  * inputs by absolute
  * path (browser.page.setInputFiles), response bodies
- * (browser.page.responseBody). trustedGesture stays false — only click,
- * press and type have trusted paths; fill/drag/hover/select/submit
- * remain untrusted DOM events. filePicker stays false — setInputFiles ≠ the native picker.
+ * (browser.page.responseBody). trustedGesture is true — every
+ * gesture-bearing tool (click/press/type/fill/hover/drag) has a
+ * verified args.trusted CDP path; select/submit/scroll/focus/
+ * navigate/wait/find and in-memory upload are programmatic, not
+ * gestures. filePicker stays false — setInputFiles ≠ the native picker.
  * playwright-isolated: isolated profile, no user session/tabs; iframe "all"
  * stays PROVISIONAL until spike-B4 frame tests pass — default reported
  * conservatively as "none" until then? NO: plan marks it PROVISIONAL(spike-B4),
@@ -135,9 +137,12 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // CDP Page.javascriptDialogOpening/handleJavaScriptDialog.
     nativeDialogs: true,
     filePicker: false,
-    // Only browser.page.click/press/type/fill/hover/drag args.trusted are trusted; the rest
-    // of the input surface is still untrusted DOM events.
-    trustedGesture: false,
+    // Every gesture-bearing tool has a verified CDP trusted path
+    // (click/press/type/fill/hover/drag args.trusted). What stays
+    // synthetic is non-gesture by nature: select/submit/scroll/focus/
+    // navigate/wait/find, and browser.page.upload's in-memory bytes
+    // (real files go through setInputFiles instead).
+    trustedGesture: true,
     browserChrome: false,
     tabCreate: true,
     consoleCapture: true,

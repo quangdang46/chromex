@@ -75,14 +75,15 @@ for Testing:
 - Capability claims (updated after `cdp-headless` PASS, not before):
   `accessibility: true` (snapshot `mode:"aria"`), `nativeDialogs: true`
   (`browser.page.dialog`), `networkBodies: true`
-  (`browser.page.responseBody`). `trustedGesture` stays `false` — only
-  `browser.page.click`, `browser.page.press`, `browser.page.type`,
-  `browser.page.fill`, `browser.page.hover` and `browser.page.drag`
-  (`args.trusted`; press/type/fill share a US-layout key table; fill =
-  focus → select-all → Backspace → per-char keys; drag = press →
-  interpolated moves → release; element targets are focused/located
-  through the content script first) have trusted paths; select/submit
-  remain untrusted DOM events.
+  (`browser.page.responseBody`). `trustedGesture` is `true` — every
+  gesture-bearing tool has a verified `args.trusted` path:
+  `browser.page.click` (Input.dispatchMouseEvent), `press`/`type`/`fill`
+  (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →
+  select-all → Backspace → per-char keys), `hover` and `drag` (mouse
+  move / press→moves→release). Element targets are focused/located
+  through the content script first. select/submit/scroll/focus/
+  navigate/wait/find and in-memory `browser.page.upload` stay
+  programmatic — not gestures.
   `filePicker` stays `false` —
   `browser.page.setInputFiles` writes `input.files` by path; the native
   picker UI remains unreachable.
