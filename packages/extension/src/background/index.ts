@@ -632,7 +632,12 @@ function safeCreateContextMenu(properties: chrome.contextMenus.CreateProperties)
     return;
   }
   chrome.contextMenus.remove(id, () => {
-    consumeContextMenuRuntimeError(`remove ${id}`);
+    // Removing an absent item is the normal first-install path — only
+    // surface real failures, not "Cannot find menu item".
+    const message = chrome.runtime.lastError?.message;
+    if (message && !/cannot find menu item/i.test(message)) {
+      consumeContextMenuRuntimeError(`remove ${id}`);
+    }
     createMenuItem();
   });
 }
