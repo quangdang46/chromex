@@ -868,6 +868,7 @@ try {
   await expectReject("browser.sessions", { action: "list" }, "does not support", "sessions refused on isolated (closed pages cannot reopen)");
   await expectReject("browser.proxy", { action: "get" }, "does not support", "proxy refused on isolated (fixed at launch)");
   await expectReject("browser.privacy", { action: "get" }, "does not support", "privacy refused on isolated (browser-global settings)");
+  await expectReject("browser.management", { action: "list" }, "does not support", "management refused on isolated (no extension inventory)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

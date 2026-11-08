@@ -921,6 +921,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
     }),
   },
+  "browser.management": {
+    description:
+      "Inventory and control the browser's installed extensions/apps/themes (chrome.management) — the extension layer running in every tab. args.action: 'list' (default) returns sanitized entries {id, name, version, enabled, type, installType, permissions, hostPermissions, mayDisable, mayEnable, disabledReason, self?} capped by args.maxResults (1–200, default 100; 'self' marks the Chromex extension itself); 'get' returns one entry by args.id; 'setEnabled' toggles args.enabled for args.id; 'uninstall' removes args.id (Chrome shows its own confirm dialog for other extensions — the result reports what actually happened). args.id is the extension id from a list/get entry (1–128 chars). The Chromex extension itself can never be disabled or uninstalled — args.id equal to it → proto.invalid. 'setEnabled'/'uninstall' ALWAYS require approval and are never task-eligible — they change what code runs in every tab. On chrome-extension requires the optional 'management' permission — ungranted → proto.unsupported. On playwright-isolated → proto.unsupported (no extension inventory exists).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["list", "get", "setEnabled", "uninstall"], description: "Operation (default list)." },
+      id: { type: "string", description: "Extension id — required for get/setEnabled/uninstall." },
+      enabled: { type: "boolean", description: "setEnabled: target state." },
+      maxResults: { type: "integer", description: "list: max entries (1–200, default 100)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

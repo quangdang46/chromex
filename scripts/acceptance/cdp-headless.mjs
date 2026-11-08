@@ -1177,6 +1177,26 @@ await runScenario(
         ...pv,
       };
 
+      // --- management: optional "management" permission — ungranted → honest unsupported ---
+      let mg = {};
+      const mgRes = await runner.browserToolCall(
+        taskId, "browser.management", { action: "list" }, token, 60_000,
+      );
+      const mgErr = mgRes?.error ?? {};
+      mg.listUnsupportedOk = mgRes?.status === "failed" && mgErr.code === "proto.unsupported";
+      mg.msg = String(mgErr.message ?? "").slice(0, 160);
+      const mgUn = await runner.browserToolCall(
+        taskId, "browser.management",
+        { action: "uninstall", id: "bogus-extension-id" }, token, 60_000,
+      );
+      const mgUnErr = mgUn?.error ?? {};
+      mg.uninstallUnsupportedOk = mgUn?.status === "failed" && mgUnErr.code === "proto.unsupported";
+      evidence.note(`management → ${JSON.stringify(mg).slice(0, 300)}`);
+      results.management = {
+        ok: mg.listUnsupportedOk === true && mg.uninstallUnsupportedOk === true,
+        ...mg,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

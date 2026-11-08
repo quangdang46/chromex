@@ -1621,6 +1621,82 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.management marshals list/get/setEnabled/uninstall + self-protection", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const ext = { id: "ext-1", name: "Other", enabled: true, self: undefined };
+    const d = deps({
+      selfExtensionId: "self-id-123",
+      management: {
+        list: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "list", args });
+          return [{ ...ext }, { id: "self-id-123", name: "Chromex", enabled: true, self: true }];
+        }),
+        get: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "get", args });
+          return args[0] === "missing" ? {} : { ...ext, id: String(args[0]) };
+        }),
+        setEnabled: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "setEnabled", args });
+          return { applied: true };
+        }),
+        uninstall: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "uninstall", args });
+          return { uninstalled: true };
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    const listRes = (await h(req("browser.management", {}))) as { extensions: Array<{ id: string }>; count: number };
+    expect(listRes.count).toBe(2);
+    expect(calls[0]).toEqual({ op: "list", args: [100] });
+    // maxResults honored
+    await h(req("browser.management", { action: "list", maxResults: 5 }));
+    expect(calls[1]).toEqual({ op: "list", args: [5] });
+    // get
+    const getRes = (await h(req("browser.management", { action: "get", id: "ext-1" }))) as { extension: { id: string } };
+    expect(getRes.extension.id).toBe("ext-1");
+    expect(calls[2]).toEqual({ op: "get", args: ["ext-1"] });
+    // setEnabled + uninstall on a foreign extension
+    const enRes = (await h(req("browser.management", { action: "setEnabled", id: "ext-1", enabled: false }))) as { applied: boolean };
+    expect(enRes.applied).toBe(true);
+    expect(calls[3]).toEqual({ op: "setEnabled", args: ["ext-1", false] });
+    const unRes = (await h(req("browser.management", { action: "uninstall", id: "ext-1" }))) as { uninstalled: boolean };
+    expect(unRes.uninstalled).toBe(true);
+    expect(calls[4]).toEqual({ op: "uninstall", args: ["ext-1"] });
+    // self-protection: cannot disable/uninstall own extension
+    await expect(h(req("browser.management", { action: "setEnabled", id: "self-id-123", enabled: false })))
+      .rejects.toMatchObject({ code: "proto.invalid", message: expect.stringContaining("itself") });
+    await expect(h(req("browser.management", { action: "uninstall", id: "self-id-123" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // get on self IS allowed (read)
+    await h(req("browser.management", { action: "get", id: "self-id-123" }));
+    // validation
+    await expect(h(req("browser.management", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.management", { action: "get" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.management", { action: "setEnabled", id: "x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.management", { action: "list", maxResults: 0 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.management", { action: "list", maxResults: 500 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      management: {
+        list: vi.fn(async () => "permission" as const),
+        get: vi.fn(async () => "permission" as const),
+        setEnabled: vi.fn(async () => "permission" as const),
+        uninstall: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.management", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("management permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.management", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

@@ -744,6 +744,47 @@ const toolHostHandler = createToolHostHandler({
         return { cleared: true, clearedCount: cleared, totalCount: keys.length };
       },
     },
+    management: {
+      // chrome.management — optional "management" permission checked per
+      // call (runtime grant works without SW restart). Entries are
+      // sanitized to the fields the agent needs; 'self' marks this
+      // extension so the agent can identify its own host.
+      list: async (maxResults) => {
+        const granted = await chrome.permissions.contains({ permissions: ["management"] });
+        if (!granted) return "permission";
+        const api = chrome.management as unknown as { getAll(): Promise<Array<Record<string, unknown>>> } | undefined;
+        if (!api?.getAll) return null;
+        const all = await api.getAll();
+        const selfId = chrome.runtime.id;
+        return all.slice(0, maxResults).map((e) => sanitizeExtensionInfo(e, selfId));
+      },
+      get: async (id) => {
+        const granted = await chrome.permissions.contains({ permissions: ["management"] });
+        if (!granted) return "permission";
+        const api = chrome.management as unknown as { get(i: string): Promise<Record<string, unknown> | undefined> } | undefined;
+        if (!api?.get) return null;
+        const e = await api.get(id);
+        if (!e) return null;
+        return sanitizeExtensionInfo(e, chrome.runtime.id);
+      },
+      setEnabled: async (id, enabled) => {
+        const granted = await chrome.permissions.contains({ permissions: ["management"] });
+        if (!granted) return "permission";
+        const api = chrome.management as unknown as { setEnabled(i: string, en: boolean): Promise<void> } | undefined;
+        if (!api?.setEnabled) return null;
+        await api.setEnabled(id, enabled);
+        return { applied: true };
+      },
+      uninstall: async (id) => {
+        const granted = await chrome.permissions.contains({ permissions: ["management"] });
+        if (!granted) return "permission";
+        const api = chrome.management as unknown as { uninstall(i: string): Promise<void> } | undefined;
+        if (!api?.uninstall) return null;
+        await api.uninstall(id);
+        return { uninstalled: true };
+      },
+    },
+    selfExtensionId: chrome.runtime.id,
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
@@ -918,6 +959,21 @@ const state = {
   lastAutoCompactThreadId: "" as string,
   lastAutoCompactBucket: null as number | null,
 };
+
+function sanitizeExtensionInfo(e: Record<string, unknown>, selfId: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "id", "name", "shortName", "version", "versionName", "description",
+    "enabled", "type", "installType", "mayDisable", "mayEnable",
+    "disabledReason", "offlineEnabled", "homepageUrl", "updateUrl",
+  ]) {
+    if (e[key] !== undefined) out[key] = e[key];
+  }
+  if (Array.isArray(e.permissions)) out.permissions = e.permissions;
+  if (Array.isArray(e.hostPermissions)) out.hostPermissions = e.hostPermissions;
+  if (typeof e.id === "string" && e.id === selfId) out.self = true;
+  return out;
+}
 
 function trackBridgeEventRuntime(event: unknown): string | null {
   const bridgeEvent = event as { type?: string };

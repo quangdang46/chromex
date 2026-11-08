@@ -80,6 +80,9 @@ export interface ActionContext {
   /** browser.privacy sub-action — get reads privacy settings, set/clear
    *  change the profile-wide privacy posture (external mutation). */
   privacyOp?: string;
+  /** browser.management sub-action — list/get read the installed
+   *  extension inventory, setEnabled/uninstall mutate it. */
+  managementOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -585,6 +588,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "privacy settings read" });
+    }
+
+    case "browser.management": {
+      const op = ctx.managementOp ?? "list";
+      if (op === "setEnabled" || op === "uninstall") {
+        // Enabling a hostile extension or uninstalling a user's
+        // extension changes what runs in EVERY tab — always approval,
+        // never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "extension enable/uninstall changes browser-wide behavior",
+        });
+      }
+      return verdict("read", { reason: "extension inventory read" });
     }
 
     case "browser.page.caches": {

@@ -38,7 +38,8 @@
     "contentSettings",
     "sessions",
     "proxy",
-    "privacy"
+    "privacy",
+    "management"
   ],
   "background": {
     "service_worker": "background.js",

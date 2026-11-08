@@ -204,6 +204,18 @@ export interface ToolHostDeps {
     set(setting: string, value: unknown, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
     clear(setting?: string, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
   } | undefined;
+  /** chrome.management (browser.management) — installed extension
+   *  inventory + enable/uninstall. "permission" → optional management
+   *  permission not granted; null → API unavailable → proto.unsupported. */
+  management?: {
+    list(maxResults: number): Promise<Array<Record<string, unknown>> | "permission" | null>;
+    get(id: string): Promise<Record<string, unknown> | "permission" | null>;
+    setEnabled(id: string, enabled: boolean): Promise<Record<string, unknown> | "permission" | null>;
+    uninstall(id: string): Promise<Record<string, unknown> | "permission" | null>;
+  } | undefined;
+  /** This extension's own id — browser.management refuses to disable or
+   *  uninstall it (would kill the agent's host). */
+  selfExtensionId?: string;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -373,6 +385,7 @@ const SUPPORTED = new Set([
   "browser.sessions",
   "browser.proxy",
   "browser.privacy",
+  "browser.management",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2436,6 +2449,60 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         }
         const res = sentinel(await deps.privacy.set(setting, value, scope), "privacy settings");
         return { setting, value, ...res, ...(scope ? { scope } : {}) };
+      }
+      case "browser.management": {
+        // Not tab-scoped: chrome.management — the installed extension
+        // inventory. Optional "management" permission — ungranted →
+        // unsupported. The agent's own extension is protected: it can
+        // never disable or uninstall its own host.
+        if (!deps.management) {
+          throw toolError("proto.unsupported", "extension management is not available on this host");
+        }
+        const action = str(args.action) ?? "list";
+        if (!["list", "get", "setEnabled", "uninstall"].includes(action)) {
+          throw toolError("proto.invalid", "browser.management args.action must be list|get|setEnabled|uninstall");
+        }
+        const sentinel = (res: unknown, what: string): never | Record<string, unknown> | Array<Record<string, unknown>> => {
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "management permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", `${what} is not available on this host`);
+          }
+          return res as Record<string, unknown> | Array<Record<string, unknown>>;
+        };
+        if (action === "list") {
+          const maxResults = args.maxResults === undefined ? 100 : args.maxResults;
+          if (typeof maxResults !== "number" || !Number.isInteger(maxResults) || maxResults < 1 || maxResults > 200) {
+            throw toolError("proto.invalid", "browser.management args.maxResults must be an integer 1-200");
+          }
+          const res = sentinel(await deps.management.list(maxResults), "extension inventory");
+          return { extensions: res, count: Array.isArray(res) ? res.length : 0, maxResults };
+        }
+        const id = str(args.id);
+        if (id === undefined || id.length === 0 || id.length > 128) {
+          throw toolError("proto.invalid", "browser.management args.id is required (1-128 chars)");
+        }
+        if ((action === "setEnabled" || action === "uninstall") && deps.selfExtensionId !== undefined && id === deps.selfExtensionId) {
+          throw toolError("proto.invalid", "browser.management cannot modify the Chromex extension itself");
+        }
+        if (action === "get") {
+          const res = sentinel(await deps.management.get(id), "extension");
+          if (typeof res === "object" && !Array.isArray(res) && Object.keys(res).length === 0) {
+            throw toolError("proto.unsupported", `extension '${id}' was not found`);
+          }
+          return { extension: res };
+        }
+        if (action === "setEnabled") {
+          const enabled = args.enabled;
+          if (typeof enabled !== "boolean") {
+            throw toolError("proto.invalid", "browser.management setEnabled requires args.enabled boolean");
+          }
+          const res = sentinel(await deps.management.setEnabled(id, enabled), "extension");
+          return { id, enabled, ...res };
+        }
+        const res = sentinel(await deps.management.uninstall(id), "extension");
+        return { id, ...res };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.
