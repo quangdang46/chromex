@@ -255,9 +255,11 @@ sr.innerHTML = \`
   <select id="choice" style="width:200px;height:30px"><option value="a">A</option><option value="b">B</option></select>
   <div id="dsrc" role="button" aria-label="drag-src" style="width:60px;height:30px;background:#cdf;margin-top:8px">src</div>
   <div id="ddst" role="button" aria-label="drag-dst" style="width:60px;height:30px;background:#fcd">dst</div>
+  <div id="status" role="status" aria-live="polite" style="margin-top:8px">pending</div>
 \`;
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
+  setTimeout(() => { sr.getElementById('status').textContent = 'settled-ok'; }, 700);
 });
 sr.getElementById('field').addEventListener('input', (e) => {
   window.__pierceValue = e.target.value;

@@ -1482,6 +1482,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // approval-gated by the risk classifier — the expression is
         // opaque to it. Result is JSON-bounded; page-thrown errors come
         // back as {ok:false,error} rather than a tool failure.
+        // pz refs take the CDP node-scoped path below and need no
+        // scripting permission — only the MAIN-world path does.
+        const evalRef = str(args.ref);
+        const isPierceEval = evalRef !== undefined && PIERCE_REF_RE.test(evalRef);
+        if (!isPierceEval && !deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "page evaluation requires the scripting permission");
+        }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const expression = str(args.expression);
         if (expression === undefined || expression.trim().length === 0) {
@@ -1498,16 +1505,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // pz refs scope the expression to a closed-shadow-root element —
         // `this` binds to the node via Runtime.callFunctionOn. Same
         // approval gate applies (opaque expression, risk classifier).
-        const evalRef = str(args.ref);
-        if (evalRef !== undefined && PIERCE_REF_RE.test(evalRef)) {
+        if (isPierceEval) {
           if (frameId !== 0) {
             throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
           }
           cdpRequired(deps);
-          return await pierceEvaluate(deps, tabId, evalRef, expression, timeoutMs);
-        }
-        if (!deps.runInMainWorld) {
-          throw toolError("proto.unsupported", "page evaluation requires the scripting permission");
+          return await pierceEvaluate(deps, tabId, evalRef!, expression, timeoutMs);
         }
         const evaluateDispatchedAt = Date.now();
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1920,6 +1923,29 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (consoleText !== undefined && typeof deps.runInMainWorld !== "function") {
           throw toolError("proto.unsupported", "console wait requires the scripting permission");
         }
+        // pierceRef+pierceText waits on a closed-shadow-root element's
+        // live state (value/textContent) via Runtime.callFunctionOn —
+        // the async barrier for embedded widgets (payment status,
+        // captcha clearing) that content-script waits cannot see.
+        // State condition, not lookback: it polls forward only.
+        const pierceRef = str(args.pierceRef);
+        const pierceText = str(args.pierceText);
+        if (pierceText !== undefined && (pierceText.length === 0 || pierceText.length > 512)) {
+          throw toolError("proto.invalid", "browser.page.wait args.pierceText must be a non-empty string ≤512 chars");
+        }
+        if ((pierceRef === undefined) !== (pierceText === undefined)) {
+          throw toolError("proto.invalid", "args.pierceRef and args.pierceText must be provided together");
+        }
+        if (pierceRef !== undefined) {
+          if (!PIERCE_REF_RE.test(pierceRef)) {
+            throw toolError("proto.invalid", "args.pierceRef must be a pz-N ref from browser.page.pierce");
+          }
+          if (args.frameId !== undefined && args.frameId !== null) {
+            throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+          }
+          cdpRequired(deps);
+        }
+        const hasPierceCondition = pierceRef !== undefined;
         const hasConsoleCondition = consoleText !== undefined;
         const hasResponseCondition = responseUrl !== undefined;
         const hasContentCondition =
@@ -1930,7 +1956,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.urlContains) !== undefined ||
           str(args.readyState) !== undefined ||
           str(args.visibleSelector) !== undefined;
-        const hasCondition = hasContentCondition || hasResponseCondition || hasConsoleCondition;
+        const hasCondition = hasContentCondition || hasResponseCondition || hasConsoleCondition || hasPierceCondition;
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
@@ -1984,7 +2010,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               `no completed response matching "${responseUrl}" within ${waitTimeoutMs}ms`,
             );
           }
-          if (!hasContentCondition && !networkIdle && !hasConsoleCondition) {
+          if (!hasContentCondition && !networkIdle && !hasConsoleCondition && !hasPierceCondition) {
             return {
               ok: true,
               matched: "response",
@@ -2039,7 +2065,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               `no console message matching "${consoleText}" within ${waitTimeoutMs}ms`,
             );
           }
-          if (!hasContentCondition && !networkIdle) {
+          if (!hasContentCondition && !networkIdle && !hasPierceCondition) {
             return {
               ok: true,
               matched: "console",
@@ -2063,8 +2089,56 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             }
             await new Promise((r) => setTimeout(r, 150));
           }
-          if (!hasContentCondition && !hasResponseCondition && !hasConsoleCondition) {
+          if (!hasContentCondition && !hasResponseCondition && !hasConsoleCondition && !hasPierceCondition) {
             return { ok: true, matched: "networkIdle", resolvedTabId: tabId };
+          }
+        }
+        if (hasPierceCondition) {
+          // Live-state poll on the closed-root node — value +
+          // textContent haystack, substring match. The node is resolved
+          // once; a detached node fails the poll as element_not_found.
+          const backendNodeId = pierceBackendNodeId(tabId, pierceRef!);
+          const { session, release } = await cdpAcquire(deps, tabId);
+          let pierceHit: string | undefined;
+          try {
+            const node = (await session.send("DOM.resolveNode", { backendNodeId })) as {
+              object?: { objectId?: string };
+            };
+            const objectId = node?.object?.objectId;
+            if (!objectId) {
+              throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+            }
+            const deadline = Date.now() + waitTimeoutMs;
+            while (Date.now() < deadline) {
+              const cres = (await session.send("Runtime.callFunctionOn", {
+                objectId,
+                functionDeclaration:
+                  "function(){var v='';try{v=String(this.value||'')}catch(e){}var t='';try{t=String(this.textContent||'')}catch(e){}return v+'\\n'+t}",
+                returnByValue: true,
+              })) as { result?: { value?: unknown } };
+              const hay = String(cres?.result?.value ?? "");
+              if (hay.includes(pierceText!)) {
+                pierceHit = hay;
+                break;
+              }
+              await new Promise((r) => setTimeout(r, 200));
+            }
+          } finally {
+            await release();
+          }
+          if (!pierceHit) {
+            throw toolError(
+              "browser.timeout",
+              `no pierce element state matching "${pierceText}" within ${waitTimeoutMs}ms`,
+            );
+          }
+          if (!hasContentCondition && !networkIdle && !hasResponseCondition && !hasConsoleCondition) {
+            return {
+              ok: true,
+              matched: "pierce",
+              pierce: { ref: pierceRef, excerpt: pierceHit.slice(0, 500) },
+              resolvedTabId: tabId,
+            };
           }
         }
         if (!hasContentCondition) {

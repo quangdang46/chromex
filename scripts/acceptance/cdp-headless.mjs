@@ -2094,6 +2094,43 @@ await runScenario(
               pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
               pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
             }
+            // pierce wait — async state barrier inside the closed root:
+            // reset status → click schedules 'settled-ok' in 700ms →
+            // wait must hold until the live textContent flips
+            const st = elements.find((e) => e.id === "status");
+            pj.stOk = typeof st?.ref === "string";
+            if (pj.stOk) {
+              // arm the async flip on the element itself — one call, no
+              // click latency: the 900ms timer starts when evaluate
+              // returns, so the wait provably holds ~900ms
+              await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, ref: st.ref,
+                  expression: "(()=>{const el=this;el.textContent='pending';setTimeout(()=>{el.textContent='settled-ok'},900);return 'armed'})()" },
+                token, 60_000,
+              ).catch(() => null);
+              const wStart = Date.now();
+              const wRes = await runner.browserToolCall(
+                taskId, "browser.page.wait",
+                { tabId: pjTab, pierceRef: st.ref, pierceText: "settled-ok", timeoutMs: 5000 },
+                token, 60_000,
+              ).catch(() => null);
+              pj.waitOk = (wRes?.result ?? wRes ?? {}).matched === "pierce";
+              pj.waitElapsedOk = Date.now() - wStart >= 400;
+              const wBad = await runner.browserToolCall(
+                taskId, "browser.page.wait",
+                { tabId: pjTab, pierceRef: st.ref, pierceText: "never-arrives", timeoutMs: 800 },
+                token, 60_000,
+              ).catch(() => null);
+              pj.waitTimeoutOk = (wBad?.error?.code ?? "") === "browser.timeout";
+              const wSolo = await runner.browserToolCall(
+                taskId, "browser.page.wait",
+                { tabId: pjTab, pierceText: "x" }, token, 60_000,
+              ).catch(() => null);
+              pj.waitPairOk = (wSolo?.error?.code ?? "") === "proto.invalid";
+            } else {
+              pj.waitOk = pj.waitElapsedOk = pj.waitTimeoutOk = pj.waitPairOk = false;
+            }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
@@ -2103,6 +2140,7 @@ await runScenario(
             pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
             pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
+            pj.stOk = pj.waitOk = pj.waitElapsedOk = pj.waitTimeoutOk = pj.waitPairOk = false;
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
@@ -2110,6 +2148,7 @@ await runScenario(
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
           pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
+          pj.stOk = pj.waitOk = pj.waitElapsedOk = pj.waitTimeoutOk = pj.waitPairOk = false;
         }
       } catch (e) {
         pj.error = String(e?.message ?? e).slice(0, 200);
@@ -2122,7 +2161,9 @@ await runScenario(
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
           pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
           pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&
-          pj.dragOk === true && pj.dragCallOk === true && pj.dragValOk === true,
+          pj.dragOk === true && pj.dragCallOk === true && pj.dragValOk === true &&
+          pj.stOk === true && pj.waitOk === true && pj.waitElapsedOk === true &&
+          pj.waitTimeoutOk === true && pj.waitPairOk === true,
         ...pj,
       };
 

@@ -2286,6 +2286,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         throw protocolError("proto.invalid", "args.consoleLevel must be log|info|warn|error|debug");
       }
     }
+    if (args.pierceRef !== undefined || args.pierceText !== undefined) {
+      throw protocolError(
+        "proto.invalid",
+        "pierceRef/pierceText waits need browser.page.pierce — chrome-extension only (isolated has no closed-shadow-root pierce)",
+      );
+    }
     const hasCondition =
       selector !== null || selectorGone !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
       visibleSelector !== null || networkIdle || responseUrl !== null || consoleText !== null;

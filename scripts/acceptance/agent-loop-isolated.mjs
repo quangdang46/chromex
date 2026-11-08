@@ -322,6 +322,12 @@ try {
     "invalid",
     "pierce-ref evaluate refused on isolated",
   );
+  await expectReject(
+    "browser.page.wait",
+    { tabId: sTab, pierceRef: "pz-1", pierceText: "x" },
+    "invalid",
+    "pierce wait refused on isolated",
+  );
 
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });

@@ -4384,6 +4384,76 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.wait pierceRef+pierceText polls closed-root state", async () => {
+    let polls = 0;
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "DIV", backendNodeId: 44,
+                attributes: ["id", "status"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 44, role: { value: "status" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [0, 0, 10, 0, 10, 10, 0, 10] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-w" } }),
+      // pending for the first 2 polls, then settled — the wait must hold
+      "Runtime.callFunctionOn": () => ({
+        result: { value: ++polls <= 2 ? "pending" : "settled-ok" },
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(527, cdp));
+    const res = (await h(req("browser.page.pierce", { tabId: 527 }))) as {
+      elements: Array<{ ref: string; id?: string }>;
+    };
+    const ref = res.elements.find((e) => e.id === "status")!.ref;
+    const w = (await h(req("browser.page.wait", {
+      tabId: 527, pierceRef: ref, pierceText: "settled-ok", timeoutMs: 5000,
+    }))) as { ok: boolean; matched?: string; pierce?: { ref?: string } };
+    expect(w.ok).toBe(true);
+    expect(w.matched).toBe("pierce");
+    expect(w.pierce?.ref).toBe(ref);
+    expect(polls).toBeGreaterThanOrEqual(3);
+    // timeout path — text never arrives
+    const pollsBefore = polls;
+    await expect(
+      h(req("browser.page.wait", {
+        tabId: 527, pierceRef: ref, pierceText: "never", timeoutMs: 500,
+      })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+    expect(polls).toBeGreaterThan(pollsBefore);
+    // pair validation + bad ref + frameId
+    await expect(
+      h(req("browser.page.wait", { tabId: 527, pierceText: "x" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.wait", { tabId: 527, pierceRef: "pz-1" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.wait", { tabId: 527, pierceRef: "nope-1", pierceText: "x" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h(req("browser.page.wait", { tabId: 527, pierceRef: ref, pierceText: "x", frameId: 2 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // stale ref after re-pierce → element_not_found
+    await h(req("browser.page.pierce", { tabId: 527 }));
+    await expect(
+      h(req("browser.page.wait", { tabId: 527, pierceRef: ref, pierceText: "x", timeoutMs: 300 })),
+    ).rejects.toMatchObject({ code: "browser.element_not_found" });
+  });
+
   test("pz ref evaluate scopes `this` to the closed-root element", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({
