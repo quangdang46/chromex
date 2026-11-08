@@ -1910,4 +1910,120 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     const cap2 = cdp2.sent.find((s) => s.method === "Page.captureScreenshot");
     expect(cap2?.params?.clip).toMatchObject({ x: 75, y: 90, width: 50, height: 20 });
   });
+
+  test("page.route fulfills matching requests and continues others", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(520, cdp));
+    const res = (await h(req("browser.page.route", {
+      tabId: 520, match: "/api/ping", status: 200,
+      contentType: "application/json", body: '{"v":"mock"}',
+    }))) as { routeId: string; action: string };
+    expect(res.routeId).toBeTruthy();
+    expect(res.action).toBe("fulfill");
+    expect(cdp.sent.some((s) => s.method === "Fetch.enable")).toBe(true);
+    // matching request → fulfillRequest with base64 body
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "r1", request: { url: "http://x.test/api/ping?y=1" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const fulfill = cdp.sent.find((s) => s.method === "Fetch.fulfillRequest");
+    expect(fulfill?.params).toMatchObject({
+      requestId: "r1", responseCode: 200,
+      body: Buffer.from('{"v":"mock"}').toString("base64"),
+    });
+    // non-matching → continueRequest, never fulfilled
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "r2", request: { url: "http://x.test/other" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cdp.sent.filter((s) => s.method === "Fetch.fulfillRequest")).toHaveLength(1);
+    expect(cdp.sent.some((s) => s.method === "Fetch.continueRequest" && s.params?.requestId === "r2")).toBe(true);
+  });
+
+  test("page.route abort + modify actions", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(521, cdp));
+    await h(req("browser.page.route", { tabId: 521, match: "/ad.js", action: "abort" }));
+    await h(req("browser.page.route", {
+      tabId: 521, match: "/api/data", action: "modify",
+      url: "/api/data-v2", requestHeaders: { "x-agent": "chromex" },
+      requestBody: "new-body",
+    }));
+    cdp.fire("Fetch.requestPaused", { requestId: "a1", request: { url: "http://x.test/ad.js" } });
+    cdp.fire("Fetch.requestPaused", { requestId: "m1", request: { url: "http://x.test/api/data" } });
+    await new Promise((r) => setTimeout(r, 0));
+    const fail = cdp.sent.find((s) => s.method === "Fetch.failRequest");
+    expect(fail?.params).toMatchObject({ requestId: "a1", errorReason: "BlockedByClient" });
+    const cont = cdp.sent.find((s) => s.method === "Fetch.continueRequest" && s.params?.requestId === "m1");
+    expect(cont?.params?.url).toBe("http://x.test/api/data-v2");
+    expect(cont?.params?.postData).toBe(Buffer.from("new-body").toString("base64"));
+    expect(cont?.params?.headers).toEqual([{ name: "x-agent", value: "chromex" }]);
+  });
+
+  test("page.route validates args honestly", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(522, cdp));
+    await expect(h(req("browser.page.route", { tabId: 522 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", action: "modify" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", frameId: 3 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    const noCdp = createToolHostHandler(deps());
+    await expect(noCdp(req("browser.page.route", { tabId: 1, match: "/x" }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(noCdp(req("browser.page.unroute", { tabId: 1 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.unroute removes one rule, clears all, and releases the hold", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(523, cdp));
+    const r1 = (await h(req("browser.page.route", { tabId: 523, match: "/a" }))) as { routeId: string };
+    await h(req("browser.page.route", { tabId: 523, match: "/b" }));
+    const one = (await h(req("browser.page.unroute", { tabId: 523, routeId: r1.routeId }))) as { removed: number; remaining: number };
+    expect(one).toMatchObject({ removed: 1, remaining: 1 });
+    expect(cdp.sent.some((s) => s.method === "Fetch.disable")).toBe(false);
+    const all = (await h(req("browser.page.unroute", { tabId: 523 }))) as { removed: number };
+    expect(all.removed).toBe(1);
+    expect(cdp.sent.some((s) => s.method === "Fetch.disable")).toBe(true);
+    await expect(h(req("browser.page.unroute", { tabId: 523, routeId: "nope" }))).resolves.toMatchObject({ removed: 0 });
+  });
+
+  test("page.webSocket captures connections and frames via the tap", async () => {
+    const cdp = fakeCdp({
+      "Network.getResponseBody": () => ({ body: "e30=", base64Encoded: true }),
+    });
+    const h = createToolHostHandler(cdpDeps(524, cdp));
+    // prime the tap (attaches + Network.enable)
+    const prime = (await h(req("browser.page.webSocket", { tabId: 524 }))) as { sockets: unknown[] };
+    expect(prime.sockets).toEqual([]);
+    expect(cdp.sent.some((s) => s.method === "Network.enable")).toBe(true);
+    cdp.fire("Network.webSocketCreated", { requestId: "ws1", url: "ws://x.test/socket" });
+    cdp.fire("Network.webSocketFrameSent", { requestId: "ws1", response: { opcode: 1, payloadData: "hello" } });
+    cdp.fire("Network.webSocketFrameReceived", { requestId: "ws1", response: { opcode: 1, payloadData: "hi" } });
+    const list = (await h(req("browser.page.webSocket", { tabId: 524 }))) as {
+      sockets: Array<{ requestId: string; url: string; frameCount: number }>;
+    };
+    expect(list.sockets).toHaveLength(1);
+    expect(list.sockets[0]).toMatchObject({ requestId: "ws1", frameCount: 2 });
+    const frames = (await h(req("browser.page.webSocket", { tabId: 524, requestId: "ws1" }))) as {
+      frames: Array<{ dir: string; data: string }>;
+    };
+    expect(frames.frames.map((f) => `${f.dir}:${f.data}`)).toEqual(["sent:hello", "recv:hi"]);
+    await expect(h(req("browser.page.webSocket", { tabId: 524, requestId: "nope" }))).rejects.toMatchObject({ code: "browser.not_found" });
+  });
+
+  test("disposeBrowserToolTabState unsubscribes listeners and releases holds", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(525, cdp));
+    await h(req("browser.page.route", { tabId: 525, match: "/x" }));
+    await h(req("browser.page.webSocket", { tabId: 525 }));
+    const { disposeBrowserToolTabState } = await import("../../src/background/gateway/tool-host.js");
+    await disposeBrowserToolTabState(525);
+    expect(cdp.sent.some((s) => s.method === "Fetch.disable")).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "Network.disable")).toBe(true);
+    // listeners gone: firing events must not reach send()
+    const before = cdp.sent.length;
+    cdp.fire("Fetch.requestPaused", { requestId: "z", request: { url: "http://x/x" } });
+    cdp.fire("Network.webSocketFrameSent", { requestId: "w", response: { payloadData: "q" } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cdp.sent.length).toBe(before);
+  });
 });

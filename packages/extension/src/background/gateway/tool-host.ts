@@ -1113,6 +1113,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         return await addPageRoute(deps, tabId, args);
       }
       case "browser.page.unroute": {
+        cdpRequired(deps);
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         return await removePageRoutes(deps, tabId, args);
       }
