@@ -2004,11 +2004,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (responseUrl !== undefined && (responseUrl.length === 0 || responseUrl.length > 512)) {
           throw toolError("proto.invalid", "browser.page.wait args.responseUrl must be a non-empty string ≤512 chars");
         }
-        if (responseUrl !== undefined && args.frameId !== undefined && args.frameId !== null) {
-          // response matching is tab-level (webRequest frameId filter
-          // is not wired here) — refuse rather than silently ignore.
-          throw toolError("proto.invalid", "args.frameId is not supported with args.responseUrl");
-        }
+        // args.frameId narrows the webRequest match to one frame's
+        // requests (frameId is tagged per-entry by the network log) —
+        // e.g. wait for a response fired inside a cross-origin iframe.
+        const responseFrameId =
+          responseUrl !== undefined && typeof args.frameId === "number" && args.frameId >= 0
+            ? args.frameId
+            : undefined;
         if (responseUrl !== undefined && typeof deps.listNetworkRequests !== "function") {
           throw toolError("proto.unsupported", "response wait requires the webRequest permission");
         }
@@ -2110,6 +2112,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             const entries = deps.listNetworkRequests!(tabId, {
               limit: 200,
               urlContains: responseUrl,
+              ...(responseFrameId !== undefined ? { frameId: responseFrameId } : {}),
             });
             const hit = (Array.isArray(entries) ? entries : []).find(
               (e) => typeof e.ts === "number" && e.ts >= since,
@@ -2135,6 +2138,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
                 url: matchedEntry.url ?? "",
                 ...(typeof matchedEntry.status === "number" ? { status: matchedEntry.status } : {}),
                 ...(matchedEntry.error ? { error: matchedEntry.error } : {}),
+                ...(typeof matchedEntry.frameId === "number" ? { frameId: matchedEntry.frameId } : {}),
                 ts: matchedEntry.ts ?? 0,
               },
               resolvedTabId: tabId,

@@ -693,12 +693,21 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "browser.timeout" });
   });
 
-  test("page.wait responseUrl validation: frameId refused, missing dep unsupported", async () => {
-    const d = deps({ listNetworkRequests: vi.fn(() => []) });
+  test("page.wait responseUrl frameId narrows the match; missing dep unsupported", async () => {
+    const listNetworkRequests = vi.fn(() => [
+      { method: "GET", url: "https://x.test/api/x", status: 200, frameId: 42, ts: Date.now() },
+    ]);
+    const d = deps({ listNetworkRequests });
     const h = createToolHostHandler(d);
-    await expect(
-      h(req("browser.page.wait", { responseUrl: "/x", frameId: 1, tabId: 7 })),
-    ).rejects.toMatchObject({ code: "proto.invalid" });
+    const out = (await h(
+      req("browser.page.wait", { responseUrl: "/api/x", frameId: 42, timeoutMs: 5000, tabId: 7 }),
+    )) as { matched?: string; response?: { frameId?: number } };
+    expect(out.matched).toBe("response");
+    expect(out.response?.frameId).toBe(42);
+    expect(listNetworkRequests).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ frameId: 42, urlContains: "/api/x" }),
+    );
     const hNoDep = createToolHostHandler(deps());
     await expect(
       hNoDep(req("browser.page.wait", { responseUrl: "/x", tabId: 7 })),

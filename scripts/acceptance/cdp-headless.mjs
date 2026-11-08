@@ -1196,6 +1196,41 @@ await runScenario(
         ).catch(() => null);
         const ariaFrText = JSON.stringify(ariaFr?.result ?? ariaFr ?? {});
         cdp.ariaOopifOk = /Frame Child/.test(ariaFrText);
+        // Frame-scoped response wait: fire the SAME url from the top
+        // frame and from inside the OOPIF — wait {responseUrl, frameId}
+        // must return the OOPIF entry (frameId echoed back as evidence).
+        if (cdpCross?.frameId) {
+          const topFetch = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { tabId: cdpFrameTabId, expression: "fetch('/api/waitprobe').then(()=>'top').catch(()=>'toperr')" },
+            token, 60_000,
+          ).catch(() => null);
+          const pierceRef3 = await runner.browserToolCall(
+            taskId, "browser.page.pierce",
+            { tabId: cdpFrameTabId, frameId: cdpCross.frameId }, token, 60_000,
+          ).catch(() => null);
+          const cfb3 = (pierceRef3?.result ?? pierceRef3 ?? {}).elements ?? [];
+          const probeRef3 = cfb3.find((e) => e.id === "cfb")?.ref;
+          if (probeRef3) {
+            await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: cdpFrameTabId, ref: probeRef3, expression: "fetch('/api/waitprobe').then(()=>'oopif').catch(()=>'oopiferr')" },
+              token, 60_000,
+            ).catch(() => null);
+          }
+          void topFetch;
+          const waitRes = await runner.browserToolCall(
+            taskId, "browser.page.wait",
+            { tabId: cdpFrameTabId, responseUrl: "waitprobe", frameId: cdpCross.frameId, timeoutMs: 8000 },
+            token, 60_000,
+          ).catch(() => null);
+          const waitResp = (waitRes?.result ?? waitRes ?? {});
+          cdp.waitFrameOk = waitResp.matched === "response" &&
+            waitResp.response?.frameId === cdpCross.frameId;
+          cdp.waitFrameId = waitResp.response?.frameId ?? null;
+        } else {
+          cdp.waitFrameOk = false;
+        }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1208,7 +1243,7 @@ await runScenario(
           cdp.pierceIframeOk === true && cdp.pierceOopifOk === true &&
           cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
           cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
-          cdp.ariaOopifOk === true,
+          cdp.ariaOopifOk === true && cdp.waitFrameOk === true,
         ...cdp,
       };
 
@@ -1801,7 +1836,9 @@ await runScenario(
       // persistent webRequest log — the "did my submit land" primitive.
       // /cache-probe's document response lands in the log; the wait
       // must match it with status+ts evidence, time out honestly on a
-      // nonexistent path, and refuse frameId. ---
+      // nonexistent path, and frameId must genuinely NARROW the match —
+      // /cache-probe has no frame 1, so a frame-scoped wait on the same
+      // URL must time out rather than silently ignore the filter. ---
       const wr = {};
       try {
         const wrCreate = await runner.browserToolCall(
@@ -1824,9 +1861,10 @@ await runScenario(
           ).catch(() => null);
           wr.timeoutOk = (wrNo?.error?.code ?? "") === "browser.timeout";
           const wrBad = await runner.browserToolCall(
-            taskId, "browser.page.wait", { tabId: wrTab, responseUrl: "x", frameId: 1 }, token, 60_000,
+            taskId, "browser.page.wait",
+            { tabId: wrTab, responseUrl: "cache-probe", frameId: 999999, timeoutMs: 300 }, token, 60_000,
           ).catch(() => null);
-          wr.frameOk = (wrBad?.error?.code ?? "") === "proto.invalid";
+          wr.frameOk = (wrBad?.error?.code ?? "") === "browser.timeout";
           await runner.browserToolCall(
             taskId, "browser.tab.close", { tabId: wrTab }, token, 60_000,
           ).catch(() => null);
