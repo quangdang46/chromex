@@ -159,3 +159,28 @@ export async function withCdp<T>(tabId: number, fn: (s: CdpSession) => Promise<T
     await releaseCdp(tabId);
   }
 }
+
+/** SW restart orphans every held session: route/emulate holds live in
+ *  module state and die with the worker, but chrome.debugger
+ *  attachments — including any Fetch.enable'd interception — persist.
+ *  Paused requests would then hang forever with no handler. Detach all
+ *  targets once at startup; the next acquire() re-attaches cleanly and
+ *  all CDP state (Fetch patterns, emulation overrides, taps) resets.
+ *  Detach only removes THIS extension's attachment — DevTools and
+ *  other debuggers are unaffected; unattached targets error and are
+ *  ignored. */
+export async function detachOrphanedDebuggerTargets(): Promise<void> {
+  if (typeof chrome === "undefined" || !chrome.debugger?.getTargets) return;
+  const targets = await new Promise<chrome.debugger.TargetInfo[]>((resolve) => {
+    try {
+      chrome.debugger.getTargets((t) => resolve(t ?? []));
+    } catch {
+      resolve([]);
+    }
+  });
+  await Promise.all(
+    targets.map((t) =>
+      chrome.debugger.detach({ targetId: t.id }).catch(() => {}),
+    ),
+  );
+}

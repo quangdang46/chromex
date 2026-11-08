@@ -804,6 +804,13 @@ const promptAwaitingTurnConversationIds = new Set<string>();
 // Queue ids dequeued for send during this page life — excluded when
 // merging a possibly-stale persisted snapshot during delayed re-hydrate.
 const consumedQueuedComposerMessageIds = new Set<string>();
+// Conversations whose latest turn ended via user Stop: the composer
+// queue must NOT auto-flush — the user interrupted the work, silently
+// starting the next queued prompt would resurrect it. Cleared when a
+// NEW turn starts for that conversation (fresh user-initiated work
+// re-arms normal flush-on-complete). Persisted so panel/SW reloads
+// keep the suppression.
+const queueFlushBlockedConversationIds = new Set<string>();
 const streamingAssistantMessageIdsByConversationId = new Map<string, Set<string>>();
 const contextCompactionNoticeIdsByKey = new Map<string, string>();
 const messageTraceOpenByMessageId = new Map<string, boolean>();
@@ -1751,6 +1758,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       });
       clearConversationActivity(eventConversationId);
       rememberConversationThreadId(eventConversationId, event.threadId);
+      if ("stopReason" in event && event.stopReason === "cancelled") {
+        blockQueueAutoFlush(eventConversationId);
+      }
       renderConversationListIfVisible();
       void persistDetachedConversation(eventConversationId);
       return;
@@ -1791,14 +1801,21 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     flushConversationPersist();
     // turn.cancelled arrives here as turn.completed + stopReason
     // "cancelled" (legacy-events mapping) — a user stop must NOT
-    // auto-restart queued work.
-    if (state.currentConversationId && !("stopReason" in event && event.stopReason === "cancelled")) {
+    // auto-restart queued work: block auto-flush until the next
+    // turn.started re-arms it.
+    if ("stopReason" in event && event.stopReason === "cancelled") {
+      blockQueueAutoFlush(state.currentConversationId || eventConversationId);
+    } else if (state.currentConversationId) {
       void flushQueuedComposerMessage(state.currentConversationId);
     }
     shouldRender = true;
   }
   if (event.type === "turn.started" && event.activeTurn) {
-    promptAwaitingTurnConversationIds.delete(eventConversationId || state.currentConversationId || "");
+    const startedConversationId = eventConversationId || state.currentConversationId || "";
+    promptAwaitingTurnConversationIds.delete(startedConversationId);
+    // Fresh turn = user-initiated work resumed — re-arm queue
+    // auto-flush that a prior Stop suppressed.
+    unblockQueueAutoFlush(startedConversationId);
     if (!isCurrentConversationEvent && eventConversationId) {
       activeTurnsByConversationId.set(eventConversationId, event.activeTurn);
       rememberConversationThreadId(eventConversationId, event.activeTurn.threadId);
@@ -2540,6 +2557,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
   const currentConversationIdBeforeInit = state.currentConversationId;
   const settingsSnapshotPromise = applyInitialSettingsSnapshot().catch(() => undefined);
   const queuedMessagesHydrationPromise = hydrateQueuedComposerMessages();
+  const queueFlushBlocksHydrationPromise = hydrateQueueFlushBlocks();
   const initPayloadPromise = sendRuntimeMessage({
     type: "ui.init",
     ...(targetWindowId ? { windowId: targetWindowId } : {}),
@@ -2548,6 +2566,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
   try {
     await settingsSnapshotPromise;
     await queuedMessagesHydrationPromise;
+    await queueFlushBlocksHydrationPromise;
     const payload = (await initPayloadPromise) as UiInitPayload & { error?: string };
     if (payload.error) {
       throw new Error(payload.error);
@@ -2645,6 +2664,13 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     // backstop; both dedupe by id and exclude consumed ids.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
+      const blockChange = changes[QUEUE_FLUSH_BLOCKED_STORAGE_KEY];
+      if (blockChange && Array.isArray(blockChange.newValue)) {
+        queueFlushBlockedConversationIds.clear();
+        for (const id of blockChange.newValue) {
+          if (typeof id === "string" && id) queueFlushBlockedConversationIds.add(id);
+        }
+      }
       const change = changes[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
       if (!change) return;
       const entries = change.newValue;
@@ -15399,6 +15425,42 @@ function queuedComposerMessagesForCurrentConversation(): QueuedComposerMessage[]
 }
 
 const QUEUED_COMPOSER_MESSAGES_STORAGE_KEY = "chromex.sidepanel.queuedComposerMessages";
+const QUEUE_FLUSH_BLOCKED_STORAGE_KEY = "chromex.sidepanel.queueFlushBlockedConversations";
+
+function persistQueueFlushBlocks(): void {
+  try {
+    void chrome.storage.local
+      .set({ [QUEUE_FLUSH_BLOCKED_STORAGE_KEY]: [...queueFlushBlockedConversationIds] })
+      .catch(() => undefined);
+  } catch {
+    /* storage unavailable — suppression stays in-memory only */
+  }
+}
+
+async function hydrateQueueFlushBlocks(): Promise<void> {
+  try {
+    const stored = await chrome.storage.local.get(QUEUE_FLUSH_BLOCKED_STORAGE_KEY);
+    const list = stored?.[QUEUE_FLUSH_BLOCKED_STORAGE_KEY];
+    if (Array.isArray(list)) {
+      for (const id of list) {
+        if (typeof id === "string" && id) queueFlushBlockedConversationIds.add(id);
+      }
+    }
+  } catch {
+    /* non-fatal — worst case a stopped queue flushes once after reload */
+  }
+}
+
+function blockQueueAutoFlush(conversationId: string | null | undefined): void {
+  if (!conversationId || queueFlushBlockedConversationIds.has(conversationId)) return;
+  queueFlushBlockedConversationIds.add(conversationId);
+  persistQueueFlushBlocks();
+}
+
+function unblockQueueAutoFlush(conversationId: string | null | undefined): void {
+  if (!conversationId || !queueFlushBlockedConversationIds.delete(conversationId)) return;
+  persistQueueFlushBlocks();
+}
 
 function persistQueuedComposerMessages(): Promise<void> {
   try {
@@ -15461,6 +15523,9 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   if (!sidepanelInitSettled) return;
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || isPromptTurnInFlight()) return;
+  // User Stop suppresses auto-flush for this conversation until a new
+  // turn starts — a cancelled turn must not resurrect queued work.
+  if (queueFlushBlockedConversationIds.has(conversationId)) return;
   // Gateway truth beats UI state: after a panel reload the local
   // activeTurn can lag hello/sync — flushing in that window leaks the
   // message into the gateway queue invisibly instead of holding it in

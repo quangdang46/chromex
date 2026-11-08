@@ -106,7 +106,7 @@ import {
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
 import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
-import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget } from "./cdp.js";
+import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
@@ -673,6 +673,12 @@ chrome.runtime.onInstalled.addListener(() => {
 // workspace-scoped refresh still runs from ensureStateLoaded when the
 // root differs, and catalog.updated keeps it fresh afterwards.
 void triggerCatalogRefresh();
+
+// A previous SW incarnation may have left chrome.debugger attachments
+// behind (route interception / emulation holds are module state and die
+// with the worker while the debugger session persists). Sweep them so
+// no orphaned Fetch.enable can pause requests with no handler.
+void detachOrphanedDebuggerTargets().catch(() => undefined);
 
 chrome.commands.onCommand.addListener((command) => {
   void handleCommand(command);

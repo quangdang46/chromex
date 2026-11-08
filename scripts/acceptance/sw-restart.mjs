@@ -62,6 +62,26 @@ await runScenario(
         return { status: "FAIL", summary: `baseline click delivered ${count1} times, expected 1`, details: { click1 } };
       }
 
+      // Arm a CDP route hold BEFORE the reload: Fetch.enable persists on
+      // the debugger session across SW death while the routeHolds map
+      // dies with the worker. The startup sweep must detach the orphan —
+      // otherwise every request pauses forever with no handler. Verify
+      // interception is live first (in-page fetch, no navigation — the
+      // counter state must survive for the post-reload count check).
+      const routeArm = await runner.browserToolCall(
+        taskId, "browser.page.route",
+        { match: "/api/ping", action: "fulfill", status: 200, contentType: "application/json", body: '{"v":"routed"}' },
+        token, 60_000,
+      ).catch((e) => ({ status: "threw", error: { code: e?.code ?? e?.message } }));
+      evidence.note(`route arm → ${routeArm?.status} ${JSON.stringify(routeArm?.error ?? "")}`);
+      await page.evaluate(() => {
+        fetch("/api/ping").then((r) => r.json()).then((j) => { document.title = "pong:" + j.v; })
+          .catch(() => { document.title = "fetch-failed"; });
+      });
+      await page.waitForFunction(() => document.title.startsWith("pong:"), { timeout: 10_000 }).catch(() => {});
+      const routedTitle = await page.title();
+      evidence.note(`interception check title=${routedTitle}`);
+
       // ---- reload the whole extension: SW dies, content scripts orphan ----
       const swsBefore = browser.context.serviceWorkers();
       try {
@@ -129,6 +149,7 @@ await runScenario(
       let click2 = null;
       let count2 = null;
       let ariaOk = false;
+      let orphanFetchOk = false;
       if (get?.status === "completed") {
         const snap2 = await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
         const snapId2 = findSnapshotId(snap2);
@@ -157,6 +178,20 @@ await runScenario(
         ariaOk =
           aria?.status === "completed" &&
           /inc|button/i.test(ariaTree);
+
+        // Orphaned-interception check: the same in-page fetch must now
+        // hit the REAL server (route rules died with the SW) and —
+        // critically — COMPLETE. An orphaned Fetch.enable would pause
+        // the request forever; the startup sweep prevents that.
+        await page.evaluate(() => {
+          document.title = "";
+          fetch("/api/ping").then((r) => r.json()).then((j) => { document.title = "pong:" + j.v; })
+            .catch(() => { document.title = "fetch-failed"; });
+        });
+        await page.waitForFunction(() => document.title.startsWith("pong:"), { timeout: 15_000 }).catch(() => {});
+        const postTitle = await page.title();
+        evidence.note(`post-reload fetch title=${postTitle}`);
+        orphanFetchOk = postTitle === "pong:ok";
       }
 
       const pass =
@@ -165,7 +200,9 @@ await runScenario(
         get?.status === "completed" &&
         click2?.status === "completed" &&
         count2 === "2" &&
-        ariaOk === true;
+        ariaOk === true &&
+        routedTitle === "pong:routed" &&
+        orphanFetchOk === true;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
