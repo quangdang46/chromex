@@ -1060,6 +1060,35 @@ describe("tool host (P1-09)", () => {
     expect(sent.length).toBe(before);
   });
 
+  test("page.get reports crashed:true only when CDP eval fails on unreachable content script", async () => {
+    const mkDeps = (evalFails: boolean) =>
+      deps({
+        // content script unreachable (dead renderer OR no injection)
+        sendToTab: vi.fn(async () => {
+          throw new Error("no receiving end");
+        }),
+        acquireCdp: vi.fn(async () => ({
+          send: vi.fn(async (method: string) => {
+            if (method === "Runtime.evaluate" && evalFails) throw new Error("Cannot find context");
+            return {};
+          }),
+        }) as never),
+        releaseCdp: vi.fn(async () => {}),
+      });
+    const hDead = createToolHostHandler(mkDeps(true));
+    const resDead = (await hDead(req("browser.page.get"))) as Record<string, unknown>;
+    expect(resDead.crashed).toBe(true);
+    expect(resDead.page).toBeUndefined();
+    // live page, missing content script → eval succeeds → no crashed claim
+    const hAlive = createToolHostHandler(mkDeps(false));
+    const resAlive = (await hAlive(req("browser.page.get"))) as Record<string, unknown>;
+    expect(resAlive.crashed).toBeUndefined();
+    // no debugger tier → probe skipped, field omitted (unknown, not crashed)
+    const hNoCdp = createToolHostHandler(deps({ sendToTab: vi.fn(async () => { throw new Error("x"); }) }));
+    const resNoCdp = (await hNoCdp(req("browser.page.get"))) as Record<string, unknown>;
+    expect(resNoCdp.crashed).toBeUndefined();
+  });
+
   test("page.screenshot background tab uses CDP, never captureVisibleTab", async () => {
     const cdpCalls: string[] = [];
     const visibleCalls: number[] = [];

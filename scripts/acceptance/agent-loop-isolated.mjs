@@ -174,6 +174,28 @@ try {
   );
   await call("browser.tab.close", { tabId: cbTab }).catch(() => null);
 
+  // ── Loop 4c: crash detection + recovery — Page.crash kills the
+  // renderer for real; page.get must report crashed:true, then
+  // page.history reload revives the tab (pageState returns).
+  const crCreated = await call("browser.tab.create", { url: fixture.url("/"), active: false });
+  const crTab = crCreated?.tabId ?? crCreated?.id;
+  await new Promise((r) => setTimeout(r, 800));
+  await call("browser.page.cdp", { tabId: crTab, method: "Page.crash" }).catch(() => null);
+  await new Promise((r) => setTimeout(r, 500));
+  const deadGet = await call("browser.page.get", { tabId: crTab }).catch(() => null);
+  assert(deadGet?.crashed === true, `crashed tab reports crashed:true (got ${JSON.stringify(deadGet).slice(0, 120)})`);
+  assert(deadGet?.page === undefined, "crashed tab omits page liveness probe");
+  const rel = await call("browser.page.history", { tabId: crTab, action: "reload" }).catch(() => null);
+  // crashed renderer can't reload in place — backend revives via a
+  // fresh page at the same URL and reports the NEW tabId honestly
+  const liveTab = rel?.recoveredFromCrash === true ? rel.tabId : crTab;
+  assert(rel?.moved === true || rel?.recoveredFromCrash === true, "reload dispatched on crashed tab");
+  await new Promise((r) => setTimeout(r, 1200));
+  const liveGet = await call("browser.page.get", { tabId: liveTab }).catch(() => null);
+  assert(liveGet?.crashed !== true, "reloaded tab no longer reports crashed");
+  assert(typeof liveGet?.page?.readyState === "string", `reloaded tab liveness probe back (got ${liveGet?.page?.readyState})`);
+  await call("browser.tab.close", { tabId: liveTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

@@ -1613,6 +1613,28 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } catch {
           pageState = undefined;
         }
+        // Crash probe: a dead renderer makes the content script
+        // unreachable, but so does a live page without injection —
+        // ambiguous omission. A CDP Runtime.evaluate ping disambiguates:
+        // session acquired + eval fails → renderer crashed; eval
+        // succeeds → page alive, content script simply absent; acquire
+        // fails → unknown (no debugger tier), report nothing.
+        let crashed: true | undefined;
+        if (!pageState && deps.acquireCdp) {
+          try {
+            const { session, release } = await cdpAcquire(deps, tabId);
+            try {
+              await session.send("Runtime.evaluate", { expression: "1", returnByValue: true });
+            } catch {
+              crashed = true;
+            } finally {
+              await release();
+            }
+          } catch {
+            // acquireCdp failed — debugger unavailable or target gone;
+            // not proof of a crash, omit the field.
+          }
+        }
         // Same privacy rule as tabs.list/frames — query/hash can carry
         // tokens; strip to origin+pathname.
         let safeTabUrl = "";
@@ -1657,6 +1679,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(typeof tab.autoDiscardable === "boolean" ? { autoDiscardable: tab.autoDiscardable } : {}),
           ...(typeof tab.mutedInfo?.muted === "boolean" ? { muted: tab.mutedInfo.muted } : {}),
           ...(pageState ? { page: pageState } : {}),
+          ...(crashed === true ? { crashed: true } : {}),
           ...(typeof tab.groupId === "number" ? { groupId: tab.groupId } : {}),
           ...(scroll ? { scroll } : {}),
           ...(frames ? { frames } : {}),

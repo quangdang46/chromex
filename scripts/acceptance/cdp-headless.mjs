@@ -1568,6 +1568,74 @@ await runScenario(
         ...cb,
       };
 
+      // --- screenshot fullPage: /tall is 5000px+ tall — a viewport
+      // shot and a fullPage shot must differ in JPEG pixel height
+      // (parse the SOF marker). Proves captureBeyondViewport reached
+      // CDP for real, not just arg acceptance. ---
+      const fp = {};
+      const jpegSize = (b64) => {
+        const buf = Buffer.from(String(b64), "base64");
+        let i = 2;
+        while (i < buf.length - 9) {
+          if (buf[i] !== 0xff) { i += 1; continue; }
+          const marker = buf[i + 1];
+          if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+            return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+          }
+          i += 2 + buf.readUInt16BE(i + 2);
+        }
+        return null;
+      };
+      try {
+        const fpCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/tall"), active: false }, token, 60_000,
+        );
+        const fpTab = (fpCreate?.result ?? fpCreate ?? {}).openedTabId ??
+          (fpCreate?.result ?? fpCreate ?? {}).tabId;
+        fp.createOk = typeof fpTab === "number";
+        if (fp.createOk) {
+          await sleep(800);
+          const vpShot = await runner.browserToolCall(
+            taskId, "browser.page.screenshot", { tabId: fpTab }, token, 60_000,
+          );
+          const fullShot = await runner.browserToolCall(
+            taskId, "browser.page.screenshot", { tabId: fpTab, fullPage: true }, token, 60_000,
+          );
+          const vpDim = jpegSize((vpShot?.result ?? vpShot ?? {}).dataBase64);
+          const fullDim = jpegSize((fullShot?.result ?? fullShot ?? {}).dataBase64);
+          fp.viewport = vpDim; fp.full = fullDim;
+          fp.ok = typeof vpDim?.height === "number" && typeof fullDim?.height === "number"
+            && fullDim.height > vpDim.height * 2;
+          // invalid combos refused before dispatch
+          const badCombo = await runner.browserToolCall(
+            taskId, "browser.page.screenshot", { tabId: fpTab, fullPage: true, selector: "#x" }, token, 60_000,
+          ).catch(() => null);
+          fp.badComboOk = (badCombo?.error?.code ?? "") === "proto.invalid";
+          const badType = await runner.browserToolCall(
+            taskId, "browser.page.screenshot", { tabId: fpTab, fullPage: "yes" }, token, 60_000,
+          ).catch(() => null);
+          fp.badTypeOk = (badType?.error?.code ?? "") === "proto.invalid";
+          await runner.browserToolCall(
+            taskId, "browser.tab.close", { tabId: fpTab }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          fp.ok = fp.badComboOk = fp.badTypeOk = false;
+        }
+      } catch (e) {
+        fp.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`screenshotFullPage → ${JSON.stringify(fp).slice(0, 300)}`);
+      results.screenshotFullPage = {
+        ok: fp.createOk === true && fp.ok === true && fp.badComboOk === true && fp.badTypeOk === true,
+        ...fp,
+      };
+
+      // NOTE: real renderer-crash recovery (Page.crash → page.get
+      // crashed:true → reload revive) is NOT exercised here — on headless
+      // CfT, Page.crash kills the browser host connection entirely
+      // (same destructive class as window teardown). The crashed:true
+      // probe in page.get is unit-tested; verify on headed Chrome.
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

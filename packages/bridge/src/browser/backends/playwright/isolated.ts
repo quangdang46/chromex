@@ -736,6 +736,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // Scroll/viewport + page-liveness parity with the extension host's
     // page.scrollpos / page.state probes — evaluate is backend-internal,
     // not the agent-facing tool.
+    let probeError: unknown;
     const probe = await page
       .evaluate(() => ({
         scrollX: window.scrollX,
@@ -749,7 +750,19 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         hasFocus: document.hasFocus(),
         online: navigator.onLine,
       }))
-      .catch(() => undefined);
+      .catch((e: unknown) => {
+        probeError = e;
+        return undefined;
+      });
+    // Parity with the extension host's CDP crash probe: a failed liveness
+    // evaluate on a crashed renderer reports crashed:true; other probe
+    // failures (mid-navigation etc.) stay ambiguous → field omitted.
+    const crashed =
+      probe === undefined &&
+      probeError instanceof Error &&
+      /crash/i.test(probeError.message)
+        ? true
+        : undefined;
     const scroll = probe
       ? {
           scrollX: probe.scrollX,
@@ -789,6 +802,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       frames: framesList,
       ...(scroll ? { scroll } : {}),
       ...(pageState ? { page: pageState } : {}),
+      ...(crashed === true ? { crashed: true } : {}),
       ...(pageState ? { status: pageState.readyState === "loading" ? "loading" : "complete" } : {}),
     };
     if (key === "text") {
@@ -2259,7 +2273,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** browser.page.history — page.goBack/goForward/reload parity with
    *  chrome.tabs.goBack/goForward/reload on the extension host. */
   async #history(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    let page = await this.#pageFor(taskId, args);
     const action = typeof args.action === "string" ? args.action : "";
     if (args.bypassCache !== undefined && typeof args.bypassCache !== "boolean") {
       throw protocolError("proto.invalid", "browser.page.history args.bypassCache must be a boolean");
@@ -2270,26 +2284,63 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // goBack/goForward resolve null when there is no history entry —
     // report that honestly instead of claiming a navigation.
     let moved: boolean | null = null;
+    let recoveredFromCrash = false;
     if (action === "back") {
       moved = (await page.goBack({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null)) !== null;
     } else if (action === "forward") {
       moved = (await page.goForward({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null)) !== null;
     } else if (action === "reload") {
-      if (args.bypassCache === true) {
-        // playwright page.reload has no cache-bypass — CDP
-        // Page.reload {ignoreCache:true} is the honest equivalent
-        // (same primitive chrome.tabs.reload {bypassCache} wraps).
-        const session = await this.#emulationSession(page);
-        await session.send("Page.reload", { ignoreCache: true });
-      } else {
-        await page.reload({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+      try {
+        if (args.bypassCache === true) {
+          // playwright page.reload has no cache-bypass — CDP
+          // Page.reload {ignoreCache:true} is the honest equivalent
+          // (same primitive chrome.tabs.reload {bypassCache} wraps).
+          const session = await this.#emulationSession(page);
+          await session.send("Page.reload", { ignoreCache: true });
+        } else {
+          await page.reload({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+        }
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        if (!/crash/i.test(msg)) throw e;
+        // A crashed renderer cannot reload in place — playwright
+        // refuses reload/goto on it. Real Chrome revives the same tab
+        // with a fresh renderer; the isolated equivalent is a new page
+        // at the same URL. tabId is a page index → it changes; report
+        // the new id honestly instead of pretending the old one lived.
+        const context = await this.#contextFor(taskId);
+        const url = page.url();
+        const fresh = this.#trackPage(await context.newPage());
+        try {
+          await fresh.goto(url || "about:blank", {
+            timeout: DEFAULT_NAV_TIMEOUT_MS,
+            waitUntil: "domcontentloaded",
+          });
+          if (args.bypassCache === true) {
+            const session = await this.#emulationSession(fresh);
+            await session.send("Page.reload", { ignoreCache: true });
+          }
+        } catch {
+          // best-effort revive — the fresh page exists either way
+        }
+        await page.close().catch(() => {});
+        page = fresh;
+        recoveredFromCrash = true;
       }
       moved = true;
     } else {
       throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
     }
     await this.#recordVisit(taskId, page);
-    return { navigated: action, ...(moved !== null ? { moved } : {}), url: stripQuery(page.url()) };
+    const context = await this.#contextFor(taskId);
+    return {
+      navigated: action,
+      ...(moved !== null ? { moved } : {}),
+      url: stripQuery(page.url()),
+      ...(recoveredFromCrash
+        ? { recoveredFromCrash: true, tabId: context.pages().indexOf(page) }
+        : {}),
+    };
   }
 
   /** Append a visit to the task's log (cap 500 — oldest dropped). */
@@ -2880,10 +2931,18 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     try {
       // playwright types send() against known CommandParameters keys —
       // browser.page.cdp accepts any protocol method by design.
-      const result = await (session.send as (m: string, p?: unknown) => Promise<unknown>)(
-        method,
-        params,
-      );
+      // Bounded wait: a command aimed at a target that dies mid-flight
+      // (Page.crash, tab kill) never gets a response — without a race
+      // the tool call hangs forever.
+      const result = await Promise.race([
+        (session.send as (m: string, p?: unknown) => Promise<unknown>)(method, params),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`cdp ${method} exceeded ${DEFAULT_NAV_TIMEOUT_MS}ms — target may have crashed`)),
+            DEFAULT_NAV_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       const serialized = JSON.stringify(result ?? null);
       const bytes = serialized?.length ?? 0;
       if (bytes > 256 * 1024) {
