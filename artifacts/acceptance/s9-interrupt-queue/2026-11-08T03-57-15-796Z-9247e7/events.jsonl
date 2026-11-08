@@ -1,0 +1,6 @@
+{"seq":6,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6WMV9GRPBFJ3ZSFTXXJ68A7","reason":"interrupted"},"at":1794110239889}
+{"seq":7,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794110239890}
+{"seq":null,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"reasoning.delta","payload":{},"at":1794110242612}
+{"seq":9,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M6WMVD46AJ4N8AFNBBPFTP8R","text":"No task came through — both messages only contain the app context and an interrupted turn. What would you like me to work on?"},"at":1794110242766}
+{"seq":null,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"assistant.delta","payload":{},"at":1794110242765}
+{"seq":10,"taskId":"01M6WMV9GKJAERC4T9TXCB3QKT","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M6WMVD46AJ4N8AFNBBPFTP8R"},"at":1794110242864}

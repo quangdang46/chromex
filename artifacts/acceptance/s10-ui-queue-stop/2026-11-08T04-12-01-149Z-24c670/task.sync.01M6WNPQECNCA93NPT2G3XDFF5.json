@@ -1,0 +1,206 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 1,
+      "ts": 1794111135184,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+        "profileId": "codex",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 2,
+      "ts": 1794111135188,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 3,
+      "ts": 1794111135191,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6WNPQEQJCCM9HQ16QY5BG0T",
+        "message": {
+          "gatewayTurnId": "01M6WNPQEQJCCM9HQ16QY5BG0T",
+          "clientMessageId": "prompt-1794111132863-2stcjbd5ws6",
+          "content": [
+            {
+              "type": "text",
+              "text": "first long turn — keep working"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794111132863-2stcjbd5ws6"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 4,
+      "ts": 1794111135197,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6WNPQEQJCCM9HQ16QY5BG0T"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 5,
+      "ts": 1794111136716,
+      "type": "turn.failed",
+      "payload": {
+        "type": "turn.failed",
+        "turnId": "01M6WNPQEQJCCM9HQ16QY5BG0T",
+        "error": {
+          "code": "provider.turn_failed",
+          "message": "No active credentials for provider: codex",
+          "retryable": true,
+          "requiresUserAction": false,
+          "sideEffectState": "unknown"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 6,
+      "ts": 1794111136717,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "active",
+        "to": "completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 7,
+      "ts": 1794111136717,
+      "type": "task.attention_changed",
+      "payload": {
+        "type": "task.attention_changed",
+        "attention": "turn_finished"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 8,
+      "ts": 1794111136717,
+      "type": "task.completed",
+      "payload": {
+        "type": "task.completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 9,
+      "ts": 1794111137625,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6WNPSTRW44AGG1H4WPN8TG5",
+        "message": {
+          "gatewayTurnId": "01M6WNPSTRW44AGG1H4WPN8TG5",
+          "clientMessageId": "prompt-1794111136718-4mtyds3q58u",
+          "content": [
+            {
+              "type": "text",
+              "text": "queued second message"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794111136718-4mtyds3q58u"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 10,
+      "ts": 1794111137628,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6WNPSTRW44AGG1H4WPN8TG5"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WNPQECNCA93NPT2G3XDFF5",
+      "seq": 11,
+      "ts": 1794111137811,
+      "type": "turn.failed",
+      "payload": {
+        "type": "turn.failed",
+        "turnId": "01M6WNPSTRW44AGG1H4WPN8TG5",
+        "error": {
+          "code": "provider.turn_failed",
+          "message": "No active credentials for provider: codex",
+          "retryable": true,
+          "requiresUserAction": false,
+          "sideEffectState": "unknown"
+        }
+      }
+    }
+  ],
+  "nextSeq": 11,
+  "hasMore": false
+}

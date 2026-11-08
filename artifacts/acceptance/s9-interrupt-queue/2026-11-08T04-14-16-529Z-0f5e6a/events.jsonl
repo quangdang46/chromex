@@ -1,0 +1,7 @@
+{"seq":6,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6WNTE7ZRKKR2PRRNBBK09F2","reason":"interrupted"},"at":1794111260641}
+{"seq":7,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794111260642}
+{"seq":null,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"reasoning.delta","payload":{},"at":1794111282108}
+{"seq":null,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"assistant.delta","payload":{},"at":1794111282267}
+{"seq":null,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"assistant.delta","payload":{},"at":1794111282820}
+{"seq":9,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M6WNTHYJB12V1WNC4AV9GE16","text":"I don't see a task in that message — it looks like the turn was aborted before any request came through. What would you like me to work on?"},"at":1794111282863}
+{"seq":10,"taskId":"01M6WNTE7TAGB08ZZHQ7QVA8H5","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M6WNTHYJB12V1WNC4AV9GE16"},"at":1794111283002}

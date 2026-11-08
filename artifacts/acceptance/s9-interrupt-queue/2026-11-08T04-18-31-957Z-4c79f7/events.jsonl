@@ -1,0 +1,4 @@
+{"seq":5,"taskId":"01M6WP27PSRWP2GGB4T3RT4SYP","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M6WP27PV2MYFP331JYCHFTMY","text":"starting"},"at":1794111512383}
+{"seq":null,"taskId":"01M6WP27PSRWP2GGB4T3RT4SYP","type":"assistant.delta","payload":{},"at":1794111512383}
+{"seq":6,"taskId":"01M6WP27PSRWP2GGB4T3RT4SYP","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M6WP27PV2MYFP331JYCHFTMY","stopReason":"end_turn"},"at":1794111512384}
+{"seq":8,"taskId":"01M6WP27PSRWP2GGB4T3RT4SYP","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794111512385}

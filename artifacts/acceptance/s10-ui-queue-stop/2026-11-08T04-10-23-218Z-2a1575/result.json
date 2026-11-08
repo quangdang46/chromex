@@ -1,0 +1,29 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-10-23-218Z-2a1575",
+  "status": "FAIL",
+  "summary": "queueKept=false noFlush=false cancelled=0 completed=0",
+  "durationMs": 19139,
+  "details": {
+    "afterStop": {
+      "queueStillThere": false,
+      "queueText": "",
+      "stopVisible": false,
+      "errorText": "",
+      "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+    },
+    "cancelled": 0,
+    "completed": 0,
+    "started": 4
+  },
+  "notes": [
+    "[2026-11-08T04:10:28.734Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:10:30.547Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
+    "[2026-11-08T04:10:30.552Z] provider options: []",
+    "[2026-11-08T04:10:37.972Z] gateway task after send: 01M6WNKQNH59YG4N95J83Y4XDY",
+    "[2026-11-08T04:10:37.991Z] stop button visible — turn 1 active",
+    "[2026-11-08T04:10:38.038Z] queue strip: queued second message\n          ×",
+    "[2026-11-08T04:10:42.097Z] after stop: {\"queueStillThere\":false,\"queueText\":\"\",\"stopVisible\":false,\"errorText\":\"\",\"storedQueue\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\"}",
+    "[2026-11-08T04:10:42.166Z] task 01M6WNKQNH59YG4N95J83Y4XDY events=11 cancelled=0 completed=0 failed=2 userMsgs=4 seq=1:task.created>2:task.status_changed>3:user.message.created>4:turn.started>5:turn.failed>6:task.status_changed>7:task.attention_changed>8:task.completed>9:user.message.created>10:turn.started>11:turn.failed"
+  ]
+}

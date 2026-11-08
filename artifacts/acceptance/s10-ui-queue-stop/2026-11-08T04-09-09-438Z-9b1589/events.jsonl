@@ -1,0 +1,3 @@
+{"seq":5,"taskId":"01M6WNHG7KE0JRFV8C9MCP8724","type":"turn.failed","payload":{"type":"turn.failed","turnId":"01M6WNHG7TFTTRQCKW7626ZK2N","error":{"code":"provider.turn_failed","message":"No active credentials for provider: codex","retryable":true,"requiresUserAction":false,"sideEffectState":"unknown"}},"at":1794110965163}
+{"seq":7,"taskId":"01M6WNHG7KE0JRFV8C9MCP8724","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794110965165}
+{"seq":11,"taskId":"01M6WNHG7KE0JRFV8C9MCP8724","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6WNHHNMRWG2CEQE15E6QP2Z","reason":"interrupted"},"at":1794110966253}

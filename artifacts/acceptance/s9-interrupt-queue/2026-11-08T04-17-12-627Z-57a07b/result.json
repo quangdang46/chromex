@@ -1,0 +1,19 @@
+{
+  "scenario": "s9-interrupt-queue",
+  "runId": "2026-11-08T04-17-12-627Z-57a07b",
+  "status": "FAIL",
+  "summary": "second send was not queued behind the running turn",
+  "durationMs": 3379,
+  "details": {
+    "s2": {
+      "turnId": "01M6WNZX77T66P8VDXS2S742Z8",
+      "queued": false,
+      "duplicate": false
+    }
+  },
+  "notes": [
+    "[2026-11-08T04:17:12.999Z] task 01M6WNZT956F25JP3F8HDFX7R4",
+    "[2026-11-08T04:17:13.004Z] send1 → turnId=01M6WNZT986RHEDVCRR57FR8D2 queued=false",
+    "[2026-11-08T04:17:16.008Z] send2 → turnId=01M6WNZX77T66P8VDXS2S742Z8 queued=false"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-00-20-740Z-89264d",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n",
+  "durationMs": 47884,
+  "error": "page.waitForSelector: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:45:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:17:1",
+  "notes": [
+    "[2026-11-08T04:00:26.360Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:00:28.222Z] settings.update → {\"error\":\"message rejected\"}"
+  ]
+}

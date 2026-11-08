@@ -1,0 +1,28 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-07-23-338Z-7bf10e",
+  "status": "FAIL",
+  "summary": "queueKept=false noFlush=false cancelled=0 completed=0",
+  "durationMs": 19338,
+  "details": {
+    "afterStop": {
+      "queueStillThere": false,
+      "queueText": "",
+      "stopVisible": false,
+      "errorText": "proto.invalid: proto.invalid: invalid request payload: taskId: Invalid input: expected string, received undefined"
+    },
+    "cancelled": 0,
+    "completed": 0,
+    "started": 4
+  },
+  "notes": [
+    "[2026-11-08T04:07:29.566Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:07:31.551Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
+    "[2026-11-08T04:07:31.553Z] provider options: []",
+    "[2026-11-08T04:07:38.385Z] gateway task after send: 01M6WNE8GYTR0FW2F54CENHFR1",
+    "[2026-11-08T04:07:38.393Z] stop button visible — turn 1 active",
+    "[2026-11-08T04:07:38.511Z] queue strip: queued second message\n          ×",
+    "[2026-11-08T04:07:42.598Z] after stop: {\"queueStillThere\":false,\"queueText\":\"\",\"stopVisible\":false,\"errorText\":\"proto.invalid: proto.invalid: invalid request payload: taskId: Invalid input: expected string, received undefined\"}",
+    "[2026-11-08T04:07:42.659Z] task 01M6WNE8GYTR0FW2F54CENHFR1 events=11 cancelled=0 completed=0 userMsgs=4"
+  ]
+}

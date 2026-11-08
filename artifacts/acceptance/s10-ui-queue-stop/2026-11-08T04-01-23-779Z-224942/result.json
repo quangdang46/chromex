@@ -1,0 +1,12 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-01-23-779Z-224942",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n",
+  "durationMs": 51912,
+  "error": "page.waitForSelector: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:45:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:17:1",
+  "notes": [
+    "[2026-11-08T04:01:28.850Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:01:30.634Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":false,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNaviga"
+  ]
+}

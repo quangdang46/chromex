@@ -1,0 +1,8 @@
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112472587}
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112473089}
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112473591}
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112474092}
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112474596}
+{"seq":null,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"assistant.delta","payload":{},"at":1794112475098}
+{"seq":5,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6WPZHDEQ1ERW9Y1TT0J1WQW","reason":"interrupted"},"at":1794112475129}
+{"seq":7,"taskId":"01M6WPZHD8KPQWRTQSZCEWF1YC","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794112475131}

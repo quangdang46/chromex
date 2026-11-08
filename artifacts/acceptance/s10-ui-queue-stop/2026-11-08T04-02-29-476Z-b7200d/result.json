@@ -1,0 +1,14 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-02-29-476Z-b7200d",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n",
+  "durationMs": 52346,
+  "error": "page.waitForSelector: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:51:18)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:17:1",
+  "notes": [
+    "[2026-11-08T04:02:34.710Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:02:36.569Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":false,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNaviga",
+    "[2026-11-08T04:02:36.570Z] provider options: [\"codex:Codex\",\"fakeacp:fakeacp\"]",
+    "[2026-11-08T04:03:21.620Z] diag after send: {\"composerValue\":\"\",\"bodyTail\":\"Connected\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nSummarize page\\nChromex · Chat\\nBasic permissions\\nCodex\\nfakeacp\\n6.1 Sol\\nLow\",\"buttons\":[\"top-quick-action\",\"top-quick-action infographic\",\"top-quick-action comic\",\"app-menu-toggle\",\"new-chat\",\"dock-chat\",\"site-suggestion action-card\",\"summary-chip tab-reference-chip current removable\",\"attach-files\",\"composer-permission-menu-trigger\",\"composer-model-menu-trigger\",\"send-prompt\"]}"
+  ]
+}

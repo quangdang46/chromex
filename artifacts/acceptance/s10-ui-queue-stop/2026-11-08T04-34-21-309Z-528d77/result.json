@@ -1,0 +1,32 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-34-21-309Z-528d77",
+  "status": "PASS",
+  "summary": "UI queue held the second message; Stop cancelled the provider turn without flushing the queue",
+  "durationMs": 16213,
+  "details": {
+    "afterStop": {
+      "queueStillThere": true,
+      "queueText": "\n    \n          queued second message\n          ×\n        \n  ",
+      "stopVisible": false,
+      "errorText": "",
+      "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{\"7e88c91f-86c5-43b7-89b5-1f0a853edb7c\":[{\"fileAttachments\":[],\"id\":\"queued-1794112473399-pkvp24\",\"profileId\":\"default\",\"text\":\"queued second message\"}]}}"
+    },
+    "cancelled": 1,
+    "completed": 0,
+    "started": 2
+  },
+  "notes": [
+    "[2026-11-08T04:34:26.749Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:34:28.568Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
+    "[2026-11-08T04:34:28.574Z] settings.agentProviderId now: fakeacp",
+    "[2026-11-08T04:34:28.575Z] provider options: []",
+    "[2026-11-08T04:34:33.388Z] gateway task after send: 01M6WPZHD8KPQWRTQSZCEWF1YC",
+    "[2026-11-08T04:34:33.388Z] task.get → providerId=fakeacp {\"task\":{\"taskId\":\"01M6WPZHD8KPQWRTQSZCEWF1YC\",\"createdAt\":1794112472488,\"updatedAt\":1794112472497,\"status\":\"active\",\"pauseReason\":null,\"title\":null,\"profileId\":\"fakeacp\",\"originBrowserInstanceId\":null,\"binding\":{\"browserInstanceId\":null,\"state\":\"none\"},\"providerId\":\"fakeacp\",\"conversationKey\":\"conv",
+    "[2026-11-08T04:34:33.392Z] stop button visible — turn 1 active",
+    "[2026-11-08T04:34:33.410Z] queue strip: queued second message\n          ×",
+    "[2026-11-08T04:34:37.436Z] after stop: {\"queueStillThere\":true,\"queueText\":\"\\n    \\n          queued second message\\n          ×\\n        \\n  \",\"stopVisible\":false,\"errorText\":\"\",\"storedQueue\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"7e88c91f-86c5-43b7-89b5-1f0a853edb7c\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794112473399-pkvp24\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"queued second message\\\"}]}}\"}",
+    "[2026-11-08T04:34:37.486Z] task 01M6WPZHD8KPQWRTQSZCEWF1YC events=8 cancelled=1 completed=0 failed=0 userMsgs=2 seq=1:task.created>2:task.status_changed>3:user.message.created>4:turn.started>5:turn.cancelled>6:task.status_changed>7:task.attention_changed>8:task.completed",
+    "[2026-11-08T04:34:37.486Z] failPayloads=[]"
+  ]
+}

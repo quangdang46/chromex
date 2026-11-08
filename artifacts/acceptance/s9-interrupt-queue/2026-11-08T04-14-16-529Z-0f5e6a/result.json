@@ -1,0 +1,20 @@
+{
+  "scenario": "s9-interrupt-queue",
+  "runId": "2026-11-08T04-14-16-529Z-0f5e6a",
+  "status": "PASS",
+  "summary": "interrupt without turnId → turn.cancelled{interrupted}; queued turn auto-dispatched → turn.completed; no turn.unknown",
+  "durationMs": 26566,
+  "details": {
+    "turnId1": "01M6WNTE7ZRKKR2PRRNBBK09F2",
+    "turnId2": "01M6WNTHYJB12V1WNC4AV9GE16",
+    "term1": "turn.cancelled",
+    "term2": "turn.completed"
+  },
+  "notes": [
+    "[2026-11-08T04:14:16.828Z] task 01M6WNTE7TAGB08ZZHQ7QVA8H5",
+    "[2026-11-08T04:14:17.623Z] send1 → turnId=01M6WNTE7ZRKKR2PRRNBBK09F2 queued=false",
+    "[2026-11-08T04:14:20.627Z] send2 → turnId=01M6WNTHYJB12V1WNC4AV9GE16 queued=true",
+    "[2026-11-08T04:14:20.642Z] turn.interrupt → {\"ok\":true,\"threadId\":\"01M6WNTE7TAGB08ZZHQ7QVA8H5\"}",
+    "[2026-11-08T04:14:43.089Z] term1=turn.cancelled term2=turn.completed unknowns=0"
+  ]
+}

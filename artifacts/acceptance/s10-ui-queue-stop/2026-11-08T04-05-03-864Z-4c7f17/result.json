@@ -1,0 +1,15 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T04-05-03-864Z-4c7f17",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n",
+  "durationMs": 52565,
+  "error": "page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#stop-turn') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:72:18)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s10-ui-queue-stop.mjs:17:1",
+  "notes": [
+    "[2026-11-08T04:05:09.351Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T04:05:11.162Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":false,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNaviga",
+    "[2026-11-08T04:05:11.163Z] provider options: [\"codex:Codex\",\"fakeacp:fakeacp\"]",
+    "[2026-11-08T04:05:26.208Z] gateway task after send: null",
+    "[2026-11-08T04:05:56.235Z] diag after send: {\"composerValue\":\"\",\"bodyTail\":\"Connected\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nSummarize page\\nChromex · Chat\\nBasic permissions\\nCodex\\nfakeacp\\n6.1 Sol\\nLow\",\"msgLog\":[{\"type\":\"image.attachment.pending.take\",\"ok\":true,\"err\":null,\"resp\":\"{}\"},{\"type\":\"context.menu.selection.pending.take\",\"ok\":true,\"err\":null,\"resp\":\"{}\"},{\"type\":\"context.menu.pending.take\",\"ok\":true,\"err\":null,\"resp\":\"{}\"},{\"type\":\"dictation.shortcut.pending.take\",\"ok\":true,\"err\":null,\"resp\":\"{}\"},{\"type\":\"settings.update\",\"ok\":true,\"err\":null,\"resp\":\"{\\\"uiLanguage\\\":\\\"auto\\\",\\\"uiTheme\\\":\\\"system\\\",\\\"usageNoticeAccepted\\\":false,\\\"shareCurrentTabByDefault\\\":false,\\\"rememberChats\\\":false,\\\"liveCaptions\\\":true,\\\"allowVoiceNavigation\\\":true,\\\"allowBrowserActions\\\":true,\\\"b\"},{\"type\":\"ui.settings.snapshot\",\"ok\":true,\"err\":null,\"resp\":\"{\\\"settings\\\":{\\\"uiLanguage\\\":\\\"auto\\\",\\\"uiTheme\\\":\\\"system\\\",\\\"usageNoticeAccepted\\\":false,\\\"shareCurrentTabByDefault\\\":false,\\\"rememberChats\\\":false,\\\"liveCaptions\\\":true,\\\"allowVoiceNavigation\\\":true,\\\"allowBrowserActi\"},{\"type\":\"ui.init\",\"ok\":true,\"err\":null,\"resp\":\"{\\\"accountStatus\\\":{\\\"authMode\\\":null,\\\"codexAuthenticated\\\":true,\\\"multimodalAvailable\\\":true,\\\"openAiApiKeyConfigured\\\":false,\\\"email\\\":null,\\\"planType\\\":null},\\\"currentPageSupport\\\":{\\\"available\\\":true,\\\"blockedReaso\"},{\"type\":\"gateway.tasks\",\"ok\":true,\"err\":null,\"resp\":\"{\\\"enabled\\\":true,\\\"state\\\":\\\"ready\\\",\\\"tasks\\\":[]}\"},{\"type\":\"page.i"
+  ]
+}
