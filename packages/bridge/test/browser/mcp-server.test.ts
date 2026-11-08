@@ -348,6 +348,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.tabGroups": { action: "list" },
   "browser.siteSettings": { contentType: "notifications", origin: "https://example.com" },
   "browser.sessions": { action: "list", maxResults: 10 },
+  "browser.proxy": { action: "get" },
   "browser.downloads.list": { state: "complete", limit: 20 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
   "browser.downloads.cancel": { downloadId: 42 },

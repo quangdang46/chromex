@@ -188,6 +188,14 @@ export interface ToolHostDeps {
     list(maxResults: number): Promise<unknown[] | "permission" | null>;
     restore(sessionId?: string): Promise<Record<string, unknown> | "permission" | null>;
   } | undefined;
+  /** chrome.proxy.settings (browser.proxy) — profile-wide proxy config.
+   *  "permission" → optional proxy permission not granted;
+   *  null → API unavailable → proto.unsupported. */
+  proxy?: {
+    get(scope?: string): Promise<{ value?: unknown; levelOfControl?: string } | "permission" | null>;
+    set(value: Record<string, unknown>, scope?: string): Promise<Record<string, unknown> | "permission" | null>;
+    clear(scope?: string): Promise<Record<string, unknown> | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -355,6 +363,7 @@ const SUPPORTED = new Set([
   "browser.tabGroups",
   "browser.siteSettings",
   "browser.sessions",
+  "browser.proxy",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2219,6 +2228,129 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "session data is not available on this host");
         }
         return { entries: res, count: res.length };
+      }
+      case "browser.proxy": {
+        // Not tab-scoped: chrome.proxy.settings — profile-wide egress
+        // control. Optional "proxy" permission — ungranted → unsupported.
+        if (!deps.proxy) {
+          throw toolError("proto.unsupported", "proxy control is not available on this host");
+        }
+        const action = str(args.action) ?? "get";
+        if (!["get", "set", "clear"].includes(action)) {
+          throw toolError("proto.invalid", "browser.proxy args.action must be get|set|clear");
+        }
+        const SCOPES = new Set(["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"]);
+        const scope = str(args.scope);
+        if (scope !== undefined && !SCOPES.has(scope)) {
+          throw toolError("proto.invalid", `browser.proxy args.scope must be one of ${[...SCOPES].join("|")}`);
+        }
+        if (action === "get") {
+          const res = await deps.proxy.get(scope);
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "proxy permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", "proxy control is not available on this host");
+          }
+          return {
+            value: res.value ?? null,
+            ...(typeof res.levelOfControl === "string" ? { levelOfControl: res.levelOfControl } : {}),
+            ...(scope ? { scope } : {}),
+          };
+        }
+        if (action === "clear") {
+          const res = await deps.proxy.clear(scope);
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "proxy permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", "proxy control is not available on this host");
+          }
+          return { cleared: true, ...(scope ? { scope } : {}) };
+        }
+        // set — build the chrome ProxyConfig from the simplified spec.
+        const mode = str(args.mode);
+        if (mode === undefined || !["direct", "system", "auto_detect", "pac_script", "fixed_servers"].includes(mode)) {
+          throw toolError("proto.invalid", "browser.proxy set requires args.mode direct|system|auto_detect|pac_script|fixed_servers");
+        }
+        let value: Record<string, unknown>;
+        if (mode === "fixed_servers") {
+          const p = args.proxy;
+          if (typeof p !== "object" || p === null || Array.isArray(p)) {
+            throw toolError("proto.invalid", "browser.proxy fixed_servers requires args.proxy {host, scheme?, port?}");
+          }
+          const host = str((p as Record<string, unknown>).host);
+          if (host === undefined || host.length > 253) {
+            throw toolError("proto.invalid", "browser.proxy args.proxy.host is required (≤253 chars)");
+          }
+          const scheme = str((p as Record<string, unknown>).scheme);
+          if (scheme !== undefined && !["http", "https", "quic", "socks4", "socks5"].includes(scheme)) {
+            throw toolError("proto.invalid", "browser.proxy args.proxy.scheme must be http|https|quic|socks4|socks5");
+          }
+          const port = (p as Record<string, unknown>).port;
+          if (port !== undefined && (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535)) {
+            throw toolError("proto.invalid", "browser.proxy args.proxy.port must be an integer 1-65535");
+          }
+          const bypass = args.bypassList;
+          if (bypass !== undefined) {
+            if (!Array.isArray(bypass) || bypass.length > 32 || bypass.some((b) => typeof b !== "string" || b.length === 0 || b.length > 253)) {
+              throw toolError("proto.invalid", "browser.proxy args.bypassList must be ≤32 non-empty strings ≤253 chars");
+            }
+          }
+          value = {
+            mode,
+            rules: {
+              singleProxy: {
+                host,
+                ...(scheme ? { scheme } : {}),
+                ...(port !== undefined ? { port } : {}),
+              },
+              ...(Array.isArray(bypass) ? { bypassList: bypass as string[] } : {}),
+            },
+          };
+        } else if (mode === "pac_script") {
+          const pac = args.pacScript;
+          if (typeof pac !== "object" || pac === null || Array.isArray(pac)) {
+            throw toolError("proto.invalid", "browser.proxy pac_script requires args.pacScript {url|data, mandatory?}");
+          }
+          const pacUrl = str((pac as Record<string, unknown>).url);
+          const pacData = str((pac as Record<string, unknown>).data);
+          if ((pacUrl === undefined) === (pacData === undefined)) {
+            throw toolError("proto.invalid", "browser.proxy args.pacScript takes args.pacScript.url XOR args.pacScript.data");
+          }
+          if (pacUrl !== undefined) {
+            try {
+              const u = new URL(pacUrl);
+              if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("scheme");
+            } catch {
+              throw toolError("proto.invalid", "browser.proxy args.pacScript.url must be http(s)");
+            }
+          }
+          if (pacData !== undefined && pacData.length > 128 * 1024) {
+            throw toolError("proto.invalid", "browser.proxy args.pacScript.data must be ≤128KiB");
+          }
+          const mandatory = (pac as Record<string, unknown>).mandatory;
+          if (mandatory !== undefined && typeof mandatory !== "boolean") {
+            throw toolError("proto.invalid", "browser.proxy args.pacScript.mandatory must be boolean");
+          }
+          value = {
+            mode,
+            pacScript: {
+              ...(pacUrl !== undefined ? { url: pacUrl } : { data: pacData }),
+              ...(mandatory !== undefined ? { mandatory } : {}),
+            },
+          };
+        } else {
+          value = { mode };
+        }
+        const res = await deps.proxy.set(value, scope);
+        if (res === "permission") {
+          throw toolError("proto.unsupported", "proxy permission is not granted");
+        }
+        if (res === null) {
+          throw toolError("proto.unsupported", "proxy control is not available on this host");
+        }
+        return { mode, value, ...(scope ? { scope } : {}), applied: true };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

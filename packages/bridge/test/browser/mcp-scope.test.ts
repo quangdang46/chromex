@@ -74,7 +74,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.tab.discard");
     expect(tools).not.toContain("browser.tabGroups");
     expect(tools).not.toContain("browser.sessions");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 6);
+    expect(tools).not.toContain("browser.proxy");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 7);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 

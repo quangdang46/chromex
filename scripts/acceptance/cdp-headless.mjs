@@ -1137,6 +1137,26 @@ await runScenario(
         ...sn,
       };
 
+      // --- proxy: optional "proxy" permission — ungranted → honest unsupported ---
+      let px = {};
+      const pxRes = await runner.browserToolCall(
+        taskId, "browser.proxy", { action: "get" }, token, 60_000,
+      );
+      const pxErr = pxRes?.error ?? {};
+      px.getUnsupportedOk = pxRes?.status === "failed" && pxErr.code === "proto.unsupported";
+      px.msg = String(pxErr.message ?? "").slice(0, 160);
+      const pxSet = await runner.browserToolCall(
+        taskId, "browser.proxy",
+        { action: "set", mode: "direct" }, token, 60_000,
+      );
+      const pxSetErr = pxSet?.error ?? {};
+      px.setUnsupportedOk = pxSet?.status === "failed" && pxSetErr.code === "proto.unsupported";
+      evidence.note(`proxy → ${JSON.stringify(px).slice(0, 300)}`);
+      results.proxy = {
+        ok: px.getUnsupportedOk === true && px.setUnsupportedOk === true,
+        ...px,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

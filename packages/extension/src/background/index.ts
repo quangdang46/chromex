@@ -619,6 +619,40 @@ const toolHostHandler = createToolHostHandler({
             };
       },
     },
+    proxy: {
+      // chrome.proxy.settings — optional "proxy" permission checked per
+      // call (runtime grant works without SW restart); Chrome hides the
+      // namespace while ungranted.
+      get: async (scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["proxy"] });
+        if (!granted) return "permission";
+        const api = chrome.proxy?.settings as unknown as {
+          get(d: { scope?: string }): Promise<{ value?: unknown; levelOfControl?: string }>;
+        } | undefined;
+        if (!api?.get) return null;
+        return api.get({ ...(scope ? { scope } : {}) });
+      },
+      set: async (value, scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["proxy"] });
+        if (!granted) return "permission";
+        const api = chrome.proxy?.settings as unknown as {
+          set(d: { value: unknown; scope?: string }): Promise<void>;
+        } | undefined;
+        if (!api?.set) return null;
+        await api.set({ value, ...(scope ? { scope } : {}) });
+        return { applied: true };
+      },
+      clear: async (scope) => {
+        const granted = await chrome.permissions.contains({ permissions: ["proxy"] });
+        if (!granted) return "permission";
+        const api = chrome.proxy?.settings as unknown as {
+          clear(d: { scope?: string }): Promise<void>;
+        } | undefined;
+        if (!api?.clear) return null;
+        await api.clear({ ...(scope ? { scope } : {}) });
+        return { cleared: true };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

@@ -74,6 +74,9 @@ export interface ActionContext {
   /** browser.sessions sub-action — list reads recently-closed tabs/
    *  windows (personal URLs), restore reopens one (browser mutation). */
   sessionOp?: string;
+  /** browser.proxy sub-action — get reads the effective proxy config,
+   *  set/clear reroute ALL browser traffic (external mutation). */
+  proxyOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -547,6 +550,22 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // list reads recently-closed entries — personal URLs, page-text
       // egress class (handled by the agentEgress dimension above).
       return verdict("read", { reason: "recently-closed session list" });
+    }
+
+    case "browser.proxy": {
+      const op = ctx.proxyOp ?? "get";
+      if (op === "set" || op === "clear") {
+        // Proxy config reroutes every request the browser makes —
+        // including credentials and page data through an arbitrary
+        // server. Always approval, never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "proxy change reroutes all browser traffic",
+        });
+      }
+      return verdict("read", { reason: "proxy config read" });
     }
 
     case "browser.page.caches": {

@@ -866,6 +866,7 @@ try {
   await expectReject("browser.downloads.cancel", {}, "downloadId", "downloads.cancel without id refused");
   await expectReject("browser.tabGroups", { action: "list" }, "does not support", "tabGroups refused on isolated (no playwright equivalent)");
   await expectReject("browser.sessions", { action: "list" }, "does not support", "sessions refused on isolated (closed pages cannot reopen)");
+  await expectReject("browser.proxy", { action: "get" }, "does not support", "proxy refused on isolated (fixed at launch)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

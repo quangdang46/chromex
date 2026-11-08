@@ -882,6 +882,35 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       maxResults: { type: "integer", description: "list: max entries (1–25, default 25)." },
     }),
   },
+  "browser.proxy": {
+    description:
+      "Read and control the browser's proxy configuration (chrome.proxy.settings) — reroutes ALL browser traffic, the deepest network-egress control. args.action: 'get' (default) returns the effective config {mode, rules|pacScript, levelOfControl}; 'set' applies args.mode; 'clear' removes the extension's override (falls back to system/lower-level settings). Modes: 'direct' (no proxy), 'system' (OS settings), 'auto_detect' (WPAD), 'pac_script' (args.pacScript {url http(s) XOR data ≤128KiB, optional mandatory}), 'fixed_servers' (args.proxy {host required, scheme http|https|quic|socks4|socks5, port} used for all protocols, plus optional args.bypassList string[]). args.scope optionally regular|incognito_session_only|off_the_record|span_incognito|regular_only. 'set'/'clear' ALWAYS require approval and are never task-eligible — they reroute every request including credentials through an arbitrary server. On chrome-extension requires the optional 'proxy' permission — ungranted → proto.unsupported. On playwright-isolated → proto.unsupported (proxy is fixed at launch).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["get", "set", "clear"], description: "Operation (default get)." },
+      mode: { type: "string", enum: ["direct", "system", "auto_detect", "pac_script", "fixed_servers"], description: "set: proxy mode." },
+      proxy: {
+        type: "object",
+        description: "fixed_servers: single proxy for all protocols — {host required, scheme?, port?}.",
+        properties: {
+          host: { type: "string", description: "Proxy hostname or IP (required)." },
+          scheme: { type: "string", enum: ["http", "https", "quic", "socks4", "socks5"], description: "Proxy scheme (default http)." },
+          port: { type: "integer", description: "Proxy port." },
+        },
+        required: ["host"],
+      },
+      bypassList: { type: "array", items: { type: "string" }, description: "fixed_servers: hosts that bypass the proxy (e.g. '<local>')." },
+      pacScript: {
+        type: "object",
+        description: "pac_script: {url http(s) XOR data ≤128KiB, optional mandatory}.",
+        properties: {
+          url: { type: "string", description: "http(s) URL of the PAC file." },
+          data: { type: "string", description: "Inline PAC script source (≤128KiB)." },
+          mandatory: { type: "boolean", description: "Invalid PAC → fail closed instead of direct (default false)." },
+        },
+      },
+      scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

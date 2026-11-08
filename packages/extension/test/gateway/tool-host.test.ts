@@ -1438,6 +1438,102 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.proxy marshals get/set/clear + validates", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      proxy: {
+        get: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "get", args });
+          return { value: { mode: "system" }, levelOfControl: "controlled_by_this_extension" };
+        }),
+        set: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "set", args });
+          return { applied: true };
+        }),
+        clear: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "clear", args });
+          return { cleared: true };
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    const getRes = (await h(req("browser.proxy", {}))) as { value: { mode: string }; levelOfControl: string };
+    expect(getRes.value.mode).toBe("system");
+    expect(getRes.levelOfControl).toBe("controlled_by_this_extension");
+    expect(calls[0]).toEqual({ op: "get", args: [undefined] });
+    // fixed_servers marshals into chrome ProxyConfig shape
+    const setRes = (await h(req("browser.proxy", {
+      action: "set", mode: "fixed_servers",
+      proxy: { host: "127.0.0.1", port: 8888, scheme: "http" },
+      bypassList: ["<local>"], scope: "regular",
+    }))) as { applied: boolean; mode: string };
+    expect(setRes.applied).toBe(true);
+    expect(calls[1]).toEqual({
+      op: "set",
+      args: [{
+        mode: "fixed_servers",
+        rules: {
+          singleProxy: { host: "127.0.0.1", scheme: "http", port: 8888 },
+          bypassList: ["<local>"],
+        },
+      }, "regular"],
+    });
+    // pac_script data form
+    await h(req("browser.proxy", {
+      action: "set", mode: "pac_script",
+      pacScript: { data: "function FindProxyForURL(){return 'DIRECT';}", mandatory: true },
+    }));
+    expect(calls[2]).toEqual({
+      op: "set",
+      args: [{
+        mode: "pac_script",
+        pacScript: { data: "function FindProxyForURL(){return 'DIRECT';}", mandatory: true },
+      }, undefined],
+    });
+    // simple modes
+    await h(req("browser.proxy", { action: "set", mode: "direct" }));
+    expect(calls[3]).toEqual({ op: "set", args: [{ mode: "direct" }, undefined] });
+    await h(req("browser.proxy", { action: "clear" }));
+    expect(calls[4]).toEqual({ op: "clear", args: [undefined] });
+    // validation
+    await expect(h(req("browser.proxy", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set", mode: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set", mode: "fixed_servers" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set", mode: "fixed_servers", proxy: { host: "x", scheme: "gopher" } })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set", mode: "fixed_servers", proxy: { host: "x", port: 70000 } })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { action: "set", mode: "pac_script" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", {
+      action: "set", mode: "pac_script",
+      pacScript: { url: "https://x/pac", data: "fn()" },
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", {
+      action: "set", mode: "pac_script", pacScript: { url: "file:///etc/pac" },
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.proxy", { scope: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      proxy: {
+        get: vi.fn(async () => "permission" as const),
+        set: vi.fn(async () => "permission" as const),
+        clear: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.proxy", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("proxy permission") });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.proxy", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

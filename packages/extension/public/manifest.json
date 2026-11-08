@@ -36,7 +36,8 @@
     "bookmarks",
     "browsingData",
     "contentSettings",
-    "sessions"
+    "sessions",
+    "proxy"
   ],
   "background": {
     "service_worker": "background.js",
