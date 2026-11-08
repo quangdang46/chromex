@@ -787,6 +787,11 @@ const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
 const streamingAssistantMessageIdsByConversationId = new Map<string, Set<string>>();
 const contextCompactionNoticeIdsByKey = new Map<string, string>();
 const messageTraceOpenByMessageId = new Map<string, boolean>();
+// Open state for <details> elements that have no dedicated state map —
+// renderNow() replaces root.innerHTML wholesale, so without this every
+// expand collapses on the next render (stream deltas fire constantly).
+const detailOpenByKey = new Map<string, boolean>();
+const DETAIL_OPEN_KEY_LIMIT = 2000;
 const assistantResponseMessageIdsByGroupKey = new Map<string, string>();
 const assistantResponseGroupKeysByItemId = new Map<string, string>();
 const assistantResponseGroupKeysByTurnKey = new Map<string, string>();
@@ -7790,8 +7795,9 @@ function renderMessageTraceItem(item: NonNullable<ConversationMessage["trace"]>[
     </div>
   `;
   }
+  const detailKey = `trace-item:${item.id}`;
   return `
-    <details class="message-trace-line ${escapeAttribute(item.kind)} ${escapeAttribute(item.status)} message-trace-line-expandable" role="listitem">
+    <details class="message-trace-line ${escapeAttribute(item.kind)} ${escapeAttribute(item.status)} message-trace-line-expandable" role="listitem" data-detail-key="${escapeAttribute(detailKey)}"${detailOpenByKey.get(detailKey) ? " open" : ""}>
       <summary class="message-trace-line-summary">
         ${body}
         <span class="message-trace-line-caret" aria-hidden="true">${renderUiIcon("chevron-down")}</span>
@@ -10313,7 +10319,7 @@ function renderDiagnosticLogFolderDetail(strings: ReturnType<typeof getUiStrings
 function renderWorkspaceDiagnostics(strings: ReturnType<typeof getUiStrings>): string {
   const recentChats = getRecentChatDisplayItems();
   return `
-    <details class="surface stack diagnostics-panel">
+    <details class="surface stack diagnostics-panel" data-detail-key="workspace-diagnostics"${detailOpenByKey.get("workspace-diagnostics") ? " open" : ""}>
       <summary>${escapeHtml(strings.labels.diagnostics)}</summary>
       <section class="stack">
         <div class="stack-header">
@@ -13649,6 +13655,25 @@ function bindEvents(): void {
       }
     });
   });
+  root.querySelectorAll<HTMLDetailsElement>("details[data-detail-key]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      const key = details.dataset.detailKey?.trim();
+      if (!key) {
+        return;
+      }
+      if (details.open) {
+        detailOpenByKey.delete(key);
+        detailOpenByKey.set(key, true);
+        while (detailOpenByKey.size > DETAIL_OPEN_KEY_LIMIT) {
+          const oldest = detailOpenByKey.keys().next().value;
+          if (oldest === undefined) break;
+          detailOpenByKey.delete(oldest);
+        }
+      } else {
+        detailOpenByKey.delete(key);
+      }
+    });
+  });
 
   root.querySelector<HTMLButtonElement>("[data-usage-notice-accept]")?.addEventListener("click", async () => {
     state.settings = await sendRuntimeMessage<ExtensionSettings>({
@@ -16766,7 +16791,7 @@ function renderTurnDeliverable(message: ConversationMessage): string {
   if (!deliverable) {
     return "";
   }
-  return renderDeliverableCard(deliverable, stringsForState().deliverable);
+  return renderDeliverableCard(deliverable, stringsForState().deliverable, `deliverable:${message.id}`);
 }
 
 const DELIVERABLE_MAX_ROWS = 8;
@@ -16792,6 +16817,7 @@ function renderDeliverableStatusIcon(status: "completed" | "failed"): string {
 function renderDeliverableCard(
   deliverable: TurnDeliverable,
   strings: ReturnType<typeof stringsForState>["deliverable"],
+  detailKey: string,
 ): string {
   const sections: string[] = [];
 
@@ -16877,7 +16903,7 @@ function renderDeliverableCard(
   }
 
   return `
-    <details class="deliverable-card">
+    <details class="deliverable-card" data-detail-key="${escapeAttribute(detailKey)}"${detailOpenByKey.get(detailKey) ? " open" : ""}>
       <summary class="deliverable-summary-line">
         <span class="deliverable-title">${escapeHtml(strings.title)}</span>
         <span class="deliverable-caret" aria-hidden="true">${renderUiIcon("chevron-down")}</span>
