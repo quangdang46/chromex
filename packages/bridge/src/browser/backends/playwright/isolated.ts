@@ -568,6 +568,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (args.pinned !== undefined || args.muted !== undefined || args.index !== undefined || args.autoDiscardable !== undefined) {
       throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, reorder, or set autoDiscardable; args.pinned/args.muted/args.index/args.autoDiscardable are chrome-extension only");
     }
+    const frozen = typeof args.frozen === "boolean" ? args.frozen : undefined;
     const zoomFactor =
       typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
         ? args.zoomFactor
@@ -575,13 +576,35 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (args.zoomFactor !== undefined && (zoomFactor === undefined || zoomFactor < 0.25 || zoomFactor > 5)) {
       throw protocolError("proto.invalid", "browser.tab.update args.zoomFactor must be a number in [0.25, 5]");
     }
-    if (zoomFactor === undefined) {
-      throw protocolError("proto.invalid", "browser.tab.update requires args.zoomFactor (pinned/muted/index unsupported on this backend)");
+    if (zoomFactor === undefined && frozen === undefined) {
+      throw protocolError("proto.invalid", "browser.tab.update requires args.zoomFactor and/or args.frozen (pinned/muted/index/autoDiscardable unsupported on this backend)");
     }
     const session = await this.#emulationSession(page);
-    await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: zoomFactor });
+    if (zoomFactor !== undefined) {
+      await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: zoomFactor });
+    }
+    if (frozen !== undefined) {
+      // WICG web-lifecycle freeze — same CDP command the extension
+      // backend sends through chrome.debugger. Freezing halts the
+      // page's event loop (timers/rAF/input) without unloading.
+      try {
+        await session.send("Page.setWebLifecycleState", { state: frozen ? "frozen" : "active" });
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        if (msg.includes("wasn't found") || msg.includes("not found") || msg.includes("-32601")) {
+          throw protocolError("proto.unsupported", "Page.setWebLifecycleState is not exposed on this Chromium build");
+        }
+        throw e;
+      }
+    }
     const context = await this.#contextFor(taskId);
-    return { updated: context.pages().indexOf(page), resolvedTabId: context.pages().indexOf(page), zoomFactor };
+    const idx = context.pages().indexOf(page);
+    return {
+      updated: idx,
+      resolvedTabId: idx,
+      ...(zoomFactor !== undefined ? { zoomFactor } : {}),
+      ...(frozen !== undefined ? { frozen } : {}),
+    };
   }
 
   // ---- navigation / observation ----

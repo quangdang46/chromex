@@ -1036,10 +1036,11 @@ await runScenario(
         ...cdp,
       };
 
-      // --- page.coverage: chrome.debugger filters the Profiler domain ---
-      // Extension sessions get -32601 for Profiler.* (same class as
-      // HeapProfiler/Security/IndexedDB) — the honest contract is
-      // proto.unsupported, while status/stop still answer truthfully.
+      // --- page.coverage: Profiler domain availability is build-dependent ---
+      // Older Chrome-for-Testing builds filter Profiler.* out of
+      // chrome.debugger sessions (-32601 → proto.unsupported). Newer
+      // builds expose it — when start succeeds we verify REAL coverage
+      // data instead of asserting the boundary.
       let cv = {};
       try {
         const cvTab = await runner.browserToolCall(
@@ -1053,18 +1054,33 @@ await runScenario(
         cv.stopRefusedOk = (cvBadStop?.error?.code ?? "") === "proto.invalid";
         const cvStart = await cvCall("browser.page.coverage", { tabId: cvId, action: "start" });
         cv.startCode = cvStart?.error?.code ?? "";
+        cv.startOk = (cvStart?.result ?? cvStart ?? {}).started === true;
         cv.startUnsupportedOk = cv.startCode === "proto.unsupported" &&
           /Profiler|chrome\.debugger/.test(cvStart?.error?.message ?? "");
-        const cvSt1 = await cvCall("browser.page.coverage", { tabId: cvId, action: "status" });
-        cv.statusRunOk = (cvSt1?.result ?? cvSt1 ?? {}).running === false;
+        if (cv.startOk) {
+          // Profiler is exposed on this build — verify real data:
+          // navigate a scripted page, evaluate, stop → scripts+functions.
+          await cvCall("browser.page.navigate", { tabId: cvId, url: fixture.url("/form") });
+          await cvCall("browser.page.evaluate", { tabId: cvId, expression: "document.title" });
+          const cvStop = await cvCall("browser.page.coverage", { tabId: cvId, action: "stop" });
+          const cov = (cvStop?.result ?? cvStop ?? {});
+          const covScripts = Array.isArray(cov.scripts) ? cov.scripts.length : (cov.scripts ?? 0);
+          cv.realCoverageOk = covScripts > 0;
+          const cvSt1 = await cvCall("browser.page.coverage", { tabId: cvId, action: "status" });
+          cv.statusRunOk = (cvSt1?.result ?? cvSt1 ?? {}).running === false;
+          cv.scripts = cov.scripts;
+        } else {
+          const cvSt1 = await cvCall("browser.page.coverage", { tabId: cvId, action: "status" });
+          cv.statusRunOk = (cvSt1?.result ?? cvSt1 ?? {}).running === false;
+        }
         await cvCall("browser.tab.close", { tabId: cvId });
       } catch (e) {
         cv.error = String(e?.message ?? e).slice(0, 200);
       }
       evidence.note(`coverage → ${JSON.stringify(cv).slice(0, 300)}`);
       results.coverage = {
-        ok: cv.statusIdleOk === true && cv.stopRefusedOk === true && cv.startUnsupportedOk === true &&
-          cv.statusRunOk === true,
+        ok: cv.statusIdleOk === true && cv.stopRefusedOk === true &&
+          (cv.startUnsupportedOk === true || (cv.startOk === true && cv.realCoverageOk === true && cv.statusRunOk === true)),
         ...cv,
       };
 
@@ -1195,6 +1211,49 @@ await runScenario(
         const adTabs = (adList?.result ?? adList ?? {}).tabs ?? [];
         const adTab = adTabs.find((t) => (t.id ?? t.tabId) === second.id);
         mv.autoDiscardableOk = adTab?.autoDiscardable === false;
+        // frozen → CDP Page.setWebLifecycleState via chrome.debugger.
+        // WICG semantics: freeze only halts HIDDEN/occluded pages — a
+        // visible page ignores it. Headless Chrome may keep inactive
+        // tabs "visible", so we probe visibilityState and only require
+        // timer-halt when the tab is genuinely hidden; the command
+        // itself + page survival + resume must always work.
+        const frzTab = await runner.browserToolCall(
+          taskId, "browser.page.navigate", { url: fixture.url("/keys"), tabId: second.id }, token, 60_000,
+        ).catch(() => null);
+        // Read state via page.cdp Runtime.evaluate — the content-script
+        // page.evaluate path goes through the page's (possibly frozen)
+        // event loop, while CDP evaluate is a direct protocol call.
+        const ev = async (expr) => {
+          const r = await runner.browserToolCall(
+            taskId, "browser.page.cdp",
+            { tabId: second.id, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true } },
+            token, 60_000,
+          ).catch((e) => ({ error: String(e?.message ?? e).slice(0, 120) }));
+          const res = r?.result ?? r ?? {};
+          return res?.result?.result?.value ?? res?.result?.value ?? res?.value;
+        };
+        await ev("window.__fz = 0; setInterval(() => window.__fz++, 50); 'armed'");
+        mv.visibility = await ev("document.visibilityState");
+        const frzRes = await runner.browserToolCall(
+          taskId, "browser.tab.update", { tabId: second.id, frozen: true }, token, 60_000,
+        );
+        mv.freezeOk = (frzRes?.result?.frozen ?? frzRes?.frozen) === true;
+        await new Promise((r) => setTimeout(r, 200));
+        const fz1 = await ev("window.__fz");
+        await new Promise((r) => setTimeout(r, 200));
+        const fz2 = await ev("window.__fz");
+        mv.freezeHalted = typeof fz1 === "number" && fz1 === fz2;
+        // page must still evaluate while "frozen" (not unloaded/crashed)
+        mv.freezeAliveOk = typeof fz1 === "number" || typeof fz2 === "number";
+        const actRes = await runner.browserToolCall(
+          taskId, "browser.tab.update", { tabId: second.id, frozen: false }, token, 60_000,
+        );
+        mv.unfreezeOk = (actRes?.result?.frozen ?? actRes?.frozen) === false;
+        await new Promise((r) => setTimeout(r, 300));
+        const fz3 = await ev("window.__fz");
+        mv.resumeOk = typeof fz3 === "number" && (fz2 === undefined || fz3 >= fz2);
+        // hidden+frozen must halt; visible+frozen may legitimately no-op
+        mv.freezeEffectiveOk = mv.visibility !== "hidden" || mv.freezeHalted === true;
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: mvAId }, token, 60_000,
         );
@@ -1206,7 +1265,9 @@ await runScenario(
       }
       evidence.note(`tabMove → ${JSON.stringify(mv).slice(0, 300)}`);
       results.tabMove = {
-        ok: mv.listOk === true && mv.moveOk === true && mv.badIndexOk === true && mv.autoDiscardableOk === true,
+        ok: mv.listOk === true && mv.moveOk === true && mv.badIndexOk === true && mv.autoDiscardableOk === true
+          && mv.freezeOk === true && mv.freezeAliveOk === true && mv.unfreezeOk === true && mv.resumeOk === true
+          && mv.freezeEffectiveOk === true,
         ...mv,
       };
 

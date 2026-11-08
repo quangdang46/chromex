@@ -258,13 +258,14 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tab.update": {
     description:
-      "Update a scoped tab's chrome state — pinned, muted, autoDiscardable (protect from/prevent Chrome memory-management discard), zoomFactor (0.25–5), and/or index (strip position, integer >= -1 where -1 moves to the end). tabId optional (defaults like other tab tools). Low-risk reversible op. playwright-isolated supports zoomFactor only (via CDP page scale); pinned/muted/index/autoDiscardable are chrome-extension only.",
+      "Update a scoped tab's chrome state — pinned, muted, autoDiscardable (protect from/prevent Chrome memory-management discard), frozen (WICG web-lifecycle freeze via CDP Page.setWebLifecycleState — halts the page's event loop: timers/rAF/input stop without unloading; false resumes), zoomFactor (0.25–5), and/or index (strip position, integer >= -1 where -1 moves to the end). tabId optional (defaults like other tab tools). Low-risk reversible op. frozen works on BOTH backends via CDP (real parity); pinned/muted/index/autoDiscardable are chrome-extension only, zoomFactor works on both.",
     inputSchema: objectSchema({
       ...TAB_TARGET_PROPS,
       pinned: { type: "boolean", description: "Pin or unpin the tab." },
       muted: { type: "boolean", description: "Mute or unmute the tab's audio." },
       autoDiscardable: { type: "boolean", description: "Allow (true, Chrome default) or prevent (false) Chrome auto-discarding this tab under memory pressure — protect long-running task tabs." },
-      zoomFactor: { type: "number", description: "Page zoom factor 0.25–5 (chrome.tabs.setZoom)." },
+      frozen: { type: "boolean", description: "Freeze (true) or resume (false) the page via CDP Page.setWebLifecycleState. WICG semantics: only HIDDEN/occluded pages actually halt — a visible page accepts the command as a no-op. Works on both backends." },
+      zoomFactor: { type: "number", description: "Page zoom factor 0.25–5 (chrome.tabs.setZoom / CDP page scale)." },
       index: { type: "integer", description: "New strip position (chrome.tabs.move); -1 moves to the end." },
     }),
   },

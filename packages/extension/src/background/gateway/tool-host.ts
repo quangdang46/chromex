@@ -901,6 +901,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const pinned = typeof args.pinned === "boolean" ? args.pinned : undefined;
         const muted = typeof args.muted === "boolean" ? args.muted : undefined;
         const autoDiscardable = typeof args.autoDiscardable === "boolean" ? args.autoDiscardable : undefined;
+        const frozen = typeof args.frozen === "boolean" ? args.frozen : undefined;
         const zoomFactor =
           typeof args.zoomFactor === "number" && Number.isFinite(args.zoomFactor)
             ? args.zoomFactor
@@ -915,8 +916,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (args.index !== undefined && index === undefined) {
           throw toolError("proto.invalid", "browser.tab.update args.index must be an integer >= -1 (-1 = end of strip)");
         }
-        if (pinned === undefined && muted === undefined && autoDiscardable === undefined && zoomFactor === undefined && index === undefined) {
-          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.autoDiscardable, args.zoomFactor and/or args.index");
+        if (pinned === undefined && muted === undefined && autoDiscardable === undefined && frozen === undefined && zoomFactor === undefined && index === undefined) {
+          throw toolError("proto.invalid", "browser.tab.update requires args.pinned, args.muted, args.autoDiscardable, args.frozen, args.zoomFactor and/or args.index");
         }
         if ((pinned !== undefined || muted !== undefined || autoDiscardable !== undefined) && !deps.updateTab) {
           throw toolError("proto.unsupported", "tab update is not available on this host");
@@ -940,12 +941,39 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (index !== undefined) {
           await deps.moveTab!(tabId, index);
         }
+        if (frozen !== undefined) {
+          // WICG web-lifecycle freeze via CDP Page domain — Page is NOT
+          // one of the domains chrome.debugger filters (unlike
+          // Profiler), so this has real parity with the isolated
+          // backend's CDPSession. Freezing halts the page's event loop
+          // (timers/rAF/input) without unloading — the honest middle
+          // ground between discard and close.
+          const { session, release } = await cdpAcquire(deps, tabId);
+          try {
+            await session.send("Page.setWebLifecycleState", {
+              state: frozen ? "frozen" : "active",
+            });
+          } catch (e) {
+            const msg = String((e as Error)?.message ?? e);
+            const code = (e as { code?: number })?.code;
+            if (code === -32601 || msg.includes("wasn't found") || msg.includes("not found")) {
+              throw toolError(
+                "proto.unsupported",
+                "Page.setWebLifecycleState is not exposed via chrome.debugger on this Chrome build",
+              );
+            }
+            throw toolError("browser.action_failed", `Page.setWebLifecycleState failed: ${msg.slice(0, 200)}`);
+          } finally {
+            await release().catch(() => {});
+          }
+        }
         return {
           updated: tabId,
           resolvedTabId: tabId,
           ...(pinned !== undefined ? { pinned } : {}),
           ...(muted !== undefined ? { muted } : {}),
           ...(autoDiscardable !== undefined ? { autoDiscardable } : {}),
+          ...(frozen !== undefined ? { frozen } : {}),
           ...(zoomFactor !== undefined ? { zoomFactor } : {}),
           ...(index !== undefined ? { index } : {}),
         };

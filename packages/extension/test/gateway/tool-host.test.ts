@@ -210,6 +210,43 @@ describe("tool host (P1-09)", () => {
     await expect(h(sreq({}))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("tab.update frozen sends Page.setWebLifecycleState via CDP", async () => {
+    const sent: Array<{ method: string; params: unknown }> = [];
+    const d = deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", title: "X", active: true })),
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async (method: string, params?: unknown) => {
+          sent.push({ method, params });
+          return {};
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async () => {}),
+    });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7], foreignTabIds: [] };
+    const sreq = (args: Record<string, unknown>) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool: "browser.tab.update", args, tabScope: scope });
+    const res = (await h(sreq({ frozen: true }))) as { frozen: boolean };
+    expect(res.frozen).toBe(true);
+    expect(sent).toEqual([{ method: "Page.setWebLifecycleState", params: { state: "frozen" } }]);
+    await h(sreq({ frozen: false }));
+    expect(sent[1]).toEqual({ method: "Page.setWebLifecycleState", params: { state: "active" } });
+    // frozen alone satisfies the at-least-one-arg requirement
+    await expect(h(sreq({}))).rejects.toMatchObject({ code: "proto.invalid" });
+    // domain filtered out → honest proto.unsupported
+    const dFiltered = deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", title: "X", active: true })),
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async () => {
+          throw new Error("'Page.setWebLifecycleState' wasn't found");
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async () => {}),
+    });
+    await expect(createToolHostHandler(dFiltered)(sreq({ frozen: true })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.wait forwards visibleSelector as a wait condition", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

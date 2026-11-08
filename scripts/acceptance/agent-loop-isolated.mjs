@@ -293,6 +293,26 @@ try {
   const adBad = await call("browser.tab.update", { tabId: dupId, autoDiscardable: false }).then(() => null).catch((e) => e);
   assert(adBad !== null, "tab.update refused autoDiscardable on isolated backend");
 
+  // tab.update frozen → CDP Page.setWebLifecycleState. Headless shell
+  // reports every page visibilityState:"visible" — WICG freeze only
+  // halts HIDDEN pages, so here we verify the command path honestly:
+  // accepted, page stays alive/evaluable (not unloaded), resume works.
+  // Real timer-halt is verified on cdp-headless where inactive tabs are
+  // genuinely hidden.
+  await call("browser.page.evaluate", {
+    tabId: dupId,
+    expression: "window.__freezeTicks = 0; setInterval(() => window.__freezeTicks++, 50); 'armed'",
+  });
+  const frz = await call("browser.tab.update", { tabId: dupId, frozen: true });
+  assert(frz?.frozen === true, `tab.update froze the page (${JSON.stringify(frz)})`);
+  const frozenAlive = await call("browser.page.evaluate", { tabId: dupId, expression: "document.visibilityState" });
+  assert(typeof frozenAlive?.value === "string", "frozen page still evaluates (not unloaded)");
+  const act = await call("browser.tab.update", { tabId: dupId, frozen: false });
+  assert(act?.frozen === false, `tab.update resumed the page (${JSON.stringify(act)})`);
+  await new Promise((r) => setTimeout(r, 300));
+  const liveRead = await call("browser.page.evaluate", { tabId: dupId, expression: "window.__freezeTicks > 0" });
+  assert(liveRead?.value === true, "resumed page timers ran again");
+
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {
     url: fixture.url("/dl"),
