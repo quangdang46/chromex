@@ -43,7 +43,7 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 | Browser↔MCP tool surface for providers | bridge mcp-server + session-manager + mcp-call | ✅ wired per task; agent steering verified | `initialize.instructions` (own-the-browser + snapshot-first) reaches native-MCP providers automatically; `mcp-call.js --list` now prints the same instructions + enum values so the CLI-fallback path self-corrects; unknown-tool errors append the tool list; `page.get` documents origin+path URL stripping + `evaluate 'location.href'` escape hatch |
 | Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
 | Browser↔code feedback loop | composition | ✅ E2E proven | S1 + S2 PASS real-browser; loop proof cbbda36/6e690ab |
-| Prompt-injection defense | page content → agent boundary | ✅ fenced (af60f2b, cd3cf46) | envelope + label-defuse + planner marking; action-side cross-check deferred |
+| Prompt-injection defense | page content → agent boundary | ✅ fenced (af60f2b, cd3cf46, e5b9531, 3c5c4f9) | envelope on results AND tool-error text (page-thrown exceptions, backend errors quoting page URLs); label-defuse + planner marking; action-side cross-check deferred |
 | Permission/audit/revoke | approvals + tool tokens | ✅ built | S7 PASS real-browser; egress consent landed (d4e5429) |
 | UX: timeline/approvals/questions/elapsed/deliverable | sidepanel | ✅ deliverable card (9cbdcb7) | approval-card-for-all-kinds + verified badge + rebuild notice in flight |
 | Backend capability honesty | shared backend.ts | ✅ truthful | update as capabilities land |
