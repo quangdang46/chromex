@@ -486,6 +486,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       y: { type: "number", description: "Source viewport y (CSS px)." },
       dropX: { type: "number", description: "Destination viewport x (CSS px)." },
       dropY: { type: "number", description: "Destination viewport y (CSS px)." },
+      trusted: { type: "boolean", description: "Dispatch via CDP Input.dispatchMouseEvent (press → interpolated moves → release) so the page sees isTrusted=true pointer/mouse events (chrome-extension debugger tier, top frame only). Default false = untrusted DOM drag." },
     }),
     expectable: true,
   },

@@ -1631,4 +1631,28 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       tabId: 515, selector: "#k", text: "é", trusted: true,
     }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
+
+  test("drag trusted sends press + interpolated moves + release", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(516, cdp));
+    const res = (await h(req("browser.page.drag", {
+      tabId: 516, x: 10, y: 20, dropX: 110, dropY: 120, trusted: true,
+    }))) as { ok: boolean; step?: { trusted?: boolean } };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    const evs = cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent");
+    const types = evs.map((s) => s.params?.type);
+    expect(types[0]).toBe("mouseMoved");
+    expect(types[1]).toBe("mousePressed");
+    expect(types[types.length - 1]).toBe("mouseReleased");
+    expect(types.filter((t) => t === "mouseMoved")).toHaveLength(9); // initial + 8 steps
+    const release = evs[evs.length - 1];
+    expect(release?.params).toMatchObject({ x: 110, y: 120, button: "left" });
+    await expect(h(req("browser.page.drag", {
+      tabId: 516, selector: "#s", trusted: true,
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.drag", {
+      tabId: 516, x: 1, y: 2, dropX: 3, dropY: 4, trusted: true, frameId: 3,
+    }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
 });

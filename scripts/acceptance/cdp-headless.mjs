@@ -9,6 +9,7 @@
 //   - press/type args.trusted → Input.dispatchKeyEvent (isTrusted=true)
 //   - hover args.trusted    → Input.dispatchMouseEvent (isTrusted + :hover)
 //   - fill args.trusted     → select-all + Backspace + per-char keys (replace)
+//   - drag args.trusted     → press + interpolated moves + release
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
@@ -217,6 +218,24 @@ await runScenario(
         value: filledValue,
       };
 
+      // trusted drag: CDP press→moves→release, isTrusted mousedown
+      await page.goto(fixture.url("/drag"), { waitUntil: "domcontentloaded" });
+      await page.bringToFront();
+      const dragRes = await runner.browserToolCall(
+        taskId, "browser.page.drag",
+        { selector: "#src", toSelector: "#dst", trusted: true }, token, 60_000,
+      );
+      await sleep(300);
+      const rDown = await page.locator("#r-down").textContent();
+      const dragOut = await page.locator("#out").textContent();
+      evidence.note(`drag: down=${rDown} out=${dragOut} status=${dragRes?.status}`);
+      results.trustedDrag = {
+        ok: dragRes?.status === "completed" && rDown === "isTrusted:true" && /^up@\d+/.test(dragOut ?? ""),
+        down: rDown,
+        out: dragOut,
+        status: dragRes?.status,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
@@ -274,7 +293,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

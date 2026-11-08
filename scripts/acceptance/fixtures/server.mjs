@@ -81,7 +81,8 @@ const PAGES = {
   // observable state for coordinate and element drags.
   "/drag": `<!doctype html><html><body>
 <h1>Drag Page</h1>
-<div id="src" style="width:80px;height:80px;background:#cde">src</div>
+<div id="src" style="width:80px;height:80px;background:#cde" onmousedown="document.getElementById('r-down').textContent='isTrusted:'+event.isTrusted">src</div>
+<p id="r-down">none</p>
 <div id="dst" style="position:fixed;left:300px;top:40px;width:120px;height:80px;background:#ecd">dst</div>
 <pre id="out">idle</pre>
 <script>
