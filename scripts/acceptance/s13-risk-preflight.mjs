@@ -226,6 +226,136 @@ await runScenario(
       const benignFired = okPageText.includes("benign-ok");
       evidence.note(`post-click #out=${okPageText.slice(0, 200)}`);
 
+      // ---------- Part 4: trusted/CDP approve-then-mutate TOCTOU ----------
+      // The classifier approves "Delete account permanently"; while the
+      // approval is pending the page relabels the button. The trusted
+      // dispatch must re-verify expectedTarget and refuse — the click
+      // handler must never fire. Positive control: restore the label,
+      // approve again, and the trusted click really fires (isTrusted).
+      const tcCreated = await callGrantingEgress("browser.tab.create", { url: fixture.url("/toctou") });
+      const tcTabId = tcCreated?.result?.tabId ?? tcCreated?.result?.id ?? tcCreated?.tabId;
+      evidence.note(`toctou tab.create → tabId=${tcTabId}`);
+      let toctou = { attempted: false, refused: false, notFired: false, controlFired: false };
+      if (Number.isInteger(tcTabId)) {
+        await sleep(800);
+        const tcSnap = await callGrantingEgress("browser.page.snapshot", { tabId: tcTabId });
+        const tcSnapResult = tcSnap?.result ?? {};
+        const tcElements = Array.isArray(tcSnapResult.elements) ? tcSnapResult.elements : [];
+        const tcBtn = tcElements.find((e) => /delete account/i.test(e.label ?? e.text ?? ""));
+        evidence.note(`toctou snapshot elements=${tcElements.length} btnRef=${tcBtn?.ref}`);
+
+        // the Playwright-side page for this tab — mutate the DOM
+        // directly while the approval is pending (no tool approval
+        // needed, deterministic timing).
+        let pwPage = null;
+        const pwDeadline = Date.now() + 10_000;
+        while (Date.now() < pwDeadline && !pwPage) {
+          for (const p of browser.context.pages()) {
+            try {
+              if (p.url().includes("/toctou")) { pwPage = p; break; }
+            } catch {}
+          }
+          if (!pwPage) await sleep(300);
+        }
+        evidence.note(`toctou pwPage=${pwPage ? pwPage.url() : "NOT FOUND"}`);
+
+        if (tcBtn?.ref && pwPage) {
+          toctou.attempted = true;
+          let tcOutcome = null;
+          let tcError = null;
+          const tcCall = runner
+            .browserToolCall(
+              taskId,
+              "browser.page.click",
+              { tabId: tcTabId, ref: tcBtn.ref, snapshotId: tcSnapResult.snapshotId, trusted: true },
+              token,
+              90_000,
+            )
+            .then((o) => (tcOutcome = o))
+            .catch((e) => (tcError = e));
+
+          // wait for the action approval, then mutate BEFORE answering
+          let tcReq = null;
+          const tcDeadline = Date.now() + 30_000;
+          while (Date.now() < tcDeadline && !tcReq) {
+            for (const req of pendingRequests()) {
+              if (req.kind === "agent_egress") await grantEgress(req);
+              else { tcReq = req; break; }
+            }
+            if (!tcReq) await sleep(300);
+          }
+          if (tcReq) {
+            evidence.note(`toctou approval id=${tcReq.requestId} kind=${tcReq.kind} targetLabel=${tcReq.details?.targetLabel}`);
+            await pwPage.evaluate(() => window.__mutate?.());
+            await sleep(200); // let the mutation commit before dispatch
+            const tcOpt =
+              (tcReq.options ?? []).find((o) => /allow_once|approve|yes/i.test(String(o.id)) || o.kind === "allow_once") ??
+              (tcReq.options ?? []).find((o) => o.kind !== "deny");
+            await respond(tcReq, tcOpt?.id);
+            await Promise.race([tcCall, sleep(30_000)]);
+            const tcCode = tcOutcome?.error?.code;
+            toctou.refused = tcOutcome?.status === "failed" && tcCode === "browser.target_changed";
+            evidence.note(`toctou outcome=${JSON.stringify(tcOutcome ?? tcError?.message)?.slice(0, 300)}`);
+
+            const tcAfter = await callGrantingEgress(
+              "browser.page.extract",
+              { tabId: tcTabId, selector: "#out", format: "text" },
+              30_000,
+            );
+            const tcText = JSON.stringify(tcAfter?.result ?? {});
+            toctou.notFired = !tcText.includes("clicked:");
+            evidence.note(`toctou post-refuse #out=${tcText.slice(0, 200)}`);
+
+            // positive control — restore facts, approve again, real
+            // trusted click must fire (proves the gate is not a blanket
+            // block on trusted input).
+            await pwPage.evaluate(() => window.__restore?.());
+            let tc2Outcome = null;
+            const tc2Call = runner
+              .browserToolCall(
+                taskId,
+                "browser.page.click",
+                { tabId: tcTabId, ref: tcBtn.ref, snapshotId: tcSnapResult.snapshotId, trusted: true },
+                token,
+                90_000,
+              )
+              .then((o) => (tc2Outcome = o))
+              .catch(() => {});
+            let tc2Req = null;
+            const tc2Deadline = Date.now() + 30_000;
+            while (Date.now() < tc2Deadline && !tc2Req) {
+              for (const req of pendingRequests()) {
+                if (req.kind === "agent_egress") await grantEgress(req);
+                else { tc2Req = req; break; }
+              }
+              if (!tc2Req) await sleep(300);
+            }
+            if (tc2Req) {
+              const tc2Opt =
+                (tc2Req.options ?? []).find((o) => /allow_once|approve|yes/i.test(String(o.id)) || o.kind === "allow_once") ??
+                (tc2Req.options ?? []).find((o) => o.kind !== "deny");
+              await respond(tc2Req, tc2Opt?.id);
+              await Promise.race([tc2Call, sleep(30_000)]);
+              evidence.note(`toctou control outcome=${JSON.stringify(tc2Outcome)?.slice(0, 300)}`);
+              const tc2After = await callGrantingEgress(
+                "browser.page.extract",
+                { tabId: tcTabId, selector: "#out", format: "text" },
+                30_000,
+              );
+              toctou.controlFired = JSON.stringify(tc2After?.result ?? {}).includes("clicked:Delete account permanently");
+              evidence.note(`toctou control #out=${JSON.stringify(tc2After?.result ?? {}).slice(0, 200)}`);
+            } else {
+              evidence.note("toctou control: no approval request seen");
+            }
+          } else {
+            evidence.note("toctou: no approval request seen — aborting leg");
+            await Promise.race([tcCall, sleep(3_000)]);
+          }
+        } else {
+          evidence.note(`toctou leg skipped: btnRef=${tcBtn?.ref} pwPage=${!!pwPage}`);
+        }
+      }
+
       // screenshot the risky tab for evidence
       for (const p of browser.context.pages()) {
         try {
@@ -233,12 +363,14 @@ await runScenario(
         } catch {}
       }
 
-      const pass = denied && dangerNotFired && approved && dangerFired && benignOk && noNewApproval && benignFired;
+      const pass =
+        denied && dangerNotFired && approved && dangerFired && benignOk && noNewApproval && benignFired &&
+        toctou.attempted && toctou.refused && toctou.notFired && toctou.controlFired;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired"
-          : `denied=${denied} dangerNotFired=${dangerNotFired} approved=${approved} dangerFired=${dangerFired} benignOk=${benignOk} noNewApproval=${noNewApproval} benignFired=${benignFired}`,
+          ? "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired; trusted approve-then-mutate → browser.target_changed, handler never fired, restored-label control click fires"
+          : `denied=${denied} dangerNotFired=${dangerNotFired} approved=${approved} dangerFired=${dangerFired} benignOk=${benignOk} noNewApproval=${noNewApproval} benignFired=${benignFired} toctou=${JSON.stringify(toctou)}`,
         details: {
           denied,
           dangerNotFired,
@@ -247,6 +379,7 @@ await runScenario(
           benignOk,
           noNewApproval,
           benignFired,
+          toctou,
           denyOutcome,
           approveOutcome,
           benignOutcome,

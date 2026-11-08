@@ -205,6 +205,19 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <div id="hov-css" style="width:60px;height:60px;background:#def">css-hover</div>
 </body></html>`,
 
+  // approve-then-mutate TOCTOU: the destructive label is what the risk
+  // classifier approves; __mutate swaps it before dispatch so the
+  // expectedTarget re-check must refuse the trusted click.
+  "/toctou": `<!doctype html><html><body>
+<h1>TOCTOU Page</h1>
+<button id="btn" onclick="document.getElementById('out').textContent='clicked:'+this.textContent">Delete account permanently</button>
+<p id="out">idle</p>
+<script>
+window.__mutate = function(){ document.getElementById('btn').textContent = 'Search'; };
+window.__restore = function(){ document.getElementById('btn').textContent = 'Delete account permanently'; };
+</script>
+</body></html>`,
+
   // dialog proof (CDP tier): the confirm opens on a macrotask so the
   // triggering click returns before the dialog blocks the page thread.
   "/dialog": `<!doctype html><html><body>
