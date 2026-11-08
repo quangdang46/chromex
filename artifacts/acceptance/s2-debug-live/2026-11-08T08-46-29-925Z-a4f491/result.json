@@ -1,0 +1,28 @@
+{
+  "scenario": "s2-debug-live",
+  "runId": "2026-11-08T08-46-29-925Z-a4f491",
+  "status": "PASS",
+  "summary": "agent edited code, re-drove real browser, verified token end-to-end",
+  "durationMs": 49388,
+  "details": {
+    "taskId": "01M6X5D54MPWC9100HYC2HPQNT",
+    "turnId": "01M6X5D54WJW5CEBJBB3J9X55B",
+    "terminal": "turn.completed",
+    "actions": [
+      "browser.page.navigate",
+      "browser.page.snapshot",
+      "browser.page.get",
+      "browser.page.navigate",
+      "browser.page.get",
+      "browser.page.snapshot"
+    ],
+    "onDiskHasToken": true,
+    "servedHasToken": true
+  },
+  "notes": [
+    "[2026-11-08T08:46:38.403Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T08:46:38.405Z] fixture /var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-s2-6qvA5i/index.html at http://127.0.0.1:51476/ token CHROMEX-VERIFIED-5E6F4A44",
+    "[2026-11-08T08:46:38.744Z] task 01M6X5D54MPWC9100HYC2HPQNT",
+    "[2026-11-08T08:46:38.747Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-2tYy7D/mcp/01M6X5D54MPWC9100HYC2HPQNT.json"
+  ]
+}

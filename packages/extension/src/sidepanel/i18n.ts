@@ -293,6 +293,11 @@ export const UI_STRINGS = {
       disclaimer:
         "This notice is product guidance, not legal advice. Review Chrome Web Store and local privacy requirements before publishing.",
     },
+    buildNotice: {
+      title: "Newer build on disk",
+      body: "The extension files were rebuilt after this panel loaded. Reload to pick up the latest code.",
+      reload: "Reload extension",
+    },
     newChat: "New chat",
     popOut: "Pop-out",
     dock: "Dock",
@@ -1205,6 +1210,11 @@ export const UI_STRINGS = {
       startCta: "채팅 시작",
       disclaimer:
         "이 안내는 제품 고지이며 법률 자문이 아닙니다. 배포 전 Chrome Web Store 정책과 지역별 개인정보 요건을 별도로 확인하세요.",
+    },
+    buildNotice: {
+      title: "디스크에 새 빌드가 있습니다",
+      body: "이 패널이 로드된 뒤 확장 프로그램 파일이 다시 빌드되었습니다. 최신 코드를 사용하려면 새로고침하세요.",
+      reload: "확장 프로그램 새로고침",
     },
     newChat: "새 채팅",
     popOut: "팝아웃",
@@ -53862,6 +53872,9 @@ const OPTIONAL_ENGLISH_FALLBACK_STATIC_UI_STRING_KEYS = new Set<string>([
   "approval.fieldArguments",
   "approval.fallbackSummary",
   "approval.sending",
+  "buildNotice.title",
+  "buildNotice.body",
+  "buildNotice.reload",
   "queuedMessagesLabel",
   "removeQueuedMessage",
 ]);

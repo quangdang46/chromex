@@ -1032,6 +1032,7 @@ const state = {
   voiceOptions: listCodexRealtimeVoiceOptions(),
   initError: "",
   actionStatus: "",
+  newerBuild: null as { buildId: string; builtAt: string } | null,
   copiedMessageId: "",
   pendingPermission: null as {
     plan: PermissionRequestPlan;
@@ -1269,6 +1270,7 @@ installSmokeHarness();
 installGlobalFloatingSurfaceDismissal();
 renderSync();
 void scheduleInitialize();
+void checkDiskBuild();
 
 if (new URLSearchParams(window.location.search).has("debug")) {
   (window as unknown as Record<string, unknown>).__chromexQueueDebug = () => ({
@@ -1292,11 +1294,13 @@ window.addEventListener("pagehide", () => {
 
 window.addEventListener("focus", () => {
   void refreshPendingPluginConnectionCatalog();
+  scheduleDiskBuildCheck();
 });
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     void refreshPendingPluginConnectionCatalog();
+    scheduleDiskBuildCheck();
   }
 });
 
@@ -3573,6 +3577,7 @@ function renderNow(): void {
       </header>`
       }
       ${renderFloatingNotifications()}
+      ${renderBuildNotice(strings)}
       ${renderPendingPermissionPrompt(strings)}
 
       <main class="main-stage ${isEmptyChat ? "empty" : ""} ${showOnboarding ? "onboarding" : ""}">
@@ -3962,6 +3967,84 @@ async function toggleRealtimeVoiceFromComposer(): Promise<void> {
     state.pendingAction = "";
     render();
   }
+}
+
+// ---- rebuild notice -------------------------------------------------------
+//
+// Dev workflow: `npm run build` rewrites dist/ while the loaded extension
+// keeps running the old bundle until someone reloads it. build-info.json
+// (written by scripts/build-extension.mjs) carries the buildId baked into
+// this page's script URL (?v=buildId) — a mismatch means the disk build is
+// newer than the running one.
+
+let diskBuildCheckAt = 0;
+let diskBuildCheckInflight = false;
+
+function scheduleDiskBuildCheck(): void {
+  const now = Date.now();
+  if (now - diskBuildCheckAt < 15_000 || diskBuildCheckInflight) {
+    return;
+  }
+  diskBuildCheckAt = now;
+  void checkDiskBuild();
+}
+
+function ownBuildId(): string {
+  try {
+    const src =
+      document.querySelector<HTMLScriptElement>('script[src*="sidepanel.js"]')?.src ?? import.meta.url;
+    return new URL(src, window.location.href).searchParams.get("v") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+async function checkDiskBuild(): Promise<void> {
+  const own = ownBuildId();
+  if (!own || diskBuildCheckInflight) {
+    return;
+  }
+  diskBuildCheckInflight = true;
+  try {
+    const res = await fetch(`${chrome.runtime.getURL("build-info.json")}?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return;
+    }
+    const info = (await res.json()) as { buildId?: string; builtAt?: string };
+    const diskBuildId = (info.buildId ?? "").trim();
+    if (!diskBuildId) {
+      return;
+    }
+    const next =
+      diskBuildId !== own ? { buildId: diskBuildId, builtAt: info.builtAt ?? "" } : null;
+    if (state.newerBuild?.buildId !== next?.buildId) {
+      state.newerBuild = next;
+      render();
+    }
+  } catch {
+    // build-info.json absent on older dists — stay silent.
+  } finally {
+    diskBuildCheckInflight = false;
+  }
+}
+
+function renderBuildNotice(strings: ReturnType<typeof getUiStrings>): string {
+  const build = state.newerBuild;
+  if (!build) {
+    return "";
+  }
+  const labels = strings.buildNotice;
+  return `
+    <div class="build-notice" role="status">
+      <div class="build-notice-text">
+        <strong>${escapeHtml(labels.title)}</strong>
+        <span>${escapeHtml(labels.body)}</span>
+      </div>
+      <button id="reload-extension-build" class="build-notice-reload" type="button">${escapeHtml(labels.reload)}</button>
+    </div>
+  `;
 }
 
 function renderFloatingNotifications(): string {
@@ -14318,6 +14401,10 @@ function bindEvents(): void {
       scheduleConversationPersist();
       render();
     });
+  });
+
+  root.querySelector<HTMLButtonElement>("#reload-extension-build")?.addEventListener("click", () => {
+    chrome.runtime.reload();
   });
 
   root.querySelector<HTMLButtonElement>("#new-chat")?.addEventListener("click", () => {
