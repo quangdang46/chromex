@@ -204,6 +204,17 @@ try {
   const fname = await call("browser.page.extract", { tabId: kTab, selector: "#fname" });
   assert(String(fname?.text ?? "").includes("agent-note.txt"), "file input shows uploaded name");
 
+  // Drop-zone fallback: #dz has no file input — upload must dispatch a
+  // real dragenter/dragover/drop carrying the File objects.
+  const dzUp = await call("browser.page.upload", {
+    tabId: kTab,
+    selector: "#dz",
+    files: [{ name: "agent-drop.bin", mimeType: "application/octet-stream", base64: Buffer.from("drop").toString("base64") }],
+  });
+  assert(dzUp?.uploaded === 1 && dzUp?.via === "drop", "drop-zone upload dispatched (via=drop)");
+  const dzOut = await call("browser.page.extract", { tabId: kTab, selector: "#dzout" });
+  assert(String(dzOut?.text ?? "").includes("agent-drop.bin"), `drop zone received file (got "${dzOut?.text}")`);
+
   // ── Loop 9: downloads.save → file on disk → downloads.list ─────────
   const dl = await call("browser.downloads.save", {
     url: fixture.url("/dl"),

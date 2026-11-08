@@ -1605,6 +1605,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (raw.length === 0) {
       throw protocolError("proto.invalid", "browser.page.upload requires args.files[]");
     }
+    const payloads: Array<{ name: string; mimeType: string; base64: string }> = [];
     const files = raw.map((entry) => {
       // Bytes-only contract — same as the extension host: local paths
       // would let the agent exfiltrate arbitrary files into a page.
@@ -1613,16 +1614,48 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       const o = (entry ?? {}) as Record<string, unknown>;
       if (typeof o.base64 === "string" && o.base64.length > 0) {
-        return {
-          name: typeof o.name === "string" && o.name ? o.name : "file",
-          mimeType: typeof o.mimeType === "string" ? o.mimeType : "",
-          buffer: Buffer.from(o.base64, "base64"),
-        };
+        const name = typeof o.name === "string" && o.name ? o.name : "file";
+        const mimeType = typeof o.mimeType === "string" ? o.mimeType : "";
+        payloads.push({ name, mimeType, base64: o.base64 });
+        return { name, mimeType, buffer: Buffer.from(o.base64, "base64") };
       }
       throw protocolError("proto.invalid", "upload file entries require {name, mimeType, base64}");
     });
-    await page.locator(selector).first().setInputFiles(files as never);
-    return { uploaded: files.length };
+    const loc = page.locator(selector).first();
+    try {
+      await loc.setInputFiles(files as never);
+      return { uploaded: files.length };
+    } catch {
+      // Not a file input — fall through to the drop-zone path. Any
+      // non-input failure also lands here; the drop dispatch is the
+      // same contract either way and page acceptance stays honest.
+    }
+    const dropped = await loc.evaluate(
+      (el: Element, payload: Array<{ name: string; mimeType: string; base64: string }>) => {
+        const dt = new DataTransfer();
+        for (const f of payload) {
+          const bin = atob(f.base64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          dt.items.add(new File([bytes], f.name, { type: f.mimeType }));
+        }
+        const r = el.getBoundingClientRect();
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          dataTransfer: dt,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        };
+        el.dispatchEvent(new DragEvent("dragenter", init));
+        el.dispatchEvent(new DragEvent("dragover", init));
+        el.dispatchEvent(new DragEvent("drop", init));
+        return true;
+      },
+      payloads,
+    );
+    return { uploaded: files.length, via: "drop", dispatched: dropped === true };
   }
 
   // ---- lifecycle ----

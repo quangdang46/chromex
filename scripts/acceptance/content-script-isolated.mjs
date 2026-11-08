@@ -184,6 +184,22 @@ try {
   assert(String(keyOut?.text ?? "").includes("key:y"), `press dispatched real key (got "${keyOut?.text}")`);
   const fname = await keys.send({ type: "page.extract", selector: "#fname" });
   assert(String(fname?.text ?? "").includes("cs-note.txt"), "upload attached file via DataTransfer");
+
+  // Drop-zone fallback: no file input — upload must dispatch a real
+  // dragenter/dragover/drop carrying the File objects.
+  const dzRes = await keys.send(
+    perform([
+      {
+        action: "upload",
+        selector: "#dz",
+        files: [{ name: "dz-file.bin", mimeType: "application/octet-stream", base64: Buffer.from("drop").toString("base64") }],
+        reason: "e2e",
+      },
+    ]),
+  );
+  assert(dzRes?.ok === true, `drop-zone upload dispatched (${dzRes?.summary})`);
+  const dzOut = await keys.send({ type: "page.extract", selector: "#dzout" });
+  assert(String(dzOut?.text ?? "").includes("dz-file.bin"), `drop zone received file (got "${dzOut?.text}")`);
   await keys.page.close();
 
   // ── Loop 5: honesty — invisible element click must fail, not fake ───

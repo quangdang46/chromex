@@ -260,6 +260,16 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <p id="out">none</p>
 <input id="f" type="file" onchange="document.getElementById('fname').textContent=(this.files[0]&&this.files[0].name)||'none'" />
 <p id="fname">none</p>
+<div id="dz" style="width:200px;height:60px;border:2px dashed #888">drop here</div>
+<p id="dzout">none</p>
+<script>
+document.getElementById('dz').addEventListener('drop', function(e){
+  e.preventDefault();
+  var names = Array.from(e.dataTransfer.files).map(function(f){return f.name;}).join(',');
+  document.getElementById('dzout').textContent = 'dropped:' + names;
+});
+document.getElementById('dz').addEventListener('dragover', function(e){ e.preventDefault(); });
+</script>
 </body></html>`,
 
   // trusted-input proof (CDP tier): two buttons record event.isTrusted —

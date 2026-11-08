@@ -531,10 +531,14 @@ export async function performBrowserDomAction(step: BrowserDomActionStep): Promi
       }
       case "upload": {
         // DataTransfer bytes path — synthetic but functional: page JS
-        // sees real File objects on input.files. NOT a trusted gesture;
-        // sites checking event.isTrusted may still reject.
-        const count = await performUploadAction(element, step.files ?? []);
-        message = `Uploaded ${count} file(s) to ${getElementLabel(element) || "the target element"}.`;
+        // sees real File objects on input.files, or on a drop zone via
+        // dragenter/dragover/drop. NOT a trusted gesture; sites checking
+        // event.isTrusted may still reject.
+        const up = await performUploadAction(element, step.files ?? []);
+        message =
+          up.via === "drop"
+            ? `Dispatched file drop of ${up.count} file(s) onto ${getElementLabel(element) || "the target element"} (no file input — acceptance is page-defined).`
+            : `Uploaded ${up.count} file(s) to ${getElementLabel(element) || "the target element"}.`;
         break;
       }
       default:
@@ -1141,24 +1145,34 @@ function resolveUploadFileInput(element: HTMLElement): HTMLInputElement | null {
   return null;
 }
 
+function buildUploadDataTransfer(
+  files: ReadonlyArray<{ name: string; mimeType: string; base64: string }>,
+): DataTransfer {
+  const dataTransfer = new DataTransfer();
+  for (const f of files) {
+    const bytes = decodeUploadBase64(f.base64);
+    dataTransfer.items.add(new File([bytes], f.name, { type: typeof f.mimeType === "string" ? f.mimeType : "" }));
+  }
+  return dataTransfer;
+}
+
 /**
- * upload: build File objects from base64 bytes, attach via DataTransfer,
- * then dispatch input+change so page listeners observe the selection.
- * Returns the number of files attached.
+ * upload: build File objects from base64 bytes. With a file input they
+ * attach via input.files + input/change; without one the element is
+ * treated as a drop zone and gets a real DragEvent sequence carrying
+ * the files — the same contract an OS file drop produces. Drop
+ * acceptance is page-defined, so `via:"drop"` callers must not claim
+ * the upload succeeded.
  */
 export async function performUploadAction(
   element: HTMLElement,
   files: ReadonlyArray<{ name: string; mimeType: string; base64: string }>,
-): Promise<number> {
+): Promise<{ count: number; via: "input" | "drop" }> {
   if (!Array.isArray(files) || files.length === 0) {
     throw new Error("browser.page.upload requires at least one file.");
   }
   if (files.length > UPLOAD_MAX_FILES) {
     throw new Error(`browser.page.upload accepts at most ${UPLOAD_MAX_FILES} files.`);
-  }
-  const input = resolveUploadFileInput(element);
-  if (!input) {
-    throw new Error("Target element is not a file input.");
   }
   let totalBase64 = 0;
   for (const f of files) {
@@ -1170,15 +1184,33 @@ export async function performUploadAction(
   if (totalBase64 > UPLOAD_MAX_BASE64_CHARS) {
     throw new Error("browser.page.upload payload exceeds the size limit.");
   }
-  const dataTransfer = new DataTransfer();
-  for (const f of files) {
-    const bytes = decodeUploadBase64(f.base64);
-    dataTransfer.items.add(new File([bytes], f.name, { type: typeof f.mimeType === "string" ? f.mimeType : "" }));
+  const input = resolveUploadFileInput(element);
+  if (input) {
+    input.files = buildUploadDataTransfer(files).files;
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    return { count: files.length, via: "input" };
   }
-  input.files = dataTransfer.files;
-  input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-  return files.length;
+  if (!isPointerReachableElement(element)) {
+    throw new Error("Target element is not a file input and is not visible — cannot act as a drop zone.");
+  }
+  const rect = element.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const dataTransfer = buildUploadDataTransfer(files);
+  const init = {
+    bubbles: true,
+    composed: true,
+    cancelable: true,
+    view: window,
+    dataTransfer,
+    clientX: x,
+    clientY: y,
+  };
+  element.dispatchEvent(new DragEvent("dragenter", init));
+  element.dispatchEvent(new DragEvent("dragover", init));
+  element.dispatchEvent(new DragEvent("drop", init));
+  return { count: files.length, via: "drop" };
 }
 
 export function summarizeDomActionResults(results: BrowserDomActionResult["results"]): string {

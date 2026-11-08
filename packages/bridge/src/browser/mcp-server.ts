@@ -509,7 +509,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.upload": {
     description:
-      "Attach in-memory files to a file input: files[] entries of {name, mimeType, base64} are set on input.files via DataTransfer (extension) or setInputFiles buffers (playwright-isolated). Local paths/native pickers are refused with browser.gesture_required — ask the user to attach the file instead. Upload always requires approval.",
+      "Attach in-memory files: files[] entries of {name, mimeType, base64} are set on input.files via DataTransfer (extension) or setInputFiles buffers (playwright-isolated). When the target has no file input it is treated as a drop zone and receives a real dragenter/dragover/drop sequence carrying the File objects — drop acceptance is page-defined and reported as via:\"drop\", not as a confirmed upload. Local paths/native pickers are refused with browser.gesture_required — ask the user to attach the file instead. Upload always requires approval.",
     inputSchema: objectSchema(
       {
         ...ELEMENT_TARGET_WITH_TAB,

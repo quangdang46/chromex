@@ -83,7 +83,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   into headless Chromium behind a chrome.* stub, driven via the actual
   runtime.onMessage API: snapshot refs, pointer-sequence actions,
   per-char type, DataTransfer upload/drag, wait conditions, honest
-  failure on hidden targets (19 asserts)
+  failure on hidden targets; **upload drop-zone fallback**: target
+  without a file input gets a real dragenter/dragover/drop carrying
+  File objects, reported `via:"drop"` (acceptance page-defined) on
+  both extension and playwright-isolated backends (62 asserts)
   `gateway-mcp-isolated` PASS — the full provider path without user
   Chrome: real in-process Gateway + spawned mcp-stdio.js child +
   JSON-RPC over stdio → IPC browser.tool.call → tool server (HMAC
