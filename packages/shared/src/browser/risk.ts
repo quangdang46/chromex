@@ -164,6 +164,12 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     return verdict("read", { reason: "read-only tool" });
   }
 
+  if (ctx.action === "browser.page.pdf") {
+    return verdict("read", {
+      reason: "pdf capture is read + agentEgress (handled above)",
+    });
+  }
+
   if (ctx.action === "browser.page.screenshot") {
     return verdict("read", {
       reason: "screenshot is read + agentEgress (handled above)",

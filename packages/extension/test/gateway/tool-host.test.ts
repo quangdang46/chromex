@@ -1540,6 +1540,37 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(noCdp(req("browser.page.emulate", { tabId: 1, width: 100, height: 100 }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.pdf prints via CDP and uploads the artifact", async () => {
+    const pdfB64 = Buffer.from("%PDF-1.4 fake").toString("base64");
+    const cdp = fakeCdp({ "Page.printToPDF": () => ({ data: pdfB64 }) });
+    const uploads: Array<{ kind: string; mimeType: string }> = [];
+    const h = createToolHostHandler(cdpDeps(515, cdp, {
+      uploadArtifact: vi.fn(async (input: { kind: string; mimeType: string }) => {
+        uploads.push(input);
+        return { artifactRef: "art-1", sha256: "x", bytes: 13 };
+      }),
+    }));
+    const res = (await h(req("browser.page.pdf", { tabId: 515, landscape: true }))) as {
+      ok: boolean; bytes: number; mimeType: string; artifactRef?: string; sha256: string;
+    };
+    expect(res.ok).toBe(true);
+    expect(res.mimeType).toBe("application/pdf");
+    expect(res.bytes).toBe(13);
+    expect(res.artifactRef).toBe("art-1");
+    expect(res.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(uploads[0]).toMatchObject({ kind: "pdf", mimeType: "application/pdf" });
+    const print = cdp.sent.find((s) => s.method === "Page.printToPDF");
+    expect(print?.params).toMatchObject({ landscape: true, scale: 1 });
+  });
+
+  test("page.pdf rejects frameId and missing CDP", async () => {
+    const cdp = fakeCdp({ "Page.printToPDF": () => ({ data: "eA==" }) });
+    const h = createToolHostHandler(cdpDeps(516, cdp));
+    await expect(h(req("browser.page.pdf", { tabId: 516, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    const noCdp = createToolHostHandler(deps());
+    await expect(noCdp(req("browser.page.pdf", { tabId: 1 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.setInputFiles falls back to the OOPIF frame target", async () => {
     const tabCdp = fakeCdp({
       "DOM.getDocument": () => ({ root: { nodeId: 1 } }), // pierced tree: no marker

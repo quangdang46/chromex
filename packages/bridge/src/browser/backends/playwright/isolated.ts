@@ -48,6 +48,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.console",
   "browser.page.evaluate",
   "browser.page.emulate",
+  "browser.page.pdf",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -269,6 +270,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#withExpect(taskId, args, await this.#evaluate(taskId, args));
       case "browser.page.emulate":
         return this.#withExpect(taskId, args, await this.#emulate(taskId, args));
+      case "browser.page.pdf":
+        return this.#withExpect(taskId, args, await this.#pdf(taskId, args));
       case "browser.page.click":
       case "browser.page.focus":
       case "browser.page.type":
@@ -573,6 +576,37 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.page.emulate requires at least one override arg (or args.reset)");
     }
     return { ok: true, applied };
+  }
+
+  async #pdf(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    if (typeof args.frameId === "number" && args.frameId !== 0) {
+      throw protocolError("proto.invalid", "browser.page.pdf is tab-scoped; args.frameId is not supported");
+    }
+    const pdfArgs = {
+      landscape: args.landscape === true,
+      printBackground: args.printBackground !== false,
+      ...(typeof args.paperWidth === "number" ? { width: `${args.paperWidth}in` } : {}),
+      ...(typeof args.paperHeight === "number" ? { height: `${args.paperHeight}in` } : {}),
+    };
+    let buf = await page.pdf(pdfArgs).catch((e: unknown) => {
+      throw protocolError("browser.action_failed", `page.pdf failed: ${e instanceof Error ? e.message : String(e)}`);
+    });
+    // Same 512KiB bound as the extension artifact cap — retry once at
+    // reduced scale, then fail honestly rather than exceed it.
+    if (buf.length > 512 * 1024) {
+      buf = await page.pdf({ ...pdfArgs, scale: 0.6 }).catch(() => buf);
+    }
+    if (buf.length > 512 * 1024) {
+      throw protocolError("proto.payload_too_large", `pdf is ${buf.length} bytes — exceeds the 512KiB cap`);
+    }
+    const { createHash } = await import("node:crypto");
+    return {
+      ok: true,
+      mimeType: "application/pdf",
+      bytes: buf.length,
+      sha256: createHash("sha256").update(buf).digest("hex"),
+    };
   }
 
   /** Lazily attach request/response/requestfailed capture to a page.

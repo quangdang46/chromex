@@ -420,6 +420,23 @@ await runScenario(
         body: fbPayload?.body,
       };
 
+      // --- pdf: Page.printToPDF → artifact ---
+      let pdfRes = null;
+      try {
+        pdfRes = await runner.browserToolCall(
+          taskId, "browser.page.pdf", { landscape: true }, token, 60_000,
+        );
+      } catch (e) {
+        pdfRes = { rpcError: e?.message };
+      }
+      const pdfPayload = pdfRes?.result ?? pdfRes ?? {};
+      evidence.note(`pdf → ${JSON.stringify(pdfPayload).slice(0, 200)}`);
+      results.pdf = {
+        ok: pdfRes?.status === "completed" && pdfPayload?.mimeType === "application/pdf" && (pdfPayload?.bytes ?? 0) > 100,
+        bytes: pdfPayload?.bytes,
+        artifactRef: typeof pdfPayload?.artifactRef === "string" ? "present" : pdfPayload?.artifactRef,
+      };
+
       // --- emulate: viewport + dark colorScheme, verified via evaluate ---
       let emu = null, emuCheck = null, emuReset = null;
       try {

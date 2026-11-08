@@ -212,6 +212,7 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.get": "page-text",
   "browser.page.extract": "page-text",
   "browser.page.screenshot": "screenshot",
+  "browser.page.pdf": "screenshot",
   // console entries are page-generated content — same egress class as
   // extracted text (may carry tokens/PII the page logged).
   "browser.page.console": "page-text",

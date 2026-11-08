@@ -358,6 +358,17 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     }),
   },
+  "browser.page.pdf": {
+    description:
+      "Print the tab to PDF via the debugger tier (chrome-extension backend; playwright-isolated via page.pdf). Returns {bytes, sha256, mimeType, artifactRef?} — the PDF is stored as an artifact, NOT returned inline. Scale retries down until it fits the 512KiB artifact cap. Tab-scoped; args.frameId unsupported.",
+    inputSchema: objectSchema({
+      ...TAB_TARGET_PROPS,
+      landscape: { type: "boolean", description: "Landscape orientation (default portrait)." },
+      printBackground: { type: "boolean", description: "Include background graphics (default true)." },
+      paperWidth: { type: "number", description: "Paper width in inches (3–24, default 8.5)." },
+      paperHeight: { type: "number", description: "Paper height in inches (3–24, default 11)." },
+    }),
+  },
   "browser.page.click": {
     description: `Click an element — or a viewport coordinate (x,y) for canvas/WebGL/map surfaces that have no DOM target (mutually exclusive with ref/selector/label). Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly. button: left (default), right (contextmenu sequence — page JS sees it, the native browser menu does NOT open), or middle (auxclick). clickCount:2 double-clicks. ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({

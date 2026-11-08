@@ -20,6 +20,7 @@ export type BrowserToolName =
   | "browser.page.console"
   | "browser.page.evaluate"
   | "browser.page.emulate"
+  | "browser.page.pdf"
   | "browser.page.click"
   | "browser.page.focus"
   | "browser.page.type"
@@ -61,6 +62,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.console",
   "browser.page.evaluate",
   "browser.page.emulate",
+  "browser.page.pdf",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",

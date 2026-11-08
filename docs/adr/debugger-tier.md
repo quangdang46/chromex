@@ -118,6 +118,10 @@ for Testing:
   clipped via `Page.captureScreenshot` — verified inside an iframe in
   `cdp-headless`. Whole-tab capture stays on `captureVisibleTab`;
   `playwright-isolated` rejects element clips `proto.unsupported`.
+- `browser.page.pdf` prints the tab via `Page.printToPDF` — bytes go to
+  the artifact store only (no inline payload); scale retries 1→0.45
+  until ≤512KiB decoded, then `proto.payload_too_large`. playwright-
+  isolated implements via `page.pdf` with the same bound.
 - `browser.page.emulate` applies CDP `Emulation.*`/`Network.emulateNetworkConditions`
   overrides (viewport, UA, timezone, geolocation, media, CPU throttle,
   network conditions). Overrides are session-scoped, so emulate HOLDS the

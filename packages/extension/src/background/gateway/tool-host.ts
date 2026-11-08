@@ -183,6 +183,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.console",
   "browser.page.evaluate",
   "browser.page.emulate",
+  "browser.page.pdf",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -215,6 +216,7 @@ const SUPPORTED = new Set([
   "browser.page.console",
   "browser.page.evaluate",
   "browser.page.emulate",
+  "browser.page.pdf",
   "browser.page.click",
   "browser.page.focus",
   "browser.page.type",
@@ -350,6 +352,11 @@ export function toolHostSnapshotRegistry(): SnapshotRegistry {
 const SCREENSHOT_MAX_DECODED_BYTES = 512 * 1024;
 /** jpeg quality ladder tried after the dep's default capture. */
 const SCREENSHOT_QUALITY_RETRY = [45, 25] as const;
+
+async function sha256Hex(data: ArrayBufferView): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 function base64DecodedBytes(dataBase64: string): number {
   const padding = dataBase64.endsWith("==") ? 2 : dataBase64.endsWith("=") ? 1 : 0;
@@ -730,6 +737,62 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } catch (e) {
           if (e instanceof Error && "code" in e) throw e;
           throw toolError("browser.action_failed", `emulation failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      case "browser.page.pdf": {
+        // CDP Page.printToPDF — the agent's "save this page" deliverable.
+        // PDF bytes go to the artifact store (no inline payload: a PDF
+        // is not provider-consumable image input and would flood context).
+        cdpRequired(deps);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.pdf is tab-scoped; args.frameId is not supported");
+        }
+        const { session, release } = await cdpAcquire(deps, tabId);
+        try {
+          const landscape = args.landscape === true;
+          const printBackground = args.printBackground !== false;
+          const paperWidth = numArg(args.paperWidth, "paperWidth", 3, 24) ?? 8.5;
+          const paperHeight = numArg(args.paperHeight, "paperHeight", 3, 24) ?? 11;
+          // Retry at lower scale until the PDF fits the 512KiB artifact
+          // cap — same bounded-egress rule as screenshots.
+          let pdf: { data: string } | undefined;
+          for (const scale of [1, 0.8, 0.6, 0.45]) {
+            const res = (await session.send("Page.printToPDF", {
+              landscape, printBackground, scale,
+              paperWidth, paperHeight,
+              marginTop: 0.4, marginBottom: 0.4, marginLeft: 0.4, marginRight: 0.4,
+            })) as { data?: string } | undefined;
+            pdf = res?.data ? { data: res.data } : undefined;
+            if (pdf && base64DecodedBytes(pdf.data) <= SCREENSHOT_MAX_DECODED_BYTES) break;
+          }
+          if (!pdf) throw toolError("browser.action_failed", "Page.printToPDF returned no data");
+          const bytes = base64DecodedBytes(pdf.data);
+          if (bytes > SCREENSHOT_MAX_DECODED_BYTES) {
+            throw toolError(
+              "proto.payload_too_large",
+              `pdf is ${bytes} bytes — exceeds the ${SCREENSHOT_MAX_DECODED_BYTES}-byte artifact cap even at minimum scale`,
+            );
+          }
+          const out: Record<string, unknown> = {
+            ok: true,
+            mimeType: "application/pdf",
+            bytes,
+            sha256: await sha256Hex(Uint8Array.from(atob(pdf.data), (c) => c.charCodeAt(0))),
+            resolvedTabId: tabId,
+          };
+          if (deps.uploadArtifact) {
+            const art = await deps.uploadArtifact({
+              taskId: req.taskId ?? "",
+              kind: "pdf",
+              mimeType: "application/pdf",
+              dataBase64: pdf.data,
+            });
+            out.artifactRef = art.artifactRef;
+          }
+          return out;
+        } finally {
+          await release();
         }
       }
       case "browser.page.get": {
