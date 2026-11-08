@@ -4195,10 +4195,12 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       requests: Array<{ requestId: string; url: string; finished: boolean }>;
     };
     expect(list.requests).toHaveLength(1);
-    expect(list.requests[0].requestId).toBe("r1");
+    // public requestId is session-namespaced — raw CDP ids collide
+    // across tab/frame sessions
+    expect(list.requests[0].requestId).toBe("tab:r1");
     expect(list.requests[0].url).toBe("https://x/api/data"); // query stripped
     expect(list.requests[0].finished).toBe(true);
-    const body = (await h(req("browser.page.responseBody", { tabId: 508, requestId: "r1" }))) as {
+    const body = (await h(req("browser.page.responseBody", { tabId: 508, requestId: list.requests[0].requestId }))) as {
       body: string; bodyBytes: number;
     };
     expect(body.body).toBe("hello-body");
@@ -4248,13 +4250,16 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       tabId: 511, urlContains: "ads.example.com",
     }))) as { requests: Array<{ requestId: string; url: string; finished: boolean }> };
     expect(list.requests).toHaveLength(1);
-    expect(list.requests[0].requestId).toBe("f-req-1");
+    expect(list.requests[0].requestId).toBe("ftgt-oopif:f-req-1");
     expect(list.requests[0].finished).toBe(true);
     // getResponseBody must route back to the FRAME session that saw it
     const body = (await h(req("browser.page.responseBody", {
-      tabId: 511, requestId: "f-req-1",
+      tabId: 511, requestId: list.requests[0].requestId,
     }))) as { body: string };
     expect(body.body).toBe("oopif-body");
+    // ...with the RAW cdp requestId, not the namespaced public one
+    const grb = frameCdp.sent.find((s) => s.method === "Network.getResponseBody");
+    expect(grb?.params?.requestId).toBe("f-req-1");
     expect(frameCdp.sent.some((s) => s.method === "Network.getResponseBody")).toBe(true);
     expect(tabCdp.sent.some((s) => s.method === "Network.getResponseBody")).toBe(false);
   });
@@ -5396,8 +5401,8 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       sockets: Array<{ requestId: string; url: string; frameCount: number }>;
     };
     expect(list.sockets).toHaveLength(1);
-    expect(list.sockets[0]).toMatchObject({ requestId: "ws1", frameCount: 2 });
-    const frames = (await h(req("browser.page.webSocket", { tabId: 524, requestId: "ws1" }))) as {
+    expect(list.sockets[0]).toMatchObject({ requestId: "tab:ws1", frameCount: 2 });
+    const frames = (await h(req("browser.page.webSocket", { tabId: 524, requestId: list.sockets[0].requestId }))) as {
       frames: Array<{ dir: string; data: string }>;
     };
     expect(frames.frames.map((f) => `${f.dir}:${f.data}`)).toEqual(["sent:hello", "recv:hi"]);

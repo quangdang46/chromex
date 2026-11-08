@@ -8437,7 +8437,13 @@ async function setInputFiles(
 // ---- browser.page.responseBody ----------------------------------------------
 
 interface NetworkTapEntry {
+  /** Public unique id — the session-namespaced key (`tab:<id>` /
+   *  `f<target>:<id>`). Raw CDP requestIds collide across sessions, so
+   *  the namespaced form is what callers must pass back. */
   requestId: string;
+  /** Raw CDP requestId on the owning session — what
+   *  Network.getResponseBody expects. */
+  cdpId: string;
   method: string;
   url: string;
   type: string;
@@ -8462,6 +8468,7 @@ interface WsFrameEntry {
 }
 
 interface WsTapEntry {
+  /** Public unique id — session-namespaced like NetworkTapEntry. */
   requestId: string;
   url: string;
   ts: number;
@@ -8515,8 +8522,9 @@ async function ensureNetworkTap(
   const entries: NetworkTapEntry[] = [];
   const sockets: WsTapEntry[] = [];
   // requestIds are session-scoped — two CDP sessions can emit the
-  // same id, so internal maps key on `${tag}:${requestId}` while the
-  // public requestId stays raw.
+  // same id, so BOTH the internal maps and the public requestId key on
+  // `${tag}:${requestId}`; the raw id is kept as cdpId for the
+  // getResponseBody round-trip.
   const entryKeys = new Map<string, NetworkTapEntry>();
   const wsKeys = new Map<string, WsTapEntry>();
 
@@ -8531,7 +8539,8 @@ async function ensureNetworkTap(
       let e = entryKeys.get(k);
       if (!e) {
         e = {
-          requestId,
+          requestId: k,
+          cdpId: requestId,
           method: "",
           url: "",
           type: "",
@@ -8588,7 +8597,7 @@ async function ensureNetworkTap(
       const k = key(requestId);
       let s = wsKeys.get(k);
       if (!s) {
-        s = { requestId, url, ts: Date.now(), closed: false, frames: [] };
+        s = { requestId: k, url, ts: Date.now(), closed: false, frames: [] };
         wsKeys.set(k, s);
         sockets.push(s);
         if (sockets.length > WS_TAP_CAP) {
@@ -8784,7 +8793,7 @@ async function pageResponseBody(
     }
     // OOPIF requests live on the frame target's session — getResponseBody
     // must go back to the session that observed them.
-    const res = (await (entry.owner ?? tap.session).send("Network.getResponseBody", { requestId })) as {
+    const res = (await (entry.owner ?? tap.session).send("Network.getResponseBody", { requestId: entry.cdpId })) as {
       body?: string;
       base64Encoded?: boolean;
     };
