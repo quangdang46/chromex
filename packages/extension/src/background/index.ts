@@ -455,7 +455,13 @@ const toolHostHandler = createToolHostHandler({
       else await chrome.downloads.erase({ id: downloadId });
     },
     listWindows: async () => {
-      const wins = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+      // normal+popup+app: popup windows (window.open features, agent
+      // pop-outs) are real browsing surface the agent must see to
+      // manage; devtools/panel are chrome-internal and never returned.
+      const wins = await chrome.windows.getAll({
+        populate: true,
+        windowTypes: ["normal", "popup", "app"],
+      });
       return wins
         .filter((w) => typeof w.id === "number")
         .map((w) => ({
@@ -504,6 +510,7 @@ const toolHostHandler = createToolHostHandler({
     createWindow: async (opts) => {
       const win = await chrome.windows.create({
         ...(opts.url ? { url: opts.url } : {}),
+        ...(opts.type ? { type: opts.type as NonNullable<chrome.windows.CreateData["type"]> } : {}),
         ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
         ...(opts.width !== undefined ? { width: opts.width } : {}),
         ...(opts.height !== undefined ? { height: opts.height } : {}),
@@ -515,6 +522,7 @@ const toolHostHandler = createToolHostHandler({
         id: win?.id,
         focused: win?.focused === true,
         state: win?.state ?? opts.state,
+        type: win?.type ?? opts.type ?? "normal",
         tabs: (win?.tabs ?? [])
           .filter((t) => typeof t.id === "number")
           .map((t) => ({

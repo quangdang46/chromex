@@ -347,6 +347,21 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.windows.create", { state: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("windows.create forwards type popup; rejects other types", async () => {
+    const d = deps();
+    let createdType: string | undefined;
+    d.createWindow = async (opts) => {
+      createdType = opts.type;
+      return { id: 9, focused: false, state: "normal", type: "popup", tabs: [] };
+    };
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.windows.create", { type: "popup" }))) as { type: string };
+    expect(createdType).toBe("popup");
+    expect(res.type).toBe("popup");
+    await expect(h(req("browser.windows.create", { type: "devtools" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.create", { type: "app" }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("windows.update requires windowId + focused|state", async () => {
     const d = deps();
     const calls: Array<[number, Record<string, unknown>]> = [];

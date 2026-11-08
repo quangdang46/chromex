@@ -1131,7 +1131,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.windows.list": {
     description:
-      "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
+      "List the browser's windows (normal + popup + app types) — id, focused, state, bounds, incognito, tabCount. Popup windows (window.open features, agent pop-outs) are included so the agent can see and manage every browsing surface. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
     inputSchema: objectSchema({}),
   },
   "browser.windows.get": {
@@ -1144,9 +1144,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.windows.create": {
     description:
-      "Open a new browser window — optionally with an http(s) URL, size/position, initial state, and focus. Returns windowId plus the window's tabs (sanitized urls); the first tab enters this task's scope as openedTabId. Lets the agent work in its own window without disturbing the user's. chrome-extension backend only.",
+      "Open a new browser window — optionally with an http(s) URL, window type (normal|popup — popup gives a chromeless agent pop-out surface), size/position, initial state, and focus. Returns windowId plus the window's tabs (sanitized urls); the first tab enters this task's scope as openedTabId. Popup windows appear in browser.windows.list. Lets the agent work in its own window without disturbing the user's. chrome-extension backend only.",
     inputSchema: objectSchema({
       url: { type: "string", description: "Optional http(s) URL to open in the new window." },
+      type: { type: "string", enum: ["normal", "popup"], description: "Window type — popup for a chromeless agent pop-out (default normal)." },
       focused: { type: "boolean", description: "Focus the new window (default: browser decides, usually true)." },
       width: { type: "number", description: "Window width in px." },
       height: { type: "number", description: "Window height in px." },

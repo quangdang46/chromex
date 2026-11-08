@@ -156,6 +156,7 @@ export interface ToolHostDeps {
   }>>;
   createWindow?(opts: {
     url?: string | undefined;
+    type?: string | undefined;
     focused?: boolean | undefined;
     width?: number | undefined;
     height?: number | undefined;
@@ -166,6 +167,7 @@ export interface ToolHostDeps {
     id?: number | undefined;
     focused?: boolean | undefined;
     state?: string | undefined;
+    type?: string | undefined;
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
   updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
@@ -3921,12 +3923,17 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (state !== undefined && !["normal", "minimized", "maximized", "fullscreen"].includes(state)) {
           throw toolError("proto.invalid", "browser.windows.create args.state must be normal|minimized|maximized|fullscreen");
         }
+        const type = str(args.type);
+        if (type !== undefined && !["normal", "popup"].includes(type)) {
+          throw toolError("proto.invalid", "browser.windows.create args.type must be normal|popup");
+        }
         const numArg = (key: string): number | undefined => {
           const v = args[key];
           return typeof v === "number" && Number.isFinite(v) ? v : undefined;
         };
         const win = await deps.createWindow({
           ...(url ? { url } : {}),
+          ...(type ? { type } : {}),
           ...(typeof args.focused === "boolean" ? { focused: args.focused } : {}),
           ...(numArg("width") !== undefined ? { width: numArg("width") } : {}),
           ...(numArg("height") !== undefined ? { height: numArg("height") } : {}),
@@ -3963,6 +3970,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           id: win.id,
           focused: win.focused === true,
           state: win.state ?? state ?? "normal",
+          type: win.type ?? type ?? "normal",
           tabs,
           ...(typeof firstTabId === "number" ? { openedTabId: firstTabId, tabId: firstTabId, resolvedTabId: firstTabId } : {}),
         };

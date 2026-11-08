@@ -1673,6 +1673,36 @@ await runScenario(
         ok: wg.listOk === true && wg.byIdOk === true && wg.lastFocusedOk === true && wg.badIdOk === true,
         ...wg,
       };
+
+      // --- windows.create type:"popup" + windows.list coverage ---
+      // Popup windows are real browsing surface — they must be
+      // creatable AND visible in windows.list (previously filtered to
+      // "normal" only). Left open: closing it would teardown-crash
+      // headless; scenario teardown quits the browser cleanly.
+      const wp = {};
+      const wpBad = await runner.browserToolCall(
+        taskId, "browser.windows.create", { type: "devtools" }, token, 60_000,
+      ).catch(() => null);
+      wp.badTypeOk = wpBad?.status === "failed" &&
+        (wpBad?.error?.code ?? "") === "proto.invalid";
+      const wpCreate = await runner.browserToolCall(
+        taskId, "browser.windows.create",
+        { url: fixture.url("/fetch"), type: "popup", focused: false, width: 400, height: 300 },
+        token, 60_000,
+      );
+      const wpRes = wpCreate?.result ?? wpCreate ?? {};
+      wp.createOk = wpRes.type === "popup" && typeof wpRes.windowId === "number";
+      wp.windowId = wpRes.windowId ?? null;
+      await sleep(500);
+      const wpList = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 30_000);
+      const wpWins = (wpList?.result ?? wpList ?? {}).windows ?? [];
+      wp.listedOk = wpWins.some((w) => w.id === wp.windowId && w.type === "popup");
+      evidence.note(`windows.popup → ${JSON.stringify(wp).slice(0, 300)}`);
+      results.windowsPopup = {
+        ok: wp.badTypeOk === true && wp.createOk === true && wp.listedOk === true,
+        ...wp,
+      };
+
       // --- windows.remove: window teardown crashes headless Chromium
       // (chrome.windows.remove AND last-tab-close both BUS_ADRALN) —
       // the dep is omitted on HeadlessChrome so the tool must refuse
