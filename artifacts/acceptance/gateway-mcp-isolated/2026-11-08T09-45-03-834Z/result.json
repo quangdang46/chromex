@@ -1,0 +1,7 @@
+{
+  "scenario": "gateway-mcp-isolated",
+  "status": "PASS",
+  "asserts": 15,
+  "taskId": "01M6X8R43QK4KZP45S89RB4WBA",
+  "toolEvents": 16
+}

@@ -1,0 +1,13 @@
+{"seq":1,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"task.created","payload":{"type":"task.created","taskId":"01M6X903H9B72BYQX7CQH751MV","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794131365422}
+{"seq":2,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794131365423}
+{"seq":3,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6X903HMVDH41P1SX4Z2EQ3T","message":{"gatewayTurnId":"01M6X903HMVDH41P1SX4Z2EQ3T","clientMessageId":"prompt-1794131357764-tqnolsz46bs","content":[{"type":"text","text":"first long turn — keep working"}]},"clientMessageId":"prompt-1794131357764-tqnolsz46bs"},"at":1794131365429}
+{"seq":4,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6X903HMVDH41P1SX4Z2EQ3T"},"at":1794131365432}
+{"seq":null,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"assistant.delta","payload":{},"at":1794131365537}
+{"seq":null,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"assistant.delta","payload":{},"at":1794131366039}
+{"seq":null,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"assistant.delta","payload":{},"at":1794131366538}
+{"seq":null,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"assistant.delta","payload":{},"at":1794131367041}
+{"seq":null,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"assistant.delta","payload":{},"at":1794131367541}
+{"seq":5,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6X903HMVDH41P1SX4Z2EQ3T","reason":"interrupted"},"at":1794131367558}
+{"seq":6,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794131367559}
+{"seq":7,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794131367559}
+{"seq":8,"taskId":"01M6X903H9B72BYQX7CQH751MV","type":"task.completed","payload":{"type":"task.completed"},"at":1794131367559}

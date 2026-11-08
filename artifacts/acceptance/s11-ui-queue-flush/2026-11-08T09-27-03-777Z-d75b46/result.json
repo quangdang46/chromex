@@ -1,0 +1,20 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T09-27-03-777Z-d75b46",
+  "status": "FAIL",
+  "summary": "harness error: queued message neither visible nor flushed after reload — queue lost",
+  "durationMs": 43548,
+  "error": "Error: queued message neither visible nor flushed after reload — queue lost\n    at runScenario.needsBrowser (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:176:15)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T09:27:11.017Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:27:14.307Z] usage notice accept clicked=false",
+    "[2026-11-08T09:27:21.159Z] turn 1 active",
+    "[2026-11-08T09:27:21.171Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"5a2dc815-62a0-4d90-a483-db880ca894c2\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794130041169-0hi40k\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T09:27:21.196Z] second message queued",
+    "[2026-11-08T09:27:26.339Z] task 01M6X7QTJK03QW82SH6EKWAWCW",
+    "[2026-11-08T09:27:26.342Z] active turn restored post-reload (#stop-turn visible)",
+    "[2026-11-08T09:27:27.231Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"5a2dc815-62a0-4d90-a483-db880ca894c2\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"5a2dc815-62a0-4d90-a483-db880ca894c2\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6X7QTJY16H4C6PSE8KXRR2P\\\",\\\"threadId\\\":\\\"01M6X7QTJK03QW82SH6EKWAWCW\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"5a2dc815-62a0-4d90-a483-db880ca894c2\",\"activeTurn\":{\"turnId\":\"01M6X7QTJY16H4C6PSE8KXRR2P\",\"threadId\":\"01M6X7QTJK03QW82SH6EKWAWCW\"},\"promptActivity\":true,\"queued\":{}}}",
+    "[2026-11-08T09:27:27.231Z] queue console: []",
+    "[2026-11-08T09:27:47.311Z] queue lost post-reload: userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started"
+  ]
+}

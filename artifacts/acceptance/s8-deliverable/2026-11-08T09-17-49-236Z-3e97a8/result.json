@@ -1,0 +1,34 @@
+{
+  "scenario": "s8-deliverable",
+  "runId": "2026-11-08T09-17-49-236Z-3e97a8",
+  "status": "FAIL",
+  "summary": "durableOk=true uiOk=false",
+  "durationMs": 12578,
+  "details": {
+    "durableOk": true,
+    "uiOk": false,
+    "events": 21,
+    "toolStarted": 5,
+    "toolCompleted": 5,
+    "classified": 5,
+    "callsOk": true,
+    "callStatuses": {
+      "nav": "completed",
+      "snap": "completed",
+      "click": "completed",
+      "get": "completed"
+    },
+    "spState": {
+      "title": "Chromex",
+      "bodyText": "",
+      "hasComposer": false
+    },
+    "note": "agent-authored deliverable card requires a live provider turn (see s1)"
+  },
+  "notes": [
+    "[2026-11-08T09:17:57.388Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:18:00.009Z] calls: nav=completed snap=completed click=completed get=completed",
+    "[2026-11-08T09:18:00.062Z] durable events=21 started=5 completed=5 classified=5",
+    "[2026-11-08T09:18:01.793Z] sidepanel state: {\"title\":\"Chromex\",\"bodyText\":\"\",\"hasComposer\":false}"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T09-34-29-237Z-2fc4f4",
+  "status": "FAIL",
+  "summary": "harness error: queued message neither visible nor flushed after reload — queue lost",
+  "durationMs": 42399,
+  "error": "Error: queued message neither visible nor flushed after reload — queue lost\n    at runScenario.needsBrowser (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:176:15)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T09:34:36.079Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:34:39.558Z] usage notice accept clicked=false",
+    "[2026-11-08T09:34:46.397Z] turn 1 active",
+    "[2026-11-08T09:34:46.408Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"7552f7db-d5d9-4ce8-82bc-ac49abfae9e0\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794130486407-ddcofb\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T09:34:46.432Z] second message queued",
+    "[2026-11-08T09:34:50.605Z] task 01M6X85D0KW870FRMK5AHT3501",
+    "[2026-11-08T09:34:50.612Z] active turn restored post-reload (#stop-turn visible)",
+    "[2026-11-08T09:34:51.500Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"7552f7db-d5d9-4ce8-82bc-ac49abfae9e0\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"7552f7db-d5d9-4ce8-82bc-ac49abfae9e0\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6X85D0W248788VC9NR4ACPQ\\\",\\\"threadId\\\":\\\"01M6X85D0KW870FRMK5AHT3501\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"7552f7db-d5d9-4ce8-82bc-ac49abfae9e0\",\"activeTurn\":{\"turnId\":\"01M6X85D0W248788VC9NR4ACPQ\",\"threadId\":\"01M6X85D0KW870FRMK5AHT3501\"},\"promptActivity\":true,\"queued\":{},\"lastFlushDecision\":{\"conversationId\":\"7552f7db-d5d9-4ce8-82bc-ac49abfae9e0\",\"boundThreadId\":\"\",\"stateThreadId\":\"\",\"mappedThreadId\":null,\"queuedThreadId\":null,\"activeTurn\":null,\"promptActivity\":false,\"gwEnabled\":true,\"gwTasks\":[],\"at\":1794130487458}}}",
+    "[2026-11-08T09:34:51.500Z] queue console: []",
+    "[2026-11-08T09:35:11.578Z] queue lost post-reload: userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started"
+  ]
+}

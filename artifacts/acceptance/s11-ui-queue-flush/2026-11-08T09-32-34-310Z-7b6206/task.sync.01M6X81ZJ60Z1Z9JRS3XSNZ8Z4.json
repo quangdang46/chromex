@@ -1,0 +1,83 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+      "seq": 1,
+      "ts": 1794130378312,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+      "seq": 2,
+      "ts": 1794130378313,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+      "seq": 3,
+      "ts": 1794130378318,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6X81ZJE5549GC5HKE082B4Q",
+        "message": {
+          "gatewayTurnId": "01M6X81ZJE5549GC5HKE082B4Q",
+          "clientMessageId": "prompt-1794130373317-596jaiz7wy7",
+          "content": [
+            {
+              "type": "text",
+              "text": "auto-flush me after turn one"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794130373317-596jaiz7wy7"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X81ZJ60Z1Z9JRS3XSNZ8Z4",
+      "seq": 4,
+      "ts": 1794130378322,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6X81ZJE5549GC5HKE082B4Q"
+      }
+    }
+  ],
+  "nextSeq": 4,
+  "hasMore": false
+}

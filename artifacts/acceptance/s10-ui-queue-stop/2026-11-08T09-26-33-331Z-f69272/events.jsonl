@@ -1,0 +1,12 @@
+{"seq":1,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"task.created","payload":{"type":"task.created","taskId":"01M6X7Q03BCJRYD06753CZY0KG","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794130018415}
+{"seq":2,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794130018416}
+{"seq":3,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6X7Q03ZE6PD2SPWMV78PM3N","message":{"gatewayTurnId":"01M6X7Q03ZE6PD2SPWMV78PM3N","clientMessageId":"prompt-1794130009684-52qrnt9wv8w","content":[{"type":"text","text":"first long turn — keep working"}]},"clientMessageId":"prompt-1794130009684-52qrnt9wv8w"},"at":1794130018432}
+{"seq":4,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6X7Q03ZE6PD2SPWMV78PM3N"},"at":1794130018437}
+{"seq":null,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"assistant.delta","payload":{},"at":1794130018556}
+{"seq":null,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"assistant.delta","payload":{},"at":1794130019061}
+{"seq":null,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"assistant.delta","payload":{},"at":1794130019563}
+{"seq":null,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"assistant.delta","payload":{},"at":1794130020065}
+{"seq":5,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6X7Q03ZE6PD2SPWMV78PM3N","reason":"interrupted"},"at":1794130020504}
+{"seq":6,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794130020505}
+{"seq":7,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794130020506}
+{"seq":8,"taskId":"01M6X7Q03BCJRYD06753CZY0KG","type":"task.completed","payload":{"type":"task.completed"},"at":1794130020506}

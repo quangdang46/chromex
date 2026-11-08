@@ -1,0 +1,224 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 1,
+      "ts": 1794130576414,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 2,
+      "ts": 1794130576414,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 3,
+      "ts": 1794130576421,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6X88114WHV494JGEWERCKDK",
+        "message": {
+          "gatewayTurnId": "01M6X88114WHV494JGEWERCKDK",
+          "clientMessageId": "prompt-1794130570572-f7pk6vqh3kh",
+          "content": [
+            {
+              "type": "text",
+              "text": "first turn — finish soon"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794130570572-f7pk6vqh3kh"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 4,
+      "ts": 1794130576427,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6X88114WHV494JGEWERCKDK"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 5,
+      "ts": 1794130577283,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6X881W24P022JWNX3308F2C",
+        "message": {
+          "gatewayTurnId": "01M6X881W24P022JWNX3308F2C",
+          "clientMessageId": "prompt-1794130573044-42so9zj68e",
+          "content": [
+            {
+              "type": "text",
+              "text": "auto-flush me after turn one"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794130573044-42so9zj68e"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 6,
+      "ts": 1794130601484,
+      "type": "assistant.message",
+      "payload": {
+        "type": "assistant.message",
+        "turnId": "01M6X88114WHV494JGEWERCKDK",
+        "text": "startingworking… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… "
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 7,
+      "ts": 1794130601492,
+      "type": "turn.completed",
+      "payload": {
+        "type": "turn.completed",
+        "turnId": "01M6X88114WHV494JGEWERCKDK",
+        "stopReason": "end_turn"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 8,
+      "ts": 1794130601495,
+      "type": "task.attention_changed",
+      "payload": {
+        "type": "task.attention_changed",
+        "attention": "turn_finished"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 9,
+      "ts": 1794130601496,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6X881W24P022JWNX3308F2C"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 10,
+      "ts": 1794130602999,
+      "type": "assistant.message",
+      "payload": {
+        "type": "assistant.message",
+        "turnId": "01M6X881W24P022JWNX3308F2C",
+        "text": "startingworking… working… "
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 11,
+      "ts": 1794130602999,
+      "type": "turn.completed",
+      "payload": {
+        "type": "turn.completed",
+        "turnId": "01M6X881W24P022JWNX3308F2C",
+        "stopReason": "end_turn"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 12,
+      "ts": 1794130603000,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "active",
+        "to": "completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X8810WJC8THAPGQJAS0R2S",
+      "seq": 13,
+      "ts": 1794130603001,
+      "type": "task.completed",
+      "payload": {
+        "type": "task.completed"
+      }
+    }
+  ],
+  "nextSeq": 13,
+  "hasMore": false
+}

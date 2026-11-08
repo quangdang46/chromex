@@ -1,0 +1,11 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T09-21-48-423Z-65c3be",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#composer') to be visible\u001b[22m\n",
+  "durationMs": 26174,
+  "error": "page.waitForSelector: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#composer') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:39:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-08T09:21:54.352Z] authed gateway connections=2 (1=client, 2+=browser host)"
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "scenario": "iframe-headless",
+  "runId": "2026-11-08T09-14-48-642Z-0cd429",
+  "status": "PASS",
+  "summary": "frameId end-to-end on real extension: snapshot+click/evaluate inside same- AND cross-origin iframes (incl. OOPIF MAIN world + open shadow DOM); cross-frame snapshotId refused; bad frameId fails honestly",
+  "durationMs": 18639,
+  "details": {
+    "results": {
+      "same-origin": {
+        "ok": true,
+        "clickStatus": "completed",
+        "frameId": 3
+      },
+      "cross-origin": {
+        "ok": true,
+        "clickStatus": "completed",
+        "frameId": 4
+      },
+      "evaluate": {
+        "ok": true,
+        "top": "/iframe-parent",
+        "frame": "http://localhost:58460"
+      }
+    },
+    "shadow": {
+      "click": "completed",
+      "out": "shadow-child-hit"
+    },
+    "sameHit": true,
+    "crossHit": true,
+    "rejected": true,
+    "badFrameFailed": true,
+    "hits": [
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "at": 1794129299126
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "src": "http://127.0.0.1:58460",
+        "at": 1794129299126
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "at": 1794129302120
+      },
+      {
+        "method": "GET",
+        "path": "/api/frame-hit",
+        "src": "http://localhost:58460",
+        "at": 1794129302120
+      }
+    ]
+  },
+  "notes": [
+    "[2026-11-08T09:14:56.740Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:14:58.820Z] frames=[{\"frameId\":0,\"url\":\"http://127.0.0.1:58460/iframe-parent\",\"parentFrameId\":-1},{\"frameId\":3,\"url\":\"http://127.0.0.1:58460/iframe-child\",\"parentFrameId\":0},{\"frameId\":4,\"url\":\"http://localhost:58460/iframe-child\",\"parentFrameId\":0}]",
+    "[2026-11-08T09:14:59.088Z] same-origin frame=3 snapshot=completed snapId=snap:12213a7b-36d2-4583-b664-f7b4576e1819 ref=dom-3",
+    "[2026-11-08T09:14:59.736Z] same-origin click → {\"toolCallId\":\"rpc-mw7m9f2p-z51uu1\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-3\",\"action\":\"click\",\"",
+    "[2026-11-08T09:15:02.095Z] cross-origin frame=4 snapshot=completed snapId=snap:7c20977c-8d16-4340-979c-c331dcbc408b ref=dom-3",
+    "[2026-11-08T09:15:02.736Z] cross-origin click → {\"toolCallId\":\"rpc-mw7m9he9-z7oo8f\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-3\",\"action\":\"click\",\"",
+    "[2026-11-08T09:15:02.736Z] frame-hit beacons=[{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794129299126},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://127.0.0.1:58460\",\"at\":1794129299126},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794129302120},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://localhost:58460\",\"at\":1794129302120}]",
+    "[2026-11-08T09:15:03.898Z] shadow-in-frame click → {\"click\":\"completed\",\"out\":\"shadow-child-hit\"}",
+    "[2026-11-08T09:15:04.426Z] cross-frame snapshotId click → {\"toolCallId\":\"rpc-mw7m9j6s-v4zbxo\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot was captured in a different frame; call browser.page.snapshot with the same args.frameId\"}}",
+    "[2026-11-08T09:15:06.170Z] evaluate top=\"/iframe-parent\" frame=\"http://localhost:58460\"",
+    "[2026-11-08T09:15:07.283Z] frameId=99999 → {\"toolCallId\":\"rpc-mw7m9kjf-gsy474\",\"tool\":\"browser.page.snapshot\",\"status\":\"failed\",\"error\":{\"code\":\"internal\",\"message\":\"internal: No frame with id 99999 in tab with id 1715225701\"}}"
+  ]
+}

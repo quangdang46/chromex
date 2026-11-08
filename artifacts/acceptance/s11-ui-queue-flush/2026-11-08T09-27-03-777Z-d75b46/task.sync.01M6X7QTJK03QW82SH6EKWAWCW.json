@@ -1,0 +1,83 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+      "seq": 1,
+      "ts": 1794130045527,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+      "seq": 2,
+      "ts": 1794130045528,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+      "seq": 3,
+      "ts": 1794130045534,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6X7QTJY16H4C6PSE8KXRR2P",
+        "message": {
+          "gatewayTurnId": "01M6X7QTJY16H4C6PSE8KXRR2P",
+          "clientMessageId": "prompt-1794130039648-v1cdpuklzt",
+          "content": [
+            {
+              "type": "text",
+              "text": "first turn — finish soon"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794130039648-v1cdpuklzt"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X7QTJK03QW82SH6EKWAWCW",
+      "seq": 4,
+      "ts": 1794130045543,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6X7QTJY16H4C6PSE8KXRR2P"
+      }
+    }
+  ],
+  "nextSeq": 4,
+  "hasMore": false
+}

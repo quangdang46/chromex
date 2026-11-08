@@ -1,0 +1,17 @@
+{
+  "scenario": "s14-windows",
+  "runId": "2026-11-08T09-55-25-240Z-36a5b0",
+  "status": "FAIL",
+  "summary": "harness error: Cannot read properties of undefined (reading 'slice')",
+  "durationMs": 8025,
+  "error": "TypeError: Cannot read properties of undefined (reading 'slice')\n    at file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s14-windows.mjs:78:72\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s14-windows.mjs:11:1",
+  "notes": [
+    "[2026-11-08T09:55:31.530Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:55:31.537Z] task 01M6X9B92E0RFG42R7ATJN356M",
+    "[2026-11-08T09:55:31.539Z] browser.mcp scope acquired",
+    "[2026-11-08T09:55:31.545Z] windows before=1 ids=207225560",
+    "[2026-11-08T09:55:31.639Z] windows.create → windowId=207225562 tabId=207225563 tabs=1",
+    "[2026-11-08T09:55:32.704Z] page.get on window tab → {\"id\":207225563,\"tabId\":207225563,\"url\":\"http://127.0.0.1:54323/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":207225563,\"value\":\"Fixture Home\",\"windowI",
+    "[2026-11-08T09:55:32.719Z] tab.create windowId=207225562 → tabId=207225564"
+  ]
+}

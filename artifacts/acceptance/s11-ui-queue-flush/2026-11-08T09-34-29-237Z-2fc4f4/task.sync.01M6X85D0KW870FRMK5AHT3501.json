@@ -1,0 +1,83 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6X85D0KW870FRMK5AHT3501",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X85D0KW870FRMK5AHT3501",
+      "seq": 1,
+      "ts": 1794130490391,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6X85D0KW870FRMK5AHT3501",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X85D0KW870FRMK5AHT3501",
+      "seq": 2,
+      "ts": 1794130490391,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X85D0KW870FRMK5AHT3501",
+      "seq": 3,
+      "ts": 1794130490396,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6X85D0W248788VC9NR4ACPQ",
+        "message": {
+          "gatewayTurnId": "01M6X85D0W248788VC9NR4ACPQ",
+          "clientMessageId": "prompt-1794130484884-x2o02hoyqqq",
+          "content": [
+            {
+              "type": "text",
+              "text": "first turn — finish soon"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794130484884-x2o02hoyqqq"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6X85D0KW870FRMK5AHT3501",
+      "seq": 4,
+      "ts": 1794130490400,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6X85D0W248788VC9NR4ACPQ"
+      }
+    }
+  ],
+  "nextSeq": 4,
+  "hasMore": false
+}

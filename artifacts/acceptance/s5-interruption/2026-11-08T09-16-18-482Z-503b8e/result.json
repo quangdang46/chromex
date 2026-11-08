@@ -1,0 +1,67 @@
+{
+  "scenario": "s5-interruption",
+  "runId": "2026-11-08T09-16-18-482Z-503b8e",
+  "status": "PASS",
+  "summary": "gateway SIGKILL → respawn → task + tab scope survived, calls completed once, replayed toolCallId deduped",
+  "durationMs": 33746,
+  "details": {
+    "call1Status": "completed",
+    "call2": {
+      "toolCallId": "rpc-mw7mbu5r-dsf5j3",
+      "tool": "browser.page.get",
+      "status": "completed",
+      "result": {
+        "id": 2095658469,
+        "tabId": 2095658469,
+        "url": "http://127.0.0.1:58806/",
+        "title": "Fixture Home",
+        "active": true,
+        "resolvedTabId": 2095658469,
+        "windowId": 2095658467,
+        "status": "complete",
+        "pinned": false,
+        "groupId": -1,
+        "scroll": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewportWidth": 1280,
+          "viewportHeight": 720,
+          "documentHeight": 720,
+          "documentWidth": 1280
+        },
+        "frames": [
+          {
+            "frameId": 0,
+            "url": "http://127.0.0.1:58806/",
+            "parentFrameId": -1
+          }
+        ]
+      }
+    },
+    "dedup": {
+      "toolCallId": "s5-interrupted-call",
+      "tool": "browser.page.get",
+      "status": "failed",
+      "error": {
+        "code": "browser.duplicate_tool_call",
+        "message": "toolCallId s5-interrupted-call already has outcome failed"
+      },
+      "verified": "unknown"
+    },
+    "completed": 3,
+    "started": 3,
+    "duplicateCompletions": false
+  },
+  "notes": [
+    "[2026-11-08T09:16:25.627Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T09:16:25.639Z] task 01M6X73P52VG4RM6E0GR6PJMM2",
+    "[2026-11-08T09:16:26.858Z] pre-kill page.get → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":2095658469,\"tabId\":2095658469,\"url\":\"http://127.0.0.1:58806/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
+    "[2026-11-08T09:16:26.859Z] gateway pid=59436 — sending SIGKILL",
+    "[2026-11-08T09:16:27.362Z] spawn_in_flight window: waiting 13s before respawn",
+    "[2026-11-08T09:16:47.634Z] gateway respawned",
+    "[2026-11-08T09:16:51.947Z] sidepanel opened to wake NM host → gateway reconnect",
+    "[2026-11-08T09:16:52.217Z] post-respawn page.get → {\"toolCallId\":\"rpc-mw7mbu5r-dsf5j3\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":2095658469,\"tabId\":2095658469,\"url\":\"http://127.0.0.1:58806/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":2095658469,\"windowId\":2095658467,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scrol",
+    "[2026-11-08T09:16:52.228Z] post-respawn replay of s5-interrupted-call → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.duplicate_tool_call\",\"message\":\"toolCallId s5-interrupted-call already has outcome failed\"},\"ve",
+    "[2026-11-08T09:16:52.231Z] durable: tool.started=3 tool.completed=3"
+  ]
+}
