@@ -4318,6 +4318,71 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       .rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("describeTarget resolves pz refs to §4.8 facts via CDP; pz click re-verifies expectedTarget", async () => {
+    const FACTS = {
+      label: "Pay now", tagName: "button", controlType: "submit",
+      pageOrigin: "https://x", pageUrl: "https://x/",
+    };
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "BUTTON", backendNodeId: 42,
+                attributes: ["id", "pay"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "button" }, name: { value: "Pay now" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [0, 0, 50, 0, 50, 30, 0, 30] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-1" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: FACTS } }),
+    });
+    const h = createToolHostHandler(cdpDeps(523, cdp));
+    const pz = (await h(req("browser.page.pierce", { tabId: 523 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    const ref = pz.elements[0]!.ref;
+    // risk preflight sees real element facts — not found:false
+    const desc = (await h(req("browser.internal.describeTarget", { tabId: 523, ref }))) as {
+      found?: boolean; label?: string; tagName?: string; pageOrigin?: string;
+    };
+    expect(desc.found).toBe(true);
+    expect(desc.label).toBe("Pay now");
+    expect(desc.tagName).toBe("button");
+    expect(desc.pageOrigin).toBe("https://x");
+    // unknown pz ref → honest not-found, not a thrown error
+    const descBad = (await h(req("browser.internal.describeTarget", { tabId: 523, ref: "pz-999999" }))) as {
+      found?: boolean; reason?: string;
+    };
+    expect(descBad.found).toBe(false);
+    expect(descBad.reason).toBe("unknown_pierce_ref");
+    // matching expectedTarget → dispatch proceeds
+    const clk = (await h({
+      ...req("browser.page.click", { tabId: 523, ref }),
+      expectedTarget: { ...FACTS },
+    })) as { ok: boolean };
+    expect(clk.ok).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "Input.dispatchMouseEvent" && s.params?.type === "mousePressed")).toBe(true);
+    // drifted facts → browser.target_changed BEFORE any input dispatch
+    const before = cdp.sent.filter((s) => s.method.startsWith("Input.")).length;
+    await expect(h({
+      ...req("browser.page.click", { tabId: 523, ref }),
+      expectedTarget: { ...FACTS, label: "Delete everything" },
+    })).rejects.toMatchObject({ code: "browser.target_changed" });
+    expect(cdp.sent.filter((s) => s.method.startsWith("Input."))).toHaveLength(before);
+  });
+
   test("page.screenshot accepts pz refs — element clip via the owning CDP session", async () => {
     const cdp = fakeCdp({
       "DOM.getDocument": () => ({

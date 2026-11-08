@@ -686,6 +686,31 @@ async function describeTargetForRisk(
 ): Promise<unknown> {
   const tabId = await resolveScopedTabId(deps, args, scope);
   const frameId = frameIdArg(args);
+  // pz refs live in closed shadow roots — the content-script describe
+  // can't see them, so resolve facts via CDP on the owning session
+  // (frame target for OOPIF refs; location.* inside the injected
+  // function already reports the owning frame's origin+path).
+  const pzRef = typeof args.ref === "string" && PIERCE_REF_RE.test(args.ref) ? args.ref : undefined;
+  if (pzRef !== undefined) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "pierce refs carry their own frame — drop args.frameId");
+    }
+    try {
+      const hit = pierceHit(tabId, pzRef);
+      const { session, release } = await pierceAcquire(deps, hit);
+      try {
+        const facts = await pierceElementFacts(session, hit.backendNodeId, pzRef);
+        return { found: true, ...facts, resolvedTabId: tabId };
+      } finally {
+        await release();
+      }
+    } catch (e) {
+      if ((e as { code?: string })?.code === "browser.element_not_found") {
+        return { found: false, reason: "unknown_pierce_ref", resolvedTabId: tabId };
+      }
+      throw e;
+    }
+  }
   const res = (await deps.sendToTab(
     tabId,
     {
@@ -5694,6 +5719,99 @@ async function pierceBoxRect(
   };
 }
 
+/** §4.8 ground-truth facts for a closed-root element via
+ *  Runtime.callFunctionOn — mirrors describeDomElementFacts /
+ *  getElementLabel but self-contained (injected functions can't import
+ *  content-script code) and shadow-aware: label[for] / aria-labelledby
+ *  lookups go through el.getRootNode() since document.* can't pierce
+ *  the closed root the element lives in. pageOrigin/pageUrl come from
+ *  the executing frame's location — correct for OOPIF targets too. */
+const PIERCE_FACTS_FN = `function(){
+var el=this;
+function txt(e){try{return String(e&&(e.innerText||e.textContent||'')).replace(/\\s+/g,' ').trim()}catch(x){return ''}}
+function attr(n){try{return el.getAttribute&&el.getAttribute(n)||''}catch(x){return ''}}
+var root=null;try{root=el.getRootNode&&el.getRootNode()}catch(x){}
+var doc=el.ownerDocument||null;
+function byId(id){try{if(root&&root.getElementById)return root.getElementById(id);return doc&&doc.getElementById?doc.getElementById(id):null}catch(x){return null}}
+var lb=attr('aria-labelledby');
+var lbText=lb?lb.split(/\\s+/).map(function(id){var n=byId(id);return n?txt(n):''}).join(' '):'';
+var inputLabels='';
+try{if(el.id){var scope=root&&root.querySelectorAll?root:doc;if(scope&&scope.querySelectorAll){Array.prototype.forEach.call(scope.querySelectorAll('label[for]'),function(l){if(l.getAttribute('for')===el.id)inputLabels+=(inputLabels?' ':'')+txt(l)})}}}catch(x){}
+var label=attr('aria-label')||lbText||inputLabels||attr('placeholder')||attr('title')||(el.value!=null?String(el.value):'')||txt(el);
+label=String(label||'').slice(0,160);
+var form=null;try{form=el.closest&&el.closest('form')}catch(x){}
+var anchor=null;try{anchor=String(el.tagName||'').toLowerCase()==='a'?el:(el.querySelector?el.querySelector('a[href]'):null)}catch(x){}
+var formAction='';var fa=form&&form.getAttribute('action');
+if(fa){try{var u=new URL(fa,location.href);formAction=u.origin+u.pathname}catch(x){}}
+var href='';var ah=anchor&&anchor.href;
+if(ah){try{var u2=new URL(ah);href=u2.origin+u2.pathname}catch(x){}}
+var out={label:label,tagName:String(el.tagName||'').toLowerCase()};
+var role=attr('role');if(role)out.role=role;
+var tg=out.tagName;
+if(tg==='input'||tg==='textarea'||tg==='select'){var it=el.type;out.inputType=(typeof it==='string'&&it)?it:'text'}
+if(tg==='button'||tg==='input'){out.controlType=String(attr('type')||'submit').toLowerCase()}
+if(form)out.formMethod=String(form.getAttribute('method')||'get').toLowerCase();
+if(formAction)out.formAction=formAction;
+if(href)out.href=href;
+out.pageOrigin=location.origin;
+out.pageUrl=location.origin+location.pathname;
+return out;
+}`;
+
+/** Resolve a pz ref's node and return its §4.8 facts. Throws
+ *  element_not_found when the node is gone — same contract as the
+ *  content-script describe path's not-found. */
+async function pierceElementFacts(
+  session: CdpSession,
+  backendNodeId: number,
+  ref: string,
+): Promise<Record<string, unknown>> {
+  const node = (await session.send("DOM.resolveNode", { backendNodeId })) as {
+    object?: { objectId?: string };
+  };
+  const objectId = node?.object?.objectId;
+  if (!objectId) {
+    throw toolError("browser.element_not_found", `pierce target "${ref}" is gone — re-run browser.page.pierce`);
+  }
+  const res = (await session.send("Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration: PIERCE_FACTS_FN,
+    returnByValue: true,
+  })) as { result?: { value?: unknown } };
+  const v = res?.result?.value;
+  if (!v || typeof v !== "object" || Array.isArray(v)) {
+    throw toolError("browser.action_failed", "pierce fact extraction returned no object");
+  }
+  return v as Record<string, unknown>;
+}
+
+const PIERCE_FACT_KEYS = [
+  "label", "tagName", "role", "inputType", "controlType",
+  "formMethod", "formAction", "href", "pageOrigin", "pageUrl",
+] as const;
+
+/** §4.8 dispatch-time re-check for pz actions — the classifier
+ *  approved facts for THIS element; if they drifted between approval
+ *  and dispatch the action aborts like the content-script path's
+ *  domElementFactsMatch. */
+async function pierceVerifyExpected(
+  session: CdpSession,
+  hit: PierceHit,
+  expectedTarget: Record<string, string>,
+): Promise<void> {
+  const actual = await pierceElementFacts(session, hit.backendNodeId, "pz");
+  for (const k of PIERCE_FACT_KEYS) {
+    const exp = expectedTarget[k] ?? "";
+    const act = typeof actual[k] === "string" ? actual[k] : "";
+    if (exp !== act) {
+      throw toolError(
+        "browser.target_changed",
+        `pierce target facts changed since approval (${k}: "${exp.slice(0, 60)}" → "${act.slice(0, 60)}") — re-observe and retry`,
+      );
+    }
+  }
+}
+
 /** DOM.focus on a closed-root element — the only focus path that reaches
  *  it (content-script .focus() can't). */
 async function pierceFocusOn(session: CdpSession, backendNodeId: number): Promise<void> {
@@ -6369,6 +6487,7 @@ async function trustedClick(
     ({ session, release } = await pierceAcquire(deps, hit));
     try {
       point = await pierceBoxCenter(session, hit.backendNodeId, clickRef!);
+      if (expectedTarget) await pierceVerifyExpected(session, hit, expectedTarget);
     } catch (e) {
       await release().catch(() => {});
       throw e;
@@ -6464,6 +6583,7 @@ async function trustedHover(
     const { session, release } = await pierceAcquire(deps, hit);
     try {
       point = await pierceBoxCenter(session, hit.backendNodeId, hoverRef!);
+      if (expectedTarget) await pierceVerifyExpected(session, hit, expectedTarget);
       await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
     } finally {
       await release();
@@ -6609,6 +6729,8 @@ async function trustedDrag(
   let from: { x: number; y: number };
   let to: { x: number; y: number };
   let pierceDrag = false;
+  let pierceSrc = false;
+  let srcHit: PierceHit | null = null;
   // When a pierce endpoint lives on an OOPIF target, the whole gesture
   // must dispatch on THAT session with frame-local coords — mixed
   // coordinate spaces cannot form one drag.
@@ -6635,7 +6757,7 @@ async function trustedDrag(
     };
     const isPz = (t: { ref?: string | undefined; selector?: string | undefined; label?: string | undefined }) =>
       typeof t.ref === "string" && PIERCE_REF_RE.test(t.ref);
-    const pierceSrc = isPz(srcTarget);
+    pierceSrc = isPz(srcTarget);
     const pierceDst = isPz(dstTarget);
     if (pierceSrc || pierceDst) {
       pierceDrag = true;
@@ -6647,7 +6769,7 @@ async function trustedDrag(
           throw toolError("proto.invalid", `a pierce ${name} ref cannot be combined with selector/label`);
         }
       }
-      const srcHit = pierceSrc ? pierceHit(tabId, srcTarget.ref!) : null;
+      srcHit = pierceSrc ? pierceHit(tabId, srcTarget.ref!) : null;
       const dstHit = pierceDst ? pierceHit(tabId, dstTarget.ref!) : null;
       const oopifTid = srcHit?.targetId ?? dstHit?.targetId;
       if (oopifTid !== undefined) {
@@ -6701,6 +6823,11 @@ async function trustedDrag(
   const acquired = dragSession ?? await cdpAcquire(deps, tabId);
   const { session, release } = acquired;
   try {
+    // §4.8: expectedTarget describes the drag SOURCE — re-verify it
+    // on the session that owns the pierce node before dispatch.
+    if (pierceSrc && srcHit && expectedTarget) {
+      await pierceVerifyExpected(session, srcHit, expectedTarget);
+    }
     await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
     await session.send("Input.dispatchMouseEvent", {
       type: "mousePressed", x: from.x, y: from.y, button: "left", clickCount: 1,
@@ -7033,6 +7160,7 @@ async function trustedPress(
     const hit = pierceHit(tabId, pressRef!);
     keySession = await pierceAcquire(deps, hit);
     try {
+      if (expectedTarget) await pierceVerifyExpected(keySession.session, hit, expectedTarget);
       await pierceFocusOn(keySession.session, hit.backendNodeId);
     } catch (e) {
       await keySession.release().catch(() => {});
@@ -7118,6 +7246,7 @@ async function trustedType(
     const hit = pierceHit(tabId, typeRef!);
     keySession = await pierceAcquire(deps, hit);
     try {
+      if (expectedTarget) await pierceVerifyExpected(keySession.session, hit, expectedTarget);
       await pierceFocusOn(keySession.session, hit.backendNodeId);
     } catch (e) {
       await keySession.release().catch(() => {});
@@ -7190,6 +7319,7 @@ async function trustedFill(
     keySession = await pierceAcquire(deps, hit);
     pierceBackend = hit.backendNodeId;
     try {
+      if (expectedTarget) await pierceVerifyExpected(keySession.session, hit, expectedTarget);
       await pierceFocusOn(keySession.session, hit.backendNodeId);
     } catch (e) {
       await keySession.release().catch(() => {});
