@@ -23,6 +23,7 @@ import {
   effectiveBackendCapabilities,
   protocolError,
   summarizeCoverage,
+  summarizeMetrics,
   type BrowserBackend,
   type BrowserBackendCapabilities,
   type BrowserExpectCondition,
@@ -77,6 +78,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.serviceWorker",
   "browser.page.cdp",
   "browser.page.coverage",
+  "browser.page.metrics",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -197,6 +199,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Pages with a running Profiler precise-coverage session — WeakSet
    *  so closed pages drop out without bookkeeping. */
   readonly #coveragePages = new WeakSet<PwPage>();
+  /** Pages with Performance metric collection enabled — WeakSet so
+   *  closed pages drop out without bookkeeping. */
+  readonly #metricsPages = new WeakSet<PwPage>();
   /** page → finished responses kept for lazy body() reads
    *  (browser.page.responseBody). Bounded; Response objects stay
    *  valid for body() after the event loop turns. */
@@ -442,6 +447,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#cdp(taskId, args);
       case "browser.page.coverage":
         return this.#coverage(taskId, args);
+      case "browser.page.metrics":
+        return this.#metrics(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.history.delete":
@@ -2742,6 +2749,52 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     await session.send("Profiler.stopPreciseCoverage").catch(() => {});
     await session.send("Profiler.disable").catch(() => {});
     return { ...summarizeCoverage(cov?.result), stopped: true, resolvedTabId: tabId };
+  }
+
+  /** browser.page.metrics — Performance-domain counters via the same
+   *  cached CDPSession as #cdp/#coverage. start enables collection,
+   *  read snapshots the cumulative counters, stop ends + releases.
+   *  Pure numeric telemetry — no page content. */
+  async #metrics(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "";
+    if (action !== "start" && action !== "read" && action !== "stop" && action !== "status") {
+      throw protocolError(
+        "proto.invalid",
+        "browser.page.metrics requires args.action start|read|stop|status",
+      );
+    }
+    const context = await this.#contextFor(taskId);
+    const tabId = context.pages().indexOf(page);
+    if (action === "status") {
+      return { running: this.#metricsPages.has(page), resolvedTabId: tabId };
+    }
+    const session = await this.#emulationSession(page);
+    if (action === "start") {
+      if (this.#metricsPages.has(page)) {
+        throw protocolError(
+          "proto.invalid",
+          "metrics is already running for this tab — call action:'stop' first",
+        );
+      }
+      await session.send("Performance.enable");
+      this.#metricsPages.add(page);
+      return { started: true, resolvedTabId: tabId };
+    }
+    if (!this.#metricsPages.has(page)) {
+      throw protocolError(
+        "proto.invalid",
+        "metrics is not running for this tab — call action:'start' first",
+      );
+    }
+    if (action === "read") {
+      const snap = (await session.send("Performance.getMetrics")) as { metrics?: unknown };
+      return { ...summarizeMetrics(snap), resolvedTabId: tabId };
+    }
+    this.#metricsPages.delete(page);
+    const snap = (await session.send("Performance.getMetrics")) as { metrics?: unknown };
+    await session.send("Performance.disable").catch(() => {});
+    return { ...summarizeMetrics(snap), stopped: true, resolvedTabId: tabId };
   }
 
   // ---- bookmarks ----

@@ -1099,6 +1099,52 @@ await runScenario(
         ...cv,
       };
 
+      // --- page.metrics: Performance domain — same build-dependent
+      // chrome.debugger filtering as Profiler. When start succeeds we
+      // verify REAL counters (JSHeapUsedSize, LayoutCount, Documents).
+      let mt = {};
+      try {
+        const mtTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+        );
+        const mtId = mtTab?.result?.tabId ?? mtTab?.result?.openedTabId ?? mtTab?.tabId;
+        const mtCall = (tool, args) => runner.browserToolCall(taskId, tool, args, token, 60_000);
+        const mtSt0 = await mtCall("browser.page.metrics", { tabId: mtId, action: "status" });
+        mt.statusIdleOk = (mtSt0?.result ?? mtSt0 ?? {}).running === false;
+        const mtBadRead = await mtCall("browser.page.metrics", { tabId: mtId, action: "read" });
+        mt.readRefusedOk = (mtBadRead?.error?.code ?? "") === "proto.invalid";
+        const mtStart = await mtCall("browser.page.metrics", { tabId: mtId, action: "start" });
+        mt.startCode = mtStart?.error?.code ?? "";
+        mt.startOk = (mtStart?.result ?? mtStart ?? {}).started === true;
+        mt.startUnsupportedOk = mt.startCode === "proto.unsupported" &&
+          /Performance|chrome\.debugger/.test(mtStart?.error?.message ?? "");
+        if (mt.startOk) {
+          await mtCall("browser.page.navigate", { tabId: mtId, url: fixture.url("/form") });
+          const mtRead = await mtCall("browser.page.metrics", { tabId: mtId, action: "read" });
+          const mm = (mtRead?.result ?? mtRead ?? {}).metrics ?? {};
+          mt.realMetricsOk =
+            typeof mm.JSHeapUsedSize === "number" && mm.JSHeapUsedSize > 0 &&
+            typeof mm.LayoutCount === "number" && typeof mm.Documents === "number";
+          mt.sample = { heap: mm.JSHeapUsedSize, layouts: mm.LayoutCount, docs: mm.Documents };
+          const mtStop = await mtCall("browser.page.metrics", { tabId: mtId, action: "stop" });
+          mt.stopOk = (mtStop?.result ?? mtStop ?? {}).stopped === true;
+          const mtSt1 = await mtCall("browser.page.metrics", { tabId: mtId, action: "status" });
+          mt.statusRunOk = (mtSt1?.result ?? mtSt1 ?? {}).running === false;
+        } else {
+          const mtSt1 = await mtCall("browser.page.metrics", { tabId: mtId, action: "status" });
+          mt.statusRunOk = (mtSt1?.result ?? mtSt1 ?? {}).running === false;
+        }
+        await mtCall("browser.tab.close", { tabId: mtId });
+      } catch (e) {
+        mt.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`metrics → ${JSON.stringify(mt).slice(0, 300)}`);
+      results.pageMetrics = {
+        ok: mt.statusIdleOk === true && mt.readRefusedOk === true &&
+          (mt.startUnsupportedOk === true || (mt.startOk === true && mt.realMetricsOk === true && mt.stopOk === true && mt.statusRunOk === true)),
+        ...mt,
+      };
+
       // --- tabGroups: real chrome.tabs.group/tabGroups on the extension ---
       let tg = {};
       try {

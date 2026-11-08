@@ -826,6 +826,31 @@ try {
   assert(covStatus2?.running === false, "coverage reports idle after stop");
   await call("browser.tab.close", { tabId: covId });
 
+  // ── Loop 20c: page.metrics — real Performance-domain counters ────────
+  const metTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const metId = metTab?.tabId ?? metTab?.id;
+  const metStatus0 = await call("browser.page.metrics", { tabId: metId, action: "status" });
+  assert(metStatus0?.running === false, `metrics starts idle (got ${JSON.stringify(metStatus0)})`);
+  await expectReject("browser.page.metrics", { tabId: metId, action: "read" }, "action:'start'", "metrics read without start refused");
+  const metStart = await call("browser.page.metrics", { tabId: metId, action: "start" });
+  assert(metStart?.started === true, `metrics start (got ${JSON.stringify(metStart).slice(0, 120)})`);
+  await expectReject("browser.page.metrics", { tabId: metId, action: "start" }, "action:'stop'", "double metrics start refused");
+  // real page work inside the metrics window so counters move
+  await call("browser.page.navigate", { tabId: metId, url: fixture.url("/form") });
+  const metRead = await call("browser.page.metrics", { tabId: metId, action: "read" });
+  const metMap = metRead?.metrics ?? {};
+  assert(
+    typeof metMap.JSHeapUsedSize === "number" && metMap.JSHeapUsedSize > 0 &&
+    typeof metMap.LayoutCount === "number" && typeof metMap.Documents === "number",
+    `metrics read reports real counters (got ${JSON.stringify({ count: metRead?.count, heap: metMap.JSHeapUsedSize, layouts: metMap.LayoutCount })})`,
+  );
+  const metStop = await call("browser.page.metrics", { tabId: metId, action: "stop" });
+  assert(metStop?.stopped === true && typeof metStop?.metrics?.JSHeapUsedSize === "number",
+    `metrics stop returns final snapshot (got ${JSON.stringify(metStop).slice(0, 120)})`);
+  const metStatus1 = await call("browser.page.metrics", { tabId: metId, action: "status" });
+  assert(metStatus1?.running === false, "metrics reports idle after stop");
+  await call("browser.tab.close", { tabId: metId });
+
   // ── Loop 21: browsingData.clear — honest subset on isolated ─────────
   // seed a cookie + rely on visit-log entries from earlier loops
   const bdTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });

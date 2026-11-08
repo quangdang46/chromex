@@ -469,6 +469,12 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.needsApproval).toBe(false);
   });
 
+  test("browser.page.metrics: read verdict (pure numeric counters)", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.page.metrics" }));
+    expect(v.risk).toBe("read");
+    expect(v.needsApproval).toBe(false);
+  });
+
   test("browser.downloads.open: external app spawn — approval, never task-eligible", () => {
     const v = classifyActionRisk(ctx({ action: "browser.downloads.open" }));
     expect(v.risk).toBe("external_mutation");

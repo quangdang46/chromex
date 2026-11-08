@@ -51,6 +51,7 @@ export type BrowserToolName =
   | "browser.page.serviceWorker"
   | "browser.page.cdp"
   | "browser.page.coverage"
+  | "browser.page.metrics"
   | "browser.history.search"
   | "browser.history.delete"
   | "browser.bookmarks"
@@ -124,6 +125,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.serviceWorker",
   "browser.page.cdp",
   "browser.page.coverage",
+  "browser.page.metrics",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",

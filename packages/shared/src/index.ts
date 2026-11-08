@@ -38,4 +38,5 @@ export * from "./browser/fingerprint.js";
 export * from "./browser/tool.js";
 export * from "./browser/risk.js";
 export * from "./browser/coverage.js";
+export * from "./browser/metrics.js";
 export * from "./types.js";

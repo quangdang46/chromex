@@ -3088,6 +3088,64 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(status.running).toBe(false);
   });
 
+  test("page.metrics holds a Performance session across start/read/stop", async () => {
+    const cdp = fakeCdp({
+      "Performance.getMetrics": () => ({
+        metrics: [
+          { name: "JSHeapUsedSize", value: 1_000_000 },
+          { name: "LayoutCount", value: 42 },
+          { name: "Documents", value: 1 },
+        ],
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(507, cdp));
+    const status0 = (await h(req("browser.page.metrics", { tabId: 507, action: "status" }))) as { running: boolean };
+    expect(status0.running).toBe(false);
+    await expect(h(req("browser.page.metrics", { tabId: 507, action: "read" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.metrics", { tabId: 507, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const started = (await h(req("browser.page.metrics", { tabId: 507, action: "start" }))) as { started: boolean };
+    expect(started.started).toBe(true);
+    await expect(h(req("browser.page.metrics", { tabId: 507, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const snap = (await h(req("browser.page.metrics", { tabId: 507, action: "read" }))) as {
+      metrics: Record<string, number>;
+      count: number;
+    };
+    expect(snap.metrics.JSHeapUsedSize).toBe(1_000_000);
+    expect(snap.metrics.LayoutCount).toBe(42);
+    expect(snap.count).toBe(3);
+    const rep = (await h(req("browser.page.metrics", { tabId: 507, action: "stop" }))) as {
+      stopped: boolean;
+      metrics: Record<string, number>;
+    };
+    expect(rep.stopped).toBe(true);
+    expect(rep.metrics.Documents).toBe(1);
+    // exact Performance command sequence — enable → getMetrics(read) → getMetrics(stop) → disable
+    expect(cdp.sent.map((s) => s.method)).toEqual([
+      "Performance.enable",
+      "Performance.getMetrics",
+      "Performance.getMetrics",
+      "Performance.disable",
+    ]);
+    const status1 = (await h(req("browser.page.metrics", { tabId: 507, action: "status" }))) as { running: boolean };
+    expect(status1.running).toBe(false);
+  });
+
+  test("page.metrics maps a missing Performance domain to proto.unsupported", async () => {
+    const cdp = fakeCdp({
+      "Performance.enable": () => {
+        throw new Error('{"code":-32601,"message":"\'Performance.enable\' wasn\'t found"}');
+      },
+    });
+    const releaseCdp = vi.fn(async () => {});
+    const h = createToolHostHandler(cdpDeps(508, cdp, { releaseCdp }));
+    await expect(h(req("browser.page.metrics", { tabId: 508, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    expect(releaseCdp).toHaveBeenCalled();
+  });
+
   test("snapshot mode:aria returns a formatted AX tree", async () => {
     const cdp = fakeCdp({
       "Accessibility.getFullAXTree": () => ({

@@ -156,6 +156,9 @@ const READ_TOOLS = new Set([
   // JS coverage reports script URLs + invocation counts — page-derived
   // metadata, same read+egress class as console/network.
   "browser.page.coverage",
+  // page metrics are pure numeric counters/gauges (heap, layout,
+  // script time) — no page content leaves the browser.
+  "browser.page.metrics",
   "browser.windows.list",
   "browser.windows.get",
   // browsing history is personal data leaving the browser — same

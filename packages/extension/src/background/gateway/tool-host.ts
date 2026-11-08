@@ -27,7 +27,7 @@
  * `selector`/`label`.
  */
 
-import { SnapshotRegistry, summarizeCoverage, urlOriginPath } from "@codex-sidepanel/shared";
+import { SnapshotRegistry, summarizeCoverage, summarizeMetrics, urlOriginPath } from "@codex-sidepanel/shared";
 import type {
   BrowserDomActionResult,
   BrowserDomSnapshot,
@@ -478,6 +478,7 @@ const SUPPORTED = new Set([
   "browser.page.serviceWorker",
   "browser.page.cdp",
   "browser.page.coverage",
+  "browser.page.metrics",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -826,6 +827,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
   // restart detaches debugger targets) — the next call reports
   // not-running honestly.
   const coverageHolds = new Map<
+    number,
+    { session: CdpSession; release: () => Promise<void> }
+  >();
+  // Performance-metric sessions — same held-session pattern as
+  // coverageHolds (one per tab, dies with the SW).
+  const metricsHolds = new Map<
     number,
     { session: CdpSession; release: () => Promise<void> }
   >();
@@ -1960,6 +1967,65 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             stopped: true,
             resolvedTabId: tabId,
           };
+        } finally {
+          await held.release().catch(() => {});
+        }
+      }
+      case "browser.page.metrics": {
+        // Performance-domain metrics via the same held-session pattern
+        // as coverage: start enables collection, read snapshots the
+        // cumulative counters, stop ends + releases. Pure numeric
+        // telemetry — no page content.
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const action = str(args.action);
+        if (action !== "start" && action !== "read" && action !== "stop" && action !== "status") {
+          throw toolError(
+            "proto.invalid",
+            "browser.page.metrics requires args.action start|read|stop|status",
+          );
+        }
+        if (action === "status") {
+          return { running: metricsHolds.has(tabId), resolvedTabId: tabId };
+        }
+        if (action === "start") {
+          if (metricsHolds.has(tabId)) {
+            throw toolError(
+              "proto.invalid",
+              "metrics is already running for this tab — call action:'stop' first",
+            );
+          }
+          const { session, release } = await cdpAcquire(deps, tabId);
+          try {
+            await session.send("Performance.enable");
+          } catch (e) {
+            await release().catch(() => {});
+            if (/-32601|wasn't found/.test(String((e as Error)?.message ?? e))) {
+              throw toolError(
+                "proto.unsupported",
+                "the Performance CDP domain is not exposed via chrome.debugger on this Chrome build",
+              );
+            }
+            throw e;
+          }
+          metricsHolds.set(tabId, { session, release });
+          return { started: true, resolvedTabId: tabId };
+        }
+        const held = metricsHolds.get(tabId);
+        if (!held) {
+          throw toolError(
+            "proto.invalid",
+            "metrics is not running for this tab — call action:'start' first",
+          );
+        }
+        if (action === "read") {
+          const snap = await held.session.send<{ metrics?: unknown }>("Performance.getMetrics");
+          return { ...summarizeMetrics(snap), resolvedTabId: tabId };
+        }
+        metricsHolds.delete(tabId);
+        try {
+          const snap = await held.session.send<{ metrics?: unknown }>("Performance.getMetrics");
+          await held.session.send("Performance.disable").catch(() => {});
+          return { ...summarizeMetrics(snap), stopped: true, resolvedTabId: tabId };
         } finally {
           await held.release().catch(() => {});
         }
