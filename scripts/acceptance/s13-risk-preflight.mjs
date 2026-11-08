@@ -152,7 +152,59 @@ await runScenario(
       const dangerNotFired = !denyPageText.includes("danger-fired");
       evidence.note(`post-deny #out=${denyPageText.slice(0, 200)}`);
 
-      // ---------- Part 2: benign click by bare ref → NO approval ----------
+      // ---------- Part 2: approve once → destructive action really fires ----------
+      let approveOutcome = null;
+      let approveError = null;
+      const approveCall = runner
+        .browserToolCall(
+          taskId,
+          "browser.page.click",
+          { tabId, ref: danger.ref, snapshotId: snapResult.snapshotId },
+          token,
+          90_000,
+        )
+        .then((o) => (approveOutcome = o))
+        .catch((e) => (approveError = e));
+
+      let approveReq = null;
+      const approveDeadline = Date.now() + 30_000;
+      while (Date.now() < approveDeadline && !approveReq) {
+        for (const req of pendingRequests()) {
+          if (req.kind === "agent_egress") await grantEgress(req);
+          else {
+            approveReq = req;
+            break;
+          }
+        }
+        if (!approveReq) await sleep(300);
+      }
+      if (!approveReq) {
+        await Promise.race([approveCall, sleep(3_000)]);
+        return {
+          status: "FAIL",
+          summary: "no permission.requested on approved destructive ref click",
+          details: { approveError: approveError?.message, approveOutcome },
+        };
+      }
+      evidence.note(`approve-leg permission.requested id=${approveReq.requestId} kind=${approveReq.kind}`);
+      const approveOpt =
+        (approveReq.options ?? []).find((o) => /allow_once|approve|yes/i.test(String(o.id)) || o.kind === "allow_once") ??
+        (approveReq.options ?? []).find((o) => o.kind !== "deny");
+      await respond(approveReq, approveOpt?.id);
+      await Promise.race([approveCall, sleep(30_000)]);
+      const approved = approveOutcome?.status !== "failed";
+      evidence.note(`approve outcome=${JSON.stringify(approveOutcome ?? approveError?.message)?.slice(0, 300)}`);
+
+      const afterApprove = await callGrantingEgress(
+        "browser.page.extract",
+        { tabId, selector: "#out", format: "text" },
+        30_000,
+      );
+      const approvePageText = JSON.stringify(afterApprove?.result ?? {});
+      const dangerFired = approvePageText.includes("danger-fired");
+      evidence.note(`post-approve #out=${approvePageText.slice(0, 200)}`);
+
+      // ---------- Part 3: benign click by bare ref → NO approval ----------
       const reqsBefore = pendingRequests().length;
       const benignOutcome = await callGrantingEgress(
         "browser.page.click",
@@ -181,21 +233,25 @@ await runScenario(
         } catch {}
       }
 
-      const pass = denied && dangerNotFired && benignOk && noNewApproval && benignFired;
+      const pass = denied && dangerNotFired && approved && dangerFired && benignOk && noNewApproval && benignFired;
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "destructive ref-click → approval (denied, handler never fired); benign ref-click → no approval, fired"
-          : `denied=${denied} dangerNotFired=${dangerNotFired} benignOk=${benignOk} noNewApproval=${noNewApproval} benignFired=${benignFired}`,
+          ? "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired"
+          : `denied=${denied} dangerNotFired=${dangerNotFired} approved=${approved} dangerFired=${dangerFired} benignOk=${benignOk} noNewApproval=${noNewApproval} benignFired=${benignFired}`,
         details: {
           denied,
           dangerNotFired,
+          approved,
+          dangerFired,
           benignOk,
           noNewApproval,
           benignFired,
           denyOutcome,
+          approveOutcome,
           benignOutcome,
           denyError: denyError?.message,
+          approveError: approveError?.message,
         },
       };
     } finally {
