@@ -448,6 +448,31 @@ async function captureElementScreenshot(
   }
 }
 
+/** Tab closed: release every held CDP resource for it — emulation
+ *  override, route interception, network/WS tap — and unsubscribe their
+ *  chrome.debugger.onEvent listeners, which otherwise accumulate for
+ *  the SW's lifetime. Sessions themselves are refcounted in cdp.ts and
+ *  detach on tab close regardless. */
+export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
+  await releaseEmulationHold(tabId).catch(() => {});
+  const tap = networkTaps.get(tabId);
+  if (tap) {
+    networkTaps.delete(tabId);
+    for (const un of tap.unsubs) un();
+    await tap.session.send("Network.disable").catch(() => {});
+    // tap sessions are never released by design (bodies need the tap
+    // alive); release the extra ref the tap holds now that the tab is
+    // gone — cdp.ts already dropped the state, so this is a no-op guard.
+  }
+  const hold = routeHolds.get(tabId);
+  if (hold) {
+    routeHolds.delete(tabId);
+    for (const un of hold.unsubs) un();
+    await hold.session.send("Fetch.disable").catch(() => {});
+    await hold.release().catch(() => {});
+  }
+}
+
 export function createToolHostHandler(deps: ToolHostDeps) {
   return async function handleToolRequest(payload: unknown): Promise<unknown> {
     const req = (payload ?? {}) as {
@@ -3352,15 +3377,21 @@ const RESPONSE_BODY_MAX = 256 * 1024;
  *  Cleared on SW restart (module state) — the next call re-taps and the
  *  buffer honestly restarts. Tab close is handled by cdp.ts state GC +
  *  the getTab liveness check in the tool case. */
-const networkTaps = new Map<
-  number,
-  { session: CdpSession; entries: NetworkTapEntry[]; sockets: WsTapEntry[]; since: number }
->();
+interface NetworkTap {
+  session: CdpSession;
+  entries: NetworkTapEntry[];
+  sockets: WsTapEntry[];
+  since: number;
+  /** session.on unsubscribe fns — chrome.debugger.onEvent listeners
+   *  otherwise outlive the tab and accumulate per tap. */
+  unsubs: Array<() => void>;
+}
+const networkTaps = new Map<number, NetworkTap>();
 
 async function ensureNetworkTap(
   deps: ToolHostDeps,
   tabId: number,
-): Promise<{ session: CdpSession; entries: NetworkTapEntry[]; sockets: WsTapEntry[]; since: number }> {
+): Promise<NetworkTap> {
   const existing = networkTaps.get(tabId);
   if (existing) return existing;
   const { session } = await cdpAcquire(deps, tabId);
@@ -3385,7 +3416,8 @@ async function ensureNetworkTap(
       Object.assign(e, patch);
     }
   };
-  session.on("Network.requestWillBeSent", (p) => {
+  const unsubs: Array<() => void> = [];
+  unsubs.push(session.on("Network.requestWillBeSent", (p) => {
     const req = (p.request ?? {}) as { method?: string; url?: string };
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (!requestId) return;
@@ -3394,8 +3426,8 @@ async function ensureNetworkTap(
       url: typeof req.url === "string" ? req.url : "",
       type: typeof p.type === "string" ? p.type : "",
     });
-  });
-  session.on("Network.responseReceived", (p) => {
+  }));
+  unsubs.push(session.on("Network.responseReceived", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const resp = (p.response ?? {}) as { url?: string; status?: number; mimeType?: string };
     if (!requestId) return;
@@ -3404,15 +3436,15 @@ async function ensureNetworkTap(
       ...(typeof resp.status === "number" ? { status: resp.status } : {}),
       ...(typeof resp.mimeType === "string" ? { mimeType: resp.mimeType } : {}),
     });
-  });
-  session.on("Network.loadingFinished", (p) => {
+  }));
+  unsubs.push(session.on("Network.loadingFinished", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (requestId) upsert(requestId, { finished: true });
-  });
-  session.on("Network.loadingFailed", (p) => {
+  }));
+  unsubs.push(session.on("Network.loadingFailed", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (requestId) upsert(requestId, { finished: true, failed: true });
-  });
+  }));
   // WebSocket connections + frames (browser.page.webSocket). CDP reports
   // opcode 1=text / 2=binary; `data` is the payload text (binary frames
   // arrive base64-encoded by the protocol). Bounded per-connection and
@@ -3451,19 +3483,19 @@ async function ensureNetworkTap(
       ...(truncated ? { truncated: true } : {}),
     });
   };
-  session.on("Network.webSocketCreated", (p) => {
+  unsubs.push(session.on("Network.webSocketCreated", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const url = typeof p.url === "string" ? p.url : "";
     if (requestId) wsUpsert(requestId, url);
-  });
-  session.on("Network.webSocketFrameSent", wsFrame("sent"));
-  session.on("Network.webSocketFrameReceived", wsFrame("recv"));
-  session.on("Network.webSocketClosed", (p) => {
+  }));
+  unsubs.push(session.on("Network.webSocketFrameSent", wsFrame("sent")));
+  unsubs.push(session.on("Network.webSocketFrameReceived", wsFrame("recv")));
+  unsubs.push(session.on("Network.webSocketClosed", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const s = requestId ? wsByRequest.get(requestId) : undefined;
     if (s) s.closed = true;
-  });
-  const tap = { session, entries, sockets, since: Date.now() };
+  }));
+  const tap: NetworkTap = { session, entries, sockets, since: Date.now(), unsubs };
   networkTaps.set(tabId, tap);
   return tap;
 }

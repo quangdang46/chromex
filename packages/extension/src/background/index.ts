@@ -105,7 +105,7 @@ import {
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
-import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
+import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
@@ -735,6 +735,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   toolHostSnapshotRegistry().invalidateTab(tabId);
   resetNetworkTab(tabId);
+  void disposeBrowserToolTabState(tabId);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
