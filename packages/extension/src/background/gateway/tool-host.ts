@@ -7656,6 +7656,13 @@ async function handlePageDialog(
   const promptText = str(args.promptText);
   const timeoutMs = clampMs(args.timeoutMs, 5_000, 10_000);
   const { session, release } = await cdpAcquire(deps, tabId);
+  // NOTE: Page.* is top-level-target only — iframe/OOPIF targets reject
+  // Page.enable/Page.handleJavaScriptDialog ("Command can only be
+  // executed on top-level targets", verified on CfT 158). And the tab
+  // agent does NOT surface javascriptDialogOpening for dialogs opened
+  // inside OOPIFs either (they auto-resolve; confirm() returned false
+  // with no CDP event) — a platform limitation, so page.dialog covers
+  // main-frame and same-process-frame dialogs only.
   const handleDialog = () =>
     session.send("Page.handleJavaScriptDialog", {
       accept,

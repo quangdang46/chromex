@@ -65,6 +65,14 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   cross-origin iframes via the content-script geometry chain.
   `setInputFiles` reaches out-of-process iframes through their own
   debugger targets (`cdp-headless` `oopifSetInputFiles` PASS).
+  KNOWN PLATFORM LIMIT: JS dialogs (alert/confirm/prompt) opened inside
+  OOPIFs are NOT observable or handleable via chrome.debugger — the
+  Page domain is top-level-target only (iframe targets reject
+  Page.enable/handleJavaScriptDialog with "top-level targets"), and the
+  tab agent does not receive javascriptDialogOpening for OOPIF dialogs
+  (verified on CfT 158: confirm() inside a cross-origin iframe resolves
+  false without any CDP event). page.dialog covers main-frame and
+  same-process-frame dialogs only.
   `browser.page.evaluate` runs arbitrary JS in the page MAIN world —
   unblocked from the day-one hard-block once the scripting tier landed;
   every call requires approval (expression previewed in argsPreview),
