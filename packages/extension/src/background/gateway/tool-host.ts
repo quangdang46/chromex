@@ -2913,6 +2913,7 @@ async function applyEmulationReset(session: CdpSession): Promise<void> {
 interface RouteRule {
   id: string;
   match: string;
+  action: "fulfill" | "abort";
   status: number;
   headers: Record<string, string>;
   bodyBase64: string;
@@ -2922,6 +2923,9 @@ interface RouteHold {
   session: CdpSession;
   release: () => Promise<void>;
   rules: Map<string, RouteRule>;
+  /** session.on unsubscribe fns — chrome.debugger.onEvent listeners
+   *  outlive the hold otherwise and stale rules keep firing. */
+  unsubs: Array<() => void>;
 }
 const routeHolds = new Map<number, RouteHold>();
 
@@ -2942,7 +2946,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
   const existing = routeHolds.get(tabId);
   if (existing) return existing;
   const { session, release } = await cdpAcquire(deps, tabId);
-  const hold: RouteHold = { session, release, rules: new Map() };
+  const hold: RouteHold = { session, release, rules: new Map(), unsubs: [] };
   routeHolds.set(tabId, hold);
   // Pause every request at Request stage; non-matching requests are
   // continued untouched. Response-stage interception is not supported —
@@ -2950,7 +2954,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
   await session.send("Fetch.enable", {
     patterns: [{ urlPattern: "*", requestStage: "Request" }],
   });
-  session.on("Fetch.requestPaused", (p) => {
+  hold.unsubs.push(session.on("Fetch.requestPaused", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const url = typeof (p.request as { url?: string } | undefined)?.url === "string"
       ? (p.request as { url: string }).url
@@ -2963,6 +2967,12 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
       void session.send("Fetch.continueRequest", { requestId }).catch(() => {});
       return;
     }
+    if (rule.action === "abort") {
+      void session
+        .send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" })
+        .catch(() => {});
+      return;
+    }
     const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
     void session
       .send("Fetch.fulfillRequest", {
@@ -2972,8 +2982,8 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
         body: rule.bodyBase64,
       })
       .catch(() => {});
-  });
-  session.on("Fetch.authRequired", (p) => {
+  }));
+  hold.unsubs.push(session.on("Fetch.authRequired", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     if (!requestId) return;
     void session
@@ -2982,7 +2992,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
         authChallengeResponse: { response: "Default" },
       })
       .catch(() => {});
-  });
+  }));
   return hold;
 }
 
@@ -2990,6 +3000,7 @@ async function releaseRouteHold(tabId: number): Promise<void> {
   const hold = routeHolds.get(tabId);
   if (!hold) return;
   routeHolds.delete(tabId);
+  for (const un of hold.unsubs) un();
   await hold.session.send("Fetch.disable").catch(() => {});
   await hold.release().catch(() => {});
 }
@@ -3002,6 +3013,10 @@ async function addPageRoute(
   const match = strArg(args.match, "match", 512);
   if (match === undefined) {
     throw toolError("proto.invalid", "browser.page.route requires args.match (URL substring)");
+  }
+  const action = args.action === undefined ? "fulfill" : str(args.action);
+  if (action !== "fulfill" && action !== "abort") {
+    throw toolError("proto.invalid", "browser.page.route args.action must be fulfill|abort");
   }
   const status = numArg(args.status, "status", 100, 599) ?? 200;
   const contentType = strArg(args.contentType, "contentType", 200);
@@ -3034,8 +3049,8 @@ async function addPageRoute(
     throw toolError("proto.invalid", `route rule cap reached (${ROUTE_RULES_MAX}) — unroute first`);
   }
   const id = crypto.randomUUID();
-  hold.rules.set(id, { id, match, status, headers, bodyBase64 });
-  return { routeId: id, match, status, rules: hold.rules.size, resolvedTabId: tabId };
+  hold.rules.set(id, { id, match, action: action as "fulfill" | "abort", status, headers, bodyBase64 });
+  return { routeId: id, match, action, status, rules: hold.rules.size, resolvedTabId: tabId };
 }
 
 async function removePageRoutes(

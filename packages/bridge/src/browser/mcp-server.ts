@@ -624,6 +624,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       {
         ...TAB_TARGET_PROPS,
         match: { type: "string", description: "URL substring to intercept (required, ≤512 chars)." },
+        action: { type: "string", enum: ["fulfill", "abort"], description: "fulfill (default) returns the supplied response; abort fails matching requests (BlockedByClient) — status/headers/body are ignored for abort." },
         status: { type: "integer", description: "Response status code (100–599, default 200)." },
         contentType: { type: "string", description: "Content-Type response header." },
         headers: { type: "object", additionalProperties: { type: "string" }, description: "Extra response headers (name → value)." },

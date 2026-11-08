@@ -142,7 +142,7 @@ await runScenario(
 
       // --- route: Fetch-domain interception mocks /api/ping, then
       // unroute restores the real response ---
-      let routeRes = null, mockedOut = null, unrouteRes = null, realOut = null;
+      let routeRes = null, mockedOut = null, unrouteRes = null, realOut = null, abortedOut = null;
       try {
         routeRes = await runner.browserToolCall(
           taskId, "browser.page.route",
@@ -165,18 +165,32 @@ await runScenario(
           { timeout: 10_000 },
         );
         realOut = await page.evaluate(() => document.getElementById("out")?.textContent);
+        // abort action: matching requests fail → page's catch fires
+        const abortRes = await runner.browserToolCall(
+          taskId, "browser.page.route",
+          { match: "/api/ping", action: "abort" }, token, 60_000,
+        );
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.getElementById("out")?.textContent !== "pending",
+          { timeout: 10_000 },
+        );
+        abortedOut = await page.evaluate(() => document.getElementById("out")?.textContent);
+        await runner.browserToolCall(taskId, "browser.page.unroute", {}, token, 60_000);
       } catch (e) {
         routeRes = routeRes ?? { rpcError: e?.message };
       }
-      evidence.note(`route → mocked=${mockedOut} real=${realOut}`);
+      evidence.note(`route → mocked=${mockedOut} real=${realOut} aborted=${abortedOut}`);
       results.route = {
         ok:
           routeRes?.status === "completed" &&
           mockedOut === "pong:mocked" &&
           unrouteRes?.status === "completed" &&
-          realOut === "pong:ok",
+          realOut === "pong:ok" &&
+          abortedOut === "fetch-failed",
         mocked: mockedOut,
         real: realOut,
+        aborted: abortedOut,
       };
 
       // --- aria snapshot ---
