@@ -56,6 +56,25 @@ export function requeueQueuedComposerMessage(
   queuesByConversationId.set(conversationId, queue);
 }
 
+export function serializeQueuedComposerMessages(): Record<string, QueuedComposerMessage[]> {
+  const out: Record<string, QueuedComposerMessage[]> = {};
+  for (const [conversationId, queue] of queuesByConversationId) {
+    if (queue.length > 0) out[conversationId] = queue;
+  }
+  return out;
+}
+
+export function restoreQueuedComposerMessages(
+  entries: Record<string, QueuedComposerMessage[]>,
+): void {
+  queuesByConversationId.clear();
+  for (const [conversationId, queue] of Object.entries(entries)) {
+    if (Array.isArray(queue) && queue.length > 0) {
+      queuesByConversationId.set(conversationId, queue);
+    }
+  }
+}
+
 export function resetQueuedComposerMessagesForTests(): void {
   queuesByConversationId.clear();
 }

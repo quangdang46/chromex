@@ -29,6 +29,8 @@ import {
   queuedComposerMessagesFor,
   requeueQueuedComposerMessage,
   removeQueuedComposerMessage,
+  restoreQueuedComposerMessages,
+  serializeQueuedComposerMessages,
   type QueuedComposerMessage,
 } from "./composer-message-queue.js";
 import { createSubmittedComposerFileAttachmentState } from "./composer-attachment-submit.js";
@@ -2518,6 +2520,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
   syncDocumentLanguage();
   const currentConversationIdBeforeInit = state.currentConversationId;
   const settingsSnapshotPromise = applyInitialSettingsSnapshot().catch(() => undefined);
+  const queuedMessagesHydrationPromise = hydrateQueuedComposerMessages();
   const initPayloadPromise = sendRuntimeMessage({
     type: "ui.init",
     ...(targetWindowId ? { windowId: targetWindowId } : {}),
@@ -2525,6 +2528,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
   });
   try {
     await settingsSnapshotPromise;
+    await queuedMessagesHydrationPromise;
     const payload = (await initPayloadPromise) as UiInitPayload & { error?: string };
     if (payload.error) {
       throw new Error(payload.error);
@@ -15307,10 +15311,35 @@ function queuedComposerMessagesForCurrentConversation(): QueuedComposerMessage[]
   return queuedComposerMessagesFor(state.currentConversationId);
 }
 
+const QUEUED_COMPOSER_MESSAGES_STORAGE_KEY = "chromex.sidepanel.queuedComposerMessages";
+
+function persistQueuedComposerMessages(): void {
+  try {
+    void chrome.storage.session
+      .set({ [QUEUED_COMPOSER_MESSAGES_STORAGE_KEY]: serializeQueuedComposerMessages() })
+      .catch(() => undefined);
+  } catch {
+    // storage.session unavailable — queue stays in-memory only
+  }
+}
+
+async function hydrateQueuedComposerMessages(): Promise<void> {
+  try {
+    const stored = await chrome.storage.session.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
+    const entries = stored?.[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
+    if (entries && typeof entries === "object") {
+      restoreQueuedComposerMessages(entries as Record<string, QueuedComposerMessage[]>);
+    }
+  } catch {
+    // storage unavailable — start with an empty queue
+  }
+}
+
 function removeQueuedComposerMessageForCurrentConversation(id: string): void {
   const conversationId = state.currentConversationId;
   if (!conversationId) return;
   removeQueuedComposerMessage(conversationId, id);
+  persistQueuedComposerMessages();
   render();
 }
 
@@ -15321,6 +15350,7 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   if (queuedComposerFlushInFlight.has(conversationId)) return;
   if (state.currentConversationId !== conversationId || state.activeTurn) return;
   const next = dequeueQueuedComposerMessage(conversationId);
+  persistQueuedComposerMessages();
   if (!next) {
     render();
     return;
@@ -15329,10 +15359,15 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   try {
     if (state.activeTurn) {
       requeueQueuedComposerMessage(conversationId, next);
+      persistQueuedComposerMessages();
       return;
     }
     state.fileAttachments = [...next.fileAttachments];
     await sendPrompt(next.text, next.profileId ? { profileId: next.profileId } : {});
+  } catch {
+    // Never drop a queued message on a failed flush — put it back at the head.
+    requeueQueuedComposerMessage(conversationId, next);
+    persistQueuedComposerMessages();
   } finally {
     queuedComposerFlushInFlight.delete(conversationId);
   }
@@ -15449,6 +15484,7 @@ async function sendPrompt(
         fileAttachments: [...state.fileAttachments],
         profileId: activeProfileId,
       });
+      persistQueuedComposerMessages();
       state.composerDraft = "";
       state.fileAttachments = [];
       clearTransientComposerCommandPill();
