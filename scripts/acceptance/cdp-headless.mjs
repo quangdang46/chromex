@@ -954,12 +954,59 @@ await runScenario(
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpTabId }, token, 60_000,
         );
+        // frame-scoped CDP: the cross-origin iframe is an OOPIF with its
+        // own debugger target — Runtime.evaluate must run INSIDE it.
+        const cdpFrameTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/iframe-parent") }, token, 60_000,
+        );
+        const cdpFrameTabId = cdpFrameTab?.result?.tabId ?? cdpFrameTab?.result?.openedTabId ?? cdpFrameTab?.tabId;
+        const cdpFramesRes = await runner.browserToolCall(
+          taskId, "browser.page.get", { tabId: cdpFrameTabId }, token, 60_000,
+        );
+        const cdpFrames = cdpFramesRes?.result?.frames ?? cdpFramesRes?.frames ?? [];
+        const cdpCross = cdpFrames.find(
+          (f) => String(f.url ?? "").includes("localhost") && String(f.url ?? "").includes("/iframe-child"),
+        );
+        const cdpSame = cdpFrames.find(
+          (f) => String(f.url ?? "").includes("127.0.0.1") && String(f.url ?? "").includes("/iframe-child"),
+        );
+        if (cdpCross?.frameId) {
+          const cdpFrRes = await runner.browserToolCall(
+            taskId, "browser.page.cdp",
+            {
+              tabId: cdpFrameTabId, frameId: cdpCross.frameId,
+              method: "Runtime.evaluate",
+              params: { expression: "location.href", returnByValue: true },
+            },
+            token, 60_000,
+          );
+          const cdpFr = cdpFrRes?.result ?? cdpFrRes ?? {};
+          const cdpFrVal = cdpFr?.result?.result?.value ?? "";
+          cdp.frameOk = cdpFr?.ok === true
+            && cdpFr?.resolvedFrameId === cdpCross.frameId
+            && String(cdpFrVal).includes("localhost")
+            && String(cdpFrVal).includes("/iframe-child");
+          cdp.frameVal = String(cdpFrVal).slice(0, 120);
+        }
+        // same-process frame → honest proto.unsupported (shares tab session)
+        if (cdpSame?.frameId) {
+          const cdpSameRes = await runner.browserToolCall(
+            taskId, "browser.page.cdp",
+            { tabId: cdpFrameTabId, frameId: cdpSame.frameId, method: "Page.getFrameTree" },
+            token, 60_000,
+          );
+          const cdpSameErr = cdpSameRes?.error ?? {};
+          cdp.sameUnsupported = cdpSameRes?.status === "failed" && cdpSameErr.code === "proto.unsupported";
+        }
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
+        );
       } catch (e) {
         cdp.error = String(e?.message ?? e).slice(0, 200);
       }
       evidence.note(`cdp → ${JSON.stringify(cdp).slice(0, 300)}`);
       results.cdp = {
-        ok: cdp.treeOk === true && cdp.errOk === true,
+        ok: cdp.treeOk === true && cdp.errOk === true && cdp.frameOk === true && cdp.sameUnsupported === true,
         ...cdp,
       };
 

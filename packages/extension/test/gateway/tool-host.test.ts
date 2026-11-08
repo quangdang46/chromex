@@ -1906,8 +1906,54 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.cdp", {
       tabId: 503, method: "Page.x", params: { blob: "x".repeat(70 * 1024) },
     }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // frameId without the frame-target tier → proto.unsupported
     await expect(h(req("browser.page.cdp", { tabId: 503, method: "Page.x", frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.cdp frameId routes to the OOPIF debugger target", async () => {
+    const tabCdp = fakeCdp({});
+    const frameCdp = fakeCdp({
+      "Runtime.evaluate": () => ({ result: { type: "string", value: "https://pay.example/frame" } }),
+    });
+    const h = createToolHostHandler(cdpDeps(514, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 9, url: "https://pay.example/frame" },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-page", type: "page", url: "https://x/" },
+        { id: "t-frame", type: "other", url: "https://pay.example/frame" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => frameCdp.session as never),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    const res = (await h(req("browser.page.cdp", {
+      tabId: 514, method: "Runtime.evaluate", frameId: 9,
+      params: { expression: "location.href", returnByValue: true },
+    }))) as { ok: boolean; resolvedFrameId?: number; result?: { result?: { value?: string } } };
+    expect(res.ok).toBe(true);
+    expect(res.resolvedFrameId).toBe(9);
+    expect(res.result?.result?.value).toBe("https://pay.example/frame");
+    // the frame session got the command; the tab session did not
+    expect(frameCdp.sent.map((s) => s.method)).toEqual(["Runtime.evaluate"]);
+    expect(tabCdp.sent).toHaveLength(0);
+    // unknown frameId → proto.invalid; same-process frame → proto.unsupported
+    await expect(h(req("browser.page.cdp", { tabId: 514, method: "Page.x", frameId: 77 })))
       .rejects.toMatchObject({ code: "proto.invalid" });
+    const hSame = createToolHostHandler(cdpDeps(515, tabCdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 0, url: "https://x/" },
+        { frameId: 3, url: "https://x/inner" },
+      ]),
+      listCdpTargets: vi.fn(async () => [
+        { id: "t-page", type: "page", url: "https://x/" },
+      ]),
+      acquireCdpTarget: vi.fn(async () => { throw new Error("unused"); }),
+      releaseCdpTarget: vi.fn(async () => {}),
+    }));
+    await expect(hSame(req("browser.page.cdp", { tabId: 515, method: "Page.x", frameId: 3 })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
   test("snapshot mode:aria returns a formatted AX tree", async () => {

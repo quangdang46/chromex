@@ -301,6 +301,7 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.network",
   "browser.page.setInputFiles",
   "browser.page.screenshot",
+  "browser.page.cdp",
 ]);
 
 const SUPPORTED = new Set([
@@ -1556,11 +1557,11 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.cdp": {
         // Raw CDP passthrough — the deepest protocol surface. One-shot
         // acquire/send/release on the tab target; the risk classifier
-        // already forced approval for every call.
+        // already forced approval for every call. args.frameId routes
+        // to the frame's own debugger target — only out-of-process
+        // iframes have one; same-process frames share the tab session.
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.cdp is tab-scoped; args.frameId is not supported");
-        }
+        const frameId = frameIdArg(args);
         const method = str(args.method);
         if (
           !method ||
@@ -1586,7 +1587,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             throw toolError("proto.invalid", "browser.page.cdp args.params must be JSON-serializable ≤64KiB");
           }
         }
-        const { session, release } = await cdpAcquire(deps, tabId);
+        const acquired = frameId === 0
+          ? await cdpAcquire(deps, tabId)
+          : await cdpAcquireForFrame(deps, tabId, frameId);
+        const { session, release } = acquired;
         try {
           const result = await session.send(method, params);
           const serialized = JSON.stringify(result ?? null);
@@ -1595,11 +1599,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return {
               method, ok: true, result: null, omitted: true,
               resultBytes: bytes, resolvedTabId: tabId,
+              ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
             };
           }
           return {
             method, ok: true, result: result ?? null,
             resultBytes: bytes, resolvedTabId: tabId,
+            ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
           };
         } catch (e) {
           // CDP protocol errors are data, not transport failure — an
@@ -1608,6 +1614,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             method, ok: false,
             error: { code: "cdp_error", message: String((e as Error)?.message ?? e).slice(0, 500) },
             resolvedTabId: tabId,
+            ...(frameId !== 0 ? { resolvedFrameId: frameId } : {}),
           };
         } finally {
           await release().catch(() => {});
@@ -2893,6 +2900,46 @@ async function cdpAcquire(
     );
   }
   return { session, release: () => cdp.release(tabId) };
+}
+
+/** Frame-scoped CDP acquire: chrome.webNavigation frameId → frame URL →
+ *  matching out-of-process iframe debugger target. Only OOPIFs have
+ *  their own target — same-process frames share the tab session, so a
+ *  frameId that resolves to no iframe target is honestly unsupported
+ *  (the caller should drop frameId and use the tab session). */
+async function cdpAcquireForFrame(
+  deps: ToolHostDeps,
+  tabId: number,
+  frameId: number,
+): Promise<{ session: CdpSession; release: () => Promise<void> }> {
+  if (!deps.listFrames || !deps.listCdpTargets || !deps.acquireCdpTarget || !deps.releaseCdpTarget) {
+    throw toolError(
+      "proto.unsupported",
+      "frame-scoped CDP requires the debugger frame-target tier",
+    );
+  }
+  const frames = await deps.listFrames(tabId);
+  const frame = frames.find((f) => f.frameId === frameId);
+  if (!frame) {
+    throw toolError("proto.invalid", `args.frameId ${frameId} is not a frame in this tab`);
+  }
+  if (!frame.url) {
+    throw toolError("proto.unsupported", `frame ${frameId} has no URL to match a debugger target`);
+  }
+  const targets = await deps.listCdpTargets();
+  // Same matching rule as setInputFilesViaFrameTarget: OOPIF targets
+  // report type "iframe" on some builds, "other" on others — URL
+  // equality with the webNavigation frame is the real key.
+  const target = targets.find(
+    (t) => (t.type === "iframe" || t.type === "other") && t.url === frame.url,
+  );
+  if (!target) {
+    throw toolError(
+      "proto.unsupported",
+      `frame ${frameId} has no dedicated debugger target (same-process frames share the tab session — drop args.frameId)`,
+    );
+  }
+  return cdpTargetAcquire(deps, target.id);
 }
 
 interface AxNode {
