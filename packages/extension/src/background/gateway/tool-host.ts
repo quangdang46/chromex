@@ -85,8 +85,14 @@ export interface ToolHostDeps {
     args?: unknown[],
     frameIds?: number[],
   ): Promise<unknown>;
-  /** chrome.tabs.goBack/goForward/reload (browser.page.history) */
-  navigateHistory?(tabId: number, action: "back" | "forward" | "reload"): Promise<unknown>;
+  /** chrome.tabs.goBack/goForward/reload (browser.page.history);
+   *  bypassCache maps to chrome.tabs.reload {bypassCache:true} /
+   *  CDP Page.reload {ignoreCache:true} on isolated. */
+  navigateHistory?(
+    tabId: number,
+    action: "back" | "forward" | "reload",
+    opts?: { bypassCache?: boolean },
+  ): Promise<unknown>;
   /** chrome.downloads.search (browser.downloads.list) — requires the
    *  "downloads" permission; absent dep → proto.unsupported. */
   listDownloads?(query: {
@@ -1791,12 +1797,21 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (action !== "back" && action !== "forward" && action !== "reload") {
           throw toolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
         }
+        // bypassCache only has meaning on reload — refuse on back/forward
+        // rather than silently ignoring it.
+        const bypassCache = args.bypassCache === true;
+        if (args.bypassCache !== undefined && typeof args.bypassCache !== "boolean") {
+          throw toolError("proto.invalid", "browser.page.history args.bypassCache must be a boolean");
+        }
+        if (bypassCache && action !== "reload") {
+          throw toolError("proto.invalid", "browser.page.history args.bypassCache only applies to action reload");
+        }
         if (!deps.navigateHistory) {
           throw toolError("proto.unsupported", "history navigation is not available on this host");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        await deps.navigateHistory(tabId, action);
-        return { navigated: action, resolvedTabId: tabId };
+        await deps.navigateHistory(tabId, action, bypassCache ? { bypassCache: true } : undefined);
+        return { navigated: action, ...(bypassCache ? { bypassCache: true } : {}), resolvedTabId: tabId };
       }
       case "browser.page.cookies": {
         cdpRequired(deps);

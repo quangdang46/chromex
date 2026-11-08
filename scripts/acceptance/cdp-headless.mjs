@@ -1500,6 +1500,74 @@ await runScenario(
         ...mw,
       };
 
+      // --- page.history bypassCache: /cache-probe serves a constant
+      // ETag + hit-counter body. Normal reload revalidates → 304 → old
+      // body; bypassCache ignores cache → fresh 200 → higher counter.
+      // Proves the arg reaches chrome.tabs.reload {bypassCache} / CDP
+      // Page.reload {ignoreCache} for real, not just dispatch. ---
+      const cb = {};
+      try {
+        const cbCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/cache-probe"), active: false }, token, 60_000,
+        );
+        const cbTab = (cbCreate?.result ?? cbCreate ?? {}).openedTabId ??
+          (cbCreate?.result ?? cbCreate ?? {}).tabId;
+        cb.createOk = typeof cbTab === "number";
+        const readCv = async () => {
+          const r = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { tabId: cbTab, expression: "document.getElementById('cv')?.textContent ?? ''" },
+            token, 60_000,
+          ).catch(() => null);
+          const v = (r?.result ?? r ?? {}).value ?? "";
+          const m = /cache-v(\d+)/.exec(String(v));
+          return m ? Number(m[1]) : null;
+        };
+        if (cb.createOk) {
+          await sleep(800);
+          const v1 = await readCv();
+          cb.v1 = v1;
+          // invalid combos refused before dispatch
+          const badBack = await runner.browserToolCall(
+            taskId, "browser.page.history", { tabId: cbTab, action: "back", bypassCache: true }, token, 60_000,
+          ).catch(() => null);
+          cb.badBackOk = (badBack?.error?.code ?? "") === "proto.invalid";
+          const badType = await runner.browserToolCall(
+            taskId, "browser.page.history", { tabId: cbTab, action: "reload", bypassCache: "yes" }, token, 60_000,
+          ).catch(() => null);
+          cb.badTypeOk = (badType?.error?.code ?? "") === "proto.invalid";
+          // normal reload — conditional revalidation → 304 → SAME body
+          await runner.browserToolCall(
+            taskId, "browser.page.history", { tabId: cbTab, action: "reload" }, token, 60_000,
+          );
+          await sleep(1000);
+          const vNorm = await readCv();
+          cb.normalOk = typeof v1 === "number" && vNorm === v1;
+          // bypassCache reload — cache ignored → fresh 200 → HIGHER counter
+          const bc = await runner.browserToolCall(
+            taskId, "browser.page.history", { tabId: cbTab, action: "reload", bypassCache: true }, token, 60_000,
+          );
+          cb.callOk = (bc?.result ?? bc ?? {}).bypassCache === true;
+          await sleep(1000);
+          const vBypass = await readCv();
+          cb.versions = { v1, vNorm, vBypass };
+          cb.bypassOk = typeof vNorm === "number" && typeof vBypass === "number" && vBypass > vNorm;
+          await runner.browserToolCall(
+            taskId, "browser.tab.close", { tabId: cbTab }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          cb.badBackOk = cb.badTypeOk = cb.normalOk = cb.callOk = cb.bypassOk = false;
+        }
+      } catch (e) {
+        cb.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`cacheBypass → ${JSON.stringify(cb).slice(0, 300)}`);
+      results.cacheBypass = {
+        ok: cb.createOk === true && cb.badBackOk === true && cb.badTypeOk === true &&
+          cb.normalOk === true && cb.callOk === true && cb.bypassOk === true,
+        ...cb,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

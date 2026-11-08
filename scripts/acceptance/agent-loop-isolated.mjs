@@ -142,6 +142,38 @@ try {
   const backUrl = await call("browser.page.get", { tabId: sTab, key: "url" });
   assert(String(backUrl?.value ?? "").includes("/slow"), "back landed on /slow");
 
+  // ── Loop 4b: history bypassCache — /cache-probe serves a constant
+  // ETag + hit-counter body. Normal reload revalidates → 304 → old
+  // body; bypassCache → CDP Page.reload {ignoreCache} → fresh 200.
+  const cbCreated = await call("browser.tab.create", { url: fixture.url("/cache-probe"), active: false });
+  const cbTab = cbCreated?.tabId ?? cbCreated?.id;
+  const readCv = async () => {
+    const r = await call("browser.page.evaluate", {
+      tabId: cbTab, expression: "document.getElementById('cv')?.textContent ?? ''",
+    });
+    const m = /cache-v(\d+)/.exec(String(r?.value ?? ""));
+    return m ? Number(m[1]) : null;
+  };
+  await new Promise((r) => setTimeout(r, 800));
+  const cbV1 = await readCv();
+  assert(typeof cbV1 === "number", `cache-probe loaded (got ${cbV1})`);
+  await call("browser.page.history", { tabId: cbTab, action: "reload" });
+  await new Promise((r) => setTimeout(r, 1000));
+  const cbNorm = await readCv();
+  assert(cbNorm === cbV1, `normal reload revalidated → same cached body (v${cbV1}→v${cbNorm})`);
+  const cbRes = await call("browser.page.history", { tabId: cbTab, action: "reload", bypassCache: true });
+  assert(cbRes?.bypassCache === true || cbRes?.navigated === "reload", "bypassCache reload dispatched");
+  await new Promise((r) => setTimeout(r, 1000));
+  const cbBypass = await readCv();
+  assert(typeof cbBypass === "number" && cbBypass > cbNorm, `bypassCache fetched fresh body (v${cbNorm}→v${cbBypass})`);
+  await expectReject(
+    "browser.page.history",
+    { tabId: cbTab, action: "back", bypassCache: true },
+    "only applies to action reload",
+    "bypassCache on back refused",
+  );
+  await call("browser.tab.close", { tabId: cbTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

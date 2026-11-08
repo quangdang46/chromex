@@ -682,11 +682,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.history": {
     description:
-      "Browser history navigation on the task's tab: back, forward, or reload. Low-risk but still a navigation — refs and snapshotIds from before the action are stale afterwards; re-snapshot before acting on the result page.",
+      "Browser history navigation on the task's tab: back, forward, or reload. args.bypassCache (reload only) ignores the HTTP cache — chrome.tabs.reload {bypassCache} on the extension, CDP Page.reload {ignoreCache} on isolated — use it to verify a fix actually reached the wire instead of trusting a stale cached page. Low-risk but still a navigation — refs and snapshotIds from before the action are stale afterwards; re-snapshot before acting on the result page.",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
         action: { type: "string", enum: ["back", "forward", "reload"], description: "History action (required)." },
+        bypassCache: { type: "boolean", description: "Reload only: bypass the HTTP cache entirely (verify fresh content after a fix)." },
       },
       ["action"],
     ),

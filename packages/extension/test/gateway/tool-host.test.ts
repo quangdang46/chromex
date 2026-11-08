@@ -726,6 +726,33 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("page.history bypassCache forwards opts; refused on back/forward", async () => {
+    const calls: Array<{ tabId: number; action: string; opts?: { bypassCache?: boolean } }> = [];
+    const d = deps({
+      navigateHistory: vi.fn(async (tabId: number, action: "back" | "forward" | "reload", opts?: { bypassCache?: boolean }) => {
+        calls.push({ tabId, action, opts });
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.history", { action: "reload", bypassCache: true }))) as {
+      navigated: string;
+      bypassCache?: boolean;
+    };
+    expect(res).toMatchObject({ navigated: "reload", bypassCache: true });
+    expect(calls).toEqual([{ tabId: 7, action: "reload", opts: { bypassCache: true } }]);
+    // plain reload passes no opts
+    await h(req("browser.page.history", { action: "reload" }));
+    expect(calls[1]).toEqual({ tabId: 7, action: "reload", opts: undefined });
+    // bypassCache on back/forward is meaningless → refused before dispatch
+    await expect(h(req("browser.page.history", { action: "back", bypassCache: true }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.page.history", { action: "reload", bypassCache: "yes" }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    expect(calls).toHaveLength(2); // rejected calls never dispatched
+  });
+
   test("page.history without dep → proto.unsupported", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.page.history", { action: "reload" }))).rejects.toMatchObject({

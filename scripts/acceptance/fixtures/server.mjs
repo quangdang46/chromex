@@ -331,6 +331,8 @@ export async function startFixtureServer() {
   const requests = [];
   const sockets = new Set();
   const wsMessages = [];
+  // /cache-probe hit counter — body carries the hit number
+  let cacheProbeHits = 0;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
     requests.push({ method: req.method, path: url.pathname, at: Date.now() });
@@ -342,6 +344,26 @@ export async function startFixtureServer() {
         res.writeHead(200, { "content-type": "text/html" });
         res.end(PAGES["/submit-ok"]);
       });
+      return;
+    }
+    // cache-bypass probe: CONSTANT ETag + hit-counter body + long
+    // max-age. A conditional reload gets 304 → browser keeps the OLD
+    // body; bypassCache gets a fresh 200 → new counter. Deterministic
+    // proof that the cache was actually bypassed.
+    if (url.pathname === "/cache-probe") {
+      cacheProbeHits += 1;
+      const etag = '"cache-probe"';
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, { etag, "cache-control": "public, max-age=3600" });
+        res.end();
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/html",
+        etag,
+        "cache-control": "public, max-age=3600",
+      });
+      res.end(`<!doctype html><html><body><p id="cv">cache-v${cacheProbeHits}</p></body></html>`);
       return;
     }
     // JSON API hit by the /fetch page — page.network proof

@@ -305,10 +305,12 @@ const toolHostHandler = createToolHostHandler({
       });
       return res?.result;
     },
-    navigateHistory: async (tabId, action) => {
+    navigateHistory: async (tabId, action, opts) => {
       if (action === "back") return chrome.tabs.goBack(tabId);
       if (action === "forward") return chrome.tabs.goForward(tabId);
-      return chrome.tabs.reload(tabId);
+      return opts?.bypassCache
+        ? chrome.tabs.reload(tabId, { bypassCache: true })
+        : chrome.tabs.reload(tabId);
     },
     searchHistory: async ({ text, url, startTime, endTime, limit }) => {
       const granted = await chrome.permissions.contains({ permissions: ["history"] });

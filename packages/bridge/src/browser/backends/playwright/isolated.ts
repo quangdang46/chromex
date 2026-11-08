@@ -2257,6 +2257,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #history(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const action = typeof args.action === "string" ? args.action : "";
+    if (args.bypassCache !== undefined && typeof args.bypassCache !== "boolean") {
+      throw protocolError("proto.invalid", "browser.page.history args.bypassCache must be a boolean");
+    }
+    if (args.bypassCache === true && action !== "reload") {
+      throw protocolError("proto.invalid", "browser.page.history args.bypassCache only applies to action reload");
+    }
     // goBack/goForward resolve null when there is no history entry —
     // report that honestly instead of claiming a navigation.
     let moved: boolean | null = null;
@@ -2265,7 +2271,15 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     } else if (action === "forward") {
       moved = (await page.goForward({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null)) !== null;
     } else if (action === "reload") {
-      await page.reload({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+      if (args.bypassCache === true) {
+        // playwright page.reload has no cache-bypass — CDP
+        // Page.reload {ignoreCache:true} is the honest equivalent
+        // (same primitive chrome.tabs.reload {bypassCache} wraps).
+        const session = await this.#emulationSession(page);
+        await session.send("Page.reload", { ignoreCache: true });
+      } else {
+        await page.reload({ timeout: DEFAULT_NAV_TIMEOUT_MS });
+      }
       moved = true;
     } else {
       throw protocolError("proto.invalid", "browser.page.history requires args.action back|forward|reload");
