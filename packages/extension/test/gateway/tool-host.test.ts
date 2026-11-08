@@ -2303,6 +2303,7 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.responseBody", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.snapshot", { tabId: 501, mode: "aria" }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.cdp", { tabId: 501, method: "Page.getFrameTree" }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.coverage", { tabId: 501, action: "start" }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.click", { tabId: 501, selector: "#b", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.press", { tabId: 501, key: "Enter", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.fill", { tabId: 501, selector: "#i", text: "x", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
@@ -2389,6 +2390,71 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     }));
     await expect(hSame(req("browser.page.cdp", { tabId: 515, method: "Page.x", frameId: 3 })))
       .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("page.coverage holds a Profiler session across start/stop", async () => {
+    const cdp = fakeCdp({
+      "Profiler.takePreciseCoverage": () => ({
+        result: [
+          {
+            scriptId: "s1", url: "https://x/app.js",
+            functions: [
+              { functionName: "a", ranges: [{ startOffset: 0, endOffset: 10, count: 2 }] },
+              { functionName: "b", ranges: [{ startOffset: 10, endOffset: 20, count: 0 }] },
+            ],
+          },
+          { scriptId: "s2", url: "https://x/lib.js", functions: [] },
+        ],
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(505, cdp));
+    const status0 = (await h(req("browser.page.coverage", { tabId: 505, action: "status" }))) as { running: boolean };
+    expect(status0.running).toBe(false);
+    await expect(h(req("browser.page.coverage", { tabId: 505, action: "stop" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.coverage", { tabId: 505, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const started = (await h(req("browser.page.coverage", { tabId: 505, action: "start" }))) as { started: boolean };
+    expect(started.started).toBe(true);
+    await expect(h(req("browser.page.coverage", { tabId: 505, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const status1 = (await h(req("browser.page.coverage", { tabId: 505, action: "status" }))) as { running: boolean };
+    expect(status1.running).toBe(true);
+    const rep = (await h(req("browser.page.coverage", { tabId: 505, action: "stop" }))) as {
+      stopped: boolean;
+      scripts: Array<{ url: string; functions: number; invokedFunctions: number }>;
+      totals: { scripts: number; functions: number; invokedFunctions: number };
+    };
+    expect(rep.stopped).toBe(true);
+    expect(rep.totals).toEqual({ scripts: 2, functions: 2, invokedFunctions: 1 });
+    expect(rep.scripts[0]).toMatchObject({ url: "https://x/app.js", functions: 2, invokedFunctions: 1 });
+    // exact Profiler command sequence — enable → start → take → stop → disable
+    expect(cdp.sent.map((s) => s.method)).toEqual([
+      "Profiler.enable",
+      "Profiler.startPreciseCoverage",
+      "Profiler.takePreciseCoverage",
+      "Profiler.stopPreciseCoverage",
+      "Profiler.disable",
+    ]);
+    const status2 = (await h(req("browser.page.coverage", { tabId: 505, action: "status" }))) as { running: boolean };
+    expect(status2.running).toBe(false);
+  });
+
+  test("page.coverage maps a missing Profiler domain to proto.unsupported", async () => {
+    // chrome.debugger filters whole CDP domains — a -32601 "wasn't found"
+    // reply is the honest unsupported boundary, not an internal error.
+    const cdp = fakeCdp({
+      "Profiler.enable": () => {
+        throw new Error('{"code":-32601,"message":"\'Profiler.enable\' wasn\'t found"}');
+      },
+    });
+    const releaseCdp = vi.fn(async () => {});
+    const h = createToolHostHandler(cdpDeps(506, cdp, { releaseCdp }));
+    await expect(h(req("browser.page.coverage", { tabId: 506, action: "start" })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    expect(releaseCdp).toHaveBeenCalled();
+    const status = (await h(req("browser.page.coverage", { tabId: 506, action: "status" }))) as { running: boolean };
+    expect(status.running).toBe(false);
   });
 
   test("snapshot mode:aria returns a formatted AX tree", async () => {

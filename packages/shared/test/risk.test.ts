@@ -403,6 +403,12 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.notifications" })).risk).toBe("read");
   });
 
+  test("browser.page.coverage: read verdict (Profiler subset, not raw CDP)", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.page.coverage" }));
+    expect(v.risk).toBe("read");
+    expect(v.needsApproval).toBe(false);
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

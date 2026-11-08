@@ -143,6 +143,9 @@ const READ_TOOLS = new Set([
   // WS frames are page-originated payload content — same read+egress
   // class as responseBody (page-text, bounded, approval-gated).
   "browser.page.webSocket",
+  // JS coverage reports script URLs + invocation counts — page-derived
+  // metadata, same read+egress class as console/network.
+  "browser.page.coverage",
   "browser.windows.list",
   // browsing history is personal data leaving the browser — same
   // egress gate as page text (approval for non-local destinations)

@@ -27,7 +27,7 @@
  * `selector`/`label`.
  */
 
-import { SnapshotRegistry, urlOriginPath } from "@codex-sidepanel/shared";
+import { SnapshotRegistry, summarizeCoverage, urlOriginPath } from "@codex-sidepanel/shared";
 import type {
   BrowserDomActionResult,
   BrowserDomSnapshot,
@@ -390,6 +390,7 @@ const SUPPORTED = new Set([
   "browser.page.caches",
   "browser.page.serviceWorker",
   "browser.page.cdp",
+  "browser.page.coverage",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -723,6 +724,15 @@ export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
 }
 
 export function createToolHostHandler(deps: ToolHostDeps) {
+  // JS-coverage sessions held across tool calls — one Profiler session
+  // per tab, refcounted through the shared CDP layer so other CDP tools
+  // keep working while coverage runs. Dies with the handler (SW
+  // restart detaches debugger targets) — the next call reports
+  // not-running honestly.
+  const coverageHolds = new Map<
+    number,
+    { session: CdpSession; release: () => Promise<void> }
+  >();
   return async function handleToolRequest(payload: unknown): Promise<unknown> {
     const req = (payload ?? {}) as {
       toolCallId?: string;
@@ -1735,6 +1745,76 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           };
         } finally {
           await release().catch(() => {});
+        }
+      }
+      case "browser.page.coverage": {
+        // JS coverage via the CDP Profiler domain — a fixed read-only
+        // protocol subset (unlike raw page.cdp). start holds a
+        // refcounted debugger session so coverage accumulates across
+        // later page work; stop takes precise coverage and releases.
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        const action = str(args.action);
+        if (action !== "start" && action !== "stop" && action !== "status") {
+          throw toolError(
+            "proto.invalid",
+            "browser.page.coverage requires args.action start|stop|status",
+          );
+        }
+        if (action === "status") {
+          return { running: coverageHolds.has(tabId), resolvedTabId: tabId };
+        }
+        if (action === "start") {
+          if (coverageHolds.has(tabId)) {
+            throw toolError(
+              "proto.invalid",
+              "coverage is already running for this tab — call action:'stop' first",
+            );
+          }
+          const { session, release } = await cdpAcquire(deps, tabId);
+          try {
+            await session.send("Profiler.enable");
+            await session.send("Profiler.startPreciseCoverage", {
+              callCount: true,
+              detailed: false,
+            });
+          } catch (e) {
+            await release().catch(() => {});
+            // chrome.debugger filters whole CDP domains (Profiler,
+            // HeapProfiler, Security, IndexedDB, …) — the -32601
+            // "wasn't found" reply means this build does not expose
+            // the domain to extension sessions at all.
+            if (/-32601|wasn't found/.test(String((e as Error)?.message ?? e))) {
+              throw toolError(
+                "proto.unsupported",
+                "the Profiler CDP domain is not exposed via chrome.debugger on this Chrome build",
+              );
+            }
+            throw e;
+          }
+          coverageHolds.set(tabId, { session, release });
+          return { started: true, resolvedTabId: tabId };
+        }
+        const held = coverageHolds.get(tabId);
+        if (!held) {
+          throw toolError(
+            "proto.invalid",
+            "coverage is not running for this tab — call action:'start' first",
+          );
+        }
+        coverageHolds.delete(tabId);
+        try {
+          const cov = await held.session.send<{ result?: unknown }>(
+            "Profiler.takePreciseCoverage",
+          );
+          await held.session.send("Profiler.stopPreciseCoverage").catch(() => {});
+          await held.session.send("Profiler.disable").catch(() => {});
+          return {
+            ...summarizeCoverage(cov?.result),
+            stopped: true,
+            resolvedTabId: tabId,
+          };
+        } finally {
+          await held.release().catch(() => {});
         }
       }
       case "browser.history.delete": {

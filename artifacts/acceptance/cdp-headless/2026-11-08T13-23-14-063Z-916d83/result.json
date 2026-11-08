@@ -1,0 +1,9 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T13-23-14-063Z-916d83",
+  "status": "FAIL",
+  "summary": "harness error: No Chromium/Chrome-for-Testing binary found. Set BROWSER_EXECUTABLE_PATH or run playwright install chromium.",
+  "durationMs": 3117,
+  "error": "Error: No Chromium/Chrome-for-Testing binary found. Set BROWSER_EXECUTABLE_PATH or run playwright install chromium.\n    at resolveChromiumLaunchOptions (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:178:9)\n    at async launchChromiumWithExtension (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:225:25)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:752:17)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/cdp-headless.mjs:42:1",
+  "notes": []
+}

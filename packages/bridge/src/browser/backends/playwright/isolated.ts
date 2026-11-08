@@ -22,6 +22,7 @@ import {
   DEFAULT_BACKEND_CAPABILITIES,
   effectiveBackendCapabilities,
   protocolError,
+  summarizeCoverage,
   type BrowserBackend,
   type BrowserBackendCapabilities,
   type BrowserExpectCondition,
@@ -75,6 +76,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.caches",
   "browser.page.serviceWorker",
   "browser.page.cdp",
+  "browser.page.coverage",
   "browser.history.search",
   "browser.history.delete",
   "browser.bookmarks",
@@ -192,6 +194,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  the same commands the extension debugger tier sends. WeakMap so
    *  closed pages release their session handle. */
   readonly #cdpSessions = new WeakMap<PwPage, PwCDPSession>();
+  /** Pages with a running Profiler precise-coverage session — WeakSet
+   *  so closed pages drop out without bookkeeping. */
+  readonly #coveragePages = new WeakSet<PwPage>();
   /** page → finished responses kept for lazy body() reads
    *  (browser.page.responseBody). Bounded; Response objects stay
    *  valid for body() after the event loop turns. */
@@ -435,6 +440,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#serviceWorker(taskId, args);
       case "browser.page.cdp":
         return this.#cdp(taskId, args);
+      case "browser.page.coverage":
+        return this.#coverage(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.history.delete":
@@ -2639,6 +2646,54 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         error: { code: "cdp_error", message: String((e as Error)?.message ?? e).slice(0, 500) },
       };
     }
+  }
+
+  /** browser.page.coverage — JS coverage via the same cached CDPSession
+   *  as #cdp. start holds Profiler state on the session (it persists —
+   *  the session is per-page, not per-call); stop takes precise
+   *  coverage and summarizes via the shared helper so both backends
+   *  report identical shapes. */
+  async #coverage(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "";
+    if (action !== "start" && action !== "stop" && action !== "status") {
+      throw protocolError(
+        "proto.invalid",
+        "browser.page.coverage requires args.action start|stop|status",
+      );
+    }
+    const context = await this.#contextFor(taskId);
+    const tabId = context.pages().indexOf(page);
+    if (action === "status") {
+      return { running: this.#coveragePages.has(page), resolvedTabId: tabId };
+    }
+    const session = await this.#emulationSession(page);
+    if (action === "start") {
+      if (this.#coveragePages.has(page)) {
+        throw protocolError(
+          "proto.invalid",
+          "coverage is already running for this tab — call action:'stop' first",
+        );
+      }
+      await session.send("Profiler.enable");
+      await session.send("Profiler.startPreciseCoverage", {
+        callCount: true,
+        detailed: false,
+      });
+      this.#coveragePages.add(page);
+      return { started: true, resolvedTabId: tabId };
+    }
+    if (!this.#coveragePages.has(page)) {
+      throw protocolError(
+        "proto.invalid",
+        "coverage is not running for this tab — call action:'start' first",
+      );
+    }
+    this.#coveragePages.delete(page);
+    const cov = (await session.send("Profiler.takePreciseCoverage")) as { result?: unknown };
+    await session.send("Profiler.stopPreciseCoverage").catch(() => {});
+    await session.send("Profiler.disable").catch(() => {});
+    return { ...summarizeCoverage(cov?.result), stopped: true, resolvedTabId: tabId };
   }
 
   // ---- bookmarks ----

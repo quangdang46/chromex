@@ -303,6 +303,7 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   // CDP results are page-derived data (DOM trees, runtime values) —
   // same egress class, though the action is approval-gated anyway.
   "browser.page.cdp": "page-text",
+  "browser.page.coverage": "page-text",
   // find returns page text + element selectors — same egress class.
   "browser.page.find": "page-text",
   // CDP response bodies are page content (docs/adr/debugger-tier.md).

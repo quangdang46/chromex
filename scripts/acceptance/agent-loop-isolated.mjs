@@ -775,6 +775,32 @@ try {
   await expectReject("browser.page.cdp", { tabId: cdpId, method: "Page.x", params: [1] }, "JSON object", "cdp array params refused");
   await call("browser.tab.close", { tabId: cdpId });
 
+  // ── Loop 20b: page.coverage — real Profiler precise coverage ─────────
+  const covTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });
+  const covId = covTab?.tabId ?? covTab?.id;
+  const covStatus0 = await call("browser.page.coverage", { tabId: covId, action: "status" });
+  assert(covStatus0?.running === false, `coverage starts idle (got ${JSON.stringify(covStatus0)})`);
+  await expectReject("browser.page.coverage", { tabId: covId, action: "stop" }, "action:'start'", "coverage stop without start refused");
+  const covStart = await call("browser.page.coverage", { tabId: covId, action: "start" });
+  assert(covStart?.started === true, `coverage start (got ${JSON.stringify(covStart).slice(0, 120)})`);
+  const covStatus1 = await call("browser.page.coverage", { tabId: covId, action: "status" });
+  assert(covStatus1?.running === true, "coverage reports running after start");
+  await expectReject("browser.page.coverage", { tabId: covId, action: "start" }, "action:'stop'", "double coverage start refused");
+  // do real page work inside the coverage window — a navigate + evaluate
+  await call("browser.page.navigate", { tabId: covId, url: fixture.url("/form") });
+  await call("browser.page.evaluate", { tabId: covId, expression: "document.title" });
+  const covStop = await call("browser.page.coverage", { tabId: covId, action: "stop" });
+  const covTotals = covStop?.totals ?? {};
+  assert(
+    covStop?.stopped === true && covTotals.scripts > 0 && covTotals.invokedFunctions > 0,
+    `coverage stop reports real scripts+invocations (got ${JSON.stringify(covTotals)})`,
+  );
+  const covOwn = (covStop?.scripts ?? []).some((s) => String(s.url ?? "").includes("/form") || String(s.url ?? "").includes("/keys"));
+  assert(covOwn, "coverage includes the fixture page's own scripts");
+  const covStatus2 = await call("browser.page.coverage", { tabId: covId, action: "status" });
+  assert(covStatus2?.running === false, "coverage reports idle after stop");
+  await call("browser.tab.close", { tabId: covId });
+
   // ── Loop 21: browsingData.clear — honest subset on isolated ─────────
   // seed a cookie + rely on visit-log entries from earlier loops
   const bdTab = await call("browser.tab.create", { url: fixture.url("/keys"), active: false });

@@ -1036,6 +1036,38 @@ await runScenario(
         ...cdp,
       };
 
+      // --- page.coverage: chrome.debugger filters the Profiler domain ---
+      // Extension sessions get -32601 for Profiler.* (same class as
+      // HeapProfiler/Security/IndexedDB) — the honest contract is
+      // proto.unsupported, while status/stop still answer truthfully.
+      let cv = {};
+      try {
+        const cvTab = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+        );
+        const cvId = cvTab?.result?.tabId ?? cvTab?.result?.openedTabId ?? cvTab?.tabId;
+        const cvCall = (tool, args) => runner.browserToolCall(taskId, tool, args, token, 60_000);
+        const cvSt0 = await cvCall("browser.page.coverage", { tabId: cvId, action: "status" });
+        cv.statusIdleOk = (cvSt0?.result ?? cvSt0 ?? {}).running === false;
+        const cvBadStop = await cvCall("browser.page.coverage", { tabId: cvId, action: "stop" });
+        cv.stopRefusedOk = (cvBadStop?.error?.code ?? "") === "proto.invalid";
+        const cvStart = await cvCall("browser.page.coverage", { tabId: cvId, action: "start" });
+        cv.startCode = cvStart?.error?.code ?? "";
+        cv.startUnsupportedOk = cv.startCode === "proto.unsupported" &&
+          /Profiler|chrome\.debugger/.test(cvStart?.error?.message ?? "");
+        const cvSt1 = await cvCall("browser.page.coverage", { tabId: cvId, action: "status" });
+        cv.statusRunOk = (cvSt1?.result ?? cvSt1 ?? {}).running === false;
+        await cvCall("browser.tab.close", { tabId: cvId });
+      } catch (e) {
+        cv.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`coverage → ${JSON.stringify(cv).slice(0, 300)}`);
+      results.coverage = {
+        ok: cv.statusIdleOk === true && cv.stopRefusedOk === true && cv.startUnsupportedOk === true &&
+          cv.statusRunOk === true,
+        ...cv,
+      };
+
       // --- tabGroups: real chrome.tabs.group/tabGroups on the extension ---
       let tg = {};
       try {

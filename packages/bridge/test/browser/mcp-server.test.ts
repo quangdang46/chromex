@@ -342,6 +342,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.caches": { action: "listCaches" },
   "browser.page.serviceWorker": { action: "list" },
   "browser.page.cdp": { method: "Page.getFrameTree" },
+  "browser.page.coverage": { action: "status" },
   "browser.history.search": { text: "example", limit: 10 },
   "browser.history.delete": { url: "https://example.com/" },
   "browser.bookmarks": { action: "list" },
@@ -428,6 +429,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.downloads.cancel",
           "browser.windows.update",
           "browser.page.cdp",
+          "browser.page.coverage",
           "browser.browsingData.clear",
           "browser.siteSettings",
         ].includes(internal)

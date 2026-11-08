@@ -771,6 +771,17 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["method"],
     ),
   },
+  "browser.page.coverage": {
+    description:
+      "JS code coverage for a scoped tab via the CDP Profiler domain — proves which code paths a page actually executed. args.action: 'start' begins precise coverage with call counts (one session per tab — a second start fails proto.invalid); do page work (navigate, click, fill) between start and stop; 'stop' ends the session and returns {scripts:[{url,scriptId,functions,invokedFunctions}], totals:{scripts,functions,invokedFunctions}, omittedScripts?} bounded at 500 scripts; 'status' reports {running}. Coverage accumulates across ALL page activity while the session is held — including work the agent did not instrument. Backend note: playwright-isolated supports it via the page's CDPSession; chrome-extension ATTEMPTS it via a held chrome.debugger session (refcounted — other CDP tools keep working; a service-worker restart honestly ends the session) but chrome.debugger filters whole CDP domains — on builds where Profiler.* returns -32601 'wasn't found', start fails proto.unsupported honestly (same class as HeapProfiler/Security/IndexedDB, which are also filtered). A coverage session left running when the tab closes reports honestly on the next call. Read + page-text egress — script URLs and counts leave the browser.",
+    inputSchema: objectSchema(
+      {
+        ...TAB_TARGET_PROPS,
+        action: { type: "string", enum: ["start", "stop", "status"], description: "start begins coverage, stop ends it and returns the report, status reports whether a session is running (required)." },
+      },
+      ["action"],
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",
