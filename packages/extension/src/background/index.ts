@@ -6336,7 +6336,9 @@ async function dockChat(targetWindowId?: number, popupWindowId?: number) {
     state.browserWindowId = activeWindowId;
     await chrome.sidePanel.open({ windowId: activeWindowId });
   }
-  if (typeof popupWindowId === "number") {
+  if (typeof popupWindowId === "number" && !HEADLESS_CHROME) {
+    // chrome.windows.remove crashes headless Chromium (window teardown)
+    // — and popout windows can't exist headless anyway.
     await chrome.windows.remove(popupWindowId).catch(() => undefined);
   }
   return { ok: true };
