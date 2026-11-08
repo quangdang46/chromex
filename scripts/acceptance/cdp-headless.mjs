@@ -1915,6 +1915,21 @@ await runScenario(
           );
           const stayTab = (stayCreate?.result ?? stayCreate ?? {}).openedTabId ??
             (stayCreate?.result ?? stayCreate ?? {}).tabId;
+          // tab.create resolves before the navigation commits — wait for
+          // the URL to land or disappear sees "no match" and returns
+          // instantly instead of timing out.
+          if (typeof stayTab === "number") {
+            const loadDeadline = Date.now() + 8000;
+            while (Date.now() < loadDeadline) {
+              const tl = await runner.browserToolCall(
+                taskId, "browser.tabs.list", {}, token, 60_000,
+              ).catch(() => null);
+              const tabs = (tl?.result ?? tl ?? {}).tabs ?? [];
+              const hit = tabs.find((t) => (t.tabId ?? t.id) === stayTab);
+              if (String(hit?.url ?? "").includes("popup-done")) break;
+              await sleep(200);
+            }
+          }
           const stayRes = typeof stayTab === "number"
             ? await runner.browserToolCall(
                 taskId, "browser.tabs.wait",
@@ -1990,16 +2005,41 @@ await runScenario(
               taskId, "browser.page.click", { tabId: pjTab, ref: "pz-999999" }, token, 60_000,
             ).catch(() => null);
             pj.badRefOk = (bad?.error?.code ?? "") === "browser.element_not_found";
+            // keyboard ops on pz refs — fill replaces, type appends; both
+            // must land as trusted keystrokes (input events on the field)
+            const inp = elements.find((e) => e.tagName === "input");
+            pj.inpOk = typeof inp?.ref === "string";
+            if (pj.inpOk) {
+              const fl = await runner.browserToolCall(
+                taskId, "browser.page.fill", { tabId: pjTab, ref: inp.ref, text: "pierce-text" },
+                token, 60_000,
+              ).catch(() => null);
+              pj.fillOk = (fl?.result ?? fl ?? {}).pierced === true;
+              const ty = await runner.browserToolCall(
+                taskId, "browser.page.type", { tabId: pjTab, ref: inp.ref, text: "!" },
+                token, 60_000,
+              ).catch(() => null);
+              pj.typeOk = (ty?.result ?? ty ?? {}).pierced === true;
+              const ev2 = await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, expression: "window.__pierceValue||''" }, token, 60_000,
+              ).catch(() => null);
+              pj.valueOk = String(ev2?.result?.value ?? ev2?.value ?? "") === "pierce-text!";
+            } else {
+              pj.fillOk = pj.typeOk = pj.valueOk = false;
+            }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
             pj.filterOk = ((filt?.result ?? filt ?? {}).elements ?? []).length >= 1;
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+            pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = false;
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+          pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = false;
         }
       } catch (e) {
         pj.error = String(e?.message ?? e).slice(0, 200);
@@ -2008,7 +2048,8 @@ await runScenario(
       results.pierce = {
         ok: pj.createOk === true && pj.rootsOk === true && pj.btnOk === true &&
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
-          pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true,
+          pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
+          pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true,
         ...pj,
       };
 

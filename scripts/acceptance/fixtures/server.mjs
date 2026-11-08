@@ -255,6 +255,9 @@ sr.innerHTML = \`
 sr.getElementById('inner').addEventListener('click', () => {
   window.__pierceClicks = (window.__pierceClicks || 0) + 1;
 });
+sr.getElementById('field').addEventListener('input', (e) => {
+  window.__pierceValue = e.target.value;
+});
 </script>
 </body></html>`,
 

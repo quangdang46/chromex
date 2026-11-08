@@ -4670,15 +4670,13 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // args.trusted, since no untrusted path exists for closed
         // shadow roots. There is no silent downgrade: the result still
         // reports trusted:true honestly.
-        const pierceClick =
-          tool === "browser.page.click" &&
+        const pierceRefTarget =
           typeof args.ref === "string" && PIERCE_REF_RE.test(args.ref);
+        const pierceClick = tool === "browser.page.click" && pierceRefTarget;
         if (tool === "browser.page.click" && (args.trusted === true || pierceClick)) {
           return await trustedClick(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
-        const pierceHover =
-          tool === "browser.page.hover" &&
-          typeof args.ref === "string" && PIERCE_REF_RE.test(args.ref);
+        const pierceHover = tool === "browser.page.hover" && pierceRefTarget;
         if (tool === "browser.page.hover" && (args.trusted === true || pierceHover)) {
           return await trustedHover(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
@@ -4687,7 +4685,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // events follow the focused frame. Pointer ops also work in
         // subframes — element targets resolve to absolute viewport
         // coordinates via CDP DOM quads before dispatch.
-        if (tool === "browser.page.press" && args.trusted === true) {
+        if (tool === "browser.page.press" && (args.trusted === true || pierceRefTarget)) {
           const startedAt = Date.now();
           const res = await trustedPress(deps, tabId, args, expectCond, frameId, expectedTarget);
           const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
@@ -4697,14 +4695,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // form or JS handler can open a popup, so collect openedTabs
         // only when the text can produce a newline. Hover cannot click;
         // drag drop handlers can window.open — always collect there.
-        if (tool === "browser.page.type" && args.trusted === true) {
+        if (tool === "browser.page.type" && (args.trusted === true || pierceRefTarget)) {
           const startedAt = Date.now();
           const res = await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
           const maySubmit = String(args.text ?? args.value ?? "").includes("\n");
           const openedTabs = maySubmit ? await collectOpenedTabs(deps, tabId, startedAt) : [];
           return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
-        if (tool === "browser.page.fill" && args.trusted === true) {
+        if (tool === "browser.page.fill" && (args.trusted === true || pierceRefTarget)) {
           const startedAt = Date.now();
           const res = await trustedFill(deps, tabId, args, expectCond, frameId, expectedTarget);
           const maySubmit = String(args.text ?? args.value ?? "").includes("\n");
@@ -5470,6 +5468,64 @@ async function pierceTargetPoint(
     );
   }
   return p;
+}
+
+/** pz ref → backendNodeId, throwing element_not_found when unknown —
+ *  the keyboard-path counterpart of pierceTargetPoint. */
+function pierceBackendNodeId(tabId: number, ref: string): number {
+  const hit = pierceRefs.get(`${tabId}:${ref}`);
+  if (!hit) {
+    throw toolError(
+      "browser.element_not_found",
+      `unknown pierce ref "${ref}" — re-run browser.page.pierce for fresh refs`,
+    );
+  }
+  return hit.backendNodeId;
+}
+
+/** DOM.focus on a closed-root element — the only focus path that reaches
+ *  it (content-script .focus() can't). Returns the backendNodeId for
+ *  follow-up DOM/Runtime calls on the same node. */
+async function pierceFocus(
+  deps: ToolHostDeps,
+  tabId: number,
+  ref: string,
+): Promise<number> {
+  const backendNodeId = pierceBackendNodeId(tabId, ref);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    await session.send("DOM.focus", { backendNodeId });
+  } finally {
+    await release();
+  }
+  return backendNodeId;
+}
+
+/** Select-all inside a closed root for pierce fill — the content-script
+ *  selectAll step can't reach it. input/textarea use .select();
+ *  contenteditable uses execCommand. Anything else reports
+ *  not-fillable instead of selecting the whole document (a Backspace
+ *  after a document-wide selection would wipe the page). */
+async function pierceSelectAll(session: CdpSession, backendNodeId: number): Promise<void> {
+  const resolved = (await session.send("DOM.resolveNode", { backendNodeId })) as {
+    object?: { objectId?: string };
+  };
+  const objectId = resolved?.object?.objectId;
+  if (!objectId) {
+    throw toolError("browser.action_failed", "could not resolve pierce target for select-all");
+  }
+  const res = (await session.send("Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration:
+      "function(){try{if(typeof this.select==='function'){this.select();return 'selected'}if(this.isContentEditable){(this.ownerDocument||document).execCommand('selectAll');return 'selected'}}catch(e){}return 'not-fillable'}",
+    returnByValue: true,
+  })) as { result?: { value?: unknown } };
+  if (res?.result?.value !== "selected") {
+    throw toolError(
+      "browser.action_failed",
+      "pierce fill target is not fillable (needs input/textarea/contenteditable)",
+    );
+  }
 }
 
 // --- browser.dnr rule validation -------------------------------------
@@ -6526,7 +6582,19 @@ async function trustedPress(
     );
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
-  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
+  const pressRef = str(args.ref);
+  const isPierceRef = pressRef !== undefined && PIERCE_REF_RE.test(pressRef);
+  if (isPierceRef) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+    }
+    if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+    }
+    await pierceFocus(deps, tabId, pressRef!);
+  } else {
+    await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
+  }
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -6546,6 +6614,7 @@ async function trustedPress(
     ok: true,
     summary: `trusted press ${resolved.def.key}`,
     step: { action: "press", trusted: true, key: resolved.def.key, ok: true },
+    ...(isPierceRef ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,
@@ -6589,7 +6658,19 @@ async function trustedType(
   }
   const keys = cdpResolveTypeText("browser.page.type", text);
   cdpRequired(deps);
-  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
+  const typeRef = str(args.ref);
+  const isPierceRef = typeRef !== undefined && PIERCE_REF_RE.test(typeRef);
+  if (isPierceRef) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+    }
+    if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+    }
+    await pierceFocus(deps, tabId, typeRef!);
+  } else {
+    await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
+  }
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -6611,6 +6692,7 @@ async function trustedType(
     ok: true,
     summary: `trusted type ${text.length} chars`,
     step: { action: "type", trusted: true, chars: text.length, ok: true },
+    ...(isPierceRef ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,
@@ -6637,29 +6719,45 @@ async function trustedFill(
   const del = CDP_NAMED_KEYS["backspace"];
   if (!del) throw toolError("proto.invalid", "internal: fill key definitions missing");
   cdpRequired(deps);
-  // fill always targets an element — focus is mandatory, not optional
-  const loc = await cdpLocateElement(deps, tabId, args, frameId, false, expectedTarget);
-  await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
-  // Select-all via the content script (input.select()/execCommand) —
-  // the select-all CHORD does not survive CDP dispatch reliably on
-  // every platform, and selection is not the trusted part anyway: the
-  // Backspace + typed chars below are isTrusted=true either way.
-  const selRes = (await deps.sendToTab(tabId, {
-    type: "page.dom.perform",
-    steps: [{ action: "selectAll", selector: loc.selector, reason: "trusted fill select-all" }],
-  }, { frameId })) as BrowserDomActionResult;
-  const selStep = selRes?.results?.[0];
-  if (selRes?.ok === false || selStep?.ok === false) {
-    throw toolError(
-      typeof selStep?.code === "string" && selStep.code.startsWith("browser.")
-        ? selStep.code
-        : "browser.action_failed",
-      selStep?.message ?? selRes?.summary ?? "could not select the field contents",
-    );
+  const fillRef = str(args.ref);
+  const isPierceRef = fillRef !== undefined && PIERCE_REF_RE.test(fillRef);
+  let pierceBackend: number | undefined;
+  if (isPierceRef) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+    }
+    if (str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+    }
+    pierceBackend = await pierceFocus(deps, tabId, fillRef!);
+  } else {
+    // fill always targets an element — focus is mandatory, not optional
+    const loc = await cdpLocateElement(deps, tabId, args, frameId, false, expectedTarget);
+    await cdpFocusTarget(deps, tabId, args, frameId, expectedTarget);
+    // Select-all via the content script (input.select()/execCommand) —
+    // the select-all CHORD does not survive CDP dispatch reliably on
+    // every platform, and selection is not the trusted part anyway: the
+    // Backspace + typed chars below are isTrusted=true either way.
+    const selRes = (await deps.sendToTab(tabId, {
+      type: "page.dom.perform",
+      steps: [{ action: "selectAll", selector: loc.selector, reason: "trusted fill select-all" }],
+    }, { frameId })) as BrowserDomActionResult;
+    const selStep = selRes?.results?.[0];
+    if (selRes?.ok === false || selStep?.ok === false) {
+      throw toolError(
+        typeof selStep?.code === "string" && selStep.code.startsWith("browser.")
+          ? selStep.code
+          : "browser.action_failed",
+        selStep?.message ?? selRes?.summary ?? "could not select the field contents",
+      );
+    }
   }
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
+    if (pierceBackend !== undefined) {
+      await pierceSelectAll(session, pierceBackend);
+    }
     await cdpDispatchKey(session, del, 0);
     for (const k of keys) {
       await cdpDispatchKey(session, k.def, k.modifiers);
@@ -6679,6 +6777,7 @@ async function trustedFill(
     ok: true,
     summary: `trusted fill ${text.length} chars`,
     step: { action: "fill", trusted: true, chars: text.length, ok: true },
+    ...(isPierceRef ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

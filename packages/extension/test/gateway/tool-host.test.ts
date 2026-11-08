@@ -4242,6 +4242,70 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     ).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("pz ref type/fill/press route through DOM.focus + trusted keys", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "INPUT", backendNodeId: 42,
+                attributes: ["id", "field"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "textbox" }, name: { value: "closed-input" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [10, 10, 210, 10, 210, 40, 10, 40] } }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-1" } }),
+      "Runtime.callFunctionOn": () => ({ result: { value: "selected" } }),
+    });
+    const h = createToolHostHandler(cdpDeps(523, cdp));
+    const res = (await h(req("browser.page.pierce", { tabId: 523 }))) as {
+      elements: Array<{ ref: string; tagName: string }>;
+    };
+    const ref = res.elements[0]!.ref;
+    // type — auto-routes, DOM.focus + per-char key events
+    const ty = (await h(req("browser.page.type", { tabId: 523, ref, text: "hi" }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(ty.ok).toBe(true);
+    expect(ty.pierced).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "DOM.focus" && s.params?.backendNodeId === 42)).toBe(true);
+    const keyEvents = cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent");
+    expect(keyEvents.length).toBeGreaterThan(0);
+    // fill — select-all via Runtime.callFunctionOn then Backspace + keys
+    const fl = (await h(req("browser.page.fill", { tabId: 523, ref, text: "x" }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(fl.ok).toBe(true);
+    expect(fl.pierced).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "Runtime.callFunctionOn")).toBe(true);
+    // press — DOM.focus + key chord
+    const pr = (await h(req("browser.page.press", { tabId: 523, ref, key: "Enter" }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(pr.ok).toBe(true);
+    expect(pr.pierced).toBe(true);
+    // pz ref + selector combo → proto.invalid
+    await expect(
+      h(req("browser.page.type", { tabId: 523, ref, selector: "#x", text: "a" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // stale ref → element_not_found
+    await h(req("browser.page.pierce", { tabId: 523 }));
+    await expect(
+      h(req("browser.page.fill", { tabId: 523, ref, text: "a" })),
+    ).rejects.toMatchObject({ code: "browser.element_not_found" });
+  });
+
   test("page.pierce → proto.unsupported without CDP dep; frameId/text validated", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.page.pierce", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
