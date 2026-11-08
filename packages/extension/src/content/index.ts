@@ -17,8 +17,10 @@ import {
 } from "./actions.js";
 import {
   EDITOR_LIKE_SELECTOR,
+  buildElementSelector,
   isDomActionElementVisible,
   isTextEntryCandidate,
+  resolveDomActionTargetDetailed,
   safeRemoveElement,
   setNativeTextControlValue,
 } from "./refs.js";
@@ -312,6 +314,39 @@ function chromexRuntimeMessageListener(
       viewportHeight: window.innerHeight,
       documentHeight: document.documentElement.scrollHeight,
       documentWidth: document.documentElement.scrollWidth,
+    });
+    return false;
+  }
+
+  if (message.type === "page.dom.locate") {
+    // CDP-tier support: resolve a ref/selector/label to viewport
+    // geometry + a querySelector-able selector for DOM.* commands.
+    const resolved = resolveDomActionTargetDetailed({
+      action: "click",
+      ...(typeof message.targetRef === "string" ? { targetRef: message.targetRef } : {}),
+      ...(typeof message.selector === "string" ? { selector: message.selector } : {}),
+      ...(typeof message.label === "string" ? { label: message.label } : {}),
+      reason: "locate",
+    });
+    if (resolved.status !== "resolved") {
+      sendResponse({
+        found: false,
+        reason: resolved.status === "ambiguous" ? "ambiguous" : "not_found",
+        ...(resolved.status === "ambiguous" ? { count: resolved.count } : {}),
+      });
+      return false;
+    }
+    const el = resolved.element;
+    const rect = el.getBoundingClientRect();
+    sendResponse({
+      found: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      selector: buildElementSelector(el),
+      tagName: el.tagName.toLowerCase(),
+      visible: isDomActionElementVisible(el),
     });
     return false;
   }

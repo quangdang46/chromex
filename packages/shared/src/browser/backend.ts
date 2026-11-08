@@ -39,8 +39,10 @@ export interface BrowserBackendCapabilities {
    * implementation + real tests.
    */
   iframe: "none" | "same-origin" | "all";
-  /** every current backend */
-  nativeDialogs: false;
+  /** JS dialogs (alert/confirm/prompt/beforeunload) can be observed and
+   *  accepted/dismissed. chrome-extension: CDP Page domain
+   *  (browser.page.dialog, verified headless cdp-headless). */
+  nativeDialogs: boolean;
   /** extension: only via real user gesture; playwright: setInputFiles path */
   filePicker: boolean;
   /** extension: partial — synthetic DOM click ≠ user gesture */
@@ -85,6 +87,11 @@ export interface BrowserBackendCapabilities {
    *  Playwright: page request/response events. Bodies are NOT
    *  observable at this tier — metadata inspection only. */
   networkInspection?: boolean;
+  /** Response BODIES retrievable per request (browser.page.responseBody).
+   *  chrome-extension: CDP Network.getResponseBody via a per-tab tap —
+   *  only requests made after the tap attached are captured, and the tap
+   *  keeps the debugger attached while in use. */
+  networkBodies?: boolean;
 }
 
 /**
@@ -93,7 +100,14 @@ export interface BrowserBackendCapabilities {
  * scripts + per-frame sendMessage reach same- AND cross-origin subframes
  * (verified headless: iframe-headless scenario). file:// frames need the
  * user's file-access opt-in, same as every other tool on those pages.
- * nativeDialogs always false; trustedGesture partial; browserChrome false.
+ * CDP tier (docs/adr/debugger-tier.md, verified headless: cdp-headless):
+ * real AX tree (snapshot mode:"aria"), JS dialog handling
+ * (browser.page.dialog), trusted click via args.trusted
+ * (Input.dispatchMouseEvent → isTrusted=true), file inputs by absolute
+ * path (browser.page.setInputFiles), response bodies
+ * (browser.page.responseBody). trustedGesture stays false — only click
+ * has a trusted path; press/type/fill/drag remain untrusted DOM events.
+ * filePicker stays false — setInputFiles ≠ the native picker.
  * playwright-isolated: isolated profile, no user session/tabs; iframe "all"
  * stays PROVISIONAL until spike-B4 frame tests pass — default reported
  * conservatively as "none" until then? NO: plan marks it PROVISIONAL(spike-B4),
@@ -108,15 +122,20 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     isolatedProfile: false,
     multiTab: true,
     dom: true,
-    accessibility: false,
+    // CDP Accessibility.getFullAXTree — snapshot mode:"aria"
+    // (cdp-headless verified).
+    accessibility: true,
     screenshot: true,
     screenshotImagePayload: true,
     // DataTransfer bytes path (browser.page.upload) — synthetic, not a
     // trusted gesture; filePicker stays false for the native picker.
     upload: true,
     iframe: "all",
-    nativeDialogs: false,
+    // CDP Page.javascriptDialogOpening/handleJavaScriptDialog.
+    nativeDialogs: true,
     filePicker: false,
+    // Only browser.page.click args.trusted is trusted; the rest of the
+    // input surface is still untrusted DOM events.
     trustedGesture: false,
     browserChrome: false,
     tabCreate: true,
@@ -129,6 +148,8 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     downloadsSave: true,
     downloadsCancel: true,
     networkInspection: true,
+    // CDP Network.getResponseBody tap (browser.page.responseBody).
+    networkBodies: true,
     windowManagement: true,
   },
   "playwright-isolated": {

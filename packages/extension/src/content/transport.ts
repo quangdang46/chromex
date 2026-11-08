@@ -9,6 +9,7 @@ export const PAGE_MESSAGE = {
   domPerform: "page.dom.perform",
   domFind: "page.dom.find",
   domWait: "page.dom.wait",
+  domLocate: "page.dom.locate",
   aiControlStart: "page.ai-control.start",
   aiControlStop: "page.ai-control.stop",
   fingerprintContext: "page.fingerprint.context",

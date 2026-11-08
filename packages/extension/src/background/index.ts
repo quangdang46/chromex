@@ -106,6 +106,7 @@ import {
 import { getGatewayRuntime, resetGatewayRuntime, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
 import { createToolHostHandler, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
+import { acquireCdp, releaseCdp } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
@@ -371,6 +372,8 @@ const toolHostHandler = createToolHostHandler({
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
     },
+    acquireCdp,
+    releaseCdp,
     captureVisibleTab: async (windowId, opts) =>
       chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: opts?.quality ?? 70 }),
     uploadArtifact: async (input) => {
@@ -3478,7 +3481,7 @@ async function ensureContentScript(tabId: number, url?: string, frameId = 0): Pr
   await injection;
 }
 
-async function injectContentScript(tabId: number, url?: string, frameId: number): Promise<void> {
+async function injectContentScript(tabId: number, url: string | undefined, frameId: number): Promise<void> {
   // The manifest content script registers at document_idle — callers that
   // arrive during load ping before it exists and would inject a duplicate
   // delivery record. Give it a grace window before paying for an injection.

@@ -1,0 +1,20 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T00-51-34-658Z-eaade1",
+  "status": "FAIL",
+  "summary": "harness error: locator.textContent: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#r')\u001b[22m\n",
+  "durationMs": 51441,
+  "error": "locator.textContent: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#r')\u001b[22m\n\n    at runScenario.autoAnswer (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/cdp-headless.mjs:161:48)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/cdp-headless.mjs:36:1",
+  "notes": [
+    "[2026-11-08T00:51:38.780Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T00:51:39.115Z] responseBody prime → {\"toolCallId\":\"rpc-mw74a4f2-gr9h4p\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794099099112,\"resolvedTabId\":1293749073}}",
+    "[2026-11-08T00:51:39.662Z] responseBody → {\"requestId\":\"82094.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:64085/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794099099129,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1293749073}",
+    "[2026-11-08T00:51:39.925Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:ok\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1293749073}",
+    "[2026-11-08T00:51:40.204Z] trusted snap=completed snapId=snap:f9e6759a-8392-439d-933e-32337fc2d1c1",
+    "[2026-11-08T00:51:40.522Z] untrusted click → {\"toolCallId\":\"rpc-mw74a5gs-jnl14b\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T00:51:40.522Z] trusted click → {\"toolCallId\":\"rpc-mw74a5or-8gkfed\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T00:51:40.538Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T00:51:40.813Z] dialog snap=completed snapId=snap:e1d687d3-aeca-4ea4-877a-a14c55967afc",
+    "[2026-11-08T00:51:56.096Z] dialog → {\"toolCallId\":\"rpc-mw74a5y6-bgqxi5\",\"tool\":\"browser.page.dialog\",\"status\":\"unknown\",\"error\":{\"code\":\"browser.tool_timeout\",\"message\":\"tool browser.page.dialog timed out after 15000ms\"}}"
+  ]
+}

@@ -227,6 +227,21 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         "args.frameId is not supported on playwright-isolated (frame locators unimplemented)",
       );
     }
+    // CDP-tier args (docs/adr/debugger-tier.md): playwright has no
+    // chrome.debugger — never silently run the untrusted/DOM path when
+    // the caller explicitly asked for the trusted/CDP variant.
+    if (args.trusted === true) {
+      throw protocolError(
+        "proto.unsupported",
+        "args.trusted requires the chrome-extension debugger tier",
+      );
+    }
+    if (tool === "browser.page.snapshot" && args.mode === "dom") {
+      throw protocolError(
+        "proto.unsupported",
+        "snapshot mode 'dom' is not supported on playwright-isolated (aria snapshot only)",
+      );
+    }
     switch (tool) {
       case "browser.tabs.list":
         return this.#tabsList(taskId);

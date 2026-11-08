@@ -212,6 +212,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.console": "page-text",
   // find returns page text + element selectors — same egress class.
   "browser.page.find": "page-text",
+  // CDP response bodies are page content (docs/adr/debugger-tier.md).
+  "browser.page.responseBody": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -292,7 +294,7 @@ export function buildActionContext(
   }
   const hasTarget =
     typeof args.ref === "string" || typeof args.selector === "string" || typeof args.label === "string";
-  const mutating = /\.(click|fill|submit|navigate|type|select|press|scroll|hover|drag|upload)$/.test(req.tool);
+  const mutating = /\.(click|fill|submit|navigate|type|select|press|scroll|hover|drag|upload|setInputFiles|dialog)$/.test(req.tool);
   const targetLabel = typeof args.label === "string" ? args.label : undefined;
   const inputType = typeof args.inputType === "string" ? args.inputType : undefined;
   const egressDataClass = EGRESS_DATA_CLASS[req.tool as BrowserToolName];

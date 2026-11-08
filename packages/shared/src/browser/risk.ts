@@ -95,6 +95,9 @@ const READ_TOOLS = new Set([
   "browser.page.find",
   "browser.downloads.list",
   "browser.page.network",
+  // CDP tier (docs/adr/debugger-tier.md): response bodies are page
+  // content — same read+egress class as extract/find.
+  "browser.page.responseBody",
   "browser.windows.list",
 ]);
 
@@ -185,6 +188,29 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
     case "browser.tab.activate":
     case "browser.page.history":
       return verdict("low", { reason: "low-risk navigation/UI action" });
+
+    case "browser.page.setInputFiles": {
+      // Local paths enter the page like upload bytes — sensitive entry,
+      // approval always required (allow_task never offered).
+      return verdict("data_entry_sensitive", {
+        needsApproval: true,
+        kind: "data_entry_sensitive",
+        allowTaskEligible: false,
+        reason: "file paths enter user data into the page",
+      });
+    }
+
+    case "browser.page.dialog": {
+      // Accepting a JS dialog can confirm a side effect (confirm/alert
+      // flows); dismissing is safer but the classifier cannot see args —
+      // approval always required.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "dialog accept/dismiss may resolve a page side effect",
+      });
+    }
 
     case "browser.page.upload": {
       // File bytes enter the page like typed data — sensitive entry.

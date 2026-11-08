@@ -135,6 +135,24 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <input id="f" type="file" onchange="document.getElementById('fname').textContent=(this.files[0]&&this.files[0].name)||'none'" />
 <p id="fname">none</p>
 </body></html>`,
+
+  // trusted-input proof (CDP tier): two buttons record event.isTrusted —
+  // a synthetic DOM .click() must report false, CDP Input must report true.
+  "/trusted": `<!doctype html><html><body>
+<h1>Trusted Page</h1>
+<button id="t-untrusted" onclick="document.getElementById('r-untrusted').textContent='isTrusted:'+event.isTrusted">untrusted</button>
+<p id="r-untrusted">none</p>
+<button id="t-trusted" onclick="document.getElementById('r-trusted').textContent='isTrusted:'+event.isTrusted">trusted</button>
+<p id="r-trusted">none</p>
+</body></html>`,
+
+  // dialog proof (CDP tier): the confirm opens on a macrotask so the
+  // triggering click returns before the dialog blocks the page thread.
+  "/dialog": `<!doctype html><html><body>
+<h1>Dialog Page</h1>
+<button id="ask" onclick="setTimeout(()=>{document.getElementById('r').textContent='confirm:'+confirm('proceed?')},50)">ask</button>
+<p id="r">none</p>
+</body></html>`,
 };
 
 export async function startFixtureServer() {

@@ -1304,3 +1304,228 @@ describe("tool host expect verification (chromex-0fza)", () => {
   });
 });
 
+
+describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
+  interface FakeCdp {
+    session: {
+      send: ReturnType<typeof vi.fn>;
+      on: ReturnType<typeof vi.fn>;
+    };
+    sent: Array<{ method: string; params?: Record<string, unknown> }>;
+    fire: (method: string, params: Record<string, unknown>) => void;
+    releases: () => number;
+  }
+
+  function fakeCdp(handlers: Record<string, (params?: Record<string, unknown>) => unknown> = {}): FakeCdp {
+    const sent: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const listeners = new Map<string, Array<(p: Record<string, unknown>) => void>>();
+    let releaseCount = 0;
+    const session = {
+      send: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+        sent.push({ method, params });
+        const h = handlers[method];
+        return h ? h(params) : {};
+      }),
+      on: vi.fn((method: string, cb: (p: Record<string, unknown>) => void) => {
+        const arr = listeners.get(method) ?? [];
+        arr.push(cb);
+        listeners.set(method, arr);
+        return () => {
+          listeners.set(method, (listeners.get(method) ?? []).filter((f) => f !== cb));
+        };
+      }),
+    };
+    return {
+      session,
+      sent,
+      fire: (method, params) => {
+        for (const cb of listeners.get(method) ?? []) cb(params);
+      },
+      releases: () => releaseCount,
+    };
+  }
+
+  function cdpDeps(tabId: number, cdp: FakeCdp, over: Partial<ToolHostDeps> = {}) {
+    return deps({
+      getTab: vi.fn(async () => ({ id: tabId, url: "https://x", title: "X", active: true })),
+      acquireCdp: vi.fn(async () => cdp.session as never),
+      releaseCdp: vi.fn(async () => {}),
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        if (message.type === "page.dom.locate") {
+          return { found: true, x: 10, y: 20, width: 30, height: 40, selector: "#btn", tagName: "button", visible: true };
+        }
+        return { ok: true };
+      }),
+      ...over,
+    });
+  }
+
+  test("CDP tools → proto.unsupported when acquireCdp dep is absent", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.dialog", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.setInputFiles", { tabId: 501, selector: "input", files: ["/tmp/a"] }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.responseBody", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.snapshot", { tabId: 501, mode: "aria" }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.click", { tabId: 501, selector: "#b", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("snapshot mode:aria returns a formatted AX tree", async () => {
+    const cdp = fakeCdp({
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [
+          { nodeId: "1", role: { value: "RootWebArea" }, name: { value: "X" }, childIds: ["2"] },
+          { nodeId: "2", role: { value: "button" }, name: { value: "Go" }, childIds: [] },
+        ],
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(502, cdp));
+    const res = (await h(req("browser.page.snapshot", { tabId: 502, mode: "aria" }))) as {
+      mode: string; tree: string; nodeCount: number;
+    };
+    expect(res.mode).toBe("aria");
+    expect(res.nodeCount).toBe(2);
+    expect(res.tree).toContain('- button "Go"');
+    expect(cdp.sent.map((s) => s.method)).toContain("Accessibility.getFullAXTree");
+  });
+
+  test("snapshot mode:aria rejects a non-zero frameId", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(503, cdp));
+    await expect(h(req("browser.page.snapshot", { tabId: 503, mode: "aria", frameId: 4 }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("page.dialog handles an opening dialog and defaults to dismiss", async () => {
+    let handleCalls = 0;
+    const cdp = fakeCdp({
+      "Page.handleJavaScriptDialog": () => {
+        handleCalls += 1;
+        // first probe finds no dialog; the event-driven second call does
+        if (handleCalls === 1) throw new Error("No dialog is showing");
+        return {};
+      },
+    });
+    // fire the event as soon as the tool subscribes
+    cdp.session.on.mockImplementation((method: string, cb: (p: Record<string, unknown>) => void) => {
+      if (method === "Page.javascriptDialogOpening") {
+        setTimeout(() => cb({ type: "confirm", message: "Sure?" }), 0);
+      }
+      return () => {};
+    });
+    const h = createToolHostHandler(cdpDeps(504, cdp));
+    const res = (await h(req("browser.page.dialog", { tabId: 504, timeoutMs: 2000 }))) as {
+      handled: boolean; accept: boolean; dialog?: { type?: string };
+    };
+    expect(res.handled).toBe(true);
+    expect(res.accept).toBe(false);
+    expect(res.dialog?.type).toBe("confirm");
+    const handle = cdp.sent.filter((s) => s.method === "Page.handleJavaScriptDialog");
+    expect(handle.length).toBe(2);
+    expect(handle[1]?.params?.accept).toBe(false);
+  });
+
+  test("page.dialog handles an already-open dialog without waiting", async () => {
+    const cdp = fakeCdp({
+      "Page.handleJavaScriptDialog": () => ({}),
+    });
+    const h = createToolHostHandler(cdpDeps(5041, cdp));
+    const res = (await h(req("browser.page.dialog", { tabId: 5041, accept: true, timeoutMs: 5000 }))) as {
+      handled: boolean; accept: boolean;
+    };
+    expect(res.handled).toBe(true);
+    expect(res.accept).toBe(true);
+    // handled on the first probe — no Page.enable / event wait needed
+    expect(cdp.sent.filter((s) => s.method === "Page.handleJavaScriptDialog")).toHaveLength(1);
+    expect(cdp.sent.filter((s) => s.method === "Page.enable")).toHaveLength(0);
+  });
+
+  test("page.dialog reports no_dialog honestly", async () => {
+    const cdp = fakeCdp({
+      "Page.handleJavaScriptDialog": () => {
+        throw new Error("No dialog is showing");
+      },
+    });
+    const h = createToolHostHandler(cdpDeps(505, cdp));
+    const res = (await h(req("browser.page.dialog", { tabId: 505, timeoutMs: 60 }))) as {
+      handled: boolean; reason?: string;
+    };
+    expect(res.handled).toBe(false);
+    expect(res.reason).toBe("no_dialog");
+  });
+
+  test("page.setInputFiles rejects relative paths and missing targets", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(506, cdp));
+    await expect(h(req("browser.page.setInputFiles", { tabId: 506, selector: "input", files: ["rel/a.png"] }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.setInputFiles", { tabId: 506, files: ["/tmp/a.png"] }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("page.setInputFiles sets files via DOM.setFileInputFiles", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
+      "DOM.querySelector": () => ({ nodeId: 42 }),
+      "DOM.setFileInputFiles": () => ({}),
+    });
+    const h = createToolHostHandler(cdpDeps(507, cdp));
+    const res = (await h(req("browser.page.setInputFiles", {
+      tabId: 507,
+      selector: "input[type=file]",
+      files: ["/tmp/report.pdf"],
+    }))) as { ok: boolean; fileNames: string[] };
+    expect(res.ok).toBe(true);
+    expect(res.fileNames).toEqual(["report.pdf"]);
+    const set = cdp.sent.find((s) => s.method === "DOM.setFileInputFiles");
+    expect(set?.params).toMatchObject({ nodeId: 42, files: ["/tmp/report.pdf"] });
+  });
+
+  test("page.responseBody lists captured requests then returns a body", async () => {
+    const cdp = fakeCdp({
+      "Network.getResponseBody": () => ({ body: "hello-body", base64Encoded: false }),
+    });
+    const h = createToolHostHandler(cdpDeps(508, cdp));
+    // prime the tap and feed it one finished request
+    await h(req("browser.page.responseBody", { tabId: 508 }));
+    cdp.fire("Network.requestWillBeSent", {
+      requestId: "r1",
+      request: { method: "GET", url: "https://x/api/data?token=1" },
+      type: "XHR",
+    });
+    cdp.fire("Network.responseReceived", {
+      requestId: "r1",
+      response: { url: "https://x/api/data?token=1", status: 200, mimeType: "application/json" },
+    });
+    cdp.fire("Network.loadingFinished", { requestId: "r1" });
+    const list = (await h(req("browser.page.responseBody", { tabId: 508 }))) as {
+      requests: Array<{ requestId: string; url: string; finished: boolean }>;
+    };
+    expect(list.requests).toHaveLength(1);
+    expect(list.requests[0].requestId).toBe("r1");
+    expect(list.requests[0].url).toBe("https://x/api/data"); // query stripped
+    expect(list.requests[0].finished).toBe(true);
+    const body = (await h(req("browser.page.responseBody", { tabId: 508, requestId: "r1" }))) as {
+      body: string; bodyBytes: number;
+    };
+    expect(body.body).toBe("hello-body");
+    // second call reuses the same tap — Network.enable sent only once
+    expect(cdp.sent.filter((s) => s.method === "Network.enable")).toHaveLength(1);
+  });
+
+  test("page.responseBody unknown requestId → browser.not_found", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(509, cdp));
+    await h(req("browser.page.responseBody", { tabId: 509 }));
+    await expect(h(req("browser.page.responseBody", { tabId: 509, requestId: "nope" }))).rejects.toMatchObject({ code: "browser.not_found" });
+  });
+
+  test("click trusted dispatches CDP mouse events; frameId!=0 unsupported", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(510, cdp));
+    const res = (await h(req("browser.page.click", { tabId: 510, selector: "#btn", trusted: true }))) as {
+      ok: boolean; step?: { trusted?: boolean };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    const types = cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent").map((s) => s.params?.type);
+    expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
+    await expect(h(req("browser.page.click", { tabId: 510, selector: "#b", trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+});

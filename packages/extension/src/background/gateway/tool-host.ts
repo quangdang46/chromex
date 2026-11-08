@@ -24,6 +24,7 @@ import type {
 } from "@codex-sidepanel/shared";
 
 import { chromexConsoleCollect } from "../../content/console-capture.js";
+import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
   /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL.
@@ -152,6 +153,12 @@ export interface ToolHostDeps {
   activateTab(tabId: number): Promise<void>;
   closeTab(tabId: number): Promise<void>;
   activeTabId(): Promise<number | null>;
+  /** chrome.debugger CDP tier (docs/adr/debugger-tier.md). Absent dep →
+   *  every CDP-backed path (click args.trusted, page.dialog,
+   *  page.setInputFiles, page.responseBody, snapshot mode:"aria")
+   *  fails proto.unsupported — never silently degrades to untrusted. */
+  acquireCdp?(tabId: number): Promise<CdpSession>;
+  releaseCdp?(tabId: number): Promise<void>;
 }
 
 function toolError(code: string, message: string): Error {
@@ -219,6 +226,9 @@ const SUPPORTED = new Set([
   "browser.windows.create",
   "browser.windows.update",
   "browser.page.network",
+  "browser.page.dialog",
+  "browser.page.setInputFiles",
+  "browser.page.responseBody",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -681,6 +691,31 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.snapshot": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const frameId = frameIdArg(args);
+        const mode = str(args.mode);
+        if (mode !== undefined && mode !== "dom" && mode !== "aria") {
+          throw toolError("proto.invalid", "browser.page.snapshot args.mode must be dom|aria");
+        }
+        if (mode === "aria") {
+          // CDP Accessibility.getFullAXTree — whole-page tree (all frames);
+          // no DOM refs are minted, so args.frameId is meaningless here.
+          if (frameId !== 0) {
+            throw toolError("proto.invalid", "args.frameId is meaningless for snapshot mode aria");
+          }
+          const { session, release } = await cdpAcquire(deps, tabId);
+          try {
+            const res = (await session.send("Accessibility.getFullAXTree")) as { nodes?: AxNode[] };
+            const formatted = formatAxTree(Array.isArray(res?.nodes) ? res.nodes : []);
+            return {
+              mode: "aria",
+              tree: formatted.tree,
+              nodeCount: formatted.nodeCount,
+              truncated: formatted.truncated,
+              resolvedTabId: tabId,
+            };
+          } finally {
+            await release();
+          }
+        }
         const snap = (await deps.sendToTab(tabId, { type: "page.dom.snapshot" }, { frameId })) as BrowserDomSnapshot;
         if (
           snap.snapshotId &&
@@ -824,6 +859,18 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           truncated: res.truncated === true,
           resolvedTabId: tabId,
         };
+      }
+      case "browser.page.dialog": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await handlePageDialog(deps, tabId, args);
+      }
+      case "browser.page.setInputFiles": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await setInputFiles(deps, tabId, args);
+      }
+      case "browser.page.responseBody": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await pageResponseBody(deps, tabId, args);
       }
       case "browser.page.history": {
         const action = str(args.action);
@@ -1257,10 +1304,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             }
           }
         }
-        const step = domStepFor(tool, args);
         // chromex-0fza: validate args.expect BEFORE dispatch — a
         // malformed expectation must not run the action and then fail.
         const expectCond = parseExpectCondition(args.expect);
+        // CDP tier: args.trusted on click switches dispatch from the
+        // content script (isTrusted=false) to Input.dispatchMouseEvent
+        // (isTrusted=true). Never silently downgrades — absent CDP dep
+        // or a subframe target fails proto.unsupported.
+        if (tool === "browser.page.click" && args.trusted === true) {
+          if (frameId !== 0) {
+            throw toolError(
+              "proto.unsupported",
+              "trusted click is only supported in the top frame (CDP Input is viewport-level)",
+            );
+          }
+          return await trustedClick(deps, tabId, args, expectCond);
+        }
+        const step = domStepFor(tool, args);
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
           steps: [step],
@@ -1564,4 +1624,538 @@ function normalizeUploadFiles(raw: unknown): Array<{ name: string; mimeType: str
       base64: o.base64,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// CDP tier (docs/adr/debugger-tier.md) — chrome.debugger-backed paths that
+// the DOM tier cannot express: trusted input, JS dialogs, file inputs by
+// path, response bodies, and the real accessibility tree.
+// ---------------------------------------------------------------------------
+
+function cdpRequired(deps: ToolHostDeps): {
+  acquire: NonNullable<ToolHostDeps["acquireCdp"]>;
+  release: NonNullable<ToolHostDeps["releaseCdp"]>;
+} {
+  if (!deps.acquireCdp || !deps.releaseCdp) {
+    throw toolError(
+      "proto.unsupported",
+      "the debugger (CDP) tier is not available on this host",
+    );
+  }
+  return { acquire: deps.acquireCdp, release: deps.releaseCdp };
+}
+
+/** Acquire with attach-failure mapped to proto.unsupported — a missing
+ *  debugger permission or a chrome://-restricted tab must fail typed,
+ *  not as an opaque internal error. */
+async function cdpAcquire(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<{ session: CdpSession; release: () => Promise<void> }> {
+  const cdp = cdpRequired(deps);
+  let session: CdpSession;
+  try {
+    session = await cdp.acquire(tabId);
+  } catch (e) {
+    throw toolError(
+      "proto.unsupported",
+      `debugger attach failed: ${String((e as Error)?.message ?? e)}`,
+    );
+  }
+  return { session, release: () => cdp.release(tabId) };
+}
+
+interface AxNode {
+  nodeId?: string;
+  ignored?: boolean;
+  role?: { value?: string };
+  name?: { value?: string };
+  childIds?: string[];
+}
+
+const AX_MAX_LINES = 400;
+const AX_SKIP_ROLES = new Set(["none", "generic", "InlineTextBox"]);
+
+/** Accessibility.getFullAXTree → playwright-style indented `- role "name"`
+ *  lines. Iterative DFS (trees can be very deep); nodes with generic roles
+ *  are flattened so their children surface at the parent depth. */
+function formatAxTree(nodes: AxNode[]): { tree: string; nodeCount: number; truncated: boolean } {
+  const byId = new Map<string, AxNode>();
+  const hasParent = new Set<string>();
+  for (const n of nodes) {
+    if (n.nodeId) byId.set(n.nodeId, n);
+    for (const c of n.childIds ?? []) hasParent.add(c);
+  }
+  const lines: string[] = [];
+  let truncated = false;
+  const roots = nodes.filter((n) => n.nodeId && !hasParent.has(n.nodeId));
+  const stack: Array<{ node: AxNode; depth: number }> = roots
+    .slice()
+    .reverse()
+    .map((node) => ({ node, depth: 0 }));
+  while (stack.length > 0) {
+    if (lines.length >= AX_MAX_LINES) {
+      truncated = true;
+      break;
+    }
+    const { node, depth } = stack.pop()!;
+    const role = node.role?.value ?? "";
+    const emit = role !== "" && !AX_SKIP_ROLES.has(role) && node.ignored !== true;
+    if (emit) {
+      const name = (node.name?.value ?? "").replace(/"/g, '\\"');
+      lines.push(`${"  ".repeat(depth)}- ${role}${name ? ` "${name}"` : ""}`);
+    }
+    const childDepth = emit ? depth + 1 : depth;
+    const children = (node.childIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((c): c is AxNode => c !== undefined);
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push({ node: children[i]!, depth: childDepth });
+    }
+  }
+  return { tree: lines.join("\n"), nodeCount: nodes.length, truncated };
+}
+
+/** Locate an element target in the top frame via the content script and
+ *  return its viewport-center point + a querySelector-able selector. */
+async function cdpLocateElement(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<{ x: number; y: number; selector: string }> {
+  const loc = (await deps.sendToTab(tabId, {
+    type: "page.dom.locate",
+    ...(str(args.ref) ? { targetRef: str(args.ref) } : {}),
+    ...(str(args.selector) ? { selector: str(args.selector) } : {}),
+    ...(str(args.label) ? { label: str(args.label) } : {}),
+  })) as { found?: boolean; reason?: string; count?: number; x?: number; y?: number; selector?: string };
+  if (loc?.found !== true || typeof loc.x !== "number" || typeof loc.y !== "number" || typeof loc.selector !== "string") {
+    if (loc?.reason === "ambiguous") {
+      throw toolError("browser.ambiguous_target", `target matches ${loc.count ?? "multiple"} elements`);
+    }
+    throw toolError("browser.element_not_found", "no element matched ref/selector/label");
+  }
+  return { x: loc.x, y: loc.y, selector: loc.selector };
+}
+
+const CDP_MOUSE_BUTTONS = new Set(["left", "right", "middle"]);
+const CDP_MOUSE_MODIFIERS: Record<string, number> = {
+  Alt: 1,
+  Control: 2,
+  Meta: 4,
+  Shift: 8,
+};
+
+/** browser.page.click args.trusted — Input.dispatchMouseEvent produces
+ *  isTrusted=true events (verified headless, docs/adr/debugger-tier.md).
+ *  Top frame only: iframe geometry would need frame-viewport offsetting
+ *  that CDP Input does not provide. */
+async function trustedClick(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+): Promise<Record<string, unknown>> {
+  const button = str(args.button);
+  if (button !== undefined && !CDP_MOUSE_BUTTONS.has(button)) {
+    throw toolError("proto.invalid", "browser.page.click args.button must be left|right|middle");
+  }
+  const clickCount = typeof args.clickCount === "number" ? args.clickCount : 1;
+  if (clickCount !== 1 && clickCount !== 2) {
+    throw toolError("proto.invalid", "browser.page.click args.clickCount must be 1|2");
+  }
+  const modifiers = Array.isArray(args.modifiers)
+    ? args.modifiers.filter((m): m is string => typeof m === "string")
+    : [];
+  const modifierMask = modifiers.reduce((mask, m) => mask | (CDP_MOUSE_MODIFIERS[m] ?? 0), 0);
+
+  const xArg = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+  const yArg = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+  if ((xArg === undefined) !== (yArg === undefined)) {
+    throw toolError("proto.invalid", "browser.page.click args.x and args.y must be provided together");
+  }
+  if (xArg !== undefined && xArg < 0) {
+    throw toolError("proto.invalid", "browser.page.click coordinates must be non-negative viewport pixels");
+  }
+  const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+  if (xArg !== undefined && hasTarget) {
+    throw toolError("proto.invalid", "browser.page.click accepts coordinates or an element target, not both");
+  }
+  if (xArg === undefined && !hasTarget) {
+    throw toolError("proto.invalid", "browser.page.click requires a target (ref/selector/label) or x/y coordinates");
+  }
+  cdpRequired(deps); // fail proto.unsupported before any page work
+
+  const point = xArg !== undefined
+    ? { x: xArg, y: yArg! }
+    : await cdpLocateElement(deps, tabId, args);
+
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const btn = (button ?? "left") as "left" | "right" | "middle";
+    await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    for (let i = 1; i <= clickCount; i++) {
+      await session.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: point.x,
+        y: point.y,
+        button: btn,
+        clickCount: i,
+        modifiers: modifierMask,
+      });
+      await session.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: point.x,
+        y: point.y,
+        button: btn,
+        clickCount: i,
+        modifiers: modifierMask,
+      });
+    }
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted click at ${Math.round(point.x)},${Math.round(point.y)}`,
+    step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+function clampMs(raw: unknown, fallback: number, max: number): number {
+  return typeof raw === "number" && Number.isFinite(raw)
+    ? Math.min(Math.max(Math.floor(raw), 0), max)
+    : fallback;
+}
+
+// ---- browser.page.dialog ---------------------------------------------------
+
+async function handlePageDialog(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const accept = args.accept === true; // default dismiss — never confirm implicitly
+  const promptText = str(args.promptText);
+  const timeoutMs = clampMs(args.timeoutMs, 5_000, 10_000);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  const handleDialog = () =>
+    session.send("Page.handleJavaScriptDialog", {
+      accept,
+      ...(promptText !== undefined ? { promptText } : {}),
+    });
+  const isNoDialog = (e: unknown) => /no dialog/i.test(String((e as Error)?.message ?? e));
+  try {
+    // A modal JS dialog blocks the page's command queue — Page.enable
+    // can hang behind it, but Page.handleJavaScriptDialog is still
+    // served. Try it FIRST: an already-open dialog is handled without
+    // needing the javascriptDialogOpening event at all.
+    try {
+      await handleDialog();
+      return { handled: true, accept, resolvedTabId: tabId };
+    } catch (e) {
+      if (!isNoDialog(e)) {
+        throw toolError(
+          "browser.action_failed",
+          `dialog handling failed: ${String((e as Error)?.message ?? e)}`,
+        );
+      }
+    }
+    // No dialog open yet — enable Page (best-effort, bounded: it can
+    // still hang if a dialog opens in the gap) and wait for
+    // javascriptDialogOpening so the common case returns fast with
+    // dialog metadata instead of always burning the full timeout.
+    let seen: { type?: unknown; message?: unknown; defaultPrompt?: unknown } | undefined;
+    const unsub = session.on("Page.javascriptDialogOpening", (p) => {
+      seen = {
+        type: typeof p.type === "string" ? p.type : undefined,
+        message: typeof p.message === "string" ? p.message : undefined,
+        defaultPrompt: typeof p.defaultPrompt === "string" ? p.defaultPrompt : undefined,
+      };
+    });
+    await Promise.race([
+      session.send("Page.enable").catch(() => {}),
+      new Promise((r) => setTimeout(r, 3_000)),
+    ]);
+    const deadline = Date.now() + timeoutMs;
+    while (seen === undefined && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    unsub();
+    try {
+      await handleDialog();
+    } catch (e) {
+      if (isNoDialog(e)) {
+        return {
+          handled: false,
+          reason: "no_dialog",
+          ...(seen ? { dialog: seen } : {}),
+          resolvedTabId: tabId,
+        };
+      }
+      throw toolError(
+        "browser.action_failed",
+        `dialog handling failed: ${String((e as Error)?.message ?? e)}`,
+      );
+    }
+    return {
+      handled: true,
+      accept,
+      ...(seen ? { dialog: seen } : {}),
+      resolvedTabId: tabId,
+    };
+  } finally {
+    await release();
+  }
+}
+
+// ---- browser.page.setInputFiles --------------------------------------------
+
+function isAbsoluteLocalPath(p: string): boolean {
+  return p.startsWith("/") || p.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(p);
+}
+
+function pathBaseName(p: string): string {
+  const parts = p.split(/[\\/]/).filter((s) => s.length > 0);
+  return parts[parts.length - 1] ?? p;
+}
+
+async function setInputFiles(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const rawFiles = args.files;
+  if (!Array.isArray(rawFiles) || rawFiles.length === 0 || rawFiles.length > 10) {
+    throw toolError("proto.invalid", "browser.page.setInputFiles requires args.files[] of 1-10 absolute paths");
+  }
+  const files = rawFiles.map((f) => {
+    if (typeof f !== "string" || f.length === 0 || !isAbsoluteLocalPath(f)) {
+      throw toolError(
+        "proto.invalid",
+        "browser.page.setInputFiles file entries must be absolute local paths",
+      );
+    }
+    return f;
+  });
+  if (str(args.ref) === undefined && str(args.selector) === undefined && str(args.label) === undefined) {
+    throw toolError("proto.invalid", "browser.page.setInputFiles requires args.ref, args.selector or args.label");
+  }
+  cdpRequired(deps); // fail proto.unsupported before any page work
+  const target = await cdpLocateElement(deps, tabId, args);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    await session.send("DOM.enable");
+    const doc = (await session.send("DOM.getDocument", { depth: 1 })) as { root?: { nodeId?: number } };
+    const rootId = doc?.root?.nodeId;
+    if (typeof rootId !== "number") {
+      throw toolError("browser.action_failed", "DOM.getDocument returned no root node");
+    }
+    const q = (await session.send("DOM.querySelector", {
+      nodeId: rootId,
+      selector: target.selector,
+    })) as { nodeId?: number };
+    if (typeof q?.nodeId !== "number") {
+      throw toolError("browser.element_not_found", "target selector did not resolve in the DOM domain");
+    }
+    await session.send("DOM.setFileInputFiles", { nodeId: q.nodeId, files });
+  } finally {
+    await release();
+  }
+  return {
+    ok: true,
+    files: files.length,
+    fileNames: files.map(pathBaseName),
+    resolvedTabId: tabId,
+  };
+}
+
+// ---- browser.page.responseBody ----------------------------------------------
+
+interface NetworkTapEntry {
+  requestId: string;
+  method: string;
+  url: string;
+  type: string;
+  status?: number;
+  mimeType?: string;
+  ts: number;
+  finished: boolean;
+  failed?: boolean;
+}
+
+const NETWORK_TAP_CAP = 300;
+const RESPONSE_BODY_DEFAULT_MAX = 64 * 1024;
+const RESPONSE_BODY_MAX = 256 * 1024;
+
+/** Per-tab CDP network tap. The session is held (never released) for the
+ *  tab's lifetime: response bodies are only retrievable for requests the
+ *  session observed, so the tap must stay attached to keep capturing.
+ *  Cleared on SW restart (module state) — the next call re-taps and the
+ *  buffer honestly restarts. Tab close is handled by cdp.ts state GC +
+ *  the getTab liveness check in the tool case. */
+const networkTaps = new Map<number, { session: CdpSession; entries: NetworkTapEntry[]; since: number }>();
+
+async function ensureNetworkTap(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<{ session: CdpSession; entries: NetworkTapEntry[]; since: number }> {
+  const existing = networkTaps.get(tabId);
+  if (existing) return existing;
+  const { session } = await cdpAcquire(deps, tabId);
+  await session.send("Network.enable");
+  const entries: NetworkTapEntry[] = [];
+  const upsert = (requestId: string, patch: Partial<NetworkTapEntry>) => {
+    let e = [...entries].reverse().find((x) => x.requestId === requestId);
+    if (!e) {
+      e = {
+        requestId,
+        method: "",
+        url: "",
+        type: "",
+        ts: Date.now(),
+        finished: false,
+        ...patch,
+      };
+      entries.push(e);
+      if (entries.length > NETWORK_TAP_CAP) entries.splice(0, entries.length - NETWORK_TAP_CAP);
+    } else {
+      Object.assign(e, patch);
+    }
+  };
+  session.on("Network.requestWillBeSent", (p) => {
+    const req = (p.request ?? {}) as { method?: string; url?: string };
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    if (!requestId) return;
+    upsert(requestId, {
+      method: typeof req.method === "string" ? req.method : "",
+      url: typeof req.url === "string" ? req.url : "",
+      type: typeof p.type === "string" ? p.type : "",
+    });
+  });
+  session.on("Network.responseReceived", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    const resp = (p.response ?? {}) as { url?: string; status?: number; mimeType?: string };
+    if (!requestId) return;
+    upsert(requestId, {
+      ...(typeof resp.url === "string" ? { url: resp.url } : {}),
+      ...(typeof resp.status === "number" ? { status: resp.status } : {}),
+      ...(typeof resp.mimeType === "string" ? { mimeType: resp.mimeType } : {}),
+    });
+  });
+  session.on("Network.loadingFinished", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    if (requestId) upsert(requestId, { finished: true });
+  });
+  session.on("Network.loadingFailed", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    if (requestId) upsert(requestId, { finished: true, failed: true });
+  });
+  const tap = { session, entries, since: Date.now() };
+  networkTaps.set(tabId, tap);
+  return tap;
+}
+
+function decodeBody(
+  body: string,
+  base64Encoded: boolean,
+  maxBytes: number,
+): { text: string; bytes: number; truncated: boolean } {
+  if (!base64Encoded) {
+    const truncated = body.length > maxBytes;
+    return { text: truncated ? body.slice(0, maxBytes) : body, bytes: body.length, truncated };
+  }
+  try {
+    // decode only the prefix needed — bodies can be large
+    const neededChars = Math.ceil((maxBytes * 4) / 3) + 4;
+    const slice = body.slice(0, Math.min(body.length, neededChars));
+    const bin = atob(slice);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const truncated = body.length > neededChars;
+    return {
+      text: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
+      bytes: bytes.length,
+      truncated,
+    };
+  } catch {
+    return { text: "", bytes: 0, truncated: false };
+  }
+}
+
+async function pageResponseBody(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const tab = await deps.getTab(tabId);
+  if (!tab) {
+    networkTaps.delete(tabId);
+    throw toolError("browser.no_tab", `tab ${tabId} not found`);
+  }
+  const tap = await ensureNetworkTap(deps, tabId);
+  const requestId = str(args.requestId);
+  const urlContains = str(args.urlContains);
+  const maxBytes = clampMs(args.maxBytes, RESPONSE_BODY_DEFAULT_MAX, RESPONSE_BODY_MAX);
+
+  const toPublic = (e: NetworkTapEntry) => ({
+    requestId: e.requestId,
+    method: e.method,
+    url: urlOriginPath(e.url),
+    ...(e.type ? { type: e.type } : {}),
+    ...(typeof e.status === "number" ? { status: e.status } : {}),
+    ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+    finished: e.finished,
+    ...(e.failed ? { failed: true } : {}),
+    ts: e.ts,
+  });
+
+  if (requestId !== undefined) {
+    const entry = [...tap.entries].reverse().find((e) => e.requestId === requestId);
+    if (!entry) {
+      throw toolError("browser.not_found", `no captured request with requestId ${requestId}`);
+    }
+    if (entry.failed) {
+      throw toolError("browser.action_failed", `request ${requestId} failed; no response body`);
+    }
+    if (!entry.finished) {
+      throw toolError("browser.action_failed", `request ${requestId} has not finished loading`);
+    }
+    const res = (await tap.session.send("Network.getResponseBody", { requestId })) as {
+      body?: string;
+      base64Encoded?: boolean;
+    };
+    if (typeof res?.body !== "string") {
+      throw toolError("browser.action_failed", `no response body available for ${requestId}`);
+    }
+    const decoded = decodeBody(res.body, res.base64Encoded === true, maxBytes);
+    return {
+      ...toPublic(entry),
+      body: decoded.text,
+      bodyBytes: decoded.bytes,
+      truncated: decoded.truncated,
+      resolvedTabId: tabId,
+    };
+  }
+
+  const limit = clampMs(args.limit, 50, 200);
+  const filtered = tap.entries.filter(
+    (e) => urlContains === undefined || e.url.includes(urlContains),
+  );
+  return {
+    requests: filtered.slice(-limit).map(toPublic),
+    capturingSince: tap.since,
+    resolvedTabId: tabId,
+  };
 }

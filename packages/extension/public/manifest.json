@@ -24,7 +24,8 @@
     "desktopCapture",
     "downloads",
     "webNavigation",
-    "webRequest"
+    "webRequest",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"

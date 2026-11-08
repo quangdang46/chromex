@@ -34,8 +34,8 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 | Browser tool server + scope + approvals | bridge browser + ext tool-host | ✅ built | egress UX (b1h) |
 | Tab lifecycle: list/create/activate/close/duplicate/update(pinned/muted/zoom)/discard | ext tool-host | ✅ 7 tools (07cf2e4, c42040d, cd8b05e, f04d70a) | lifecycle completeness edge cases |
 | Window management: windows.list/create/update | ext tool-host + chrome.windows | ✅ 3 tools (16045c8) | agent can spawn dedicated window; first tab enters scope |
-| Page observation: snapshot/get/extract/screenshot/console/network | ext tool-host + content | ✅ console, screenshot→image, webRequest metadata log (+frameId filter), extract selector+html, scroll pos, snapshot truncated flag, URL query/hash stripped everywhere; **iframes verified headless** (`iframe-headless`: frameId snapshot+click inside same- AND cross-origin frames, per-frame snapshotIds, cross-frame snapshot refused, bad frameId fails honestly) → capability now `iframe:"all"` | no a11y tree option |
-| Page interaction: click(+button/clickCount/modifiers/**x,y coords**)/focus/type(real append)/fill/select(+values multi)/submit/scroll/navigate/wait(+readyState+networkIdle+visibleSelector)/upload/hover(+coords)/press/drag(+coords)/find/history + downloads.list/save(+waitForCompletion)/cancel | ext tool-host + content | ✅ 24 tools | dialogs need debugger decision (deferred); untrusted-event paths; `element_not_visible` gate on pointer actions; cancel is profile-wide → always approval |
+| Page observation: snapshot/get/extract/screenshot/console/network | ext tool-host + content | ✅ console, screenshot→image, webRequest metadata log (+frameId filter), extract selector+html, scroll pos, snapshot truncated flag, URL query/hash stripped everywhere; **iframes verified headless** (`iframe-headless`: frameId snapshot+click inside same- AND cross-origin frames, per-frame snapshotIds, cross-frame snapshot refused, bad frameId fails honestly) → capability now `iframe:"all"`; **CDP tier verified headless** (`cdp-headless`): `snapshot mode:"aria"` real AX tree, `browser.page.responseBody` tap+get | no a11y tree option on DOM mode |
+| Page interaction: click(+button/clickCount/modifiers/**x,y coords**/**trusted**)/focus/type(real append)/fill/select(+values multi)/submit/scroll/navigate/wait(+readyState+networkIdle+visibleSelector)/upload/hover(+coords)/press/drag(+coords)/find/history + downloads.list/save(+waitForCompletion)/cancel + dialog/setInputFiles/responseBody (CDP tier) | ext tool-host + content + cdp.ts | ✅ 27 tools; **CDP tier verified headless** (`cdp-headless`): trusted click `isTrusted:true` vs `false` control, JS dialog accept, file input by path | untrusted-event paths on non-click tools; `element_not_visible` gate on pointer actions; cancel is profile-wide → always approval |
 | Browser↔MCP tool surface for providers | bridge mcp-server + session-manager | ✅ wired per task | verify providers actually iterate tool calls E2E |
 | Coding tools (fs/shell/git) | provider-native (codex/claude) | ✅ via provider | verify in gatewayMode tasks |
 | Browser↔code feedback loop | composition | ✅ E2E proven | S1 + S2 PASS real-browser; loop proof cbbda36/6e690ab |
@@ -46,10 +46,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 
 ## Workstream beads (this matrix)
 
-- Browser runtime depth: a11y snapshot mode, dialogs/file-picker/
-  trusted-input (debugger-tier, deferred), response-body inspection
-  (needs debugger/CDP tier). iframe frameId path verified headless on
-  the real extension (same- + cross-origin); headful re-verify pending
+- Browser runtime depth: LANDED — debugger/CDP tier implemented and
+  verified headless (`cdp-headless`: aria AX snapshot, trusted click,
+  JS dialog accept, setInputFiles by path, responseBody tap+get; see
+  docs/adr/debugger-tier.md). Remaining: trusted paths only on click;
+  native file picker still unreachable; headful re-verify pending
+  (real Chrome S1–S8 gated on acceptance token)
 - Agent loop proof: `agent-loop-isolated` scenario PASS — scripted
   provider-style iteration on headless chromium (form submit verified
   server-side + honest-failure check); runs in `run-all` without a token.

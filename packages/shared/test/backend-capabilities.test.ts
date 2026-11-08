@@ -7,11 +7,18 @@ import {
 } from "../src/browser/backend.js";
 
 describe("backend capabilities", () => {
-  test("chrome-extension claims match plan §4.5 (iframe all on http(s), no dialogs)", () => {
+  test("chrome-extension claims match plan §4.5 (iframe all on http(s); CDP tier verified)", () => {
     const caps = DEFAULT_BACKEND_CAPABILITIES["chrome-extension"];
     expect(caps.iframe).toBe("all");
-    expect(caps.nativeDialogs).toBe(false);
-    expect(caps.accessibility).toBe(false);
+    // CDP tier (docs/adr/debugger-tier.md, cdp-headless verified):
+    // real AX tree + JS dialog handling. trustedGesture/filePicker
+    // stay false — only click has a trusted path; the native picker
+    // is still unreachable.
+    expect(caps.nativeDialogs).toBe(true);
+    expect(caps.accessibility).toBe(true);
+    expect(caps.networkBodies).toBe(true);
+    expect(caps.trustedGesture).toBe(false);
+    expect(caps.filePicker).toBe(false);
     expect(caps.existingUserTabs).toBe(true);
   });
 
