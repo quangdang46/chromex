@@ -25,7 +25,8 @@
     "downloads",
     "webNavigation",
     "webRequest",
-    "debugger"
+    "debugger",
+    "tabGroups"
   ],
   "host_permissions": [
     "<all_urls>"

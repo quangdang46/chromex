@@ -301,6 +301,21 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.kind).toBe("browser_action");
   });
 
+  test("browser.tabGroups: list is read, mutations always approval", () => {
+    const list = classifyActionRisk(ctx({ action: "browser.tabGroups", tabGroupOp: "list" }));
+    expect(list.risk).toBe("read");
+    expect(list.needsApproval).toBe(false);
+    for (const op of ["create", "update", "ungroup"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.tabGroups", tabGroupOp: op }));
+      expect(v.risk).toBe("external_mutation");
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    // missing op defaults to list (read)
+    expect(classifyActionRisk(ctx({ action: "browser.tabGroups" })).risk).toBe("read");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

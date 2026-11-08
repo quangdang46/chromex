@@ -56,6 +56,7 @@ export type BrowserToolName =
   | "browser.downloads.list"
   | "browser.downloads.save"
   | "browser.downloads.cancel"
+  | "browser.tabGroups"
   | "browser.windows.list"
   | "browser.windows.create"
   | "browser.windows.update";
@@ -111,6 +112,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
+  "browser.tabGroups",
   "browser.windows.list",
   "browser.windows.create",
   "browser.windows.update",

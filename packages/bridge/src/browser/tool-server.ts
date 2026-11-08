@@ -310,6 +310,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.history.search": "page-text",
   // bookmark titles/URLs are personal profile data — same egress gate.
   "browser.bookmarks": "page-text",
+  // group titles are user-authored text — same egress gate on list.
+  "browser.tabGroups": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -327,6 +329,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.history.delete",
   "browser.bookmarks",
   "browser.browsingData.clear",
+  "browser.tabGroups",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -446,6 +449,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.page.serviceWorker"
       ? { swOp: typeof args.action === "string" ? args.action : "list" }
+      : {}),
+    ...(req.tool === "browser.tabGroups"
+      ? { tabGroupOp: typeof args.action === "string" ? args.action : "list" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

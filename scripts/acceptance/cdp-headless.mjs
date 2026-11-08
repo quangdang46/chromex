@@ -963,6 +963,77 @@ await runScenario(
         ...cdp,
       };
 
+      // --- tabGroups: real chrome.tabs.group/tabGroups on the extension ---
+      let tg = {};
+      try {
+        const tgA = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/keys"), active: false }, token, 60_000,
+        );
+        const tgB = await runner.browserToolCall(
+          taskId, "browser.tab.create", { url: fixture.url("/form"), active: false }, token, 60_000,
+        );
+        const tgAId = tgA?.result?.tabId ?? tgA?.result?.openedTabId ?? tgA?.tabId;
+        const tgBId = tgB?.result?.tabId ?? tgB?.result?.openedTabId ?? tgB?.tabId;
+        const tgCreate = await runner.browserToolCall(
+          taskId, "browser.tabGroups",
+          { action: "create", tabIds: [tgAId, tgBId], title: "Agent Group", color: "blue" },
+          token, 60_000,
+        );
+        const tgCreated = tgCreate?.result ?? tgCreate ?? {};
+        tg.createOk = typeof tgCreated?.groupId === "number" && tgCreated?.title === "Agent Group";
+        const tgGid = tgCreated?.groupId;
+        // list must surface the group with exactly our two tabs
+        const tgListRes = await runner.browserToolCall(
+          taskId, "browser.tabGroups", { action: "list" }, token, 60_000,
+        );
+        const tgGroups = (tgListRes?.result ?? tgListRes ?? {}).groups ?? [];
+        const tgFound = tgGroups.find((g) => g?.id === tgGid);
+        tg.listOk = tgFound?.title === "Agent Group" && tgFound?.color === "blue" &&
+          (tgFound?.tabIds ?? []).length === 2;
+        // update collapsed via chrome.tabGroups.update
+        await runner.browserToolCall(
+          taskId, "browser.tabGroups", { action: "update", groupId: tgGid, collapsed: true },
+          token, 60_000,
+        );
+        const tgList2Res = await runner.browserToolCall(
+          taskId, "browser.tabGroups", { action: "list" }, token, 60_000,
+        );
+        const tgFound2 = ((tgList2Res?.result ?? tgList2Res ?? {}).groups ?? [])
+          .find((g) => g?.id === tgGid);
+        tg.updateOk = tgFound2?.collapsed === true;
+        // ungroup dissolves membership — empty groups vanish from list
+        await runner.browserToolCall(
+          taskId, "browser.tabGroups", { action: "ungroup", tabIds: [tgAId, tgBId] },
+          token, 60_000,
+        );
+        const tgList3Res = await runner.browserToolCall(
+          taskId, "browser.tabGroups", { action: "list" }, token, 60_000,
+        );
+        const tgAfter = ((tgList3Res?.result ?? tgList3Res ?? {}).groups ?? [])
+          .find((g) => g?.id === tgGid);
+        tg.ungroupOk = tgAfter === undefined || (tgAfter?.tabIds ?? []).length === 0;
+        // bogus color refused host-side
+        const tgBad = await runner.browserToolCall(
+          taskId, "browser.tabGroups",
+          { action: "create", tabIds: [tgAId], color: "chartreuse" }, token, 60_000,
+        );
+        tg.badColorOk = (tgBad?.error?.code ?? "") === "proto.invalid";
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: tgAId }, token, 60_000,
+        );
+        await runner.browserToolCall(
+          taskId, "browser.tab.close", { tabId: tgBId }, token, 60_000,
+        );
+      } catch (e) {
+        tg.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`tabGroups → ${JSON.stringify(tg).slice(0, 300)}`);
+      results.tabGroups = {
+        ok: tg.createOk === true && tg.listOk === true && tg.updateOk === true &&
+          tg.ungroupOk === true && tg.badColorOk === true,
+        ...tg,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.

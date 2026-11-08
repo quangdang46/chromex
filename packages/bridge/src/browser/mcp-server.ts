@@ -850,6 +850,18 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["downloadId"],
     ),
   },
+  "browser.tabGroups": {
+    description:
+      "Organize tabs into Chrome tab groups — the agent's tab-strip management. args.action: 'list' (default) returns groups containing in-scope tabs only (id, windowId, title, color, collapsed, in-scope tabIds — foreign groups are never surfaced); 'create' groups args.tabIds (1–50 in-scope tab ids, optionally joining existing args.groupId) with optional args.title/args.color; 'update' sets title/color/collapsed on args.groupId (requires ≥1 in-scope member tab); 'ungroup' dissolves args.tabIds from their groups. Colors: grey|blue|red|yellow|green|pink|purple|cyan|orange. Mutations ALWAYS require approval and are never task-eligible — group state is shared browser chrome. On playwright-isolated → proto.unsupported (no tab-group equivalent). Requires the 'tabGroups' permission.",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["list", "create", "update", "ungroup"], description: "Operation (default list)." },
+      tabIds: { type: "array", items: { type: "integer" }, description: "create/ungroup: tab ids to group or ungroup (1–50, must be in task scope)." },
+      groupId: { type: "integer", description: "update: target group. create: join this existing group instead of making a new one." },
+      title: { type: "string", description: "Group title (create/update, ≤500 chars)." },
+      color: { type: "string", enum: ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"], description: "Group color (create/update)." },
+      collapsed: { type: "boolean", description: "update: collapse/expand the group." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

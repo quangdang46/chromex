@@ -65,6 +65,9 @@ export interface ActionContext {
   /** browser.page.serviceWorker sub-action — list is a read,
    *  unregister mutates the origin's worker registrations. */
   swOp?: string;
+  /** browser.tabGroups sub-action — list is a read (group titles are
+   *  user data), create/update/ungroup mutate browser chrome. */
+  tabGroupOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -545,6 +548,21 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
         });
       }
       return verdict("read", { reason: "cache metadata/key list" });
+    }
+
+    case "browser.tabGroups": {
+      const op = ctx.tabGroupOp ?? "list";
+      if (op === "create" || op === "update" || op === "ungroup") {
+        // Group membership/title/color is browser chrome state shared
+        // with the user's own tab strip — never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "tab group mutation changes browser chrome",
+        });
+      }
+      return verdict("read", { reason: "tab group list" });
     }
 
     case "browser.page.cdp": {

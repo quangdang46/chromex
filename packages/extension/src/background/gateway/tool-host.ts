@@ -145,6 +145,24 @@ export interface ToolHostDeps {
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
   updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
+  /** chrome.tabGroups + chrome.tabs.group/ungroup (browser.tabGroups) —
+   *  absent → proto.unsupported. */
+  tabGroups?: {
+    list(): Promise<Array<{
+      id?: number | undefined;
+      windowId?: number | undefined;
+      title?: string | undefined;
+      color?: string | undefined;
+      collapsed?: boolean | undefined;
+    }>>;
+    tabsInGroup(groupId: number): Promise<number[]>;
+    create(tabIds: number[], groupId?: number): Promise<{ id?: number | undefined }>;
+    ungroup(tabIds: number[]): Promise<unknown>;
+    update(
+      groupId: number,
+      opts: { title?: string; color?: string; collapsed?: boolean },
+    ): Promise<unknown>;
+  };
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -308,6 +326,7 @@ const SUPPORTED = new Set([
   "browser.history.delete",
   "browser.bookmarks",
   "browser.browsingData.clear",
+  "browser.tabGroups",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -331,6 +350,17 @@ interface TabScopePayload {
   boundTabId: number | null;
   allowedTabIds: number[];
   foreignTabIds: number[];
+}
+
+/** Scope membership for multi-tab tools (tabGroups): mirrors
+ *  resolveScopedTabId's rule — explicit allowlist wins, otherwise only
+ *  foreign-tab exclusion applies. */
+function tabInScope(scope: TabScopePayload | null, tabId: number): boolean {
+  if (!scope) return true;
+  const allowed = new Set(scope.allowedTabIds);
+  if (scope.boundTabId != null) allowed.add(scope.boundTabId);
+  if (allowed.size > 0) return allowed.has(tabId);
+  return !scope.foreignTabIds.includes(tabId);
 }
 
 function parseTabScope(payload: unknown): TabScopePayload | null {
@@ -1897,6 +1927,138 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // instead of claiming a cancellation that never happened.
         await deps.cancelDownload(downloadId);
         return { downloadId, cancelled: true };
+      }
+      case "browser.tabGroups": {
+        // Tab-strip organization via chrome.tabs.group/ungroup +
+        // chrome.tabGroups. Not single-tab scoped — every tabId arg is
+        // checked against the task scope individually; list only
+        // surfaces groups containing in-scope tabs.
+        if (!deps.tabGroups) {
+          throw toolError("proto.unsupported", "tab groups are not available on this host");
+        }
+        const api = deps.tabGroups;
+        const action = str(args.action) ?? "list";
+        const COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
+        const parseTabIds = (v: unknown): number[] => {
+          if (!Array.isArray(v) || v.length === 0 || v.length > 50 ||
+              v.some((n) => typeof n !== "number" || !Number.isInteger(n) || n <= 0)) {
+            throw toolError("proto.invalid", "browser.tabGroups args.tabIds must be an array of 1–50 positive integer tab ids");
+          }
+          return [...new Set(v as number[])];
+        };
+        const requireInScope = (tabIds: number[]): void => {
+          for (const id of tabIds) {
+            if (!tabInScope(tabScope, id)) {
+              throw toolError("browser.not_in_scope", `tab ${id} is outside this task's tab scope`);
+            }
+          }
+        };
+        const parseGroupId = (v: unknown): number => {
+          if (typeof v !== "number" || !Number.isInteger(v)) {
+            throw toolError("proto.invalid", "browser.tabGroups requires integer args.groupId");
+          }
+          return v;
+        };
+        const parseTitle = (): string | undefined => {
+          const t = str(args.title);
+          if (t !== undefined && t.length > 500) {
+            throw toolError("proto.invalid", "browser.tabGroups args.title must be ≤500 chars");
+          }
+          return t;
+        };
+        const parseColor = (): string | undefined => {
+          const c = str(args.color);
+          if (c !== undefined && !COLORS.has(c)) {
+            throw toolError("proto.invalid", `browser.tabGroups args.color must be one of ${[...COLORS].join("|")}`);
+          }
+          return c;
+        };
+
+        if (action === "list") {
+          const groups = await api.list();
+          const out: Array<Record<string, unknown>> = [];
+          for (const g of Array.isArray(groups) ? groups : []) {
+            if (typeof g.id !== "number") continue;
+            const memberIds = await api.tabsInGroup(g.id);
+            const scoped = memberIds.filter((id) => tabInScope(tabScope, id));
+            if (scoped.length === 0) continue; // never surface foreign groups
+            out.push({
+              id: g.id,
+              ...(typeof g.windowId === "number" ? { windowId: g.windowId } : {}),
+              title: g.title ?? "",
+              color: g.color ?? "",
+              collapsed: g.collapsed === true,
+              tabIds: scoped,
+              tabCount: scoped.length,
+            });
+          }
+          return { groups: out, count: out.length };
+        }
+        if (action === "create") {
+          const tabIds = parseTabIds(args.tabIds);
+          requireInScope(tabIds);
+          let joinId: number | undefined;
+          if (args.groupId !== undefined) {
+            joinId = parseGroupId(args.groupId);
+            // joining an existing group requires it to be visible to
+            // this task — at least one member tab in scope
+            const members = await api.tabsInGroup(joinId);
+            if (!members.some((id) => tabInScope(tabScope, id))) {
+              throw toolError("browser.not_in_scope", `group ${joinId} has no tabs in this task's scope`);
+            }
+          }
+          const created = await api.create(tabIds, joinId);
+          if (typeof created?.id !== "number") {
+            throw toolError("browser.action_failed", "chrome.tabs.group returned no group id");
+          }
+          const gid = created.id;
+          const title = parseTitle();
+          const color = parseColor();
+          if (title !== undefined || color !== undefined) {
+            await api.update(gid, {
+              ...(title !== undefined ? { title } : {}),
+              ...(color !== undefined ? { color } : {}),
+            });
+          }
+          return {
+            groupId: gid,
+            tabIds,
+            ...(joinId !== undefined ? { joined: joinId } : {}),
+            ...(title !== undefined ? { title } : {}),
+            ...(color !== undefined ? { color } : {}),
+          };
+        }
+        if (action === "update") {
+          const groupId = parseGroupId(args.groupId);
+          const title = parseTitle();
+          const color = parseColor();
+          const collapsed = typeof args.collapsed === "boolean" ? args.collapsed : undefined;
+          if (title === undefined && color === undefined && collapsed === undefined) {
+            throw toolError("proto.invalid", "browser.tabGroups update requires args.title, args.color and/or args.collapsed");
+          }
+          const members = await api.tabsInGroup(groupId);
+          if (!members.some((id) => tabInScope(tabScope, id))) {
+            throw toolError("browser.not_in_scope", `group ${groupId} has no tabs in this task's scope`);
+          }
+          await api.update(groupId, {
+            ...(title !== undefined ? { title } : {}),
+            ...(color !== undefined ? { color } : {}),
+            ...(collapsed !== undefined ? { collapsed } : {}),
+          });
+          return {
+            updated: groupId,
+            ...(title !== undefined ? { title } : {}),
+            ...(color !== undefined ? { color } : {}),
+            ...(collapsed !== undefined ? { collapsed } : {}),
+          };
+        }
+        if (action === "ungroup") {
+          const tabIds = parseTabIds(args.tabIds);
+          requireInScope(tabIds);
+          await api.ungroup(tabIds);
+          return { ungrouped: tabIds };
+        }
+        throw toolError("proto.invalid", "browser.tabGroups args.action must be list|create|update|ungroup");
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

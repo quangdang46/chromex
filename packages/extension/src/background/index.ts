@@ -473,6 +473,43 @@ const toolHostHandler = createToolHostHandler({
         ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
         ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.UpdateInfo["state"]> } : {}),
       }),
+    ...(chrome.tabGroups
+      ? {
+          tabGroups: {
+            list: async () =>
+              (await chrome.tabGroups.query({})).map((g) => ({
+                id: g.id,
+                windowId: g.windowId,
+                title: g.title,
+                color: g.color,
+                collapsed: g.collapsed,
+              })),
+            tabsInGroup: async (groupId: number) =>
+              (await chrome.tabs.query({ groupId }))
+                .map((t) => t.id)
+                .filter((id): id is number => typeof id === "number"),
+            create: async (tabIds: number[], groupId?: number) => {
+              // chrome.tabs.group resolves to the group id (number)
+              const id = await chrome.tabs.group({
+                tabIds: tabIds as [number, ...number[]],
+                ...(groupId !== undefined ? { groupId } : {}),
+              });
+              return { id };
+            },
+            ungroup: async (tabIds: number[]) =>
+              chrome.tabs.ungroup(tabIds as [number, ...number[]]),
+            update: async (
+              groupId: number,
+              opts: { title?: string; color?: string; collapsed?: boolean },
+            ) =>
+              chrome.tabGroups.update(groupId, {
+                ...(opts.title !== undefined ? { title: opts.title } : {}),
+                ...(opts.color ? { color: opts.color as chrome.tabGroups.Color } : {}),
+                ...(opts.collapsed !== undefined ? { collapsed: opts.collapsed } : {}),
+              }),
+          },
+        }
+      : {}),
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

@@ -1212,6 +1212,92 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.tabGroups: list/create/update/ungroup with scope enforcement", async () => {
+    // in-memory chrome.tabGroups/tabs.group double
+    const groups = new Map<number, { id: number; windowId: number; title: string; color: string; collapsed: boolean; tabs: number[] }>();
+    let nextGid = 100;
+    const tg = {
+      list: vi.fn(async () => [...groups.values()].map(({ tabs: _t, ...g }) => g)),
+      tabsInGroup: vi.fn(async (gid: number) => groups.get(gid)?.tabs ?? []),
+      create: vi.fn(async (tabIds: number[], groupId?: number) => {
+        const gid = groupId ?? nextGid++;
+        if (!groups.has(gid)) groups.set(gid, { id: gid, windowId: 1, title: "", color: "", collapsed: false, tabs: [] });
+        const g = groups.get(gid)!;
+        g.tabs.push(...tabIds.filter((t) => !g.tabs.includes(t)));
+        return { id: gid };
+      }),
+      ungroup: vi.fn(async (tabIds: number[]) => {
+        for (const g of groups.values()) g.tabs = g.tabs.filter((t) => !tabIds.includes(t));
+      }),
+      update: vi.fn(async (gid: number, opts: Record<string, unknown>) => {
+        const g = groups.get(gid);
+        if (!g) throw new Error("No group with id: " + gid);
+        if (typeof opts.title === "string") g.title = opts.title;
+        if (typeof opts.color === "string") g.color = opts.color;
+        if (typeof opts.collapsed === "boolean") g.collapsed = opts.collapsed;
+      }),
+    };
+    const d = deps({ tabGroups: tg });
+    const h = createToolHostHandler(d);
+    const scope = { boundTabId: 7, allowedTabIds: [7, 8, 9], foreignTabIds: [20] };
+    const sreq = (tool: string, args: Record<string, unknown> = {}) =>
+      ({ toolCallId: "tc1", taskId: "t1", tool, args, tabScope: scope });
+
+    // create groups two in-scope tabs with title+color
+    const created = (await h(sreq("browser.tabGroups", {
+      action: "create", tabIds: [7, 8], title: "Agent Work", color: "blue",
+    }))) as { groupId: number; title: string; color: string };
+    expect(created.groupId).toBe(100);
+    expect(created.title).toBe("Agent Work");
+    expect(tg.create).toHaveBeenCalledWith([7, 8], undefined);
+    expect(tg.update).toHaveBeenCalledWith(100, { title: "Agent Work", color: "blue" });
+
+    // list surfaces the group with in-scope tabIds only
+    const listed = (await h(sreq("browser.tabGroups", {}))) as {
+      count: number; groups: Array<{ id: number; title: string; tabIds: number[] }>;
+    };
+    expect(listed.count).toBe(1);
+    expect(listed.groups[0]).toMatchObject({ id: 100, title: "Agent Work", tabIds: [7, 8] });
+
+    // update title/collapsed on the group
+    await h(sreq("browser.tabGroups", { action: "update", groupId: 100, collapsed: true }));
+    expect(groups.get(100)!.collapsed).toBe(true);
+
+    // join a second in-scope tab into the existing group
+    await h(sreq("browser.tabGroups", { action: "create", tabIds: [9], groupId: 100 }));
+    expect(groups.get(100)!.tabs).toEqual([7, 8, 9]);
+
+    // ungroup dissolves membership
+    await h(sreq("browser.tabGroups", { action: "ungroup", tabIds: [8, 9] }));
+    expect(groups.get(100)!.tabs).toEqual([7]);
+
+    // scope enforcement: foreign/out-of-scope tabIds refused
+    await expect(h(sreq("browser.tabGroups", { action: "create", tabIds: [20] })))
+      .rejects.toMatchObject({ code: "browser.not_in_scope" });
+    await expect(h(sreq("browser.tabGroups", { action: "ungroup", tabIds: [7, 30] })))
+      .rejects.toMatchObject({ code: "browser.not_in_scope" });
+    // update on a group with no in-scope members refused
+    groups.set(200, { id: 200, windowId: 1, title: "", color: "", collapsed: false, tabs: [20] });
+    await expect(h(sreq("browser.tabGroups", { action: "update", groupId: 200, title: "x" })))
+      .rejects.toMatchObject({ code: "browser.not_in_scope" });
+    // list hides the foreign-only group
+    const relisted = (await h(sreq("browser.tabGroups", {}))) as { groups: Array<{ id: number }> };
+    expect(relisted.groups.map((g) => g.id)).toEqual([100]);
+
+    // validation
+    await expect(h(sreq("browser.tabGroups", { action: "create" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq("browser.tabGroups", { action: "create", tabIds: [7], color: "chartreuse" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq("browser.tabGroups", { action: "update", groupId: 100 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(sreq("browser.tabGroups", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(sreq("browser.tabGroups", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
