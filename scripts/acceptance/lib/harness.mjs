@@ -405,7 +405,7 @@ export async function installAcceptanceNativeHost(gatewayHome) {
  * enables the providers the scenario needs, spawn/connect the gateway.
  * NEVER points at ~/.chromex/gateway.
  */
-export async function ensureIsolatedGateway({ providers = ["codex", "claude"], configPatch = {} } = {}) {
+export async function ensureIsolatedGateway({ providers = ["codex", "claude"], configPatch = {}, acpProviders = {} } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), "chromex-accept-gw-"));
   const providerCfg = {};
   for (const p of providers) {
@@ -416,7 +416,7 @@ export async function ensureIsolatedGateway({ providers = ["codex", "claude"], c
     // durable store: tasks/events survive a gateway restart (s5 exercises
     // this); the default "memory" store loses everything on SIGKILL.
     store: "sqlite",
-    providers: { ...providerCfg, acp: {} },
+    providers: { ...providerCfg, acp: acpProviders },
     browser: {
       defaultBackend: "chrome-extension",
       allowedBackends: ["chrome-extension"],
@@ -723,7 +723,7 @@ export const TERMINAL_TURN = ["turn.completed", "turn.failed", "turn.cancelled",
 export async function runScenario(
   scenario,
   fn,
-  { needsBrowser = true, needsGateway = true, gatewayProviders = ["codex", "claude"], autoAnswer = "allow", headless } = {},
+  { needsBrowser = true, needsGateway = true, gatewayProviders = ["codex", "claude"], gatewayAcpProviders = {}, autoAnswer = "allow", headless } = {},
 ) {
   // headless:true launches Chrome for Testing with no windows — the token
   // gate exists to stop routine work opening browser UI, which headless
@@ -737,7 +737,7 @@ export async function runScenario(
   let nmHost = null;
   const cleanups = [];
   try {
-    if (needsGateway) gw = await ensureIsolatedGateway({ providers: gatewayProviders });
+    if (needsGateway) gw = await ensureIsolatedGateway({ providers: gatewayProviders, acpProviders: gatewayAcpProviders });
     // One isolated home shared by gateway + browser NM host. When there is
     // no gateway (pure-UI scenario) the home is unused but still isolated.
     const gatewayHome = gw?.dataDir ?? (await mkdtemp(join(tmpdir(), "chromex-accept-gw-empty-")));

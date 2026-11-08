@@ -32,6 +32,7 @@ const TOKENLESS = new Set([
   "s6-failedplan",
   "s7-approval",
   "s8-deliverable",
+  "s9-interrupt-queue",
 ]);
 const ALL = [
   "agent-loop-isolated",
@@ -52,6 +53,7 @@ const ALL = [
   "s6-failedplan",
   "s7-approval",
   "s8-deliverable",
+  "s9-interrupt-queue",
 ];
 const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
 
