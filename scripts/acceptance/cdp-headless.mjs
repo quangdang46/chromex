@@ -1831,8 +1831,45 @@ await runScenario(
           if (typeof popupId === "number") {
             await runner.browserToolCall(taskId, "browser.tab.close", { tabId: popupId }, token, 60_000).catch(() => null);
           }
+          // waitForLoad: /popup-slow answers ~1.2s late — the URL matches
+          // immediately but status stays "loading"; waitForLoad must
+          // hold until complete and report elapsed ≥ the server delay.
+          const slCreate = await runner.browserToolCall(
+            taskId, "browser.tab.create",
+            { url: fixture.url("/popup-link-slow"), active: true }, token, 60_000,
+          );
+          const slTab = (slCreate?.result ?? slCreate ?? {}).openedTabId ??
+            (slCreate?.result ?? slCreate ?? {}).tabId;
+          if (typeof slTab === "number") {
+            await sleep(800);
+            const slWaitP = runner.browserToolCall(
+              taskId, "browser.tabs.wait",
+              { urlContains: "popup-slow", waitForLoad: true, timeoutMs: 10000 }, token, 60_000,
+            );
+            const slT0 = Date.now();
+            await runner.browserToolCall(
+              taskId, "browser.page.click", { tabId: slTab, selector: "#go", trusted: true }, token, 60_000,
+            ).catch(() => null);
+            const slRes = await slWaitP;
+            const slBody = slRes?.result ?? slRes ?? {};
+            const slPopup = slBody.newTabId ?? slBody.tab?.tabId ?? slBody.tab?.id;
+            tw.loadOk = slBody.matched === "newTab" && slBody.tab?.status === "complete";
+            tw.loadElapsedOk = Date.now() - slT0 >= 900;
+            const slBad = await runner.browserToolCall(
+              taskId, "browser.tabs.wait",
+              { urlContains: "x", waitForLoad: "yes" }, token, 60_000,
+            ).catch(() => null);
+            tw.loadBadOk = (slBad?.error?.code ?? "") === "proto.invalid";
+            await runner.browserToolCall(taskId, "browser.tab.close", { tabId: slTab }, token, 60_000).catch(() => null);
+            if (typeof slPopup === "number") {
+              await runner.browserToolCall(taskId, "browser.tab.close", { tabId: slPopup }, token, 60_000).catch(() => null);
+            }
+          } else {
+            tw.loadOk = tw.loadElapsedOk = tw.loadBadOk = false;
+          }
         } else {
-          tw.matchedOk = tw.tabOk = tw.urlOk = tw.scopeOk = tw.staleOk = tw.badArgOk = false;
+          tw.matchedOk = tw.tabOk = tw.urlOk = tw.scopeOk = tw.staleOk = tw.badArgOk =
+            tw.loadOk = tw.loadElapsedOk = tw.loadBadOk = false;
         }
       } catch (e) {
         tw.error = String(e?.message ?? e).slice(0, 200);
@@ -1840,7 +1877,8 @@ await runScenario(
       evidence.note(`tabsWait → ${JSON.stringify(tw).slice(0, 300)}`);
       results.tabsWait = {
         ok: tw.createOk === true && tw.matchedOk === true && tw.tabOk === true &&
-          tw.urlOk === true && tw.scopeOk === true && tw.staleOk === true && tw.badArgOk === true,
+          tw.urlOk === true && tw.scopeOk === true && tw.staleOk === true && tw.badArgOk === true &&
+          tw.loadOk === true && tw.loadElapsedOk === true && tw.loadBadOk === true,
         ...tw,
       };
 

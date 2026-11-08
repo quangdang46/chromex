@@ -260,6 +260,28 @@ try {
   await call("browser.tab.close", { tabId: pwTab }).catch(() => null);
   await call("browser.tab.close", { tabId: popupTab }).catch(() => null);
 
+  // waitForLoad: /popup-slow answers ~1.2s late — URL matches while the
+  // document is still loading; waitForLoad must hold until readyState
+  // complete (≈ chrome.tabs status complete).
+  const slCreated = await call("browser.tab.create", { url: fixture.url("/popup-link-slow"), active: true });
+  const slTab = slCreated?.tabId ?? slCreated?.id;
+  await new Promise((r) => setTimeout(r, 800));
+  const slT0 = Date.now();
+  const slPromise = call("browser.tabs.wait", { urlContains: "popup-slow", waitForLoad: true, timeoutMs: 10000 });
+  await call("browser.page.click", { tabId: slTab, selector: "#go" }).catch(() => null);
+  const slRes = await slPromise;
+  assert(slRes?.matched === "newTab", `waitForLoad matched slow popup (got ${JSON.stringify(slRes).slice(0, 120)})`);
+  assert(Date.now() - slT0 >= 900, `waitForLoad held for slow document (elapsed ${Date.now() - slT0}ms)`);
+  const slPopup = slRes?.newTabId ?? slRes?.tab?.tabId;
+  await call("browser.tab.close", { tabId: slTab }).catch(() => null);
+  await call("browser.tab.close", { tabId: slPopup }).catch(() => null);
+  await expectReject(
+    "browser.tabs.wait",
+    { urlContains: "x", waitForLoad: "yes" },
+    "boolean",
+    "waitForLoad non-boolean refused",
+  );
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

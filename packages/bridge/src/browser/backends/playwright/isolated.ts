@@ -566,6 +566,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (urlContains === "" || urlContains.length > 512) {
       throw protocolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars)");
     }
+    if (args.waitForLoad !== undefined && typeof args.waitForLoad !== "boolean") {
+      throw protocolError("proto.invalid", "browser.tabs.wait args.waitForLoad must be a boolean");
+    }
+    const waitForLoad = args.waitForLoad === true;
     const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000;
     const deadline = Date.now() + Math.min(timeout, 30_000);
     const context = await this.#contextFor(taskId);
@@ -574,21 +578,37 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const u = p.url();
       return u !== "" && u !== "about:blank" && stripQuery(u).includes(urlContains);
     };
+    let candidate: PwPage | undefined;
     for (;;) {
       const pages = context.pages();
-      const idx = pages.findIndex((p) => !baseline.has(p) && matchUrl(p));
-      if (idx >= 0) {
-        const p = pages[idx]!;
-        return {
-          ok: true,
-          matched: "newTab",
-          newTabId: idx,
-          tab: {
-            tabId: idx,
-            url: stripQuery(p.url()),
-            title: typeof p.title === "function" ? await p.title().catch(() => "") : "",
-          },
-        };
+      if (!candidate) {
+        const idx = pages.findIndex((p) => !baseline.has(p) && matchUrl(p));
+        if (idx >= 0) candidate = pages[idx];
+      } else if (!pages.includes(candidate)) {
+        // Candidate closed mid-wait — a later new tab may still match.
+        candidate = undefined;
+      }
+      if (candidate) {
+        // waitForLoad: readyState "complete" ≈ chrome.tabs status
+        // "complete" (load event fired). A navigating/crashed page
+        // throws or reports "loading" → keep polling until deadline.
+        const ready = !waitForLoad || await candidate
+          .evaluate(() => document.readyState)
+          .then((s) => s === "complete")
+          .catch(() => false);
+        if (ready) {
+          const p = candidate;
+          return {
+            ok: true,
+            matched: "newTab",
+            newTabId: pages.indexOf(p),
+            tab: {
+              tabId: pages.indexOf(p),
+              url: stripQuery(p.url()),
+              title: typeof p.title === "function" ? await p.title().catch(() => "") : "",
+            },
+          };
+        }
       }
       if (Date.now() >= deadline) {
         throw protocolError("browser.timeout", `no new tab matching "${urlContains}" before timeout`);

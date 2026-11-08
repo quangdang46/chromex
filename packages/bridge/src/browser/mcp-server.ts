@@ -231,10 +231,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.tabs.wait": {
     description:
-      "Wait for a NEW tab whose sanitized URL (origin+path) contains urlContains — the async-popup barrier for OAuth/SSO redirects, window.open and target=_blank flows that arrive seconds after the triggering action returns (post-action openedTabs[] only covers synchronous popups). Baseline-diff: tabs already open at call time never match, so a stale tab with the same URL can't false-positive. Same visibility filter as browser.tabs.list (internal pages + other tasks' tabs excluded). Returns the new tab's id/url/title/windowId/status; timeoutMs ≤30000 (default 10s) then browser.timeout. Read-only observation; low-risk.",
+      "Wait for a NEW tab whose sanitized URL (origin+path) contains urlContains — the async-popup barrier for OAuth/SSO redirects, window.open and target=_blank flows that arrive seconds after the triggering action returns (post-action openedTabs[] only covers synchronous popups). Baseline-diff: tabs already open at call time never match, so a stale tab with the same URL can't false-positive. Same visibility filter as browser.tabs.list (internal pages + other tasks' tabs excluded). Returns the new tab's id/url/title/windowId/status; timeoutMs ≤30000 (default 10s) then browser.timeout. waitForLoad:true keeps waiting until the matched tab finishes loading (status complete / readyState complete) — use it before driving the popup, since redirect chains land on the URL while the document is still loading. Read-only observation; low-risk.",
     inputSchema: objectSchema({
       urlContains: { type: "string", description: "Substring to match against the new tab's sanitized origin+path URL (required, ≤512 chars)." },
       timeoutMs: { type: "number", description: "Max wait (clamped ≤30000, default 10000)." },
+      waitForLoad: { type: "boolean", description: "Also wait until the matched tab's load completes (default false — returns as soon as the URL matches, status may still be loading)." },
     }),
   },
   "browser.tab.activate": {

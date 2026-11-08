@@ -221,6 +221,12 @@ addEventListener("wheel", (e) => {
 <a id="go" href="/popup-done" target="_blank">open popup</a>
 </body></html>`,
   "/popup-done": `<!doctype html><html><body><h1>Popup Done</h1><p>popup landed</p></body></html>`,
+  // Same popup flow but the document arrives ~1.2s late — keeps the
+  // new tab in status "loading" long enough for waitForLoad proof.
+  "/popup-link-slow": `<!doctype html><html><body>
+<h1>Popup Launcher Slow</h1>
+<a id="go" href="/popup-slow" target="_blank">open slow popup</a>
+</body></html>`,
 
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.
@@ -460,6 +466,13 @@ export async function startFixtureServer() {
   ws.onerror = () => { document.getElementById("wstate").textContent = "error"; };
 </script>
 </body></html>`);
+      return;
+    }
+    if (url.pathname === "/popup-slow") {
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(`<!doctype html><html><body><h1>Popup Slow</h1><p>slow landed</p></body></html>`);
+      }, 1200);
       return;
     }
     if (url.pathname === "/sw.js") {

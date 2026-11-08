@@ -778,6 +778,36 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "browser.timeout" });
     // missing urlContains → proto.invalid
     await expect(h2(req("browser.tabs.wait", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    // waitForLoad non-boolean → proto.invalid
+    await expect(
+      h2(req("browser.tabs.wait", { urlContains: "x", waitForLoad: "yes" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("tabs.wait waitForLoad holds until the matched tab reaches status complete", async () => {
+    let calls = 0;
+    const d = deps({
+      queryTabs: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          return [{ id: 7, url: "https://x/", title: "X", active: true, windowId: 1 }];
+        }
+        // the popup's URL matches immediately but it stays "loading"
+        // for two polls, then completes
+        const status = calls <= 3 ? "loading" : "complete";
+        return [
+          { id: 7, url: "https://x/", title: "X", active: true, windowId: 1 },
+          { id: 55, url: "https://idp.example.com/oauth/callback", title: "OAuth", active: false, windowId: 1, status },
+        ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.tabs.wait", { urlContains: "oauth/callback", waitForLoad: true, timeoutMs: 3000 }),
+    )) as { ok: boolean; tab: { id: number; status: string } };
+    expect(res.tab.id).toBe(55);
+    expect(res.tab.status).toBe("complete");
+    expect(calls).toBeGreaterThan(3);
   });
 
   test("page.wait consoleText validation: level requires text, bad level, missing dep", async () => {

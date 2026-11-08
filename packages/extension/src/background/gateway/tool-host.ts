@@ -1093,6 +1093,14 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
           30_000,
         );
+        // waitForLoad: keep waiting until the matched tab reaches
+        // status "complete" — OAuth redirects land on the URL while the
+        // document is still loading, and operating a half-loaded page is
+        // the classic popup-flow bug.
+        if (args.waitForLoad !== undefined && typeof args.waitForLoad !== "boolean") {
+          throw toolError("proto.invalid", "browser.tabs.wait args.waitForLoad must be a boolean");
+        }
+        const waitForLoad = args.waitForLoad === true;
         const INTERNAL = /^(chrome|chrome-extension|edge|about|devtools|view-source):/i;
         const foreign = new Set(tabScope?.foreignTabIds ?? []);
         const visible = (tabs: chrome.tabs.Tab[]) =>
@@ -1114,14 +1122,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             .filter((id): id is number => typeof id === "number"),
         );
         const deadline = Date.now() + waitTimeoutMs;
-        let hit: chrome.tabs.Tab | undefined;
+        let candidate: chrome.tabs.Tab | undefined;
         while (Date.now() < deadline) {
-          hit = visible(await deps.queryTabs()).find(
-            (t) => typeof t.id === "number" && !baseline.has(t.id) && sanitize(t.url ?? "").includes(urlContains),
-          );
-          if (hit) break;
+          const tabs = visible(await deps.queryTabs());
+          if (!candidate) {
+            candidate = tabs.find(
+              (t) => typeof t.id === "number" && !baseline.has(t.id) && sanitize(t.url ?? "").includes(urlContains),
+            );
+          } else {
+            // Same tab, fresh state — it may have finished loading or
+            // been closed (closed → drop candidate, a later new tab
+            // with the same URL may still match).
+            candidate = tabs.find((t) => t.id === candidate?.id) ?? undefined;
+          }
+          if (candidate && (!waitForLoad || candidate.status === "complete")) break;
           await new Promise((r) => setTimeout(r, 200));
         }
+        const hit = candidate;
         if (!hit || typeof hit.id !== "number") {
           throw toolError(
             "browser.timeout",
