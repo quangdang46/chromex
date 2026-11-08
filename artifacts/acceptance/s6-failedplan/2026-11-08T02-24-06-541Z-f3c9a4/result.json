@@ -1,0 +1,30 @@
+{
+  "scenario": "s6-failedplan",
+  "runId": "2026-11-08T02-24-06-541Z-f3c9a4",
+  "status": "PASS",
+  "summary": "stale snapshotId rejected loudly; re-observe + retry succeeded",
+  "durationMs": 6920,
+  "details": {
+    "staleFailed": true,
+    "clickStatus": "completed",
+    "snap2Status": "completed",
+    "formAdvanced": false,
+    "stale": {
+      "toolCallId": "rpc-mw77l5jt-gu7obj",
+      "tool": "browser.page.click",
+      "status": "failed",
+      "error": {
+        "code": "browser.element_not_found",
+        "message": "browser.element_not_found: Target element was not found."
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T02:24:11.736Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T02:24:12.324Z] snapshot1 status=completed snapshotId=snap:9b68bb86-8da7-44db-933e-5a5c3d360418",
+    "[2026-11-08T02:24:12.376Z] navigate → completed",
+    "[2026-11-08T02:24:12.410Z] stale click → {\"toolCallId\":\"rpc-mw77l5jt-gu7obj\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.element_not_found\",\"message\":\"browser.element_not_found: Target element was not found.\"}}",
+    "[2026-11-08T02:24:12.685Z] snapshot2 status=completed snapshotId=snap:36e542ea-fdb6-4cfe-b5df-fd06823813d6",
+    "[2026-11-08T02:24:12.710Z] fresh click → {\"toolCallId\":\"rpc-mw77l5se-e1bg9y\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"label\":\"Next\",\"action\":\"click\"},\"ok\":true,\"message\":\"Clicked Next.\",\"verified\":\"unknown"
+  ]
+}

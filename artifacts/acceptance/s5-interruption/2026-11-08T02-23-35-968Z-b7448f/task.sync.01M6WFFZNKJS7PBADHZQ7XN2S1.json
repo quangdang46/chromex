@@ -1,0 +1,377 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 1,
+      "ts": 1794104622778,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 2,
+      "ts": 1794104622779,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 3,
+      "ts": 1794104623286,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "s5-interrupted-call",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 5,
+      "ts": 1794104623302,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw77kj3z-jg3c03",
+          "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.get requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "acbd166a1dee6284b25674aec7d57bef2c6181f5a5857f4e296938079cb7e2e6",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "allow_egress_task",
+              "label": "Allow page content for this task",
+              "kind": "allow_egress_task"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.get",
+            "argsPreview": {},
+            "origin": "",
+            "egressTaskScope": "agent-egress|page-text|cloud-provider"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 6,
+      "ts": 1794104623305,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw77kj3z-jg3c03",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 7,
+      "ts": 1794104623578,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "s5-interrupted-call",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "id": 2098567350,
+            "tabId": 2098567350,
+            "url": "http://127.0.0.1:52477/",
+            "title": "Fixture Home",
+            "active": true,
+            "resolvedTabId": 2098567350,
+            "windowId": 2098567348,
+            "status": "complete",
+            "pinned": false,
+            "groupId": -1,
+            "scroll": {
+              "scrollX": 0,
+              "scrollY": 0,
+              "viewportWidth": 1280,
+              "viewportHeight": 720,
+              "documentHeight": 720,
+              "documentWidth": 1280
+            },
+            "frames": [
+              {
+                "frameId": 0,
+                "url": "http://127.0.0.1:52477/",
+                "parentFrameId": -1
+              }
+            ]
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 8,
+      "ts": 1794104639783,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "active",
+        "to": "paused",
+        "pauseReason": "gateway_restart"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 9,
+      "ts": 1794104645741,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw77l0fh-bvhp0w",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 10,
+      "ts": 1794104645746,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.get",
+        "risk": "external_mutation",
+        "needsApproval": true,
+        "reason": "data egress to non-local destination requires approval",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 11,
+      "ts": 1794104645747,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw77l0fn-r5ebxm",
+          "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+          "kind": "agent_egress",
+          "risk": "external_mutation",
+          "summary": "browser.page.get requires approval (data egress to non-local destination requires approval)",
+          "actionDigest": "acbd166a1dee6284b25674aec7d57bef2c6181f5a5857f4e296938079cb7e2e6",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "allow_egress_task",
+              "label": "Allow page content for this task",
+              "kind": "allow_egress_task"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.get",
+            "argsPreview": {},
+            "origin": "",
+            "egressTaskScope": "agent-egress|page-text|cloud-provider"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 12,
+      "ts": 1794104645749,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw77l0fn-r5ebxm",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 13,
+      "ts": 1794104646007,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw77l0fh-bvhp0w",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "id": 2098567350,
+            "tabId": 2098567350,
+            "url": "http://127.0.0.1:52477/",
+            "title": "Fixture Home",
+            "active": true,
+            "resolvedTabId": 2098567350,
+            "windowId": 2098567348,
+            "status": "complete",
+            "pinned": false,
+            "groupId": -1,
+            "scroll": {
+              "scrollX": 0,
+              "scrollY": 0,
+              "viewportWidth": 1280,
+              "viewportHeight": 720,
+              "documentHeight": 720,
+              "documentWidth": 1280
+            },
+            "frames": [
+              {
+                "frameId": 0,
+                "url": "http://127.0.0.1:52477/",
+                "parentFrameId": -1
+              }
+            ]
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 14,
+      "ts": 1794104646010,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "s5-interrupted-call",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6WFFZNKJS7PBADHZQ7XN2S1",
+      "seq": 15,
+      "ts": 1794104646011,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "s5-interrupted-call",
+        "tool": "browser.page.get",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.duplicate_tool_call",
+            "message": "toolCallId s5-interrupted-call already has outcome failed"
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 15,
+  "hasMore": false
+}

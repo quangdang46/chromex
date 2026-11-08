@@ -1,0 +1,8 @@
+{
+  "scenario": "native-host-relay",
+  "status": "PASS",
+  "asserts": 11,
+  "taskId": "01M6WFD9B4306Y3HD4FD0PZX36",
+  "browserInstanceId": "fe8d5187e584957927bf6ca7213df4b6",
+  "hostRequests": 3
+}
