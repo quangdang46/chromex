@@ -164,6 +164,25 @@ async function main(): Promise<void> {
     text += `\navailable tools:\n  ${names.join("\n  ")}`;
   }
   child.kill();
+  // Resolve artifact:<id> refs to their on-disk paths — models
+  // receiving a screenshot/pdf otherwise burn commands hunting the
+  // artifact store. Files live at <gatewayHome>/artifacts/<id>.<ext>.
+  const artifactIds = [...text.matchAll(/artifact:([A-Za-z0-9-]+)/g)].map((m) => m[1]);
+  if (artifactIds.length > 0) {
+    const { readdir } = await import("node:fs/promises");
+    const artDir = path.join(
+      process.env.CHROMEX_GATEWAY_HOME ?? path.join(homedir(), ".chromex", "gateway"),
+      "artifacts",
+    );
+    const files = await readdir(artDir).catch(() => [] as string[]);
+    const paths = artifactIds
+      .map((id) => files.find((f) => f.startsWith(`${id}.`)))
+      .filter((f): f is string => typeof f === "string")
+      .map((f) => path.join(artDir, f));
+    if (paths.length > 0) {
+      text += `\n[artifact files: ${paths.join(", ")}]`;
+    }
+  }
   process.stdout.write(text + "\n");
   if (res.error || result?.isError) process.exit(1);
 }

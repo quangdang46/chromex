@@ -32,6 +32,19 @@ import { ToolTokenError, ToolTokenManager } from "./tool-token.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 15_000;
 
+/** Per-tool dispatch budgets. Heavy page reads legitimately exceed the
+ *  default on real-world DOMs (YouTube/GitHub snapshots observed
+ *  timing out at 15s), and page.wait's own timeoutMs clamps up to 30s —
+ *  it can never succeed under the default cap. */
+const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
+  "browser.page.snapshot": 45_000,
+  "browser.page.extract": 30_000,
+  "browser.page.screenshot": 30_000,
+  "browser.page.pdf": 60_000,
+  "browser.page.wait": 35_000,
+  "browser.page.evaluate": 20_000,
+};
+
 /** Tools that are hard-blocked (§9.1/§9.2). browser.page.evaluate was
  *  unblocked after the CDP/scripting tier landed: it runs in the page
  *  MAIN world but every call is approval-gated (risk classifier →
@@ -717,7 +730,8 @@ export class BrowserToolServer {
   }
 
   private dispatch(host: ToolHostChannel, req: ToolCallRequest): Promise<ToolCallOutcome> {
-    const timeoutMs = this.deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+    const timeoutMs =
+      PER_TOOL_TIMEOUT_MS[req.tool] ?? this.deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
     return new Promise<ToolCallOutcome>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(req.toolCallId);
