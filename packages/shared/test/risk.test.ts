@@ -253,6 +253,25 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.bookmarks" })).risk).toBe("read");
   });
 
+  test("browser.page.caches: metadata reads; match egress; mutations approval", () => {
+    for (const op of ["listCaches", "listKeys"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.caches", cacheOp: op }));
+      expect(v.risk).toBe("read");
+      expect(v.needsApproval).toBe(false);
+    }
+    const match = classifyActionRisk(ctx({ action: "browser.page.caches", cacheOp: "match" }));
+    expect(match.needsApproval).toBe(true);
+    expect(match.kind).toBe("agent_egress");
+    expect(match.allowTaskEligible).toBe(false);
+    for (const op of ["put", "delete", "clear"]) {
+      const v = classifyActionRisk(ctx({ action: "browser.page.caches", cacheOp: op }));
+      expect(v.needsApproval).toBe(true);
+      expect(v.allowTaskEligible).toBe(false);
+      expect(v.kind).toBe("browser_action");
+    }
+    expect(classifyActionRisk(ctx({ action: "browser.page.caches" })).risk).toBe("read");
+  });
+
   test("unknown tool → fail closed external_mutation", () => {
     const v = classifyActionRisk(ctx({ action: "browser.page.evaluate" as never }));
     expect(v.needsApproval).toBe(true);

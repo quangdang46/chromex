@@ -726,6 +726,23 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       },
     ),
   },
+  "browser.page.caches": {
+    description:
+      "Inspect and manage the page's Cache Storage (Cache API) — the store service workers and PWAs use for offline assets. actions: 'listCaches' (all cache names, no args), 'listKeys' (request URLs+methods inside args.cache), 'match' (args.cache + args.url → status/headers/bodyBase64; optional ignoreSearch matches ignoring the query string), 'put' (args.cache + args.url + args.body — seeds a cached response the SW/page will then serve; args.status default 200, args.headers, args.bodyBase64 or args.bodyText), 'delete' (args.cache + args.url removes one entry), 'clear' (args.cache deletes the whole cache). Requires args.cache for every action except listCaches; frameId is rejected (top-frame scope). listCaches/listKeys are metadata reads; match returns response bodies (page-data egress approval); put/delete/clear always require approval. Available on both backends — the Cache API is page-context, works in secure contexts (https/localhost).",
+    inputSchema: objectSchema(
+      {
+        action: { type: "string", enum: ["listCaches", "listKeys", "match", "put", "delete", "clear"], description: "Default 'listCaches'." },
+        cache: { type: "string", description: "Cache name — required for every action except listCaches." },
+        url: { type: "string", description: "Request URL — required for match/put/delete." },
+        ignoreSearch: { type: "boolean", description: "match: ignore the URL query string when comparing." },
+        status: { type: "integer", description: "put: response status (default 200)." },
+        headers: { type: "object", description: "put: response headers (name → value)." },
+        bodyBase64: { type: "string", description: "put: response body, base64-encoded." },
+        bodyText: { type: "string", description: "put: response body, UTF-8 text (alternative to bodyBase64)." },
+        limit: { type: "integer", description: "listKeys max entries (1–1000, default 100)." },
+      },
+    ),
+  },
   "browser.history.search": {
     description:
       "Search the browser's own history — not tab-scoped. Returns visited pages matching args.text (substring over URL+title) or args.url, optionally bounded by startTime/endTime (epoch ms or ISO) and capped by limit (default 50, max 200). On chrome-extension this reads the profile's real history via chrome.history and requires the optional 'history' permission — when it is not granted the call fails proto.unsupported honestly. On playwright-isolated it searches the task's own visit log (pages this task created/navigated) — there is no browser profile history in an isolated context. Results are personal browsing data and count as page-text egress.",

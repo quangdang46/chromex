@@ -58,6 +58,10 @@ export interface ActionContext {
   /** browser.bookmarks sub-action — reads are profile-data egress,
    *  create/update/remove mutate the user's bookmark tree. */
   bookmarkOp?: string;
+  /** browser.page.caches sub-action — key/metadata lists are reads,
+   *  match returns response bodies (egress), put/delete/clear mutate
+   *  the Cache API store. */
+  cacheOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -491,6 +495,30 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // Reads fall through to the agentEgress dimension above —
       // bookmark titles/URLs are personal data (page-text class).
       return verdict("read", { reason: "bookmark read" });
+    }
+
+    case "browser.page.caches": {
+      const op = ctx.cacheOp ?? "listCaches";
+      if (op === "put" || op === "delete" || op === "clear") {
+        // Cache mutation can poison what the page/service worker serves —
+        // never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "cache mutation changes served content",
+        });
+      }
+      if (op === "match") {
+        // Cached response bodies are page data — per-call approval.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "agent_egress",
+          allowTaskEligible: false,
+          reason: "cached response body is page data — per-call approval",
+        });
+      }
+      return verdict("read", { reason: "cache metadata/key list" });
     }
 
     case "browser.windows.update":

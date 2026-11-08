@@ -71,6 +71,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.cookies",
   "browser.page.localStorage",
   "browser.page.indexedDB",
+  "browser.page.caches",
   "browser.history.search",
   "browser.bookmarks",
   "browser.page.network",
@@ -420,6 +421,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#storage(taskId, args);
       case "browser.page.indexedDB":
         return this.#idb(taskId, args);
+      case "browser.page.caches":
+        return this.#caches(taskId, args);
       case "browser.history.search":
         return this.#historySearch(taskId, args);
       case "browser.bookmarks":
@@ -2085,6 +2088,158 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       .slice(-limit)
       .map((v) => ({ ...v, lastVisitTime: v.ts, lastVisitTimeIso: new Date(v.ts).toISOString() }));
     return { visits, count: visits.length, scope: "task" };
+  }
+
+  // ---- caches (Cache API) ----
+
+  /** Same contract as the extension backend's chromexCacheOp — fixed
+   *  in-page function, agent supplies names/URLs/put-specs never code.
+   *  Read ops never create caches. */
+  async #caches(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const page = await this.#pageFor(taskId, args);
+    const action = typeof args.action === "string" ? args.action : "listCaches";
+    const VALID = ["listCaches", "listKeys", "match", "put", "delete", "clear"];
+    if (!VALID.includes(action)) {
+      throw protocolError("proto.invalid", `browser.page.caches args.action must be ${VALID.join("|")}`);
+    }
+    const cache = typeof args.cache === "string" && args.cache ? args.cache : "";
+    const cUrl = typeof args.url === "string" && args.url ? args.url : "";
+    if (action !== "listCaches" && !cache) {
+      throw protocolError("proto.invalid", `browser.page.caches ${action} requires args.cache`);
+    }
+    if (["match", "put", "delete"].includes(action) && !cUrl) {
+      throw protocolError("proto.invalid", `browser.page.caches ${action} requires args.url`);
+    }
+    const putSpec =
+      action === "put"
+        ? {
+            ...(typeof args.status === "number" ? { status: args.status } : {}),
+            ...(args.headers && typeof args.headers === "object" && !Array.isArray(args.headers)
+              ? { headers: args.headers as Record<string, string> }
+              : {}),
+            ...(typeof args.bodyBase64 === "string" ? { bodyBase64: args.bodyBase64 } : {}),
+            ...(typeof args.bodyText === "string" ? { bodyText: args.bodyText } : {}),
+          }
+        : null;
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+        : 100;
+    const out = (await page.evaluate(
+      async ([act, cn, u, spec, ignSearch, lim]: [
+        string, string, string,
+        { status?: number; headers?: Record<string, string>; bodyBase64?: string; bodyText?: string } | null,
+        boolean, number,
+      ]) => {
+        const BODY_BYTE_CAP = 128 * 1024;
+        const b64encode = (buf: ArrayBuffer): string => {
+          const bytes = new Uint8Array(buf);
+          let s = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) {
+            s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)) as number[]);
+          }
+          return btoa(s);
+        };
+        try {
+          if (act === "listCaches") {
+            return { ok: true, result: { caches: await caches.keys() } };
+          }
+          // Read/delete ops must not create a missing cache — caches.open()
+          // would. Check existence before opening.
+          const noCreate = act === "listKeys" || act === "match" || act === "delete";
+          const existed = noCreate ? await caches.has(cn) : true;
+          if (!existed) {
+            return {
+              ok: true,
+              result:
+                act === "match"
+                  ? { cache: cn, url: u, found: false, exists: false }
+                  : act === "delete"
+                    ? { cache: cn, url: u, deleted: false, exists: false }
+                    : { cache: cn, entries: [], count: 0, truncated: false, exists: false },
+            };
+          }
+          const cache = await caches.open(cn);
+          if (act === "listKeys") {
+            const keys = await cache.keys();
+            const entries = keys.slice(0, lim).map((r) => ({ url: r.url, method: r.method }));
+            return {
+              ok: true,
+              result: { cache: cn, entries, count: entries.length, truncated: keys.length > lim },
+            };
+          }
+          if (act === "match") {
+            let res: Response | undefined;
+            if (ignSearch) {
+              const target = new URL(u);
+              const keys = await cache.keys();
+              const hit = keys.find((r) => {
+                const k = new URL(r.url);
+                return k.origin === target.origin && k.pathname === target.pathname;
+              });
+              res = hit ? await cache.match(hit) : undefined;
+            } else {
+              res = await cache.match(new Request(u));
+            }
+            if (!res) return { ok: true, result: { cache: cn, url: u, found: false } };
+            const buf = await res.arrayBuffer();
+            const truncated = buf.byteLength > BODY_BYTE_CAP;
+            const slice = truncated ? buf.slice(0, BODY_BYTE_CAP) : buf;
+            const headers: Record<string, string> = {};
+            res.headers.forEach((v, k) => {
+              headers[k] = v;
+            });
+            return {
+              ok: true,
+              result: {
+                cache: cn, url: u, found: true, status: res.status,
+                statusText: res.statusText, headers,
+                bodyBase64: b64encode(slice), bodyBytes: buf.byteLength, truncated,
+              },
+            };
+          }
+          if (act === "put") {
+            let bytes: Uint8Array;
+            if (spec?.bodyBase64) {
+              const bin = atob(spec.bodyBase64);
+              bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            } else if (spec?.bodyText !== undefined) {
+              bytes = new TextEncoder().encode(spec.bodyText);
+            } else {
+              bytes = new Uint8Array(0);
+            }
+            const status = typeof spec?.status === "number" ? spec.status : 200;
+            const res = new Response(bytes.buffer as ArrayBuffer, {
+              status,
+              headers: spec?.headers ?? { "content-type": "application/octet-stream" },
+            });
+            await cache.put(new Request(u), res);
+            return { ok: true, result: { cache: cn, url: u, put: true, status } };
+          }
+          if (act === "delete") {
+            const removed = await cache.delete(new Request(u));
+            return { ok: true, result: { cache: cn, url: u, deleted: removed } };
+          }
+          if (act === "clear") {
+            const removed = await caches.delete(cn);
+            return { ok: true, result: { cache: cn, cleared: removed } };
+          }
+          return { ok: false, error: `unknown action: ${act}` };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+      [action, cache, cUrl, putSpec, args.ignoreSearch === true, limit] as [
+        string, string, string,
+        { status?: number; headers?: Record<string, string>; bodyBase64?: string; bodyText?: string } | null,
+        boolean, number,
+      ],
+    )) as { ok?: boolean; result?: Record<string, unknown>; error?: string } | undefined;
+    if (!out || out.ok !== true) {
+      throw protocolError("browser.action_failed", `cache op failed: ${out?.error ?? "no result"}`);
+    }
+    return out.result ?? {};
   }
 
   // ---- bookmarks ----

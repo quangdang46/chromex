@@ -620,6 +620,50 @@ try {
   await expectReject("browser.bookmarks", { action: "create", url: "javascript:alert(1)" }, "http(s)", "non-http(s) bookmark url refused");
   await expectReject("browser.bookmarks", { action: "list", parentId: "bm999" }, "not found", "unknown parentId refused");
 
+  // ── Loop 18: page.caches — Cache API on the task page ──────────────
+  const cacheUrl = fixture.url("/api/ping");
+  const ckMissing = await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "listKeys",
+  });
+  assert(ckMissing?.exists === false, "listKeys on missing cache reports exists:false without creating it");
+  const ckPut = await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "put", url: cacheUrl,
+    bodyText: '{"v":"cached"}', status: 200,
+    headers: { "content-type": "application/json" },
+  });
+  assert(ckPut?.put === true, "put seeded a cached response");
+  const ckCacheList = await call("browser.page.caches", { tabId: ckId });
+  assert((ckCacheList?.caches ?? []).includes("agent-cache"), "listCaches shows the new cache");
+  const ckKeys = await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "listKeys",
+  });
+  assert((ckKeys?.entries ?? []).some((e) => e.url === cacheUrl), "listKeys shows the seeded URL");
+  const ckMatch = await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "match", url: cacheUrl,
+  });
+  const ckBody = ckMatch?.bodyBase64
+    ? Buffer.from(ckMatch.bodyBase64, "base64").toString("utf8")
+    : "";
+  assert(ckMatch?.found === true && ckBody === '{"v":"cached"}', `match returned the seeded body (got ${ckBody.slice(0, 60)})`);
+  // in-page proof: the page's own caches API sees the same entry
+  const ckDom = await call("browser.page.evaluate", {
+    tabId: ckId,
+    expression: `caches.open('agent-cache').then(c => c.match(${JSON.stringify(cacheUrl)})).then(r => r ? r.text() : 'missing')`,
+  });
+  assert(String(ckDom?.value ?? "").includes('"cached"'), "in-page caches.match sees the tool write");
+  await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "delete", url: cacheUrl,
+  });
+  const ckAfter = await call("browser.page.caches", {
+    tabId: ckId, cache: "agent-cache", action: "match", url: cacheUrl,
+  });
+  assert(ckAfter?.found === false, "delete removed the entry");
+  await call("browser.page.caches", { tabId: ckId, cache: "agent-cache", action: "clear" });
+  const ckCleared = await call("browser.page.caches", { tabId: ckId });
+  assert(!(ckCleared?.caches ?? []).includes("agent-cache"), "clear removed the whole cache");
+  await expectReject("browser.page.caches", { tabId: ckId, action: "listKeys" }, "args.cache", "cache-scoped op without cache refused");
+  await expectReject("browser.page.caches", { tabId: ckId, cache: "x", action: "match" }, "args.url", "match without url refused");
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

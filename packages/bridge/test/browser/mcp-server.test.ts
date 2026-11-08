@@ -338,6 +338,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.cookies": { action: "list" },
   "browser.page.localStorage": { action: "list" },
   "browser.page.indexedDB": { action: "listDbs" },
+  "browser.page.caches": { action: "listCaches" },
   "browser.history.search": { text: "example", limit: 10 },
   "browser.bookmarks": { action: "list" },
   "browser.downloads.list": { state: "complete", limit: 20 },

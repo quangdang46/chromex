@@ -38,6 +38,7 @@ import { chromexConsoleCollect } from "../../content/console-capture.js";
 import { chromexEvaluate } from "../../content/evaluate.js";
 import { chromexStorageOp } from "../../content/storage.js";
 import { chromexIdbOp } from "../../content/idb.js";
+import { chromexCacheOp } from "../../content/caches.js";
 import type { CdpSession } from "../cdp.js";
 
 export interface ToolHostDeps {
@@ -284,6 +285,7 @@ const SUPPORTED = new Set([
   "browser.page.cookies",
   "browser.page.localStorage",
   "browser.page.indexedDB",
+  "browser.page.caches",
   "browser.history.search",
   "browser.bookmarks",
   "browser.downloads.list",
@@ -1395,6 +1397,57 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `indexedDB op failed: ${res?.error ?? "no result"}`);
+        }
+        return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
+      }
+      case "browser.page.caches": {
+        // Fixed-shape Cache API helper — agent supplies names/URLs/put
+        // specs, never code. Read ops never create caches.
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "cache access requires the scripting permission");
+        }
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.caches is tab-scoped; args.frameId is not supported");
+        }
+        const action = str(args.action) ?? "listCaches";
+        const VALID = ["listCaches", "listKeys", "match", "put", "delete", "clear"];
+        if (!VALID.includes(action)) {
+          throw toolError("proto.invalid", `browser.page.caches args.action must be ${VALID.join("|")}`);
+        }
+        const cache = str(args.cache);
+        const cUrl = str(args.url);
+        if (action !== "listCaches" && !cache) {
+          throw toolError("proto.invalid", `browser.page.caches ${action} requires args.cache`);
+        }
+        if (["match", "put", "delete"].includes(action) && !cUrl) {
+          throw toolError("proto.invalid", `browser.page.caches ${action} requires args.url`);
+        }
+        const putSpec =
+          action === "put"
+            ? {
+                ...(typeof args.status === "number" ? { status: args.status } : {}),
+                ...(args.headers && typeof args.headers === "object" && !Array.isArray(args.headers)
+                  ? { headers: args.headers as Record<string, string> }
+                  : {}),
+                ...(typeof args.bodyBase64 === "string" ? { bodyBase64: args.bodyBase64 } : {}),
+                ...(typeof args.bodyText === "string" ? { bodyText: args.bodyText } : {}),
+              }
+            : undefined;
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.floor(args.limit), 1), 1000)
+            : 100;
+        const res = (await deps.runInMainWorld!(
+          tabId,
+          chromexCacheOp as (...fnArgs: unknown[]) => unknown,
+          // chrome.scripting args must be JSON-serializable — undefined
+          // elements are rejected, so absent values go as ""/null.
+          [action, cache ?? "", cUrl ?? "", putSpec ?? null, args.ignoreSearch === true, limit],
+          [0],
+        )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
+        if (!res || res.ok !== true) {
+          throw toolError("browser.action_failed", `cache op failed: ${res?.error ?? "no result"}`);
         }
         return { ...(res.result as Record<string, unknown>), resolvedTabId: tabId };
       }

@@ -826,6 +826,61 @@ await runScenario(
         ...idb,
       };
 
+      // --- caches: Cache API via chromexCacheOp MAIN-world helper ---
+      // put/match/delete/clear are approval-gated (auto-answered);
+      // reads never create a missing cache. In-page proof via evaluate.
+      let cc = {};
+      try {
+        const ccMissing = await runner.browserToolCall(
+          taskId, "browser.page.caches",
+          { cache: "cdp-cache", action: "listKeys" }, token, 60_000,
+        );
+        cc.noCreate = (ccMissing?.result ?? ccMissing ?? {}).exists === false;
+        const ccPut = await runner.browserToolCall(
+          taskId, "browser.page.caches",
+          { cache: "cdp-cache", action: "put",
+            url: fixture.url("/api/ping"), bodyText: '{"v":"cdpcached"}',
+            headers: { "content-type": "application/json" } }, token, 60_000,
+        );
+        cc.putOk = (ccPut?.result ?? ccPut ?? {}).put === true;
+        const ccKeys = await runner.browserToolCall(
+          taskId, "browser.page.caches",
+          { cache: "cdp-cache", action: "listKeys" }, token, 60_000,
+        );
+        cc.keysOk = ((ccKeys?.result ?? ccKeys ?? {}).entries ?? [])
+          .some((e) => String(e.url).includes("/api/ping"));
+        const ccMatch = await runner.browserToolCall(
+          taskId, "browser.page.caches",
+          { cache: "cdp-cache", action: "match", url: fixture.url("/api/ping") }, token, 60_000,
+        );
+        const ccBody = (ccMatch?.result ?? ccMatch ?? {}).bodyBase64
+          ? Buffer.from((ccMatch?.result ?? ccMatch ?? {}).bodyBase64, "base64").toString("utf8")
+          : "";
+        cc.matchOk = ccBody === '{"v":"cdpcached"}';
+        const ccDom = await runner.browserToolCall(
+          taskId, "browser.page.evaluate",
+          { expression: `caches.open('cdp-cache').then(c => c.match(${JSON.stringify(fixture.url("/api/ping"))})).then(r => r ? r.text() : 'missing')` },
+          token, 60_000,
+        );
+        cc.domOk = String(ccDom?.result?.value ?? ccDom?.value ?? "").includes('"cdpcached"');
+        await runner.browserToolCall(
+          taskId, "browser.page.caches",
+          { cache: "cdp-cache", action: "clear" }, token, 60_000,
+        );
+        const ccAfter = await runner.browserToolCall(
+          taskId, "browser.page.caches", {}, token, 60_000,
+        );
+        cc.clearOk = !((ccAfter?.result ?? ccAfter ?? {}).caches ?? []).includes("cdp-cache");
+      } catch (e) {
+        cc.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`caches → ${JSON.stringify(cc).slice(0, 300)}`);
+      results.caches = {
+        ok: cc.noCreate === true && cc.putOk === true && cc.keysOk === true &&
+          cc.matchOk === true && cc.domOk === true && cc.clearOk === true,
+        ...cc,
+      };
+
       // --- bookmarks: optional permission — ungranted → honest unsupported ---
       // The acceptance profile never grants "bookmarks", so the tool must
       // fail proto.unsupported rather than fake an empty jar.
@@ -845,7 +900,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get, cookies + web storage + indexedDB + caches"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

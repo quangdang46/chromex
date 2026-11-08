@@ -1003,6 +1003,37 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("page.caches marshals args into chromexCacheOp + validates", async () => {
+    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const d = deps({
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
+        calls.push({ funcName: func.name, args });
+        return { ok: true, result: { caches: ["v1"] } };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.caches", { tabId: 42 }))) as { caches: string[] };
+    expect(res.caches[0]).toBe("v1");
+    expect(calls[0]).toMatchObject({ funcName: "chromexCacheOp" });
+    expect(calls[0]!.args?.slice(0, 2)).toEqual(["listCaches", ""]);
+    // put marshals the spec through
+    await h(req("browser.page.caches", {
+      tabId: 42, cache: "v1", action: "put", url: "https://x.test/a.js",
+      bodyText: "body", status: 201, headers: { "content-type": "text/javascript" },
+    }));
+    expect(calls[1]!.args?.slice(0, 3)).toEqual(["put", "v1", "https://x.test/a.js"]);
+    expect(calls[1]!.args?.[3]).toMatchObject({ status: 201, bodyText: "body" });
+    // validation refuses
+    await expect(h(req("browser.page.caches", { tabId: 42, action: "listKeys" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.caches", { tabId: 42, action: "match", cache: "v1" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.caches", { tabId: 42, action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.caches", { tabId: 42, frameId: 1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("browser.bookmarks marshals ops and validates", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const d = deps({
