@@ -365,6 +365,41 @@ await runScenario(
         fout2: fout2b,
       };
 
+      // responseBody sees subframe requests: prime the tap, click the
+      // iframe button (fires fetch('/api/frame-hit')), read the body.
+      let frameBody = null;
+      if (childFrame?.frameId) {
+        await runner.browserToolCall(
+          taskId, "browser.page.responseBody", { urlContains: "/api/frame-hit" }, token, 60_000,
+        );
+        await runner.browserToolCall(
+          taskId, "browser.page.click",
+          { selector: "#fb", frameId: childFrame.frameId },
+          token, 60_000,
+        );
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+          const list = await runner.browserToolCall(
+            taskId, "browser.page.responseBody", { urlContains: "/api/frame-hit" }, token, 60_000,
+          );
+          const reqs = list?.result?.requests ?? list?.requests ?? [];
+          const hit = reqs.find((r) => r.finished === true);
+          if (hit?.requestId) {
+            frameBody = await runner.browserToolCall(
+              taskId, "browser.page.responseBody", { requestId: hit.requestId }, token, 60_000,
+            );
+            break;
+          }
+          await sleep(400);
+        }
+      }
+      const fbPayload = frameBody?.result ?? frameBody ?? {};
+      evidence.note(`frame responseBody → ${JSON.stringify(fbPayload).slice(0, 200)}`);
+      results.frameResponseBody = {
+        ok: fbPayload?.body === '{"ok":true}',
+        body: fbPayload?.body,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
