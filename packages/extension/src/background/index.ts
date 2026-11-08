@@ -433,7 +433,13 @@ void getGatewayRuntime().then((rt) => {
   });
   rt?.onEvent((env) => {
     const legacy = gatewayEventToLegacy(env);
-    if (legacy) broadcastBridgeEvent(legacy);
+    if (legacy) {
+      // Gateway events bypass bridge.subscribe — run the same
+      // conversation runtime tracking so turn.started/completed keep
+      // per-conversation activeTurn state (ui.init, queue reconcile).
+      const eventConversationId = trackBridgeEventRuntime(legacy);
+      broadcastBridgeEvent(annotateBridgeEventConversation(legacy, eventConversationId));
+    }
     // P1-10: ack durable task events once handed to the panel —
     // broadcastBridgeEvent resolves only after runtime.sendMessage, so
     // this approximates "rendered" for the interim translation path.
@@ -537,7 +543,7 @@ const state = {
   lastAutoCompactBucket: null as number | null,
 };
 
-bridge.subscribe((event) => {
+function trackBridgeEventRuntime(event: unknown): string | null {
   const bridgeEvent = event as { type?: string };
   let eventConversationId: string | null = resolveBridgeEventConversationId(event, conversationRuntime);
   if (bridgeEvent.type === "turn.started") {
@@ -582,6 +588,11 @@ bridge.subscribe((event) => {
       void triggerCatalogRefresh(state.workspaceHarness?.workspaceRoot || undefined);
     }
   }
+  return eventConversationId;
+}
+
+bridge.subscribe((event) => {
+  const eventConversationId = trackBridgeEventRuntime(event);
   broadcastBridgeEvent(annotateBridgeEventConversation(event, eventConversationId));
 });
 
@@ -1502,6 +1513,17 @@ async function seedConversationRuntime(conversationId: string): Promise<void> {
   }
 }
 
+async function gatewayActiveTurnForThread(threadId: string | null): Promise<CodexActiveTurn | null> {
+  if (!threadId) return null;
+  try {
+    const rt = await getGatewayRuntime();
+    const activeTurnId = rt?.tasks.getTask(threadId)?.activeTurnId;
+    return activeTurnId ? { threadId, turnId: activeTurnId } : null;
+  } catch {
+    return null;
+  }
+}
+
 function syncCurrentRuntimeState(conversationId: string): void {
   if (state.currentConversationId !== conversationId) {
     return;
@@ -1689,7 +1711,11 @@ async function buildUiInitPayload(
     serverThreads: state.serverThreads,
     currentConversation,
     rateLimits: state.rateLimits,
-    activeTurn: state.activeTurn,
+    // Gateway mode: after an SW restart the in-memory runtime lost
+    // activeTurn, but the gateway still reports it via hello/task view.
+    activeTurn:
+      state.activeTurn ??
+      (await gatewayActiveTurnForThread(currentConversation?.threadId ?? null)),
     latestPlan: state.latestPlan,
     latestDiff: state.latestDiff,
     latestReroute: state.latestReroute,
@@ -1898,6 +1924,7 @@ async function handlePromptSend(payload: PromptRequestPayload) {
     createCodexSkillRuntimeAvailability(settings),
     state.connectedApps,
   );
+  const activeTurnBeforePrompt = conversationRuntime.get(conversationId).activeTurn;
   const promptTurn = await requestPromptSendWithAssistantCapture({
     clientRequestId: payload.clientRequestId,
     profile: prepared.profile,
@@ -1922,7 +1949,14 @@ async function handlePromptSend(payload: PromptRequestPayload) {
     return cancellationAfterPrompt;
   }
   conversationRuntime.setThreadId(conversationId, result.threadId);
-  conversationRuntime.setActiveTurn(conversationId, null);
+  // A turn.started may already have been recorded while prompt.send was
+  // in flight (gateway mode starts the turn before the RPC returns).
+  // Only clear the slot when no NEW active turn arrived during this
+  // prompt — otherwise a sidepanel reload would resurrect with
+  // activeTurn=null and the composer queue would flush mid-turn.
+  if (conversationRuntime.get(conversationId).activeTurn === activeTurnBeforePrompt) {
+    conversationRuntime.setActiveTurn(conversationId, null);
+  }
   syncCurrentRuntimeState(conversationId);
 
   const deferredBrowserActionWorkflow = await maybeHandleDeferredBrowserDomActionWorkflow(

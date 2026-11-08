@@ -381,7 +381,11 @@ export class SessionManager {
     // 1b: turn.started + started_at BEFORE provider call (§4.4.1 step 5)
     const started = transitionTurn(turn, "running", { startedAt: Date.now() });
     store.upsertTurn(started);
-    this.#persist(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
+    // 1b persist is gateway-synthesized — #persist alone never reaches
+    // clients, so broadcast the envelope explicitly (turn boundaries
+    // drive sidepanel activeTurn state + composer queue reconcile).
+    const startedEnv = this.#persist(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
+    this.#publish(task.taskId, startedEnv, false);
     this.#armTurnTimeout(task.taskId, turn.turnId);
     if (task.status === "queued") {
       this.#setTaskStatus(task, "active");

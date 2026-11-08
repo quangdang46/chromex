@@ -32,6 +32,8 @@ export interface TaskView {
   lastReadSeq: number;
   attention: string | null;
   title: string | null;
+  /** gateway-reported running turn — survives SW restart via hello */
+  activeTurnId?: string | null;
   /** pinned browser backend for the UI badge (P2-07) */
   backendId?: string | null;
   updatedAt: number;
@@ -90,6 +92,7 @@ export class TaskController {
       lastReadSeq: this.#cursors.lastReadSeqByTask[t.taskId] ?? existing?.lastReadSeq ?? 0,
       attention: null,
       title: existing?.title ?? null,
+      activeTurnId: t.activeTurnId ?? existing?.activeTurnId ?? null,
       backendId: t.backendId ?? existing?.backendId ?? null,
       updatedAt: Date.now(),
     });
@@ -226,6 +229,18 @@ export class TaskController {
       }
       if (t.type === "task.created") {
         // title may arrive later via task.get; keep null
+      }
+      const turnId = typeof (t as { turnId?: unknown }).turnId === "string"
+        ? (t as { turnId: string }).turnId
+        : null;
+      if (t.type === "turn.started" && turnId) {
+        view.activeTurnId = turnId;
+      } else if (
+        (t.type === "turn.completed" || t.type === "turn.failed" ||
+          t.type === "turn.cancelled" || t.type === "turn.unknown") &&
+        turnId && view.activeTurnId === turnId
+      ) {
+        view.activeTurnId = null;
       }
       this.#cursors.lastSeqByTask[env.taskId] = view.lastSeq;
       void this.#saveCursors();

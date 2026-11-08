@@ -15,8 +15,13 @@ await runScenario(
   "s11-ui-queue-flush",
   async ({ runner, browser, evidence }) => {
     const sp = await browser.context.newPage();
+    const consoleLines = [];
+    sp.on("console", (msg) => {
+      const text = msg.text();
+      if (text.includes("chromex-queue")) consoleLines.push(text);
+    });
     try {
-      await sp.goto(`chrome-extension://${browser.extensionId}/sidepanel.html?mode=popup`, {
+      await sp.goto(`chrome-extension://${browser.extensionId}/sidepanel.html?mode=popup&debug=1`, {
         waitUntil: "domcontentloaded",
         timeout: 20_000,
       });
@@ -37,7 +42,9 @@ await runScenario(
       await sp.evaluate(() =>
         chrome.runtime.sendMessage({
           type: "settings.update",
-          settings: { agentProviderId: "fakeacp", usageNoticeAccepted: true },
+          // rememberChats is required for the conversation (and therefore
+          // its queue key) to survive the reload below
+          settings: { agentProviderId: "fakeacp", usageNoticeAccepted: true, rememberChats: true },
         }),
       );
 
@@ -78,6 +85,41 @@ await runScenario(
       }
       evidence.note("second message queued");
 
+      // queue must survive a sidepanel reload (chrome.storage.session +
+      // hydrate on init) and still flush when turn 1 completes
+      // turn 1 must outlive the reload window so the queue is still
+      // pending when the panel comes back; turn.completed then drives
+      // the flush. 25s keeps total runtime reasonable.
+      await sp.reload({ waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#composer", { timeout: 20_000 });
+      // turn 1 is still running → active turn state must have been
+      // restored from ui.init, and the queue must NOT have flushed early
+      await sp.waitForSelector("#stop-turn", { timeout: 15_000 });
+      const postReload = await sp.evaluate(async () => ({
+        stored: await chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r).slice(0, 300)),
+        queuePresent: Boolean(document.querySelector(".composer-queue")),
+        composerValue: document.querySelector("#composer")?.value ?? "",
+        frameClass: document.querySelector(".composer-frame")?.className ?? "",
+        approvalPanel: Boolean(document.querySelector(".approval-panel, .plan-input-panel, [class*=approval], [class*=plan-input]")),
+        footerHtml: (document.querySelector(".composer-shell")?.innerHTML ?? "").slice(0, 400),
+        bgCurrentConv: await chrome.storage.local.get("codex.sidepanel.currentConversationId").then((r) => JSON.stringify(r)),
+        dbgEvents: await chrome.storage.session.get(null).then((r) =>
+          Object.fromEntries(Object.entries(r).filter(([k]) => k.startsWith("chromex.debug.")).slice(0, 60)),
+        ),
+        chatIds: [...document.querySelectorAll("[data-chat-id]")].map((el) => el.dataset.chatId).slice(0, 5),
+        uiInit: await chrome.runtime.sendMessage({ type: "ui.init" }).then((p) => JSON.stringify({
+          convId: p?.currentConversation?.id ?? null,
+          activeTurn: p?.activeTurn ?? null,
+          recentCount: (p?.recentChats ?? []).length,
+        })).catch((e) => `err:${e}`),
+      }));
+      const dbg = await sp.evaluate(() => window.__chromexQueueDebug?.() ?? null);
+      postReload.dbg = dbg;
+      evidence.note(`post-reload: ${JSON.stringify(postReload)}`);
+      evidence.note(`queue console: ${JSON.stringify(consoleLines.slice(-10))}`);
+      await sp.waitForSelector(".composer-queue", { timeout: 15_000 });
+      evidence.note("queue survived sidepanel reload while turn still active");
+
       // find the gateway task
       let gwTaskId = null;
       for (let i = 0; i < 15 && !gwTaskId; i++) {
@@ -114,6 +156,7 @@ await runScenario(
         chrome.storage.session.get("chromex.sidepanel.queuedComposerMessages").then((r) => JSON.stringify(r)),
       );
       evidence.note(`storedQueue=${storedQueue}`);
+      evidence.note(`queue console final: ${JSON.stringify(consoleLines.slice(-20))}`);
 
       const pass = queueGone && completed === 2 && userMsgs === 2 && failed === 0 && cancelled === 0 && unknown === 0;
       return {
@@ -136,9 +179,9 @@ await runScenario(
         enabled: true,
         command: process.execPath,
         args: [FAKE_AGENT],
-        // turn 1 must outlive the queue window but finish well inside the
-        // scenario budget; later prompts finish in 1.5s (fixture default)
-        env: { FAKE_ACP_TURN_MS: "8000" },
+        // turn 1 holds 25s so it outlives the reload; later prompts
+        // finish in 1.5s (fixture default)
+        env: { FAKE_ACP_TURN_MS: "25000" },
         models: null,
         additionalModels: null,
         defaultModel: null,

@@ -1254,6 +1254,15 @@ installGlobalFloatingSurfaceDismissal();
 renderSync();
 void scheduleInitialize();
 
+if (new URLSearchParams(window.location.search).has("debug")) {
+  (window as unknown as Record<string, unknown>).__chromexQueueDebug = () => ({
+    currentConversationId: state.currentConversationId,
+    activeTurn: state.activeTurn,
+    promptActivity: Boolean(state.promptActivity),
+    queued: serializeQueuedComposerMessages(),
+  });
+}
+
 window.addEventListener("pagehide", () => {
   flushStreamingAssistantDeltas();
   syncAuthOnboardingAutoReconnect(false);
@@ -2574,6 +2583,16 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     state.serverThreads = collections.serverThreads;
     state.rateLimits = payload.rateLimits;
     state.activeTurn = payload.activeTurn;
+    // ui.init is the only turn-state source after a panel reload — seed
+    // the per-conversation maps so applyConversationToState doesn't
+    // clobber it with an empty entry while the turn is still running.
+    const initConversationId = payload.currentConversation?.id;
+    if (initConversationId && payload.activeTurn) {
+      activeTurnsByConversationId.set(initConversationId, payload.activeTurn);
+      if (payload.activeTurn.threadId) {
+        rememberConversationThreadId(initConversationId, payload.activeTurn.threadId);
+      }
+    }
     state.latestPlan = payload.latestPlan;
     state.latestDiff = payload.latestDiff;
     state.latestReroute = payload.latestReroute;
@@ -2604,6 +2623,7 @@ async function initialize(options: { forceCatalog?: boolean } = {}): Promise<voi
     if (state.attachments.has("open-tabs") || state.selectedTabIds.length) {
       await loadTabs();
     }
+    reconcileQueuedComposerFlush();
   } catch (error) {
     state.initError = toUserFacingRuntimeError(error, getUiStrings(state.uiLocale).errors.init);
     render();
@@ -14923,6 +14943,7 @@ function bindEvents(): void {
       }
       const result = await chrome.runtime.sendMessage({ type: "conversation.resume", conversationId });
       hydrateConversation(result.conversation);
+      reconcileQueuedComposerFlush();
       state.appMenuOpen = false;
       state.activeView = resolveMainViewForConversation(result.conversation);
       render();
@@ -14943,6 +14964,7 @@ function bindEvents(): void {
       }
       const result = await chrome.runtime.sendMessage({ type: "conversation.resume.server", threadId });
       hydrateConversation(result.conversation);
+      reconcileQueuedComposerFlush();
       state.threadId = threadId;
       state.appMenuOpen = false;
       state.activeView = "chat";
@@ -15325,8 +15347,10 @@ const QUEUED_COMPOSER_MESSAGES_STORAGE_KEY = "chromex.sidepanel.queuedComposerMe
 
 function persistQueuedComposerMessages(): void {
   try {
+    const serialized = serializeQueuedComposerMessages();
+    console.log("[chromex-queue] persist", JSON.stringify(Object.keys(serialized)));
     void chrome.storage.session
-      .set({ [QUEUED_COMPOSER_MESSAGES_STORAGE_KEY]: serializeQueuedComposerMessages() })
+      .set({ [QUEUED_COMPOSER_MESSAGES_STORAGE_KEY]: serialized })
       .catch(() => undefined);
   } catch {
     // storage.session unavailable — queue stays in-memory only
@@ -15337,10 +15361,12 @@ async function hydrateQueuedComposerMessages(): Promise<void> {
   try {
     const stored = await chrome.storage.session.get(QUEUED_COMPOSER_MESSAGES_STORAGE_KEY);
     const entries = stored?.[QUEUED_COMPOSER_MESSAGES_STORAGE_KEY];
+    console.log("[chromex-queue] hydrate", JSON.stringify(entries ?? null)?.slice(0, 300));
     if (entries && typeof entries === "object") {
       restoreQueuedComposerMessages(entries as Record<string, QueuedComposerMessage[]>);
     }
-  } catch {
+  } catch (error) {
+    console.log("[chromex-queue] hydrate failed", String(error));
     // storage unavailable — start with an empty queue
   }
 }
@@ -15357,8 +15383,9 @@ function removeQueuedComposerMessageForCurrentConversation(id: string): void {
  *  when the active turn ends; re-queues if a new turn already started
  *  (e.g. the user sent a fresh prompt while the flush was in flight). */
 async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
+  console.log("[chromex-queue] flush?", conversationId, "inFlightTurn:", isPromptTurnInFlight(), "queued:", queuedComposerMessagesFor(conversationId).length);
   if (queuedComposerFlushInFlight.has(conversationId)) return;
-  if (state.currentConversationId !== conversationId || state.activeTurn) return;
+  if (state.currentConversationId !== conversationId || isPromptTurnInFlight()) return;
   const next = dequeueQueuedComposerMessage(conversationId);
   persistQueuedComposerMessages();
   if (!next) {
@@ -15367,7 +15394,7 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   }
   queuedComposerFlushInFlight.add(conversationId);
   try {
-    if (state.activeTurn) {
+    if (isPromptTurnInFlight()) {
       requeueQueuedComposerMessage(conversationId, next);
       persistQueuedComposerMessages();
       return;
@@ -15381,6 +15408,22 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
   } finally {
     queuedComposerFlushInFlight.delete(conversationId);
   }
+}
+
+/** Re-deliver a persisted queue entry whose turn.end event may have been
+ *  missed while the panel was reloading or another conversation was
+ *  active. flushQueuedComposerMessage no-ops while a turn is in flight,
+ *  so this is safe to call whenever turn state is (re)hydrated. */
+function reconcileQueuedComposerFlush(): void {
+  const conversationId = state.currentConversationId;
+  console.log("[chromex-queue] reconcile", conversationId, "inFlight:", isPromptTurnInFlight(), "queued:", conversationId ? queuedComposerMessagesFor(conversationId).length : -1);
+  if (!conversationId || isPromptTurnInFlight()) {
+    return;
+  }
+  if (queuedComposerMessagesFor(conversationId).length === 0) {
+    return;
+  }
+  void flushQueuedComposerMessage(conversationId);
 }
 
 async function sendPrompt(
