@@ -186,6 +186,12 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
     await expect(
       backend2.execute("t1", "browser.tabs.wait", { urlContains: "x", waitForLoad: "yes" }),
     ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      backend2.execute("t1", "browser.tabs.wait", { urlContains: "x", disappear: "yes" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      backend2.execute("t1", "browser.tabs.wait", { urlContains: "x", disappear: true, waitForLoad: true }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
   test("press without selector uses page.keyboard with modifier chord (chromex-cly)", async () => {

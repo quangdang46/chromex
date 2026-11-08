@@ -1101,6 +1101,19 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.invalid", "browser.tabs.wait args.waitForLoad must be a boolean");
         }
         const waitForLoad = args.waitForLoad === true;
+        // disappear:true inverts the wait — hold until NO visible tab's
+        // sanitized URL contains urlContains anymore. The OAuth-popup
+        // self-close pattern (window.close() after the callback) needs
+        // exactly this: the agent must observe the tab going away, not
+        // just arriving. Returns immediately if nothing matches at call
+        // time — that IS the satisfied condition.
+        if (args.disappear !== undefined && typeof args.disappear !== "boolean") {
+          throw toolError("proto.invalid", "browser.tabs.wait args.disappear must be a boolean");
+        }
+        const disappear = args.disappear === true;
+        if (disappear && waitForLoad) {
+          throw toolError("proto.invalid", "browser.tabs.wait waitForLoad has no meaning with disappear");
+        }
         const INTERNAL = /^(chrome|chrome-extension|edge|about|devtools|view-source):/i;
         const foreign = new Set(tabScope?.foreignTabIds ?? []);
         const visible = (tabs: chrome.tabs.Tab[]) =>
@@ -1116,6 +1129,24 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return "";
           }
         };
+        if (disappear) {
+          const goneDeadline = Date.now() + waitTimeoutMs;
+          for (;;) {
+            const stillThere = visible(await deps.queryTabs()).some(
+              (t) => sanitize(t.url ?? "").includes(urlContains),
+            );
+            if (!stillThere) {
+              return { ok: true, matched: "disappear" };
+            }
+            if (Date.now() >= goneDeadline) {
+              throw toolError(
+                "browser.timeout",
+                `tab matching "${urlContains}" still present after ${waitTimeoutMs}ms`,
+              );
+            }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+        }
         const baseline = new Set(
           visible(await deps.queryTabs())
             .map((t) => t.id)

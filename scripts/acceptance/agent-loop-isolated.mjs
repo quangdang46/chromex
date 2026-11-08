@@ -282,6 +282,31 @@ try {
     "waitForLoad non-boolean refused",
   );
 
+  // disappear:true — self-closing popup (window.open + window.close,
+  // the OAuth-popup pattern). The wait must observe the tab going away;
+  // a still-open tab must keep it waiting until timeout.
+  const clCreated = await call("browser.tab.create", { url: fixture.url("/popup-link-close"), active: true });
+  const clTab = clCreated?.tabId ?? clCreated?.id;
+  await new Promise((r) => setTimeout(r, 800));
+  const gonePromise = call("browser.tabs.wait", { urlContains: "popup-closing", disappear: true, timeoutMs: 8000 });
+  await call("browser.page.click", { tabId: clTab, selector: "#go" }).catch(() => null);
+  const goneRes = await gonePromise;
+  assert(goneRes?.matched === "disappear", `disappear wait observed self-close (got ${JSON.stringify(goneRes).slice(0, 120)})`);
+  // the launcher itself stays open → disappear on its URL must time out
+  await expectReject(
+    "browser.tabs.wait",
+    { urlContains: "popup-link-close", disappear: true, timeoutMs: 500 },
+    "timeout",
+    "still-open tab keeps disappear waiting",
+  );
+  await expectReject(
+    "browser.tabs.wait",
+    { urlContains: "x", disappear: true, waitForLoad: true },
+    "no meaning",
+    "disappear+waitForLoad combo refused",
+  );
+  await call("browser.tab.close", { tabId: clTab }).catch(() => null);
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

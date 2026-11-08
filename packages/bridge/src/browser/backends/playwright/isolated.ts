@@ -570,6 +570,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", "browser.tabs.wait args.waitForLoad must be a boolean");
     }
     const waitForLoad = args.waitForLoad === true;
+    // disappear:true inverts the wait — hold until no page's URL
+    // contains urlContains anymore (OAuth-popup self-close pattern).
+    // Returns immediately when nothing matches at call time.
+    if (args.disappear !== undefined && typeof args.disappear !== "boolean") {
+      throw protocolError("proto.invalid", "browser.tabs.wait args.disappear must be a boolean");
+    }
+    const disappear = args.disappear === true;
+    if (disappear && waitForLoad) {
+      throw protocolError("proto.invalid", "browser.tabs.wait waitForLoad has no meaning with disappear");
+    }
     const timeout = typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000;
     const deadline = Date.now() + Math.min(timeout, 30_000);
     const context = await this.#contextFor(taskId);
@@ -578,6 +588,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const u = p.url();
       return u !== "" && u !== "about:blank" && stripQuery(u).includes(urlContains);
     };
+    if (disappear) {
+      for (;;) {
+        const stillThere = context.pages().some(matchUrl);
+        if (!stillThere) return { ok: true, matched: "disappear" };
+        if (Date.now() >= deadline) {
+          throw protocolError("browser.timeout", `tab matching "${urlContains}" still present before timeout`);
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
     let candidate: PwPage | undefined;
     for (;;) {
       const pages = context.pages();

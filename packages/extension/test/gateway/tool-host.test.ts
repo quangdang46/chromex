@@ -810,6 +810,53 @@ describe("tool host (P1-09)", () => {
     expect(calls).toBeGreaterThan(3);
   });
 
+  test("tabs.wait disappear holds until no tab matches; combo + type refused", async () => {
+    let calls = 0;
+    const d = deps({
+      queryTabs: vi.fn(async () => {
+        calls += 1;
+        // popup present for two polls, then gone
+        const popupThere = calls <= 3;
+        return [
+          { id: 7, url: "https://x/", title: "X", active: true, windowId: 1 },
+          ...(popupThere
+            ? [{ id: 55, url: "https://idp.example.com/oauth/callback", title: "OAuth", active: false, windowId: 1 }]
+            : []),
+        ];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(
+      req("browser.tabs.wait", { urlContains: "oauth/callback", disappear: true, timeoutMs: 3000 }),
+    )) as { ok: boolean; matched: string };
+    expect(res.matched).toBe("disappear");
+    expect(calls).toBeGreaterThan(3);
+    // already gone → immediate disappear
+    const d2 = deps({ queryTabs: vi.fn(async () => [{ id: 7, url: "https://x/", title: "X", active: true, windowId: 1 }]) });
+    const h2 = createToolHostHandler(d2);
+    const instant = (await h2(
+      req("browser.tabs.wait", { urlContains: "oauth/callback", disappear: true, timeoutMs: 1000 }),
+    )) as { matched: string };
+    expect(instant.matched).toBe("disappear");
+    // still present → browser.timeout
+    const d3 = deps({
+      queryTabs: vi.fn(async () => [
+        { id: 7, url: "https://x/stuck", title: "X", active: true, windowId: 1 },
+      ]),
+    });
+    const h3 = createToolHostHandler(d3);
+    await expect(
+      h3(req("browser.tabs.wait", { urlContains: "stuck", disappear: true, timeoutMs: 80 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
+    // validation: non-boolean + disappear/waitForLoad combo
+    await expect(
+      h2(req("browser.tabs.wait", { urlContains: "x", disappear: "yes" })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h2(req("browser.tabs.wait", { urlContains: "x", disappear: true, waitForLoad: true })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.wait consoleText validation: level requires text, bad level, missing dep", async () => {
     const h = createToolHostHandler(deps({
       runInMainWorld: vi.fn(async () => ({ installed: true, entries: [] })),

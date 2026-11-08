@@ -227,6 +227,16 @@ addEventListener("wheel", (e) => {
 <h1>Popup Launcher Slow</h1>
 <a id="go" href="/popup-slow" target="_blank">open slow popup</a>
 </body></html>`,
+  // Self-closing popup: window.open (script-opened → window.close is
+  // permitted) then the popup closes itself ~600ms later — the OAuth
+  // popup pattern browser.tabs.wait disappear:true observes.
+  "/popup-link-close": `<!doctype html><html><body>
+<h1>Popup Launcher Close</h1>
+<button id="go" onclick="window.open('/popup-closing','_blank')">open self-closing popup</button>
+</body></html>`,
+  "/popup-closing": `<!doctype html><html><body><h1>Popup Closing</h1><p>will self-close</p>
+<script>setTimeout(() => window.close(), 600);</script>
+</body></html>`,
 
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.

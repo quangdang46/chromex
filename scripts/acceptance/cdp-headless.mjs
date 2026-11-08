@@ -1882,6 +1882,74 @@ await runScenario(
         ...tw,
       };
 
+      // --- tabsWait disappear: self-closing popup (OAuth window.close
+      // pattern). window.open from a trusted click → popup lives ~600ms
+      // → disappear wait observes it go away. Also: a still-open tab
+      // must make disappear time out, and the combo with waitForLoad is
+      // refused.
+      let td = {};
+      try {
+        const tgCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create",
+          { url: fixture.url("/popup-link-close"), active: true }, token, 60_000,
+        );
+        const tgTab = (tgCreate?.result ?? tgCreate ?? {}).openedTabId ??
+          (tgCreate?.result ?? tgCreate ?? {}).tabId;
+        td.createOk = typeof tgTab === "number";
+        if (td.createOk) {
+          await sleep(800);
+          const goneP = runner.browserToolCall(
+            taskId, "browser.tabs.wait",
+            { urlContains: "popup-closing", disappear: true, timeoutMs: 8000 }, token, 60_000,
+          );
+          await runner.browserToolCall(
+            taskId, "browser.page.click", { tabId: tgTab, selector: "#go", trusted: true }, token, 60_000,
+          ).catch(() => null);
+          const goneRes = await goneP;
+          const goneBody = goneRes?.result ?? goneRes ?? {};
+          td.goneOk = goneBody.matched === "disappear";
+          // still-open tab → disappear must time out honestly
+          const stayCreate = await runner.browserToolCall(
+            taskId, "browser.tab.create",
+            { url: fixture.url("/popup-done"), active: false }, token, 60_000,
+          );
+          const stayTab = (stayCreate?.result ?? stayCreate ?? {}).openedTabId ??
+            (stayCreate?.result ?? stayCreate ?? {}).tabId;
+          const stayRes = typeof stayTab === "number"
+            ? await runner.browserToolCall(
+                taskId, "browser.tabs.wait",
+                { urlContains: "popup-done", disappear: true, timeoutMs: 600 }, token, 60_000,
+              ).catch(() => null)
+            : null;
+          td.stayTimeoutOk = (stayRes?.error?.code ?? "") === "browser.timeout";
+          // already-gone → immediate matched:"disappear" (no matching tab at call time)
+          const instant = await runner.browserToolCall(
+            taskId, "browser.tabs.wait",
+            { urlContains: "popup-closing", disappear: true, timeoutMs: 2000 }, token, 60_000,
+          ).catch(() => null);
+          td.instantOk = (instant?.result ?? instant ?? {}).matched === "disappear";
+          const combo = await runner.browserToolCall(
+            taskId, "browser.tabs.wait",
+            { urlContains: "x", disappear: true, waitForLoad: true }, token, 60_000,
+          ).catch(() => null);
+          td.comboOk = (combo?.error?.code ?? "") === "proto.invalid";
+          await runner.browserToolCall(taskId, "browser.tab.close", { tabId: tgTab }, token, 60_000).catch(() => null);
+          if (typeof stayTab === "number") {
+            await runner.browserToolCall(taskId, "browser.tab.close", { tabId: stayTab }, token, 60_000).catch(() => null);
+          }
+        } else {
+          td.goneOk = td.stayTimeoutOk = td.instantOk = td.comboOk = false;
+        }
+      } catch (e) {
+        td.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`tabsWaitDisappear → ${JSON.stringify(td).slice(0, 300)}`);
+      results.tabsWaitDisappear = {
+        ok: td.createOk === true && td.goneOk === true && td.stayTimeoutOk === true &&
+          td.instantOk === true && td.comboOk === true,
+        ...td,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for
