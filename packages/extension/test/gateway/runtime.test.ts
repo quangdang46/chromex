@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { getGatewayRuntime, resetGatewayRuntime } from "../../src/background/gateway/runtime.js";
+import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge } from "../../src/background/gateway/runtime.js";
 import { DEFAULT_SETTINGS } from "../../src/background/storage.js";
 
 function fakePort() {
@@ -78,5 +78,37 @@ describe("GatewayRuntime flag gating (P1-08 dual-path)", () => {
     // rebuild returns same runtime shape (new singleton)
     const rt2 = await getGatewayRuntime();
     expect(rt2).not.toBeNull();
+  });
+});
+
+describe("agent badge title hygiene", () => {
+  afterEach(() => {
+    setAgentBadge(null);
+    vi.unstubAllGlobals();
+  });
+
+  function stubAction() {
+    const titles: string[] = [];
+    const texts: string[] = [];
+    vi.stubGlobal("chrome", {
+      action: {
+        setBadgeText: vi.fn(async ({ text }: { text: string }) => { texts.push(text); }),
+        setBadgeBackgroundColor: vi.fn(async () => {}),
+        setTitle: vi.fn(async ({ title }: { title: string }) => { titles.push(title); }),
+      },
+      runtime: { getManifest: () => ({ name: "Chromex" }) },
+    });
+    return { titles, texts };
+  }
+
+  test("badge without title resets the title to the manifest name — no stale hover text", () => {
+    const { titles, texts } = stubAction();
+    setAgentBadge({ text: "w", title: "Working on it" });
+    expect(titles).toEqual(["Working on it"]);
+    setAgentBadge({ text: "w2" });
+    expect(titles[1]).toBe("Chromex");
+    setAgentBadge(null);
+    expect(texts.at(-1)).toBe("");
+    expect(titles.at(-1)).toBe("Chromex");
   });
 });
