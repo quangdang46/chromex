@@ -359,6 +359,21 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.windows.update", { windowId: 3, state: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("windows.remove requires integer windowId and forwards to chrome.windows.remove", async () => {
+    const d = deps();
+    const calls: number[] = [];
+    d.removeWindow = async (id) => { calls.push(id); };
+    const h = createToolHostHandler(d);
+    const res = await h(req("browser.windows.remove", { windowId: 7 }));
+    expect(res).toEqual({ removed: 7 });
+    expect(calls).toEqual([7]);
+    await expect(h(req("browser.windows.remove", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.remove", { windowId: "x" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.remove", { windowId: 1.5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    const d2 = deps();
+    await expect(createToolHostHandler(d2)(req("browser.windows.remove", { windowId: 1 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.drag maps source + drop target onto a dom.perform step", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

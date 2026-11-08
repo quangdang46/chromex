@@ -376,6 +376,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.windows.get": { windowId: 1 },
   "browser.windows.create": { url: "https://example.com", focused: false },
   "browser.windows.update": { windowId: 1, focused: true },
+  "browser.windows.remove": { windowId: 1 },
 };
 
 describe("tools/list schemas + descriptions (chromex-23y5)", () => {
@@ -448,6 +449,7 @@ describe("tools/list schemas + descriptions (chromex-23y5)", () => {
           "browser.downloads.resume",
           "browser.downloads.erase",
           "browser.windows.update",
+          "browser.windows.remove",
           "browser.page.cdp",
           "browser.page.coverage",
           "browser.page.metrics",

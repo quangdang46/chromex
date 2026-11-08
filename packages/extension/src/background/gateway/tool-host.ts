@@ -169,6 +169,8 @@ export interface ToolHostDeps {
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
   updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
+  /** chrome.windows.remove — closes the window and every tab in it. */
+  removeWindow?(windowId: number): Promise<unknown>;
   /** chrome.windows.get / getLastFocused (browser.windows.get) —
    *  single-window chrome state, same sanitized shape as listWindows;
    *  absent deps → proto.unsupported. */
@@ -540,6 +542,7 @@ const SUPPORTED = new Set([
   "browser.windows.get",
   "browser.windows.create",
   "browser.windows.update",
+  "browser.windows.remove",
   "browser.page.network",
   "browser.page.dialog",
   "browser.page.setInputFiles",
@@ -3964,6 +3967,20 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(state ? { state } : {}),
         });
         return { updated: windowId };
+      }
+      case "browser.windows.remove": {
+        // Not tab-scoped: closes the window AND every tab inside it —
+        // blast radius is tab.close × N, so risk classification keeps
+        // it approval-gated and never task-eligible.
+        if (!deps.removeWindow) {
+          throw toolError("proto.unsupported", "window remove is not available on this host");
+        }
+        const windowId = args.windowId;
+        if (typeof windowId !== "number" || !Number.isInteger(windowId)) {
+          throw toolError("proto.invalid", "browser.windows.remove requires integer args.windowId");
+        }
+        await deps.removeWindow(windowId);
+        return { removed: windowId };
       }
       case "browser.page.network": {
         // Requests span frames — args.frameId filters to requests a

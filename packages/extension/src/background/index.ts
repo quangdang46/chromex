@@ -523,6 +523,7 @@ const toolHostHandler = createToolHostHandler({
         ...(opts.focused !== undefined ? { focused: opts.focused } : {}),
         ...(opts.state ? { state: opts.state as NonNullable<chrome.windows.UpdateInfo["state"]> } : {}),
       }),
+    removeWindow: async (windowId) => chrome.windows.remove(windowId),
     ...(chrome.tabGroups
       ? {
           tabGroups: {

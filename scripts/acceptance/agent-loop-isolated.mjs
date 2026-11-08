@@ -1003,6 +1003,7 @@ try {
     await expectReject(`browser.downloads.${op}`, { downloadId: 1 }, "does not support", `downloads.${op} refused on isolated (no queue-management primitive)`);
   }
   await expectReject("browser.windows.get", { lastFocused: true }, "does not support", "windows.get refused on isolated (no window manager)");
+  await expectReject("browser.windows.remove", { windowId: 1 }, "does not support", "windows.remove refused on isolated (no window manager)");
 
   // ── frameId parity: page.get frames[] discovery → evaluate/fill/click
   // inside the cross-origin iframe child (playwright auto-attaches

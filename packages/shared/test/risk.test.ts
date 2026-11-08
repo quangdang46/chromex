@@ -527,6 +527,14 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(v.kind).toBe("browser_action");
   });
 
+  test("browser.windows.remove: closes every tab in the window — approval, never task-eligible", () => {
+    const v = classifyActionRisk(ctx({ action: "browser.windows.remove" }));
+    expect(v.risk).toBe("external_mutation");
+    expect(v.needsApproval).toBe(true);
+    expect(v.allowTaskEligible).toBe(false);
+    expect(v.kind).toBe("browser_action");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

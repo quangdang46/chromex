@@ -83,7 +83,8 @@ export type BrowserToolName =
   | "browser.windows.list"
   | "browser.windows.get"
   | "browser.windows.create"
-  | "browser.windows.update";
+  | "browser.windows.update"
+  | "browser.windows.remove";
 
 export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.tabs.list",
@@ -164,6 +165,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.windows.get",
   "browser.windows.create",
   "browser.windows.update",
+  "browser.windows.remove",
 ];
 
 /** Per-call context handed to the browser tool server (plan §9.2). */

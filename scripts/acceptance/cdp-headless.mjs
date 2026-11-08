@@ -1674,6 +1674,46 @@ await runScenario(
         ...wg,
       };
 
+      // --- windows.remove: create a throwaway window, close it, verify gone ---
+      const wr = {};
+      const wrCreate = await runner.browserToolCall(
+        taskId, "browser.windows.create", { url: fixture.url("/fetch"), focused: false }, token, 60_000,
+      );
+      const wrWinId = (wrCreate?.result ?? wrCreate ?? {}).window?.id ??
+        (wrCreate?.result ?? wrCreate ?? {}).id;
+      wr.createOk = typeof wrWinId === "number";
+      if (wr.createOk) {
+        const wrRm = await runner.browserToolCall(
+          taskId, "browser.windows.remove", { windowId: wrWinId }, token, 60_000,
+        );
+        wr.removeOk = (wrRm?.result ?? wrRm ?? {}).removed === wrWinId ||
+          wrRm?.status === "completed";
+        // Removing a window fires tab events that can bounce the SW —
+        // the host may need a few seconds to re-register. Poll until
+        // windows.list actually answers, then verify the window is gone.
+        // goneOk must NEVER be vacuous: it requires a successful list.
+        wr.goneOk = false;
+        for (let i = 0; i < 20 && !wr.goneOk; i++) {
+          await sleep(1000);
+          const wrList = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 30_000);
+          if (wrList?.status === "failed") continue;
+          const wrWins = (wrList?.result ?? wrList ?? {}).windows ?? [];
+          if (wrWins.some((w) => w.id === wrWinId)) continue;
+          wr.goneOk = true;
+          wr.recoveredAfterMs = (i + 1) * 1000;
+        }
+        wr.badIdOk = await runner.browserToolCall(
+          taskId, "browser.windows.remove", { windowId: 999999 }, token, 60_000,
+        ).then((r) => (r?.error?.code ?? "") !== "proto.unsupported").catch(() => false);
+      } else {
+        wr.removeOk = wr.goneOk = wr.badIdOk = false;
+      }
+      evidence.note(`windows.remove → ${JSON.stringify(wr).slice(0, 300)}`);
+      results.windowsRemove = {
+        ok: wr.createOk === true && wr.removeOk === true && wr.goneOk === true && wr.badIdOk === true,
+        ...wr,
+      };
+
       // --- runtime: no permission needed — verify REAL host info ---
       const rtRes = await runner.browserToolCall(
         taskId, "browser.runtime", { action: "info" }, token, 60_000,

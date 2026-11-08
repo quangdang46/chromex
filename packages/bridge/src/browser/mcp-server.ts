@@ -1167,6 +1167,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       ["windowId"],
     ),
   },
+  "browser.windows.remove": {
+    description:
+      "Close an entire window and every tab inside it (chrome.windows.remove). windowId comes from browser.windows.list. IRREVERSIBLE for all tabs in the window — always requires approval and is never task-eligible. Not tab-scoped. On playwright-isolated → proto.unsupported.",
+    inputSchema: objectSchema(
+      {
+        windowId: { type: "integer", description: "Window id from browser.windows.list (required)." },
+      },
+      ["windowId"],
+    ),
+  },
 };
 
 /** Advertised inputSchema for a spec — expectable tools get the
