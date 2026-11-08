@@ -110,22 +110,34 @@ await runScenario(
       }
       evidence.note(`bogus state refused → ${badCode}`);
 
-      // cleanup: closing the window's tabs closes the window
+      // windows.remove — the window lifecycle closer. On headful Chrome
+      // this must close the window AND leave the browser host alive
+      // (headless CfT crashes inside chrome.windows.remove — a
+      // Chromium headless bug — which is why this leg lives here).
+      const rmRes = await call("browser.windows.remove", { windowId });
+      const rmResult = result(rmRes);
+      evidence.note(`windows.remove → ${JSON.stringify(rmRes)?.slice(0, 200)}`);
+      await sleep(800);
+      const afterRm = result(await call("browser.windows.list"));
+      const stillThere = (afterRm.windows ?? []).some((w) => w.id === windowId);
+      evidence.note(`post-remove window present=${stillThere} (host alive = list answered)`);
+      if (rmRes?.status === "failed" || rmResult.removed !== windowId) {
+        return { status: "FAIL", summary: `windows.remove failed (${JSON.stringify(rmRes).slice(0, 200)})`, details: { rmRes } };
+      }
+      if (stillThere) {
+        return { status: "FAIL", summary: "windows.remove returned but window still listed", details: { afterRm } };
+      }
+
+      // cleanup: any tabs we opened outside the removed window
       for (const id of [...openedTabIds].reverse()) {
         await call("browser.tab.close", { tabId: id }).catch(() => {});
       }
       await sleep(500);
-      const after = result(await call("browser.windows.list"));
-      const stillThere = (after.windows ?? []).some((w) => w.id === windowId);
-      evidence.note(`post-cleanup window present=${stillThere}`);
-      if (stillThere) {
-        return { status: "FAIL", summary: "created window survived tab cleanup" };
-      }
 
       return {
         status: "PASS",
         summary:
-          "agent created a dedicated window, drove its tab in-scope, targeted tab.create at windowId, maximized+restored window state, bogus state refused, window closed with its tabs",
+          "agent created a dedicated window, drove its tab in-scope, targeted tab.create at windowId, maximized+restored window state, bogus state refused, windows.remove closed it and the host stayed alive",
         details: { windowId, winTabId, tab2Id, beforeCount: beforeWindows.length },
       };
     } finally {
