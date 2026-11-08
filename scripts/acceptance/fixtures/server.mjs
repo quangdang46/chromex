@@ -44,6 +44,16 @@ const PAGES = {
 
   "/submit-ok": `<!doctype html><html><body><h1>Submitted</h1><p id="done">ok</p></body></html>`,
 
+  // S13: §4.8 ground-truth preflight — a destructive-labeled button must
+  // demand approval even when targeted by bare snapshot ref (args carry
+  // no label), while a benign button stays approval-free.
+  "/risky": `<!doctype html><html><body>
+<h1>Risky Page</h1>
+<button id="benign" onclick="document.getElementById('out').textContent='benign-ok'">Search</button>
+<button id="danger" onclick="document.getElementById('out').textContent='danger-fired'">Delete account permanently</button>
+<p id="out">idle</p>
+</body></html>`,
+
   // occlusion gate: #covered is painted under #veil — a real pointer
   // hits the veil, synthetic dispatch must refuse honestly.
   "/occluded": `<!doctype html><html><body>

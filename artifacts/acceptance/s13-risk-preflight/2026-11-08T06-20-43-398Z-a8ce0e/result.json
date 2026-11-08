@@ -1,0 +1,59 @@
+{
+  "scenario": "s13-risk-preflight",
+  "runId": "2026-11-08T06-20-43-398Z-a8ce0e",
+  "status": "FAIL",
+  "summary": "denied=true dangerNotFired=true benignOk=true noNewApproval=true benignFired=false",
+  "durationMs": 8450,
+  "details": {
+    "denied": true,
+    "dangerNotFired": true,
+    "benignOk": true,
+    "noNewApproval": true,
+    "benignFired": false,
+    "denyOutcome": {
+      "toolCallId": "rpc-mw7g1gfo-jhc7z1",
+      "tool": "browser.page.click",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "benignOutcome": {
+      "toolCallId": "rpc-mw7g1h22-a2xyz7",
+      "tool": "browser.page.click",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "reason": "gateway tool browser.page.click",
+            "targetRef": "dom-1",
+            "action": "click"
+          },
+          "ok": true,
+          "message": "Clicked Search.",
+          "verified": "unknown"
+        },
+        "verified": "unknown",
+        "resolvedTabId": 459904762
+      },
+      "verified": "unknown"
+    }
+  },
+  "notes": [
+    "[2026-11-08T06:20:48.186Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:20:48.195Z] task 01M6WX23P0TESF2JWXTC9VRD1G",
+    "[2026-11-08T06:20:48.198Z] browser.mcp scope acquired",
+    "[2026-11-08T06:20:48.499Z] tab.create → tabId=459904762",
+    "[2026-11-08T06:20:49.606Z] permission.respond appr-mw7g1fyx-ppceiz → allow_egress_task (agent_egress)",
+    "[2026-11-08T06:20:49.908Z] snapshot elements=2 dangerRef=dom-2 benignRef=dom-1",
+    "[2026-11-08T06:20:50.209Z] permission.requested id=appr-mw7g1gfq-9mvdil kind=browser_action tool=browser.page.click targetLabel=Delete account permanently options=[\"allow_once\",\"deny\"]",
+    "[2026-11-08T06:20:50.211Z] permission.respond appr-mw7g1gfq-9mvdil → deny (browser_action)",
+    "[2026-11-08T06:20:50.413Z] deny outcome={\"toolCallId\":\"rpc-mw7g1gfo-jhc7z1\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-08T06:20:50.713Z] post-deny page text contains danger-fired=false",
+    "[2026-11-08T06:20:51.518Z] benign click outcome=completed pending approvals 0→0",
+    "[2026-11-08T06:20:51.820Z] post-click page text contains benign-ok=false"
+  ]
+}

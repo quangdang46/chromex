@@ -1,0 +1,13 @@
+{
+  "scenario": "s13-risk-preflight",
+  "runId": "2026-11-08T06-16-15-032Z-1a8b00",
+  "status": "FAIL",
+  "summary": "harness error: request browser.tool.call timed out",
+  "durationMs": 64851,
+  "error": "GatewayClientError: request browser.tool.call timed out\n    at Timeout._onTimeout (file:///Users/tranquangdang21/Projects/chromex/packages/native-host/dist/gateway-client.js:241:24)\n    at listOnTimeout (node:internal/timers:605:17)\n    at process.processTimers (node:internal/timers:541:7)",
+  "notes": [
+    "[2026-11-08T06:16:19.749Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T06:16:19.754Z] task 01M6WWSXH93S5KJX97GEPF7M56",
+    "[2026-11-08T06:16:19.756Z] browser.mcp scope acquired"
+  ]
+}
