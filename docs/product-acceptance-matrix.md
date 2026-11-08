@@ -62,7 +62,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   can trigger in-page side effects no tool gate observes.
   Native file picker still unreachable; headful re-verify pending
   (real Chrome S1–S8 gated on acceptance token)
-- Agent loop proof: `agent-loop-isolated` scenario PASS — scripted
+- Agent loop proofs: `agent-loop-isolated`/`agent-loop-mcp-isolated`
+  (playwright backend) AND `agent-task-headless` PASS — a scripted
+  observe→act→verify→recover→deliver loop on the REAL extension:
+  form submitted + verified server-side, in-loop stale-snapshot
+  recovery, screenshot+pdf+evaluate deliverables.
+  `agent-loop-isolated` scenario PASS — scripted
   provider-style iteration on headless chromium (form submit verified
   server-side + honest-failure check); runs in `run-all` without a token.
   `agent-loop-mcp-isolated` PASS — same loop through the real MCP path:

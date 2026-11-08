@@ -1,0 +1,11 @@
+{
+  "scenario": "agent-task-headless",
+  "runId": "2026-11-08T01-56-15-869Z-d2cbb1",
+  "status": "FAIL",
+  "summary": "harness error: ASSERT FAIL: snapshot observes the form page",
+  "durationMs": 4808,
+  "error": "Error: ASSERT FAIL: snapshot observes the form page\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:21:20)\n    at runScenario.autoAnswer (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:46:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async runScenario (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/agent-task-headless.mjs:25:1",
+  "notes": [
+    "[2026-11-08T01:56:20.360Z] authed gateway connections=2 (1=client, 2+=browser host)"
+  ]
+}
