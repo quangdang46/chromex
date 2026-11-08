@@ -3,13 +3,23 @@
  * the Gateway pushes to this extension (P1-09 §9.2 step 4).
  *
  * Maps the §9 tool surface onto existing primitives:
- *  - tabs.*        → chrome.tabs
- *  - page.snapshot/get → page.dom.snapshot / chrome.tabs.get
- *  - page.click/focus/fill/select/submit/type/scroll/navigate
- *                → page.dom.perform steps (same engine as planner path)
- *  - page.wait     → bounded sleep
- *  - extract/screenshot/upload → proto.unsupported (not yet implemented;
- *    never fake a result)
+ *  - tabs.*/windows.*/downloads.* → chrome.tabs/windows/downloads
+ *  - page.snapshot/get/extract/find/console/network/history
+ *                → page.dom.* content-script messages + webRequest log
+ *  - page.click/focus/fill/select/submit/type/scroll/navigate/hover/
+ *    press/drag/wait → page.dom.perform steps (same engine as planner)
+ *  - args.trusted variants → CDP Input.dispatchMouseEvent/KeyEvent
+ *    (isTrusted=true) via background/cdp.ts
+ *  - page.snapshot mode:"aria", page.dialog, page.setInputFiles,
+ *    page.responseBody, page.screenshot element clips, page.emulate,
+ *    page.pdf → chrome.debugger CDP tier (docs/adr/debugger-tier.md)
+ *  - page.evaluate → chrome.scripting world:"MAIN" (always approval)
+ *  - page.upload → in-memory DataTransfer path (content script)
+ *
+ * CDP sessions are per-tab refcounted; emulate holds its attach until
+ * reset/tab close (overrides are session-scoped). Subframe targeting
+ * uses args.frameId; OOPIF pointer/file ops resolve through the
+ * content-script geometry chain or the frame's own debugger target.
  *
  * Args convention: `tabId` optional → active tab of current window;
  * element targeting uses `ref` (from a prior page.snapshot) or

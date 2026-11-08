@@ -492,6 +492,30 @@ await runScenario(
         pageText: rDialog,
       };
 
+      // --- alert dialog: second dialog type through the same handler ---
+      let alertRes = null;
+      try {
+        const asnap = await runner.browserToolCall(taskId, "browser.page.snapshot", {}, token, 60_000);
+        const aSnapId = findSnapshotId(asnap);
+        await runner.browserToolCall(
+          taskId, "browser.page.click",
+          { selector: "#alertBtn", snapshotId: aSnapId ?? undefined },
+          token, 60_000,
+        );
+        alertRes = await runner.browserToolCall(
+          taskId, "browser.page.dialog", { accept: true, timeoutMs: 8000 }, token, 60_000,
+        );
+      } catch (e) {
+        alertRes = { rpcError: e?.message };
+      }
+      const alertText = JSON.stringify(alertRes?.result ?? alertRes ?? {});
+      const aText = await page.locator("#a").textContent();
+      evidence.note(`alert → ${alertText.slice(0, 200)} page=${aText}`);
+      results.alertDialog = {
+        ok: /"handled"\s*:\s*true/.test(alertText) && aText === "alert-done",
+        pageText: aText,
+      };
+
       // --- setInputFiles: absolute path onto input[type=file] ---
       await page.goto(fixture.url("/keys"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();

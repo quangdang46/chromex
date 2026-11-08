@@ -161,7 +161,9 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
   "/dialog": `<!doctype html><html><body>
 <h1>Dialog Page</h1>
 <button id="ask" onclick="setTimeout(()=>{document.getElementById('r').textContent='confirm:'+confirm('proceed?')},50)">ask</button>
+<button id="alertBtn" onclick="setTimeout(()=>{alert('heads-up');document.getElementById('a').textContent='alert-done'},50)">alert</button>
 <p id="r">none</p>
+<p id="a">none</p>
 </body></html>`,
 };
 
