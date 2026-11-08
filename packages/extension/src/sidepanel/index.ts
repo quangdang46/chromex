@@ -784,6 +784,14 @@ const conferenceModesByConversationId = new Map<string, ConversationConferenceMo
 const promptActivitiesByConversationId = new Map<string, PromptActivityState>();
 const activePromptUserMessageIdsByConversationId = new Map<string, string>();
 const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
+interface QueuedComposerMessage {
+  id: string;
+  text: string;
+  fileAttachments: UserFileAttachment[];
+  profileId: string | undefined;
+}
+const queuedComposerMessagesByConversationId = new Map<string, QueuedComposerMessage[]>();
+const queuedComposerFlushInFlight = new Set<string>();
 const streamingAssistantMessageIdsByConversationId = new Map<string, Set<string>>();
 const contextCompactionNoticeIdsByKey = new Map<string, string>();
 const messageTraceOpenByMessageId = new Map<string, boolean>();
@@ -1706,6 +1714,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     }
     scheduleConversationPersist();
     flushConversationPersist();
+    if (state.currentConversationId) {
+      void flushQueuedComposerMessage(state.currentConversationId);
+    }
     shouldRender = true;
   }
   if (event.type === "turn.completed" && event.threadId) {
@@ -1757,6 +1768,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     }
     scheduleConversationPersist();
     flushConversationPersist();
+    if (state.currentConversationId) {
+      void flushQueuedComposerMessage(state.currentConversationId);
+    }
     shouldRender = true;
   }
   if (event.type === "turn.started" && event.activeTurn) {
@@ -3504,7 +3518,8 @@ function renderNow(): void {
               ? renderPlanInputPanel(strings)
               : state.voiceInputActive
               ? renderComposerDictationPanel(strings)
-              : `${
+              : `${renderQueuedComposerMessages(strings)}
+              ${
                   hasComposerContextReferences()
                     ? `<div class="composer-tray">
                         <div class="context-summary composer-context-summary">
@@ -14092,6 +14107,15 @@ function bindEvents(): void {
     render();
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-queue-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.queueRemove;
+      if (id) {
+        removeQueuedComposerMessage(id);
+      }
+    });
+  });
+
   root.querySelectorAll<HTMLButtonElement>("[data-attachment-menu-action]").forEach((button) => {
     button.addEventListener("click", async () => {
       const action = button.dataset.attachmentMenuAction as AttachmentMenuAction | undefined;
@@ -15245,6 +15269,75 @@ function restoreComposerDraftAfterProgrammaticSend(
   }
 }
 
+function renderQueuedComposerMessages(strings: ReturnType<typeof stringsForState>): string {
+  const items = queuedComposerMessagesForCurrentConversation();
+  if (items.length === 0) return "";
+  return `<div class="composer-queue" role="list" aria-label="${escapeAttribute(strings.queuedMessagesLabel)}">
+    ${items
+      .map(
+        (item) => `<div class="composer-queue-item" role="listitem">
+          <span class="composer-queue-text">${escapeHtml(item.text)}</span>
+          <button
+            type="button"
+            class="composer-queue-remove"
+            data-queue-remove="${escapeAttribute(item.id)}"
+            title="${escapeAttribute(strings.removeQueuedMessage)}"
+            aria-label="${escapeAttribute(strings.removeQueuedMessage)}"
+          >×</button>
+        </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function queuedComposerMessagesForCurrentConversation(): QueuedComposerMessage[] {
+  if (!state.currentConversationId) return [];
+  return queuedComposerMessagesByConversationId.get(state.currentConversationId) ?? [];
+}
+
+function removeQueuedComposerMessage(id: string): void {
+  const conversationId = state.currentConversationId;
+  if (!conversationId) return;
+  const queue = queuedComposerMessagesByConversationId.get(conversationId);
+  if (!queue) return;
+  const next = queue.filter((item) => item.id !== id);
+  if (next.length > 0) {
+    queuedComposerMessagesByConversationId.set(conversationId, next);
+  } else {
+    queuedComposerMessagesByConversationId.delete(conversationId);
+  }
+  render();
+}
+
+/** Deliver the next queued composer message as its own prompt. Called
+ *  when the active turn ends; re-queues if a new turn already started
+ *  (e.g. the user sent a fresh prompt while the flush was in flight). */
+async function flushQueuedComposerMessage(conversationId: string): Promise<void> {
+  if (queuedComposerFlushInFlight.has(conversationId)) return;
+  if (state.currentConversationId !== conversationId || state.activeTurn) return;
+  const queue = queuedComposerMessagesByConversationId.get(conversationId);
+  const next = queue?.shift();
+  if (!queue || queue.length === 0) {
+    queuedComposerMessagesByConversationId.delete(conversationId);
+  }
+  if (!next) {
+    render();
+    return;
+  }
+  queuedComposerFlushInFlight.add(conversationId);
+  try {
+    if (state.activeTurn) {
+      queue?.unshift(next);
+      if (queue) queuedComposerMessagesByConversationId.set(conversationId, queue);
+      return;
+    }
+    state.fileAttachments = [...next.fileAttachments];
+    await sendPrompt(next.text, next.profileId ? { profileId: next.profileId } : {});
+  } finally {
+    queuedComposerFlushInFlight.delete(conversationId);
+  }
+}
+
 async function sendPrompt(
   messageOverride?: string,
   options: SendPromptOptions = {},
@@ -15345,6 +15438,30 @@ async function sendPrompt(
       currentWorkActive: currentWorkActiveAtSubmit,
       source: isDirectComposerTextSend ? "composer" : "programmatic",
     });
+    // Composer sends during an active turn QUEUE instead of steering —
+    // steer injects mid-turn and can derail the agent's current plan;
+    // the queue delivers each message as its own prompt when the turn
+    // completes (flushQueuedComposerMessage on turn.completed/failed).
+    if (sendAsTurnSteer && isDirectComposerTextSend && conversationIdAtStart) {
+      const queue = queuedComposerMessagesByConversationId.get(conversationIdAtStart) ?? [];
+      queue.push({
+        id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text: message,
+        fileAttachments: [...state.fileAttachments],
+        profileId: activeProfileId,
+      });
+      queuedComposerMessagesByConversationId.set(conversationIdAtStart, queue);
+      state.composerDraft = "";
+      state.fileAttachments = [];
+      clearTransientComposerCommandPill();
+      state.mentionQuery = null;
+      state.slashQuery = null;
+      if (composer) {
+        composer.value = "";
+      }
+      render();
+      return;
+    }
     sanitizeUnavailableCurrentPageState();
     const transcriptQuestionContextActive = transcriptQuestionContextActiveAtSubmit;
     const nextAttachments = Array.from(state.attachments);

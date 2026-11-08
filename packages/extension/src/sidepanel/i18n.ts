@@ -932,6 +932,8 @@ export const UI_STRINGS = {
     panelDocumentTitle: "Chromex",
     turnActive: "Turn active",
     modelReroute: "Model reroute",
+    queuedMessagesLabel: "Queued messages",
+    removeQueuedMessage: "Remove queued message",
   },
   ko: {
     brandEyebrow: "Chromex",
@@ -53860,6 +53862,8 @@ const OPTIONAL_ENGLISH_FALLBACK_STATIC_UI_STRING_KEYS = new Set<string>([
   "approval.fieldArguments",
   "approval.fallbackSummary",
   "approval.sending",
+  "queuedMessagesLabel",
+  "removeQueuedMessage",
 ]);
 const STATIC_UI_STRING_TRANSLATION_KEYS = collectStaticUiStringKeys(UI_STRINGS.en).filter(
   (key) => !OPTIONAL_ENGLISH_FALLBACK_STATIC_UI_STRING_KEYS.has(key),
