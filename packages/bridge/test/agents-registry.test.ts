@@ -186,6 +186,11 @@ describe("CatalogCache", () => {
       const third = new CatalogCache(() => [provider], () => now, store);
       await third.fetch("codex");
       expect(calls).toBe(2);
+      // the refetch's snapshot save is fire-and-forget — wait for it to
+      // land before rm or the recursive delete races the rename (ENOTEMPTY)
+      await vi.waitFor(async () => {
+        expect((await store.load("codex"))?.fetchedAt).toBe(now);
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
