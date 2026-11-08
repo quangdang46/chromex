@@ -1,0 +1,30 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-08T07-40-13-159Z-cfb57f",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 39872,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-08T07:40:18.089Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T07:40:23.714Z] turn 1 active",
+    "[2026-11-08T07:40:23.723Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794123623721-zfmbiz\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-08T07:40:23.748Z] second message queued",
+    "[2026-11-08T07:40:24.832Z] task 01M6X1KVXCGWZ9X1TMM9H87FGH",
+    "[2026-11-08T07:40:24.835Z] active turn restored post-reload (#stop-turn visible)",
+    "[2026-11-08T07:40:25.744Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794123623721-zfmbiz\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6X1KVXJN3Q0CRMAP1EMXRN1\\\",\\\"threadId\\\":\\\"01M6X1KVXCGWZ9X1TMM9H87FGH\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\",\"activeTurn\":{\"turnId\":\"01M6X1KVXJN3Q0CRMAP1EMXRN1\",\"threadId\":\"01M6X1KVXCGWZ9X1TMM9H87FGH\"},\"promptActivity\":true,\"queued\":{\"6f5bcf73-4df1-45a1-aae6-465c5af91f2f\":[{\"fileAttachments\":[],\"id\":\"queued-1794123623721-zfmbiz\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
+    "[2026-11-08T07:40:25.744Z] queue console: [\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: false, keys: Array(2), conv: }\",\"[chromex-queue-dbg] init settled {conv: , queued: Object}\",\"[chromex-queue-dbg] hydrate {merge: true, hasEntries: false, keys: Array(0), conv: }\",\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: false, keys: Array(0), conv: }\",\"[chromex-queue-dbg] init settled {conv: 6f5bcf73-4df1-45a1-aae6-465c5af91f2f, queued: Object}\",\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: true, keys: Array(9), conv: }\",\"[chromex-queue-dbg] init settled {conv: 6f5bcf73-4df1-45a1-aae6-465c5af91f2f, queued: Object}\"]",
+    "[2026-11-08T07:40:25.747Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-08T07:40:52.897Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-08T07:40:52.942Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-08T07:40:52.943Z] queue console final: [\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: false, keys: Array(2), conv: }\",\"[chromex-queue-dbg] init settled {conv: , queued: Object}\",\"[chromex-queue-dbg] hydrate {merge: true, hasEntries: false, keys: Array(0), conv: }\",\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: false, keys: Array(0), conv: }\",\"[chromex-queue-dbg] init settled {conv: 6f5bcf73-4df1-45a1-aae6-465c5af91f2f, queued: Object}\",\"[chromex-queue-dbg] hydrate {merge: false, hasEntries: true, keys: Array(9), conv: }\",\"[chromex-queue-dbg] init settled {conv: 6f5bcf73-4df1-45a1-aae6-465c5af91f2f, queued: Object}\",\"[chromex-queue-dbg] hydrate {merge: true, hasEntries: true, keys: Array(1), conv: 6f5bcf73-4df1-45a1-aae6-465c5af91f2f}\"]"
+  ]
+}

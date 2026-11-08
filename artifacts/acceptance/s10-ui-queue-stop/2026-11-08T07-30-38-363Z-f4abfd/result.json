@@ -1,0 +1,32 @@
+{
+  "scenario": "s10-ui-queue-stop",
+  "runId": "2026-11-08T07-30-38-363Z-f4abfd",
+  "status": "FAIL",
+  "summary": "queueKept=false noFlush=true cancelled=1 completed=0",
+  "durationMs": 44003,
+  "details": {
+    "afterStop": {
+      "queueStillThere": false,
+      "queueText": "",
+      "stopVisible": true,
+      "errorText": "",
+      "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+    },
+    "cancelled": 1,
+    "completed": 0,
+    "started": 2
+  },
+  "notes": [
+    "[2026-11-08T07:30:43.115Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T07:30:45.321Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
+    "[2026-11-08T07:30:45.330Z] settings.agentProviderId now: fakeacp",
+    "[2026-11-08T07:30:45.331Z] provider options: []",
+    "[2026-11-08T07:30:58.269Z] gateway task after send: 01M6X12HZ7ZS27AQA5HNR5WYTT",
+    "[2026-11-08T07:30:58.272Z] task.get → providerId=fakeacp {\"task\":{\"taskId\":\"01M6X12HZ7ZS27AQA5HNR5WYTT\",\"createdAt\":1794123057127,\"updatedAt\":1794123058264,\"status\":\"active\",\"pauseReason\":null,\"title\":null,\"profileId\":\"fakeacp\",\"originBrowserInstanceId\":null,\"binding\":{\"browserInstanceId\":null,\"state\":\"none\"},\"providerId\":\"fakeacp\",\"conversationKey\":\"conv",
+    "[2026-11-08T07:31:18.065Z] stop button visible — turn 1 active",
+    "[2026-11-08T07:31:18.128Z] queue strip: queued second message\n          ×",
+    "[2026-11-08T07:31:22.168Z] after stop: {\"queueStillThere\":false,\"queueText\":\"\",\"stopVisible\":true,\"errorText\":\"\",\"storedQueue\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\"}",
+    "[2026-11-08T07:31:22.244Z] task 01M6X12HZ7ZS27AQA5HNR5WYTT events=8 cancelled=1 completed=0 failed=0 userMsgs=2 seq=1:task.created>2:task.status_changed>3:user.message.created>4:turn.started>5:turn.cancelled>6:task.status_changed>7:task.attention_changed>8:task.completed",
+    "[2026-11-08T07:31:22.244Z] failPayloads=[]"
+  ]
+}

@@ -1,0 +1,20 @@
+{"seq":1,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"task.created","payload":{"type":"task.created","taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794123562370}
+{"seq":2,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794123562371}
+{"seq":3,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6X1HZC9EKENF05TSDX1MKQB","message":{"gatewayTurnId":"01M6X1HZC9EKENF05TSDX1MKQB","clientMessageId":"prompt-1794123550636-57yvnr6rglo","content":[{"type":"text","text":"first turn — finish soon"}]},"clientMessageId":"prompt-1794123550636-57yvnr6rglo"},"at":1794123562379}
+{"seq":4,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6X1HZC9EKENF05TSDX1MKQB"},"at":1794123562383}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123562478}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123562980}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123563480}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123563983}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123564484}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123564984}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123565487}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123565987}
+{"seq":5,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6X1J31AXD855K01ZBAKJ34S","message":{"gatewayTurnId":"01M6X1J31AXD855K01ZBAKJ34S","clientMessageId":"prompt-1794123553199-dhvn0v20ga","content":[{"type":"text","text":"auto-flush me after turn one"}]},"clientMessageId":"prompt-1794123553199-dhvn0v20ga"},"at":1794123566123}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123566490}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123566992}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123567493}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123567993}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123568495}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123568999}
+{"seq":null,"taskId":"01M6X1HZC0TYNECQCHJNNP6DHG","type":"assistant.delta","payload":{},"at":1794123569499}

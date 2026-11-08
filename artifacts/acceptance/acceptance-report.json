@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-08T07:19:33.463Z",
+  "generatedAt": "2026-11-08T07:34:17.968Z",
   "results": [
     {
       "scenario": "agent-loop-isolated",
@@ -52,7 +52,7 @@
         "ok — downloads.cancel refused on isolated backend → proto.unsupported playwright-isolated does not support browser.downloads.cancel",
         "ok — tabs.list sees 8 task tabs"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-isolated/2026-11-08T07-13-02-723Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-isolated/2026-11-08T07-27-05-665Z"
     },
     {
       "scenario": "agent-loop-mcp-isolated",
@@ -72,17 +72,17 @@
           "risk": "financial"
         }
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-mcp-isolated/2026-11-08T07-13-17-743Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-loop-mcp-isolated/2026-11-08T07-27-20-384Z"
     },
     {
       "scenario": "agent-task-headless",
-      "runId": "2026-11-08T07-14-02-529Z-c06c56",
+      "runId": "2026-11-08T07-28-33-573Z-047c2d",
       "status": "PASS",
       "summary": "scripted agent loop on the REAL extension: form submitted + verified server-side; stale-snapshot recovery in-loop; screenshot+pdf+evaluate deliverables",
-      "durationMs": 7426,
+      "durationMs": 9792,
       "details": {
         "results": [
-          "ok — tab.create returned tabId=1949065904",
+          "ok — tab.create returned tabId=635096995",
           "ok — snapshot observes the form page (title + interactive elements)",
           "ok — click Next completed",
           "ok — page.wait text=Submitted resolved",
@@ -93,7 +93,7 @@
           "ok — stale snapshotId rejected loudly mid-task",
           "ok — re-observe after navigation",
           "ok — screenshot artifact (11086 bytes)",
-          "ok — pdf artifact (31074 bytes)",
+          "ok — pdf artifact (31066 bytes)",
           "ok — evaluate reads page title (\"Fixture Form\")",
           "ok — route rule registered",
           "ok — agent observes the fulfilled (mocked) response",
@@ -102,23 +102,23 @@
         ]
       },
       "notes": [
-        "[2026-11-08T07:14:06.424Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:14:07.892Z] recovery: stale snapshot → re-observe → fill succeeded",
-        "[2026-11-08T07:14:09.700Z] network: route fulfill → observed mock → unroute → real response"
+        "[2026-11-08T07:28:39.497Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:28:41.198Z] recovery: stale snapshot → re-observe → fill succeeded",
+        "[2026-11-08T07:28:43.106Z] network: route fulfill → observed mock → unroute → real response"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-task-headless/2026-11-08T07-14-02-529Z-c06c56"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/agent-task-headless/2026-11-08T07-28-33-573Z-047c2d"
     },
     {
       "scenario": "cdp-headless",
-      "runId": "2026-11-08T07-13-46-596Z-d64aed",
+      "runId": "2026-11-08T07-27-59-943Z-65e5f7",
       "status": "PASS",
       "summary": "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get",
-      "durationMs": 15174,
+      "durationMs": 32757,
       "details": {
         "results": {
           "responseBody": {
             "ok": true,
-            "snippet": "{\"requestId\":\"3866.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:52571/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122030911,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyB"
+            "snippet": "{\"requestId\":\"85038.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:57692/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122895433,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"body"
           },
           "webSocket": {
             "ok": true,
@@ -211,7 +211,7 @@
           },
           "pdf": {
             "ok": true,
-            "bytes": 57625,
+            "bytes": 58415,
             "artifactRef": "present"
           },
           "emulate": {
@@ -239,50 +239,50 @@
         }
       },
       "notes": [
-        "[2026-11-08T07:13:50.587Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:13:50.902Z] responseBody prime → {\"toolCallId\":\"rpc-mw7hxmp7-wufk49\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794122030900,\"resolvedTabId\":438563550}}",
-        "[2026-11-08T07:13:51.438Z] responseBody → {\"requestId\":\"3866.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:52571/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122030911,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":438563550}",
-        "[2026-11-08T07:13:52.730Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
-        "[2026-11-08T07:13:53.590Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
-        "[2026-11-08T07:13:53.852Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":438563550}",
-        "[2026-11-08T07:13:54.124Z] trusted snap=completed snapId=snap:7dd0ad34-4e28-46bf-9669-15b3427a09f5",
-        "[2026-11-08T07:13:54.425Z] untrusted click → {\"toolCallId\":\"rpc-mw7hxpe4-u9jv4u\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
-        "[2026-11-08T07:13:54.426Z] trusted click → {\"toolCallId\":\"rpc-mw7hxpll-kz1mq9\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
-        "[2026-11-08T07:13:54.454Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
-        "[2026-11-08T07:13:54.878Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
-        "[2026-11-08T07:13:55.367Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
-        "[2026-11-08T07:13:55.368Z] press statuses: completed/completed",
-        "[2026-11-08T07:13:55.386Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
-        "[2026-11-08T07:13:55.402Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
-        "[2026-11-08T07:13:55.777Z] drag: down=isTrusted:true out=up@360,80 status=completed",
-        "[2026-11-08T07:13:56.382Z] frame press → status=completed kout=key:x,trusted:true",
-        "[2026-11-08T07:13:56.693Z] frame click same → status=completed pout=down:true up:true",
-        "[2026-11-08T07:13:57.017Z] frame click cross → status=completed pout=down:true up:true",
-        "[2026-11-08T07:13:57.592Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
-        "[2026-11-08T07:13:57.942Z] frame screenshot → status=completed bytes=1530",
-        "[2026-11-08T07:13:58.502Z] frame upload → status=completed fout2=files:mem.txt",
-        "[2026-11-08T07:13:58.767Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw7hxsrr-b8z7oi\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":438563550}} fout2=files:cross.txt",
-        "[2026-11-08T07:13:59.541Z] frame responseBody → {\"requestId\":\"3866.20\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:52571/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122039030,\"body\":\"{\\\"ok\\\":true}\",\"",
-        "[2026-11-08T07:13:59.879Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":57625,\"sha256\":\"471569cbc1fec47423484b3aa6b703b391daee0d08e7f50130649611512d4149\",\"resolvedTabId\":438563550,\"artifactRef\":\"artifact:art-01M6X03GJ5SGHB9E",
-        "[2026-11-08T07:14:00.144Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":438563550} check={\"dark\":true,\"w\":390}",
-        "[2026-11-08T07:14:00.418Z] dialog snap=completed snapId=snap:c54ae776-5221-4184-9cd9-5e4721fb6ef0",
-        "[2026-11-08T07:14:00.685Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":438563550}",
-        "[2026-11-08T07:14:00.695Z] dialog result text=confirm:true",
-        "[2026-11-08T07:14:01.221Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":438563550} page=alert-done",
-        "[2026-11-08T07:14:01.761Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":438563550}",
-        "[2026-11-08T07:14:01.771Z] fname=chromex-cdp-upload.txt"
+        "[2026-11-08T07:28:14.990Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:28:15.422Z] responseBody prime → {\"toolCallId\":\"rpc-mw7ig5rg-q3x1hz\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794122895419,\"resolvedTabId\":1228087476}}",
+        "[2026-11-08T07:28:15.990Z] responseBody → {\"requestId\":\"85038.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:57692/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122895433,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1228087476}",
+        "[2026-11-08T07:28:17.522Z] webSocket → {\"sockets\":1,\"frames\":2,\"sample\":\"sent:hello-agent | recv:echo:hello-agent\"}",
+        "[2026-11-08T07:28:18.450Z] route → mocked=pong:mocked real=pong:ok aborted=fetch-failed modified=pong:rerouted",
+        "[2026-11-08T07:28:18.721Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:rerouted\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1228087476}",
+        "[2026-11-08T07:28:22.274Z] trusted snap=completed snapId=snap:99404302-892c-497b-96f1-833a7e0859c2",
+        "[2026-11-08T07:28:22.637Z] untrusted click → {\"toolCallId\":\"rpc-mw7igb9f-e5v38s\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+        "[2026-11-08T07:28:22.638Z] trusted click → {\"toolCallId\":\"rpc-mw7igbi6-ohqvz0\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+        "[2026-11-08T07:28:22.668Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+        "[2026-11-08T07:28:23.086Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+        "[2026-11-08T07:28:23.916Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+        "[2026-11-08T07:28:23.916Z] press statuses: completed/completed",
+        "[2026-11-08T07:28:23.966Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+        "[2026-11-08T07:28:23.986Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+        "[2026-11-08T07:28:24.489Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+        "[2026-11-08T07:28:25.108Z] frame press → status=completed kout=key:x,trusted:true",
+        "[2026-11-08T07:28:25.422Z] frame click same → status=completed pout=down:true up:true",
+        "[2026-11-08T07:28:25.756Z] frame click cross → status=completed pout=down:true up:true",
+        "[2026-11-08T07:28:26.332Z] frame setInputFiles → status=completed fout2=files:chromex-cdp-upload.txt",
+        "[2026-11-08T07:28:26.693Z] frame screenshot → status=completed bytes=1530",
+        "[2026-11-08T07:28:27.264Z] frame upload → status=completed fout2=files:mem.txt",
+        "[2026-11-08T07:28:27.534Z] oopif setInputFiles → {\"toolCallId\":\"rpc-mw7igf40-4afp13\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"completed\",\"result\":{\"ok\":true,\"files\":1,\"fileNames\":[\"cross.txt\"],\"resolvedTabId\":1228087476}} fout2=files:cross.txt",
+        "[2026-11-08T07:28:28.326Z] frame responseBody → {\"requestId\":\"85038.20\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:57692/api/frame-hit\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794122907802,\"body\":\"{\\\"ok\\\":true}\",",
+        "[2026-11-08T07:28:28.798Z] pdf → {\"ok\":true,\"mimeType\":\"application/pdf\",\"bytes\":58415,\"sha256\":\"c6f49d1ee0cffe5bcab0109ac6404e3436f5486fd2733c5f4590d05d5036251d\",\"resolvedTabId\":1228087476,\"artifactRef\":\"artifact:art-01M6X0Y1118588T",
+        "[2026-11-08T07:28:29.566Z] emulate → {\"ok\":true,\"applied\":[\"viewport\",\"media\"],\"resolvedTabId\":1228087476} check={\"dark\":true,\"w\":390}",
+        "[2026-11-08T07:28:31.169Z] dialog snap=completed snapId=snap:879d560c-7cbf-428b-9360-87791d7a0a6d",
+        "[2026-11-08T07:28:31.510Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1228087476}",
+        "[2026-11-08T07:28:31.525Z] dialog result text=confirm:true",
+        "[2026-11-08T07:28:32.098Z] alert → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1228087476} page=alert-done",
+        "[2026-11-08T07:28:32.692Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":1228087476}",
+        "[2026-11-08T07:28:32.705Z] fname=chromex-cdp-upload.txt"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/cdp-headless/2026-11-08T07-13-46-596Z-d64aed"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/cdp-headless/2026-11-08T07-27-59-943Z-65e5f7"
     },
     {
       "scenario": "content-script-isolated",
       "status": "PASS",
       "asserts": 34,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/content-script-isolated/2026-11-08T07-13-29-932Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/content-script-isolated/2026-11-08T07-27-30-048Z"
     },
     {
       "scenario": "extension-headless",
-      "runId": "2026-11-08T07-13-32-259Z-0216ab",
+      "runId": "2026-11-08T07-27-33-406Z-f57f57",
       "status": "PASS",
       "summary": "real extension SW in headless Chromium: host registered, page.get + page.snapshot + tabs.list completed through MCP→gateway→NM→SW→content",
       "details": {
@@ -293,37 +293,37 @@
         "tabsStatus": "completed"
       },
       "notes": [
-        "[2026-11-08T07:13:34.461Z] extension menmlhahmendmkiicbjihgjhppkgaeom headless=true",
-        "[2026-11-08T07:13:36.964Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:13:36.969Z] task 01M6X02T6703HZMBBV0QPZEZG5",
-        "[2026-11-08T07:13:37.305Z] page.get → {\"toolCallId\":\"rpc-mw7hxc7l-5uo8xh\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1162480321,\"tabId\":1162480321,\"url\":\"http://127.0.0.1:52493/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
-        "[2026-11-08T07:13:37.571Z] page.snapshot → {\"toolCallId\":\"rpc-mw7hxcey-tk4t9j\",\"tool\":\"browser.page.snapshot\",\"status\":\"completed\",\"result\":{\"snapshotId\":\"snap:f4129c78-7a6a-4bad-9567-b9de827a868f\",\"structuralFingerprint\":\"sfp1:23641dacb38b506",
-        "[2026-11-08T07:13:37.575Z] tabs.list → {\"toolCallId\":\"rpc-mw7hxcmc-sd9jks\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[{\"id\":1162480321,\"title\":\"Fixture Home\",\"url\":\"http://127.0.0.1:52493/\",\"origin\":\"http://127.0.0.1"
+        "[2026-11-08T07:27:41.054Z] extension menmlhahmendmkiicbjihgjhppkgaeom headless=true",
+        "[2026-11-08T07:27:43.683Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:27:43.771Z] task 01M6X0WN4SHT81G3P5CDA1VEC8",
+        "[2026-11-08T07:27:44.668Z] page.get → {\"toolCallId\":\"rpc-mw7ifhrr-12qmkx\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1394279252,\"tabId\":1394279252,\"url\":\"http://127.0.0.1:57564/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
+        "[2026-11-08T07:27:45.024Z] page.snapshot → {\"toolCallId\":\"rpc-mw7ifi91-t172se\",\"tool\":\"browser.page.snapshot\",\"status\":\"completed\",\"result\":{\"snapshotId\":\"snap:9f4428c3-338e-482f-aad4-6a6fc59bc323\",\"structuralFingerprint\":\"sfp1:23641dacb38b506",
+        "[2026-11-08T07:27:45.027Z] tabs.list → {\"toolCallId\":\"rpc-mw7ifiip-z7j444\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[{\"id\":1394279252,\"title\":\"Fixture Home\",\"url\":\"http://127.0.0.1:57564/\",\"origin\":\"http://127.0.0.1"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/extension-headless/2026-11-08T07-13-32-259Z-0216ab"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/extension-headless/2026-11-08T07-27-33-406Z-f57f57"
     },
     {
       "scenario": "gateway-host-routing",
       "status": "PASS",
       "asserts": 21,
-      "taskId": "01M6X02F83K0D7WB3J4JADMDWA",
+      "taskId": "01M6X0W3FSXT5PVE4QYK78S7RP",
       "hostRequests": 3,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-host-routing/2026-11-08T07-13-25-728Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-host-routing/2026-11-08T07-27-25-653Z"
     },
     {
       "scenario": "gateway-mcp-isolated",
       "status": "PASS",
       "asserts": 15,
-      "taskId": "01M6X02A0C26682TFJGH5K01E6",
+      "taskId": "01M6X0W03NVH4Z1D6EF9QY8XP5",
       "toolEvents": 16,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-mcp-isolated/2026-11-08T07-13-20-331Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/gateway-mcp-isolated/2026-11-08T07-27-22-182Z"
     },
     {
       "scenario": "iframe-headless",
-      "runId": "2026-11-08T07-13-38-826Z-d52791",
+      "runId": "2026-11-08T07-27-46-846Z-f11621",
       "status": "PASS",
       "summary": "frameId end-to-end on real extension: snapshot+click/evaluate inside same- AND cross-origin iframes (incl. OOPIF MAIN world); cross-frame snapshotId refused; bad frameId fails honestly",
-      "durationMs": 6941,
+      "durationMs": 11927,
       "details": {
         "results": {
           "same-origin": {
@@ -339,7 +339,7 @@
           "evaluate": {
             "ok": true,
             "top": "/iframe-parent",
-            "frame": "http://localhost:52531"
+            "frame": "http://localhost:57620"
           }
         },
         "sameHit": true,
@@ -350,49 +350,49 @@
           {
             "method": "GET",
             "path": "/api/frame-hit",
-            "at": 1794122023357
+            "at": 1794122875492
           },
           {
             "method": "GET",
             "path": "/api/frame-hit",
-            "src": "http://127.0.0.1:52531",
-            "at": 1794122023357
+            "src": "http://127.0.0.1:57620",
+            "at": 1794122875493
           },
           {
             "method": "GET",
             "path": "/api/frame-hit",
-            "at": 1794122023629
+            "at": 1794122876050
           },
           {
             "method": "GET",
             "path": "/api/frame-hit",
-            "src": "http://localhost:52531",
-            "at": 1794122023629
+            "src": "http://localhost:57620",
+            "at": 1794122876050
           }
         ]
       },
       "notes": [
-        "[2026-11-08T07:13:42.734Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:13:43.080Z] frames=[{\"frameId\":0,\"url\":\"http://127.0.0.1:52531/iframe-parent\",\"parentFrameId\":-1},{\"frameId\":3,\"url\":\"http://127.0.0.1:52531/iframe-child\",\"parentFrameId\":0},{\"frameId\":4,\"url\":\"http://localhost:52531/iframe-child\",\"parentFrameId\":0}]",
-        "[2026-11-08T07:13:43.340Z] same-origin frame=3 snapshot=completed snapId=snap:b96a0bdb-12b0-499a-a345-a746b6672d0f ref=dom-1",
-        "[2026-11-08T07:13:43.358Z] same-origin click → {\"toolCallId\":\"rpc-mw7hxh2l-ww9t8i\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
-        "[2026-11-08T07:13:43.617Z] cross-origin frame=4 snapshot=completed snapId=snap:babaaa89-e922-4118-91f0-d8a40a5f97ff ref=dom-1",
-        "[2026-11-08T07:13:43.630Z] cross-origin click → {\"toolCallId\":\"rpc-mw7hxhaa-g60b8r\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
-        "[2026-11-08T07:13:43.631Z] frame-hit beacons=[{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794122023357},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://127.0.0.1:52531\",\"at\":1794122023357},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794122023629},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://localhost:52531\",\"at\":1794122023629}]",
-        "[2026-11-08T07:13:44.164Z] cross-frame snapshotId click → {\"toolCallId\":\"rpc-mw7hxhp6-uv81jp\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot was captured in a different frame; call browser.page.snapshot with the same args.frameId\"}}",
-        "[2026-11-08T07:13:44.682Z] evaluate top=\"/iframe-parent\" frame=\"http://localhost:52531\"",
-        "[2026-11-08T07:13:45.767Z] frameId=99999 → {\"toolCallId\":\"rpc-mw7hxi3u-7dgxjz\",\"tool\":\"browser.page.snapshot\",\"status\":\"failed\",\"error\":{\"code\":\"internal\",\"message\":\"internal: No frame with id 99999 in tab with id 1332843373\"}}"
+        "[2026-11-08T07:27:53.688Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:27:54.878Z] frames=[{\"frameId\":0,\"url\":\"http://127.0.0.1:57620/iframe-parent\",\"parentFrameId\":-1},{\"frameId\":3,\"url\":\"http://127.0.0.1:57620/iframe-child\",\"parentFrameId\":0},{\"frameId\":4,\"url\":\"http://localhost:57620/iframe-child\",\"parentFrameId\":0}]",
+        "[2026-11-08T07:27:55.204Z] same-origin frame=3 snapshot=completed snapId=snap:1389cdaf-e8a4-40ed-9432-aeae7b6f2681 ref=dom-1",
+        "[2026-11-08T07:27:55.600Z] same-origin click → {\"toolCallId\":\"rpc-mw7ifqdi-js4p0c\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+        "[2026-11-08T07:27:55.913Z] cross-origin frame=4 snapshot=completed snapId=snap:363c1d4b-153c-451a-9b4d-9cd7151537ef ref=dom-1",
+        "[2026-11-08T07:27:56.051Z] cross-origin click → {\"toolCallId\":\"rpc-mw7ifqx7-asy8gt\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+        "[2026-11-08T07:27:56.052Z] frame-hit beacons=[{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794122875492},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://127.0.0.1:57620\",\"at\":1794122875493},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"at\":1794122876050},{\"method\":\"GET\",\"path\":\"/api/frame-hit\",\"src\":\"http://localhost:57620\",\"at\":1794122876050}]",
+        "[2026-11-08T07:27:56.736Z] cross-frame snapshotId click → {\"toolCallId\":\"rpc-mw7ifrii-yjtw6s\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot was captured in a different frame; call browser.page.snapshot with the same args.frameId\"}}",
+        "[2026-11-08T07:27:57.669Z] evaluate top=\"/iframe-parent\" frame=\"http://localhost:57620\"",
+        "[2026-11-08T07:27:58.771Z] frameId=99999 → {\"toolCallId\":\"rpc-mw7ifs9x-xrh9y6\",\"tool\":\"browser.page.snapshot\",\"status\":\"failed\",\"error\":{\"code\":\"internal\",\"message\":\"internal: No frame with id 99999 in tab with id 572955909\"}}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/iframe-headless/2026-11-08T07-13-38-826Z-d52791"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/iframe-headless/2026-11-08T07-27-46-846Z-f11621"
     },
     {
       "scenario": "native-host-relay",
       "status": "PASS",
       "asserts": 11,
-      "taskId": "01M6X02FVJE955PEAW07WKVJ83",
-      "browserInstanceId": "3270848b1e8d4880ced7d1e1233b076d",
+      "taskId": "01M6X0W45Z3P592YNSCYC2685D",
+      "browserInstanceId": "b81a95a6a7f6b676173e07fae6579b9a",
       "hostRequests": 3,
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/native-host-relay/2026-11-08T07-13-26-277Z"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/native-host-relay/2026-11-08T07-27-26-281Z"
     },
     {
       "scenario": "s1-build-feature",
@@ -428,73 +428,60 @@
     },
     {
       "scenario": "s10-ui-queue-stop",
-      "runId": "2026-11-08T07-16-02-728Z-fd5687",
-      "status": "PASS",
-      "summary": "UI queue held the second message; Stop cancelled the provider turn without flushing the queue",
-      "durationMs": 25354,
+      "runId": "2026-11-08T07-30-38-363Z-f4abfd",
+      "status": "FAIL",
+      "summary": "queueKept=false noFlush=true cancelled=1 completed=0",
+      "durationMs": 44003,
       "details": {
         "afterStop": {
-          "queueStillThere": true,
-          "queueText": "\n    \n          queued second message\n          ×\n        \n  ",
-          "stopVisible": false,
+          "queueStillThere": false,
+          "queueText": "",
+          "stopVisible": true,
           "errorText": "",
-          "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{\"6651f229-ed7a-4b85-b9e9-32646e29c36c\":[{\"fileAttachments\":[],\"id\":\"queued-1794122183862-2kery3\",\"profileId\":\"default\",\"text\":\"queued second message\"}]}}"
+          "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
         },
         "cancelled": 1,
         "completed": 0,
         "started": 2
       },
       "notes": [
-        "[2026-11-08T07:16:08.792Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:16:10.773Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
-        "[2026-11-08T07:16:10.779Z] settings.agentProviderId now: fakeacp",
-        "[2026-11-08T07:16:10.780Z] provider options: []",
-        "[2026-11-08T07:16:23.842Z] gateway task after send: 01M6X07WXZPF2MBFBZV7QZJR0W",
-        "[2026-11-08T07:16:23.845Z] task.get → providerId=fakeacp {\"task\":{\"taskId\":\"01M6X07WXZPF2MBFBZV7QZJR0W\",\"createdAt\":1794122183615,\"updatedAt\":1794122183635,\"status\":\"active\",\"pauseReason\":null,\"title\":null,\"profileId\":\"fakeacp\",\"originBrowserInstanceId\":null,\"binding\":{\"browserInstanceId\":null,\"state\":\"none\"},\"providerId\":\"fakeacp\",\"conversationKey\":\"conv",
-        "[2026-11-08T07:16:23.852Z] stop button visible — turn 1 active",
-        "[2026-11-08T07:16:23.878Z] queue strip: queued second message\n          ×",
-        "[2026-11-08T07:16:27.921Z] after stop: {\"queueStillThere\":true,\"queueText\":\"\\n    \\n          queued second message\\n          ×\\n        \\n  \",\"stopVisible\":false,\"errorText\":\"\",\"storedQueue\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"6651f229-ed7a-4b85-b9e9-32646e29c36c\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794122183862-2kery3\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"queued second message\\\"}]}}\"}",
-        "[2026-11-08T07:16:28.072Z] task 01M6X07WXZPF2MBFBZV7QZJR0W events=8 cancelled=1 completed=0 failed=0 userMsgs=2 seq=1:task.created>2:task.status_changed>3:user.message.created>4:turn.started>5:turn.cancelled>6:task.status_changed>7:task.attention_changed>8:task.completed",
-        "[2026-11-08T07:16:28.072Z] failPayloads=[]"
+        "[2026-11-08T07:30:43.115Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:30:45.321Z] settings.update → {\"uiLanguage\":\"auto\",\"uiTheme\":\"system\",\"usageNoticeAccepted\":true,\"shareCurrentTabByDefault\":false,\"rememberChats\":false,\"liveCaptions\":true,\"allowVoiceNavigat",
+        "[2026-11-08T07:30:45.330Z] settings.agentProviderId now: fakeacp",
+        "[2026-11-08T07:30:45.331Z] provider options: []",
+        "[2026-11-08T07:30:58.269Z] gateway task after send: 01M6X12HZ7ZS27AQA5HNR5WYTT",
+        "[2026-11-08T07:30:58.272Z] task.get → providerId=fakeacp {\"task\":{\"taskId\":\"01M6X12HZ7ZS27AQA5HNR5WYTT\",\"createdAt\":1794123057127,\"updatedAt\":1794123058264,\"status\":\"active\",\"pauseReason\":null,\"title\":null,\"profileId\":\"fakeacp\",\"originBrowserInstanceId\":null,\"binding\":{\"browserInstanceId\":null,\"state\":\"none\"},\"providerId\":\"fakeacp\",\"conversationKey\":\"conv",
+        "[2026-11-08T07:31:18.065Z] stop button visible — turn 1 active",
+        "[2026-11-08T07:31:18.128Z] queue strip: queued second message\n          ×",
+        "[2026-11-08T07:31:22.168Z] after stop: {\"queueStillThere\":false,\"queueText\":\"\",\"stopVisible\":true,\"errorText\":\"\",\"storedQueue\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{}}\"}",
+        "[2026-11-08T07:31:22.244Z] task 01M6X12HZ7ZS27AQA5HNR5WYTT events=8 cancelled=1 completed=0 failed=0 userMsgs=2 seq=1:task.created>2:task.status_changed>3:user.message.created>4:turn.started>5:turn.cancelled>6:task.status_changed>7:task.attention_changed>8:task.completed",
+        "[2026-11-08T07:31:22.244Z] failPayloads=[]"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s10-ui-queue-stop/2026-11-08T07-16-02-728Z-fd5687"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s10-ui-queue-stop/2026-11-08T07-30-38-363Z-f4abfd"
     },
     {
       "scenario": "s11-ui-queue-flush",
-      "runId": "2026-11-08T07-16-28-916Z-10567a",
-      "status": "PASS",
-      "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
-      "durationMs": 41610,
-      "details": {
-        "queueGone": true,
-        "completed": 2,
-        "userMsgs": 2,
-        "failed": 0,
-        "cancelled": 0,
-        "unknown": 0,
-        "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
-      },
+      "runId": "2026-11-08T07-31-23-223Z-b9e53f",
+      "status": "FAIL",
+      "summary": "harness error: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n",
+      "durationMs": 33823,
+      "error": "page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:120:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:776:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
       "notes": [
-        "[2026-11-08T07:16:34.449Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:16:41.499Z] turn 1 active",
-        "[2026-11-08T07:16:41.524Z] early after send2: {\"queuePresent\":true,\"queueText\":\"\\n    \\n          auto-flush me after turn one\\n          ×\\n        \\n  \",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794122201512-tvxme4\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
-        "[2026-11-08T07:16:41.534Z] second message queued",
-        "[2026-11-08T07:16:43.295Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794122201512-tvxme4\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6X08EY6SKGYR741MASVJA2D\\\",\\\"threadId\\\":\\\"01M6X08EXYE977N1FAZH0CXDAB\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\",\"activeTurn\":{\"turnId\":\"01M6X08EY6SKGYR741MASVJA2D\",\"threadId\":\"01M6X08EXYE977N1FAZH0CXDAB\"},\"promptActivity\":true,\"queued\":{\"e9f0e3e0-2abd-475d-abd3-0bddf4f48673\":[{\"fileAttachments\":[],\"id\":\"queued-1794122201512-tvxme4\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]}}}",
-        "[2026-11-08T07:16:43.296Z] queue console: []",
-        "[2026-11-08T07:16:43.298Z] queue survived sidepanel reload while turn still active",
-        "[2026-11-08T07:16:44.300Z] task 01M6X08EXYE977N1FAZH0CXDAB",
-        "[2026-11-08T07:17:10.460Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
-        "[2026-11-08T07:17:10.503Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
-        "[2026-11-08T07:17:10.503Z] queue console final: []"
+        "[2026-11-08T07:31:30.191Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:31:39.859Z] turn 1 active",
+        "[2026-11-08T07:31:39.877Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"c8e9ddb0-4ac7-4955-8cfa-074c6b2af976\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794123099871-s3v9a1\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+        "[2026-11-08T07:31:39.891Z] second message queued",
+        "[2026-11-08T07:31:42.021Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"c8e9ddb0-4ac7-4955-8cfa-074c6b2af976\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794123099871-s3v9a1\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":false,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n        \\n        <div class=\\\"composer-frame   \\\">\\n          <input id=\\\"file-attachment-input\\\" type=\\\"file\\\" multiple=\\\"\\\" hidden=\\\"\\\">\\n          \\n          \\n          \\n              <div class=\\\"composer-tray\\\">\\n                        <div class=\\\"context-summary composer-context-summary\\\">\\n                          \\n      <div class=\\\"composer-context-group\\\" data-composer-context-group=\\\"references\",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"c8e9ddb0-4ac7-4955-8cfa-074c6b2af976\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"c8e9ddb0-4ac7-4955-8cfa-074c6b2af976\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M6X13XAGX6TVG6GMP9DJH60P\\\",\\\"threadId\\\":\\\"01M6X13X9KES0H3NZGMV2CTS8X\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"c8e9ddb0-4ac7-4955-8cfa-074c6b2af976\",\"activeTurn\":{\"turnId\":\"01M6X13XAGX6TVG6GMP9DJH60P\",\"threadId\":\"01M6X13X9KES0H3NZGMV2CTS8X\"},\"promptActivity\":true,\"queued\":{}}}",
+        "[2026-11-08T07:31:42.028Z] queue console: []"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s11-ui-queue-flush/2026-11-08T07-16-28-916Z-10567a"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s11-ui-queue-flush/2026-11-08T07-31-23-223Z-b9e53f"
     },
     {
       "scenario": "s12-sw-turn-recovery",
-      "runId": "2026-11-08T07-17-11-425Z-7ea28b",
+      "runId": "2026-11-08T07-31-58-099Z-99ac2c",
       "status": "PASS",
       "summary": "extension reload mid-turn → activeTurn restored via gateway hello → queue survived → flushed exactly once on turn.completed",
-      "durationMs": 90585,
+      "durationMs": 92406,
       "details": {
         "newSw": true,
         "queueGone": true,
@@ -506,28 +493,28 @@
         "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
       },
       "notes": [
-        "[2026-11-08T07:17:16.287Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:17:24.552Z] turn 1 active",
-        "[2026-11-08T07:17:25.555Z] gateway turn 1 established: task=01M6X09RWQWSSXM79TBVBW9B8W activeTurn=01M6X09RX1ZQFF1DBGSGEPZPSJ",
-        "[2026-11-08T07:17:25.583Z] second message queued",
-        "[2026-11-08T07:17:25.584Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M6X09RWQWSSXM79TBVBW9B8W\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794122245032}]}",
-        "[2026-11-08T07:17:25.856Z] chrome.runtime.reload() triggered (sws before=1)",
-        "[2026-11-08T07:17:26.357Z] new service worker=up",
-        "[2026-11-08T07:17:26.359Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794122246358,\"uptimeMs\":14604,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6X09BY5HZMRPRG3KYZTHECJ\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[{\"taskId\":\"01M6X09RWQWSSXM79TBVBW9B8W\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794122245032}]}",
-        "[2026-11-08T07:17:32.511Z] post-reload: stopSeen=true {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"15a3f40c-049e-412b-a30c-9f2f804adf62\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794122245565-vg57n8\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\"}]}}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"15a3f40c-049e-412b-a30c-9f2f804adf62\\\",\\\"threadId\\\":\\\"01M6X09RWQWSSXM79TBVBW9B8W\\\",\\\"activeTurn\\\":{\\\"threadId\\\":\\\"01M6X09RWQWSSXM79TBVBW9B8W\\\",\\\"turnId\\\":\\\"01M6X09RX1ZQFF1DBGSGEPZPSJ\\\"},\\\"initError\\\":null}\",\"gwTasks\":\"[{\\\"id\\\":\\\"01M6X09RWQWSSXM79TBVBW9B8W\\\",\\\"status\\\":\\\"active\\\",\\\"activeTurnId\\\":\\\"01M6X09RX1ZQFF1DBGSGEPZPSJ\\\"}]\"}",
-        "[2026-11-08T07:17:32.515Z] queue strip present post-reload=true",
-        "[2026-11-08T07:17:32.515Z] task 01M6X09RWQWSSXM79TBVBW9B8W",
-        "[2026-11-08T07:18:41.613Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
-        "[2026-11-08T07:18:41.676Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}"
+        "[2026-11-08T07:32:04.276Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:32:07.943Z] turn 1 active",
+        "[2026-11-08T07:32:20.998Z] gateway turn 1 established: task=01M6X152Z5RXEFXHV4VC9QC09V activeTurn=01M6X152ZKS9GXE6THXM8G0S42",
+        "[2026-11-08T07:32:21.038Z] second message queued",
+        "[2026-11-08T07:32:21.038Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M6X152Z5RXEFXHV4VC9QC09V\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794123140095}]}",
+        "[2026-11-08T07:32:22.094Z] chrome.runtime.reload() triggered (sws before=1)",
+        "[2026-11-08T07:32:22.597Z] new service worker=up",
+        "[2026-11-08T07:32:22.600Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794123142599,\"uptimeMs\":23680,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6X14EA2AGVWTZG3Z7CV0VJY\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[{\"taskId\":\"01M6X152Z5RXEFXHV4VC9QC09V\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794123140095}]}",
+        "[2026-11-08T07:32:24.849Z] post-reload: stopSeen=true {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"927a75ae-8284-4f45-812c-8963ddc64ca8\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794123141026-qyjda3\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\"}]}}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"927a75ae-8284-4f45-812c-8963ddc64ca8\\\",\\\"threadId\\\":\\\"01M6X152Z5RXEFXHV4VC9QC09V\\\",\\\"activeTurn\\\":{\\\"threadId\\\":\\\"01M6X152Z5RXEFXHV4VC9QC09V\\\",\\\"turnId\\\":\\\"01M6X152ZKS9GXE6THXM8G0S42\\\"},\\\"initError\\\":null}\",\"gwTasks\":\"[{\\\"id\\\":\\\"01M6X152Z5RXEFXHV4VC9QC09V\\\",\\\"status\\\":\\\"active\\\",\\\"activeTurnId\\\":\\\"01M6X152ZKS9GXE6THXM8G0S42\\\"}]\"}",
+        "[2026-11-08T07:32:24.859Z] queue strip present post-reload=true",
+        "[2026-11-08T07:32:24.859Z] task 01M6X152Z5RXEFXHV4VC9QC09V",
+        "[2026-11-08T07:33:30.326Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+        "[2026-11-08T07:33:30.383Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s12-sw-turn-recovery/2026-11-08T07-17-11-425Z-7ea28b"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s12-sw-turn-recovery/2026-11-08T07-31-58-099Z-99ac2c"
     },
     {
       "scenario": "s13-risk-preflight",
-      "runId": "2026-11-08T07-18-43-733Z-3ff8c1",
+      "runId": "2026-11-08T07-33-31-526Z-a3ea3b",
       "status": "PASS",
       "summary": "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired; trusted approve-then-mutate → browser.target_changed, handler never fired, restored-label control click fires",
-      "durationMs": 20588,
+      "durationMs": 16964,
       "details": {
         "denied": true,
         "dangerNotFired": true,
@@ -543,7 +530,7 @@
           "controlFired": true
         },
         "denyOutcome": {
-          "toolCallId": "rpc-mw7i45r8-7p5en7",
+          "toolCallId": "rpc-mw7in69g-6aduel",
           "tool": "browser.page.click",
           "status": "failed",
           "error": {
@@ -552,7 +539,7 @@
           }
         },
         "approveOutcome": {
-          "toolCallId": "rpc-mw7i46ek-1t9z6t",
+          "toolCallId": "rpc-mw7in6w0-upg742",
           "tool": "browser.page.click",
           "status": "completed",
           "result": {
@@ -567,8 +554,8 @@
                   "label": "Delete account permanently",
                   "tagName": "button",
                   "controlType": "submit",
-                  "pageOrigin": "http://127.0.0.1:54879",
-                  "pageUrl": "http://127.0.0.1:54879/risky"
+                  "pageOrigin": "http://127.0.0.1:59884",
+                  "pageUrl": "http://127.0.0.1:59884/risky"
                 }
               },
               "ok": true,
@@ -576,12 +563,12 @@
               "verified": "unknown"
             },
             "verified": "unknown",
-            "resolvedTabId": 1191478624
+            "resolvedTabId": 1199226009
           },
           "verified": "unknown"
         },
         "benignOutcome": {
-          "toolCallId": "rpc-mw7i48sp-64vna9",
+          "toolCallId": "rpc-mw7in7jf-1e93cw",
           "tool": "browser.page.click",
           "status": "completed",
           "result": {
@@ -596,8 +583,8 @@
                   "label": "Search",
                   "tagName": "button",
                   "controlType": "submit",
-                  "pageOrigin": "http://127.0.0.1:54879",
-                  "pageUrl": "http://127.0.0.1:54879/risky"
+                  "pageOrigin": "http://127.0.0.1:59884",
+                  "pageUrl": "http://127.0.0.1:59884/risky"
                 }
               },
               "ok": true,
@@ -605,40 +592,40 @@
               "verified": "unknown"
             },
             "verified": "unknown",
-            "resolvedTabId": 1191478624
+            "resolvedTabId": 1199226009
           },
           "verified": "unknown"
         }
       },
       "notes": [
-        "[2026-11-08T07:18:53.509Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:18:53.548Z] task 01M6X0CFB59HP7JGPYQ7DTYBHH",
-        "[2026-11-08T07:18:53.557Z] browser.mcp scope acquired",
-        "[2026-11-08T07:18:53.859Z] tab.create → tabId=1191478624",
-        "[2026-11-08T07:18:54.965Z] permission.respond appr-mw7i45af-w68ubb → allow_egress_task (agent_egress)",
-        "[2026-11-08T07:18:55.268Z] snapshot elements=2 dangerRef=dom-2 benignRef=dom-1",
-        "[2026-11-08T07:18:55.569Z] permission.requested id=appr-mw7i45re-jg6zjd kind=browser_action tool=browser.page.click targetLabel=Delete account permanently options=[\"allow_once\",\"deny\"]",
-        "[2026-11-08T07:18:55.571Z] permission.respond appr-mw7i45re-jg6zjd → deny (browser_action)",
-        "[2026-11-08T07:18:55.775Z] deny outcome={\"toolCallId\":\"rpc-mw7i45r8-7p5en7\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
-        "[2026-11-08T07:18:56.076Z] post-deny #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:54879/risky\",\"title\":\"\",\"resolvedTabId\":1191478624}",
-        "[2026-11-08T07:18:56.710Z] approve-leg permission.requested id=appr-mw7i46rp-lzeffm kind=browser_action",
-        "[2026-11-08T07:18:57.424Z] permission.respond appr-mw7i46rp-lzeffm → allow_once (browser_action)",
-        "[2026-11-08T07:18:58.073Z] approve outcome={\"toolCallId\":\"rpc-mw7i46ek-1t9z6t\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-2\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Delete account permanent",
-        "[2026-11-08T07:18:58.375Z] post-approve #out={\"text\":\"danger-fired\",\"truncated\":false,\"url\":\"http://127.0.0.1:54879/risky\",\"title\":\"\",\"resolvedTabId\":1191478624}",
-        "[2026-11-08T07:19:00.010Z] benign click outcome=completed pending approvals 0→0",
-        "[2026-11-08T07:19:00.365Z] post-click #out={\"text\":\"benign-ok\",\"truncated\":false,\"url\":\"http://127.0.0.1:54879/risky\",\"title\":\"\",\"resolvedTabId\":1191478624}",
-        "[2026-11-08T07:19:00.665Z] toctou tab.create → tabId=1191478625",
-        "[2026-11-08T07:19:01.770Z] toctou snapshot elements=1 btnRef=dom-1",
-        "[2026-11-08T07:19:01.779Z] toctou pwPage=http://127.0.0.1:54879/toctou",
-        "[2026-11-08T07:19:02.081Z] toctou approval id=appr-mw7i4ats-dhfjai kind=browser_action targetLabel=Delete account permanently",
-        "[2026-11-08T07:19:02.378Z] permission.respond appr-mw7i4ats-dhfjai → allow_once (browser_action)",
-        "[2026-11-08T07:19:02.464Z] toctou outcome={\"toolCallId\":\"rpc-mw7i4as4-wwqjzz\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.target_changed\",\"message\":\"browser.target_changed: target changed since the action was risk-checked — take a fresh browser.page.snapshot and retry\"}}",
-        "[2026-11-08T07:19:02.764Z] toctou post-refuse #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:54879/toctou\",\"title\":\"\",\"resolvedTabId\":1191478625}",
-        "[2026-11-08T07:19:03.392Z] permission.respond appr-mw7i4bsg-70t1t5 → allow_once (browser_action)",
-        "[2026-11-08T07:19:03.656Z] toctou control outcome={\"toolCallId\":\"rpc-mw7i4bjh-08g2dv\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 99,90\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":98.9921875,\"y\":90.375,\"ok\":true,\"frameId\":0},\"resolvedTabId\":1191478625}}",
-        "[2026-11-08T07:19:03.957Z] toctou control #out={\"text\":\"clicked:Delete account permanently\",\"truncated\":false,\"url\":\"http://127.0.0.1:54879/toctou\",\"title\":\"\",\"resolvedTabId\":1191478625}"
+        "[2026-11-08T07:33:40.535Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:33:40.668Z] task 01M6X17HNPQVKXTJYB5ZEKM2H5",
+        "[2026-11-08T07:33:40.675Z] browser.mcp scope acquired",
+        "[2026-11-08T07:33:40.977Z] tab.create → tabId=1199226009",
+        "[2026-11-08T07:33:42.086Z] permission.respond appr-mw7in5sm-dj8wkt → allow_egress_task (agent_egress)",
+        "[2026-11-08T07:33:42.388Z] snapshot elements=2 dangerRef=dom-2 benignRef=dom-1",
+        "[2026-11-08T07:33:42.688Z] permission.requested id=appr-mw7in69l-yabj9c kind=browser_action tool=browser.page.click targetLabel=Delete account permanently options=[\"allow_once\",\"deny\"]",
+        "[2026-11-08T07:33:42.690Z] permission.respond appr-mw7in69l-yabj9c → deny (browser_action)",
+        "[2026-11-08T07:33:42.897Z] deny outcome={\"toolCallId\":\"rpc-mw7in69g-6aduel\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+        "[2026-11-08T07:33:43.199Z] post-deny #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:59884/risky\",\"title\":\"\",\"resolvedTabId\":1199226009}",
+        "[2026-11-08T07:33:43.501Z] approve-leg permission.requested id=appr-mw7in6w5-mydspg kind=browser_action",
+        "[2026-11-08T07:33:43.502Z] permission.respond appr-mw7in6w5-mydspg → allow_once (browser_action)",
+        "[2026-11-08T07:33:43.741Z] approve outcome={\"toolCallId\":\"rpc-mw7in6w0-upg742\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-2\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Delete account permanent",
+        "[2026-11-08T07:33:44.043Z] post-approve #out={\"text\":\"danger-fired\",\"truncated\":false,\"url\":\"http://127.0.0.1:59884/risky\",\"title\":\"\",\"resolvedTabId\":1199226009}",
+        "[2026-11-08T07:33:44.845Z] benign click outcome=completed pending approvals 0→0",
+        "[2026-11-08T07:33:45.147Z] post-click #out={\"text\":\"benign-ok\",\"truncated\":false,\"url\":\"http://127.0.0.1:59884/risky\",\"title\":\"\",\"resolvedTabId\":1199226009}",
+        "[2026-11-08T07:33:45.447Z] toctou tab.create → tabId=1199226010",
+        "[2026-11-08T07:33:46.549Z] toctou snapshot elements=1 btnRef=dom-1",
+        "[2026-11-08T07:33:46.550Z] toctou pwPage=http://127.0.0.1:59884/toctou",
+        "[2026-11-08T07:33:46.851Z] toctou approval id=appr-mw7in9h5-nykjm6 kind=browser_action targetLabel=Delete account permanently",
+        "[2026-11-08T07:33:47.062Z] permission.respond appr-mw7in9h5-nykjm6 → allow_once (browser_action)",
+        "[2026-11-08T07:33:47.308Z] toctou outcome={\"toolCallId\":\"rpc-mw7in9h2-l3wx7l\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.target_changed\",\"message\":\"browser.target_changed: target changed since the action was risk-checked — take a fresh browser.page.snapshot and retry\"}}",
+        "[2026-11-08T07:33:47.609Z] toctou post-refuse #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:59884/toctou\",\"title\":\"\",\"resolvedTabId\":1199226010}",
+        "[2026-11-08T07:33:47.913Z] permission.respond appr-mw7inaam-6xnhuy → allow_once (browser_action)",
+        "[2026-11-08T07:33:48.158Z] toctou control outcome={\"toolCallId\":\"rpc-mw7inaaj-e4gsr1\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 99,90\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":98.9921875,\"y\":90.375,\"ok\":true,\"frameId\":0},\"resolvedTabId\":1199226010}}",
+        "[2026-11-08T07:33:48.460Z] toctou control #out={\"text\":\"clicked:Delete account permanently\",\"truncated\":false,\"url\":\"http://127.0.0.1:59884/toctou\",\"title\":\"\",\"resolvedTabId\":1199226010}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s13-risk-preflight/2026-11-08T07-18-43-733Z-3ff8c1"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s13-risk-preflight/2026-11-08T07-33-31-526Z-a3ea3b"
     },
     {
       "scenario": "s2-debug-live",
@@ -671,60 +658,60 @@
     },
     {
       "scenario": "s3-multitab",
-      "runId": "2026-11-08T07-14-21-060Z-a9c056",
+      "runId": "2026-11-08T07-28-55-361Z-e7cece",
       "status": "PASS",
       "summary": "two tasks held isolated tab scopes; cross-task tab access refused",
-      "durationMs": 7671,
+      "durationMs": 7254,
       "details": {
-        "tabA": 1773099047,
-        "tabB": 1773099048,
+        "tabA": 1471737510,
+        "tabB": 1471737511,
         "ownOk": true,
         "crossDenied": true,
         "sawB": false,
         "cross": {
-          "toolCallId": "rpc-mw7hyftx-5sqsfu",
+          "toolCallId": "rpc-mw7ih63d-r0kgxv",
           "tool": "browser.page.get",
           "status": "failed",
           "error": {
             "code": "browser.not_in_scope",
-            "message": "tab 1773099048 is outside this task's tab scope"
+            "message": "tab 1471737511 is outside this task's tab scope"
           }
         },
         "getA": "completed",
         "getB": "completed"
       },
       "notes": [
-        "[2026-11-08T07:14:26.976Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:14:26.989Z] taskA=01M6X04B14S07D7YA1Y11FSHPS taskB=01M6X04B1BM5EMZ847216SNTHR",
-        "[2026-11-08T07:14:27.005Z] taskA tab.create → {\"toolCallId\":\"rpc-mw7hyer2-lshais\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1773099047,\"tabId\":1773099047,\"resolvedTabId\":1773099047,\"id\":1773099047,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
-        "[2026-11-08T07:14:27.015Z] taskB tab.create → {\"toolCallId\":\"rpc-mw7hyerh-hbra3r\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1773099048,\"tabId\":1773099048,\"resolvedTabId\":1773099048,\"id\":1773099048,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
-        "[2026-11-08T07:14:27.015Z] tabA=1773099047 tabB=1773099048",
-        "[2026-11-08T07:14:28.388Z] A sees: {\"id\":1773099047,\"tabId\":1773099047,\"url\":\"http://127.0.0.1:52695/\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":1773099047,\"windowId\":1773099045,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":720,",
-        "[2026-11-08T07:14:28.388Z] B sees: {\"id\":1773099048,\"tabId\":1773099048,\"url\":\"http://127.0.0.1:52695/form\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":1773099048,\"windowId\":1773099045,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":",
-        "[2026-11-08T07:14:28.396Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw7hyftx-5sqsfu\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.not_in_scope\",\"message\":\"tab 1773099048 is outside this task's tab scope\"}}"
+        "[2026-11-08T07:29:00.725Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:29:00.747Z] taskA=01M6X0Z09ZVT9D5H6AAVG1CWHZ taskB=01M6X0Z0A7H1Y963ST9R8XD8RB",
+        "[2026-11-08T07:29:00.790Z] taskA tab.create → {\"toolCallId\":\"rpc-mw7ih4y4-36hb32\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1471737510,\"tabId\":1471737510,\"resolvedTabId\":1471737510,\"id\":1471737510,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+        "[2026-11-08T07:29:00.904Z] taskB tab.create → {\"toolCallId\":\"rpc-mw7ih4zm-ckh5sa\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":1471737511,\"tabId\":1471737511,\"resolvedTabId\":1471737511,\"id\":1471737511,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+        "[2026-11-08T07:29:00.905Z] tabA=1471737510 tabB=1471737511",
+        "[2026-11-08T07:29:02.232Z] A sees: {\"id\":1471737510,\"tabId\":1471737510,\"url\":\"http://127.0.0.1:57851/\",\"title\":\"Fixture Home\",\"active\":false,\"resolvedTabId\":1471737510,\"windowId\":1471737508,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":720,",
+        "[2026-11-08T07:29:02.233Z] B sees: {\"id\":1471737511,\"tabId\":1471737511,\"url\":\"http://127.0.0.1:57851/form\",\"title\":\"Fixture Form\",\"active\":false,\"resolvedTabId\":1471737511,\"windowId\":1471737508,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scroll\":{\"scrollX\":0,\"scrollY\":0,\"viewportWidth\":1280,\"viewportHeight\":720,\"documentHeight\":",
+        "[2026-11-08T07:29:02.235Z] A→B tab.get outcome: {\"toolCallId\":\"rpc-mw7ih63d-r0kgxv\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.not_in_scope\",\"message\":\"tab 1471737511 is outside this task's tab scope\"}}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s3-multitab/2026-11-08T07-14-21-060Z-a9c056"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s3-multitab/2026-11-08T07-28-55-361Z-e7cece"
     },
     {
       "scenario": "s5-interruption",
-      "runId": "2026-11-08T07-14-29-643Z-938494",
+      "runId": "2026-11-08T07-29-03-503Z-a6e486",
       "status": "PASS",
       "summary": "gateway SIGKILL → respawn → task + tab scope survived, calls completed once, replayed toolCallId deduped",
-      "durationMs": 29515,
+      "durationMs": 30938,
       "details": {
         "call1Status": "completed",
         "call2": {
-          "toolCallId": "rpc-mw7hz3cz-r6ln76",
+          "toolCallId": "rpc-mw7ihuj3-4eo8yg",
           "tool": "browser.page.get",
           "status": "completed",
           "result": {
-            "id": 1052016577,
-            "tabId": 1052016577,
-            "url": "http://127.0.0.1:52730/",
+            "id": 1554916458,
+            "tabId": 1554916458,
+            "url": "http://127.0.0.1:57887/",
             "title": "Fixture Home",
             "active": true,
-            "resolvedTabId": 1052016577,
-            "windowId": 1052016575,
+            "resolvedTabId": 1554916458,
+            "windowId": 1554916456,
             "status": "complete",
             "pinned": false,
             "groupId": -1,
@@ -739,7 +726,7 @@
             "frames": [
               {
                 "frameId": 0,
-                "url": "http://127.0.0.1:52730/",
+                "url": "http://127.0.0.1:57887/",
                 "parentFrameId": -1
               }
             ]
@@ -755,37 +742,38 @@
           },
           "verified": "unknown"
         },
-        "completed": 3,
-        "started": 3,
+        "completed": 4,
+        "started": 4,
         "duplicateCompletions": false
       },
       "notes": [
-        "[2026-11-08T07:14:35.146Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:14:35.152Z] task 01M6X04K0EGKBZ1R1TXH5PDXWK",
-        "[2026-11-08T07:14:35.504Z] pre-kill page.get → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1052016577,\"tabId\":1052016577,\"url\":\"http://127.0.0.1:52730/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
-        "[2026-11-08T07:14:35.512Z] gateway pid=7265 — sending SIGKILL",
-        "[2026-11-08T07:14:36.015Z] spawn_in_flight window: waiting 15s before respawn",
-        "[2026-11-08T07:14:54.556Z] gateway respawned",
-        "[2026-11-08T07:14:58.876Z] sidepanel opened to wake NM host → gateway reconnect",
-        "[2026-11-08T07:14:59.154Z] post-respawn page.get → {\"toolCallId\":\"rpc-mw7hz3cz-r6ln76\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1052016577,\"tabId\":1052016577,\"url\":\"http://127.0.0.1:52730/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":1052016577,\"windowId\":1052016575,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scrol",
-        "[2026-11-08T07:14:59.156Z] post-respawn replay of s5-interrupted-call → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.duplicate_tool_call\",\"message\":\"toolCallId s5-interrupted-call already has outcome failed\"},\"ve",
-        "[2026-11-08T07:14:59.158Z] durable: tool.started=3 tool.completed=3"
+        "[2026-11-08T07:29:08.326Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:29:08.339Z] task 01M6X0Z7QC87HQDN3H6XZKKGZ0",
+        "[2026-11-08T07:29:08.700Z] pre-kill page.get → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1554916458,\"tabId\":1554916458,\"url\":\"http://127.0.0.1:57887/\",\"title\":\"Fixture Home\",\"active\":true,\"re",
+        "[2026-11-08T07:29:08.700Z] gateway pid=92145 — sending SIGKILL",
+        "[2026-11-08T07:29:09.203Z] spawn_in_flight window: waiting 16s before respawn",
+        "[2026-11-08T07:29:26.446Z] gateway respawned",
+        "[2026-11-08T07:29:30.840Z] sidepanel opened to wake NM host → gateway reconnect",
+        "[2026-11-08T07:29:30.893Z] browser.no_host — waiting for extension host re-register, retrying",
+        "[2026-11-08T07:29:34.433Z] post-respawn page.get → {\"toolCallId\":\"rpc-mw7ihuj3-4eo8yg\",\"tool\":\"browser.page.get\",\"status\":\"completed\",\"result\":{\"id\":1554916458,\"tabId\":1554916458,\"url\":\"http://127.0.0.1:57887/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":1554916458,\"windowId\":1554916456,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1,\"scrol",
+        "[2026-11-08T07:29:34.436Z] post-respawn replay of s5-interrupted-call → {\"toolCallId\":\"s5-interrupted-call\",\"tool\":\"browser.page.get\",\"status\":\"failed\",\"error\":{\"code\":\"browser.duplicate_tool_call\",\"message\":\"toolCallId s5-interrupted-call already has outcome failed\"},\"ve",
+        "[2026-11-08T07:29:34.442Z] durable: tool.started=4 tool.completed=4"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s5-interruption/2026-11-08T07-14-29-643Z-938494"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s5-interruption/2026-11-08T07-29-03-503Z-a6e486"
     },
     {
       "scenario": "s6-failedplan",
-      "runId": "2026-11-08T07-14-59-641Z-15860f",
+      "runId": "2026-11-08T07-29-35-083Z-22140b",
       "status": "PASS",
       "summary": "stale snapshotId rejected loudly; re-observe + retry succeeded",
-      "durationMs": 7890,
+      "durationMs": 8574,
       "details": {
         "staleFailed": true,
         "clickStatus": "completed",
         "snap2Status": "completed",
         "formAdvanced": false,
         "stale": {
-          "toolCallId": "rpc-mw7hz94t-j731ly",
+          "toolCallId": "rpc-mw7ii19c-1a1bj9",
           "tool": "browser.page.click",
           "status": "failed",
           "error": {
@@ -795,31 +783,31 @@
         }
       },
       "notes": [
-        "[2026-11-08T07:15:05.617Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:15:06.262Z] snapshot1 status=completed snapshotId=snap:f090525a-007b-47aa-9f52-7f1ed293d69f",
-        "[2026-11-08T07:15:06.364Z] navigate → completed",
-        "[2026-11-08T07:15:06.523Z] stale click → {\"toolCallId\":\"rpc-mw7hz94t-j731ly\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot expired or belongs to another tab; call browser.page.snapshot again\"}}",
-        "[2026-11-08T07:15:06.788Z] snapshot2 status=completed snapshotId=snap:2375356a-cd7d-450c-bfb8-be2233da86da",
-        "[2026-11-08T07:15:06.808Z] fresh click → {\"toolCallId\":\"rpc-mw7hz9gk-h0gz2u\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"label\":\"Next\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Next\",\"tagName\":\"button\",\"con"
+        "[2026-11-08T07:29:42.089Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:29:42.587Z] snapshot1 status=completed snapshotId=snap:039b276e-b8b3-4071-9e0e-9564118f9ca2",
+        "[2026-11-08T07:29:42.623Z] navigate → completed",
+        "[2026-11-08T07:29:42.649Z] stale click → {\"toolCallId\":\"rpc-mw7ii19c-1a1bj9\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot expired or belongs to another tab; call browser.page.snapshot again\"}}",
+        "[2026-11-08T07:29:42.920Z] snapshot2 status=completed snapshotId=snap:137050d3-7e3d-455b-8430-056f1cb9f663",
+        "[2026-11-08T07:29:42.943Z] fresh click → {\"toolCallId\":\"rpc-mw7ii1hm-lmfmuc\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"label\":\"Next\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Next\",\"tagName\":\"button\",\"con"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s6-failedplan/2026-11-08T07-14-59-641Z-15860f"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s6-failedplan/2026-11-08T07-29-35-083Z-22140b"
     },
     {
       "scenario": "s7-approval",
-      "runId": "2026-11-08T07-15-09-358Z-9868b5",
+      "runId": "2026-11-08T07-29-44-461Z-10e1ad",
       "status": "PASS",
       "summary": "deny→approval_denied, allow→navigated, permission.resolved×2",
-      "durationMs": 7219,
+      "durationMs": 6874,
       "details": {
         "denied": true,
         "allowed": true,
         "navigated": true,
-        "finalUrl": "http://auth.localhost:52868/",
-        "tabsText": "{\"tabs\":[{\"id\":917853849,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:52868/\",\"origin\":\"http://auth.localhost:52868\",\"active\":true,\"windowId\":917853847,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
+        "finalUrl": "http://auth.localhost:58010/",
+        "tabsText": "{\"tabs\":[{\"id\":1341714693,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:58010/\",\"origin\":\"http://auth.localhost:58010\",\"active\":true,\"windowId\":1341714691,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
         "hostAliveAfterApproval": true,
         "resolvedCount": 2,
         "denyOutcome": {
-          "toolCallId": "rpc-mw7hzfyi-916gx6",
+          "toolCallId": "rpc-mw7ii6wh-90vem7",
           "tool": "browser.page.navigate",
           "status": "failed",
           "error": {
@@ -828,7 +816,7 @@
           }
         },
         "allowOutcome": {
-          "toolCallId": "rpc-mw7hzg5o-9kc1ha",
+          "toolCallId": "rpc-mw7ii73t-psvard",
           "tool": "browser.page.navigate",
           "status": "completed",
           "result": {
@@ -837,38 +825,38 @@
             "step": {
               "step": {
                 "action": "navigate",
-                "url": "http://auth.localhost:52868/",
+                "url": "http://auth.localhost:58010/",
                 "reason": "gateway tool browser.page.navigate"
               },
               "ok": true,
               "message": "Navigated the current page."
             },
-            "resolvedTabId": 917853849
+            "resolvedTabId": 1341714693
           }
         }
       },
       "notes": [
-        "[2026-11-08T07:15:15.042Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:15:15.055Z] task 01M6X05SZCMMP0237W4KMAFKBW",
-        "[2026-11-08T07:15:15.057Z] browser.mcp scope acquired",
-        "[2026-11-08T07:15:15.209Z] gated target: http://auth.localhost:52868/",
-        "[2026-11-08T07:15:15.215Z] permission.requested id=appr-mw7hzfyl-qit7st kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
-        "[2026-11-08T07:15:15.216Z] answered deny with optionId=deny",
-        "[2026-11-08T07:15:15.467Z] deny outcome={\"toolCallId\":\"rpc-mw7hzfyi-916gx6\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
-        "[2026-11-08T07:15:15.870Z] second permission.requested id=appr-mw7hzg5q-phydgq options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
-        "[2026-11-08T07:15:15.871Z] answered allow with optionId=allow_once",
-        "[2026-11-08T07:15:16.023Z] allow outcome={\"toolCallId\":\"rpc-mw7hzg5o-9kc1ha\",\"tool\":\"browser.page.navigate\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"action\":\"navigate\",\"url\":\"http://auth.localhost:52868/\",\"reason\":\"gateway tool browser.page.navigate\"},\"ok\":true,\"message\":\"Nav",
-        "[2026-11-08T07:15:16.527Z] tabs.list → {\"tabs\":[{\"id\":917853849,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:52868/\",\"origin\":\"http://auth.localhost:52868\",\"active\":true,\"windowId\":917853847,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
-        "[2026-11-08T07:15:16.579Z] probe tabs.list → {\"toolCallId\":\"rpc-mw7hzh0h-x0a5m0\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[]}}"
+        "[2026-11-08T07:29:49.788Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:29:49.795Z] task 01M6X10G70JPN1MDB7VRZMMGBH",
+        "[2026-11-08T07:29:49.798Z] browser.mcp scope acquired",
+        "[2026-11-08T07:29:49.935Z] gated target: http://auth.localhost:58010/",
+        "[2026-11-08T07:29:49.947Z] permission.requested id=appr-mw7ii6wn-096udl kind=browser_action tool=browser.page.navigate options=[\"allow_once\",\"deny\"]",
+        "[2026-11-08T07:29:49.953Z] answered deny with optionId=deny",
+        "[2026-11-08T07:29:50.199Z] deny outcome={\"toolCallId\":\"rpc-mw7ii6wh-90vem7\",\"tool\":\"browser.page.navigate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+        "[2026-11-08T07:29:50.606Z] second permission.requested id=appr-mw7ii73v-tbyixy options=[{\"id\":\"allow_once\",\"kind\":\"allow_once\"},{\"id\":\"deny\",\"kind\":\"deny\"}]",
+        "[2026-11-08T07:29:50.608Z] answered allow with optionId=allow_once",
+        "[2026-11-08T07:29:50.743Z] allow outcome={\"toolCallId\":\"rpc-mw7ii73t-psvard\",\"tool\":\"browser.page.navigate\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"action\":\"navigate\",\"url\":\"http://auth.localhost:58010/\",\"reason\":\"gateway tool browser.page.navigate\"},\"ok\":true,\"message\":\"Nav",
+        "[2026-11-08T07:29:51.252Z] tabs.list → {\"tabs\":[{\"id\":1341714693,\"title\":\"Fixture Home\",\"url\":\"http://auth.localhost:58010/\",\"origin\":\"http://auth.localhost:58010\",\"active\":true,\"windowId\":1341714691,\"status\":\"complete\",\"pinned\":false,\"groupId\":-1}]}",
+        "[2026-11-08T07:29:51.334Z] probe tabs.list → {\"toolCallId\":\"rpc-mw7ii7z8-dy67jb\",\"tool\":\"browser.tabs.list\",\"status\":\"completed\",\"result\":{\"tabs\":[]}}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s7-approval/2026-11-08T07-15-09-358Z-9868b5"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s7-approval/2026-11-08T07-29-44-461Z-10e1ad"
     },
     {
       "scenario": "s8-deliverable",
-      "runId": "2026-11-08T07-15-46-024Z-309595",
+      "runId": "2026-11-08T07-30-20-747Z-5363a3",
       "status": "PASS",
       "summary": "task.sync carries full tool evidence; sidepanel renders in real Chrome",
-      "durationMs": 9343,
+      "durationMs": 10240,
       "details": {
         "durableOk": true,
         "uiOk": true,
@@ -891,40 +879,40 @@
         "note": "agent-authored deliverable card requires a live provider turn (see s1)"
       },
       "notes": [
-        "[2026-11-08T07:15:52.545Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:15:53.470Z] calls: nav=completed snap=completed click=completed get=completed",
-        "[2026-11-08T07:15:53.521Z] durable events=21 started=5 completed=5 classified=5",
-        "[2026-11-08T07:15:55.347Z] sidepanel state: {\"title\":\"Chromex · Chat\",\"bodyText\":\"Disconnected\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nSummarize page\\nChromex · Chat\\nBasic permissions\\nLoading models…\\nVery high\",\"hasComposer\":true}"
+        "[2026-11-08T07:30:28.015Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:30:29.052Z] calls: nav=completed snap=completed click=completed get=completed",
+        "[2026-11-08T07:30:29.125Z] durable events=21 started=5 completed=5 classified=5",
+        "[2026-11-08T07:30:30.972Z] sidepanel state: {\"title\":\"Chromex · Chat\",\"bodyText\":\"Disconnected\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nSummarize page\\nChromex · Chat\\nBasic permissions\\nLoading models…\\nVery high\",\"hasComposer\":true}"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s8-deliverable/2026-11-08T07-15-46-024Z-309595"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s8-deliverable/2026-11-08T07-30-20-747Z-5363a3"
     },
     {
       "scenario": "s9-interrupt-queue",
-      "runId": "2026-11-08T07-15-56-243Z-75c9bc",
+      "runId": "2026-11-08T07-30-32-130Z-b3ac59",
       "status": "PASS",
       "summary": "interrupt without turnId → turn.cancelled{interrupted}; queued turn auto-dispatched → turn.completed; no turn.unknown",
-      "durationMs": 5562,
+      "durationMs": 5622,
       "details": {
-        "turnId1": "01M6X07342G60TGNCQR8SQ6DB5",
-        "turnId2": "01M6X076209QCEMKFVWBMKT80P",
+        "turnId1": "01M6X11TH70MJKDWP8SEC33FAV",
+        "turnId2": "01M6X11XFFEJDX4MGMGVCXB1BS",
         "term1": "turn.cancelled",
         "term2": "turn.completed"
       },
       "notes": [
-        "[2026-11-08T07:15:57.186Z] task 01M6X07340FN1QAWCBNR1EZ816",
-        "[2026-11-08T07:15:57.190Z] send1 → turnId=01M6X07342G60TGNCQR8SQ6DB5 queued=false",
-        "[2026-11-08T07:16:00.193Z] send2 → turnId=01M6X076209QCEMKFVWBMKT80P queued=true",
-        "[2026-11-08T07:16:00.199Z] turn.interrupt → {\"ok\":true,\"threadId\":\"01M6X07340FN1QAWCBNR1EZ816\"}",
-        "[2026-11-08T07:16:01.803Z] term1=turn.cancelled term2=turn.completed unknowns=0"
+        "[2026-11-08T07:30:33.123Z] task 01M6X11TGQBWGFF1NW8ZHRMQ0Q",
+        "[2026-11-08T07:30:33.138Z] send1 → turnId=01M6X11TH70MJKDWP8SEC33FAV queued=false",
+        "[2026-11-08T07:30:36.144Z] send2 → turnId=01M6X11XFFEJDX4MGMGVCXB1BS queued=true",
+        "[2026-11-08T07:30:36.148Z] turn.interrupt → {\"ok\":true,\"threadId\":\"01M6X11TGQBWGFF1NW8ZHRMQ0Q\"}",
+        "[2026-11-08T07:30:37.752Z] term1=turn.cancelled term2=turn.completed unknowns=0"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s9-interrupt-queue/2026-11-08T07-15-56-243Z-75c9bc"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/s9-interrupt-queue/2026-11-08T07-30-32-130Z-b3ac59"
     },
     {
       "scenario": "sw-restart",
-      "runId": "2026-11-08T07-14-10-636Z-7628f0",
+      "runId": "2026-11-08T07-28-44-589Z-2b92f6",
       "status": "PASS",
       "summary": "extension reload → new SW + NM host re-registered → calls + CDP tier recovered → post-reload click delivered exactly once",
-      "durationMs": 9705,
+      "durationMs": 9809,
       "details": {
         "newSw": "chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
         "authed": 2,
@@ -935,20 +923,20 @@
         "ariaOk": true
       },
       "notes": [
-        "[2026-11-08T07:14:15.232Z] authed gateway connections=2 (1=client, 2+=browser host)",
-        "[2026-11-08T07:14:16.098Z] baseline snapshot=completed ref=dom-1",
-        "[2026-11-08T07:14:16.112Z] baseline click → completed",
-        "[2026-11-08T07:14:16.417Z] count after baseline=1",
-        "[2026-11-08T07:14:16.716Z] extension reload triggered (sws before=1)",
-        "[2026-11-08T07:14:17.233Z] new service worker=chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
-        "[2026-11-08T07:14:18.234Z] authed gateway connections post-reload=2",
-        "[2026-11-08T07:14:19.436Z] post-reload page.get → completed \"\"",
-        "[2026-11-08T07:14:19.764Z] post-reload snapshot=completed ref=dom-1",
-        "[2026-11-08T07:14:19.769Z] post-reload click → {\"toolCallId\":\"rpc-mw7hy96c-11scyr\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
-        "[2026-11-08T07:14:20.072Z] count after post-reload click=2",
-        "[2026-11-08T07:14:20.341Z] post-reload aria snapshot=completed len=247"
+        "[2026-11-08T07:28:49.704Z] authed gateway connections=2 (1=client, 2+=browser host)",
+        "[2026-11-08T07:28:50.119Z] baseline snapshot=completed ref=dom-1",
+        "[2026-11-08T07:28:50.142Z] baseline click → completed",
+        "[2026-11-08T07:28:50.445Z] count after baseline=1",
+        "[2026-11-08T07:28:50.872Z] extension reload triggered (sws before=1)",
+        "[2026-11-08T07:28:51.376Z] new service worker=chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
+        "[2026-11-08T07:28:52.379Z] authed gateway connections post-reload=2",
+        "[2026-11-08T07:28:53.537Z] post-reload page.get → completed \"\"",
+        "[2026-11-08T07:28:53.799Z] post-reload snapshot=completed ref=dom-1",
+        "[2026-11-08T07:28:53.815Z] post-reload click → {\"toolCallId\":\"rpc-mw7igzl4-qceb29\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+        "[2026-11-08T07:28:54.119Z] count after post-reload click=2",
+        "[2026-11-08T07:28:54.398Z] post-reload aria snapshot=completed len=248"
       ],
-      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/sw-restart/2026-11-08T07-14-10-636Z-7628f0"
+      "evidenceDir": "/Users/tranquangdang21/Projects/chromex/artifacts/acceptance/sw-restart/2026-11-08T07-28-44-589Z-2b92f6"
     }
   ]
 }
