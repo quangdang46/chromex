@@ -290,6 +290,8 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.setInputFiles": { selector: "input[type=file]", files: ["/tmp/a.png"] },
   "browser.page.responseBody": { requestId: "req-1", maxBytes: 4096 },
   "browser.page.webSocket": { requestId: "ws-1", frameLimit: 20 },
+  "browser.page.route": { match: "/api/ping", status: 200, body: "{}" },
+  "browser.page.unroute": {},
   "browser.page.find": { text: "Sign in", limit: 10 },
   "browser.page.history": { action: "back" },
   "browser.downloads.list": { state: "complete", limit: 20 },

@@ -48,7 +48,7 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
 
 - Browser runtime depth: LANDED — debugger/CDP tier implemented and
   verified headless (`cdp-headless`: aria AX snapshot, trusted click,
-  JS dialog accept, setInputFiles by path, responseBody tap+get, webSocket frame capture; see
+  JS dialog accept, setInputFiles by path, responseBody tap+get, webSocket frame capture, route/unroute mock+restore; see
   docs/adr/debugger-tier.md). Trusted paths now cover click, press,
   type, fill, hover and drag — including inside same-origin and
   cross-origin iframes via the content-script geometry chain.

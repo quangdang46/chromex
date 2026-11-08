@@ -14,6 +14,7 @@
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
 //   - page.webSocket         → Network webSocket* events (sent+recv frames)
+//   - page.route/unroute     → Fetch.enable fulfillRequest + continueRequest
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -137,6 +138,45 @@ await runScenario(
           wsFrameList.some((f) => f.dir === "recv" && f.data === "echo:hello-agent"),
         frames: wsFrameList.length,
         snippet: wsDirs.slice(0, 200),
+      };
+
+      // --- route: Fetch-domain interception mocks /api/ping, then
+      // unroute restores the real response ---
+      let routeRes = null, mockedOut = null, unrouteRes = null, realOut = null;
+      try {
+        routeRes = await runner.browserToolCall(
+          taskId, "browser.page.route",
+          { match: "/api/ping", status: 200, contentType: "application/json", body: '{"v":"mocked"}' },
+          token, 60_000,
+        );
+        await page.goto(fixture.url("/fetch"), { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.getElementById("out")?.textContent !== "pending",
+          { timeout: 10_000 },
+        );
+        mockedOut = await page.evaluate(() => document.getElementById("out")?.textContent);
+        const routeId = routeRes?.result?.routeId ?? routeRes?.routeId;
+        unrouteRes = await runner.browserToolCall(
+          taskId, "browser.page.unroute", { routeId }, token, 60_000,
+        );
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.getElementById("out")?.textContent !== "pending",
+          { timeout: 10_000 },
+        );
+        realOut = await page.evaluate(() => document.getElementById("out")?.textContent);
+      } catch (e) {
+        routeRes = routeRes ?? { rpcError: e?.message };
+      }
+      evidence.note(`route → mocked=${mockedOut} real=${realOut}`);
+      results.route = {
+        ok:
+          routeRes?.status === "completed" &&
+          mockedOut === "pong:mocked" &&
+          unrouteRes?.status === "completed" &&
+          realOut === "pong:ok",
+        mocked: mockedOut,
+        real: realOut,
       };
 
       // --- aria snapshot ---

@@ -201,6 +201,24 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // no external side effect — same class as scroll/activate.
       return verdict("low", { reason: "low-risk navigation/UI action" });
 
+    case "browser.page.unroute": {
+      // Removes agent-installed interception — restores real network
+      // traffic; cannot create new capability. Low like scroll.
+      return verdict("low", { reason: "removes agent-installed route interception" });
+    }
+
+    case "browser.page.route": {
+      // Fulfilled responses inject arbitrary content into the page and
+      // mask real server replies — the classifier cannot inspect the
+      // body, so approval is always required, never allow_task.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "route fulfillment injects response content into the page",
+      });
+    }
+
     case "browser.page.setInputFiles": {
       // Local paths enter the page like upload bytes — sensitive entry,
       // approval always required (allow_task never offered).

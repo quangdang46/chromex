@@ -39,6 +39,8 @@ export type BrowserToolName =
   | "browser.page.setInputFiles"
   | "browser.page.responseBody"
   | "browser.page.webSocket"
+  | "browser.page.route"
+  | "browser.page.unroute"
   | "browser.page.find"
   | "browser.page.history"
   | "browser.downloads.list"
@@ -82,6 +84,8 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.setInputFiles",
   "browser.page.responseBody",
   "browser.page.webSocket",
+  "browser.page.route",
+  "browser.page.unroute",
   "browser.page.find",
   "browser.page.history",
   "browser.downloads.list",

@@ -80,7 +80,11 @@ for Testing:
   (`browser.page.dialog`), `networkBodies: true`
   (`browser.page.responseBody`), `webSocketFrames: true`
   (`browser.page.webSocket` — connections + sent/recv frame payloads,
-  captured only after the tap attaches, per-frame 8KiB truncation). `trustedGesture` is `true` — every
+  captured only after the tap attaches, per-frame 8KiB truncation),
+  `requestInterception: true` (`browser.page.route`/`unroute` — CDP
+  Fetch.enable request-stage interception fulfilled with agent-supplied
+  responses; rules tab-scoped, ≤50/tab, held session like emulation,
+  do not survive SW restart). `trustedGesture` is `true` — every
   gesture-bearing tool has a verified `args.trusted` path:
   `browser.page.click` (Input.dispatchMouseEvent), `press`/`type`/`fill`
   (Input.dispatchKeyEvent, shared US-layout key table; fill = focus →
@@ -136,7 +140,8 @@ for Testing:
   playwright-isolated supports only viewport + media keys and refuses
   the rest `proto.unsupported`.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,
-  `browser.page.responseBody`, `browser.page.webSocket`) exist only on
+  `browser.page.responseBody`, `browser.page.webSocket`,
+  `browser.page.route`, `browser.page.unroute`) exist only on
   the chrome-extension backend; `playwright-isolated` rejects them `proto.unsupported` —
   honest negative, no silent downgrade.
 - No `chrome.debugger` use for page scraping — CDP is for operations

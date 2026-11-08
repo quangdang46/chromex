@@ -98,6 +98,11 @@ export interface BrowserBackendCapabilities {
    *  / webSocketClosed on the same per-tab tap — only connections opened
    *  after attach are captured, frames truncated per-entry. */
   webSocketFrames?: boolean;
+  /** Network request interception/mocking (browser.page.route +
+   *  unroute). chrome-extension: CDP Fetch.enable/fulfillRequest on a
+   *  held session — only requests after registration are intercepted,
+   *  rules are tab-scoped and do not survive SW restart. */
+  requestInterception?: boolean;
 }
 
 /**
@@ -165,6 +170,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // (browser.page.webSocket) on the same per-tab tap.
     networkBodies: true,
     webSocketFrames: true,
+    requestInterception: true,
     windowManagement: true,
   },
   "playwright-isolated": {

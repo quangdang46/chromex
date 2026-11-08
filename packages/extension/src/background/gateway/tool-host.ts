@@ -11,8 +11,9 @@
  *  - args.trusted variants → CDP Input.dispatchMouseEvent/KeyEvent
  *    (isTrusted=true) via background/cdp.ts
  *  - page.snapshot mode:"aria", page.dialog, page.setInputFiles,
- *    page.responseBody, page.webSocket, page.screenshot element clips,
- *    page.emulate, page.pdf → chrome.debugger CDP tier (docs/adr/debugger-tier.md)
+ *    page.responseBody, page.webSocket, page.route/unroute,
+ *    page.screenshot element clips, page.emulate, page.pdf →
+ *    chrome.debugger CDP tier (docs/adr/debugger-tier.md)
  *  - page.evaluate → chrome.scripting world:"MAIN" (always approval)
  *  - page.upload → in-memory DataTransfer path (content script)
  *
@@ -255,6 +256,8 @@ const SUPPORTED = new Set([
   "browser.page.setInputFiles",
   "browser.page.responseBody",
   "browser.page.webSocket",
+  "browser.page.route",
+  "browser.page.unroute",
 ]);
 
 /** chromex-9e3: per-request tab scope snapshot computed by the Gateway
@@ -1075,6 +1078,18 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.webSocket": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         return await pageWebSocket(deps, tabId, args);
+      }
+      case "browser.page.route": {
+        cdpRequired(deps);
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        if (frameIdArg(args) !== 0) {
+          throw toolError("proto.invalid", "browser.page.route is tab-scoped; args.frameId is not supported");
+        }
+        return await addPageRoute(deps, tabId, args);
+      }
+      case "browser.page.unroute": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await removePageRoutes(deps, tabId, args);
       }
       case "browser.page.history": {
         const action = str(args.action);
@@ -2886,6 +2901,167 @@ async function applyEmulationReset(session: CdpSession): Promise<void> {
     }),
     session.send("Emulation.setUserAgentOverride", {}),
   ]);
+}
+
+// ---- browser.page.route / unroute (CDP Fetch tier) -------------------
+// Request interception is session-scoped like emulation: the hold keeps
+// the debugger attached while rules are registered. Fetch.enable sees
+// EVERY request (pattern "*") and we continue non-matching ones — only
+// requests after enable are intercepted, same honesty bound as the
+// network tap. SW restart drops rules (module state + session).
+
+interface RouteRule {
+  id: string;
+  match: string;
+  status: number;
+  headers: Record<string, string>;
+  bodyBase64: string;
+}
+
+interface RouteHold {
+  session: CdpSession;
+  release: () => Promise<void>;
+  rules: Map<string, RouteRule>;
+}
+const routeHolds = new Map<number, RouteHold>();
+
+const ROUTE_BODY_MAX = 256 * 1024;
+const ROUTE_RULES_MAX = 50;
+
+function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> {
+  const existing = routeHolds.get(tabId);
+  if (existing) return existing;
+  const { session, release } = await cdpAcquire(deps, tabId);
+  const hold: RouteHold = { session, release, rules: new Map() };
+  routeHolds.set(tabId, hold);
+  // Pause every request at Request stage; non-matching requests are
+  // continued untouched. Response-stage interception is not supported —
+  // fulfill replaces the whole response.
+  await session.send("Fetch.enable", {
+    patterns: [{ urlPattern: "*", requestStage: "Request" }],
+  });
+  session.on("Fetch.requestPaused", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    const url = typeof (p.request as { url?: string } | undefined)?.url === "string"
+      ? (p.request as { url: string }).url
+      : "";
+    const rule = requestId
+      ? [...hold.rules.values()].find((r) => url.includes(r.match))
+      : undefined;
+    if (!requestId) return;
+    if (!rule) {
+      void session.send("Fetch.continueRequest", { requestId }).catch(() => {});
+      return;
+    }
+    const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
+    void session
+      .send("Fetch.fulfillRequest", {
+        requestId,
+        responseCode: rule.status,
+        responseHeaders,
+        body: rule.bodyBase64,
+      })
+      .catch(() => {});
+  });
+  session.on("Fetch.authRequired", (p) => {
+    const requestId = typeof p.requestId === "string" ? p.requestId : "";
+    if (!requestId) return;
+    void session
+      .send("Fetch.continueWithAuth", {
+        requestId,
+        authChallengeResponse: { response: "Default" },
+      })
+      .catch(() => {});
+  });
+  return hold;
+}
+
+async function releaseRouteHold(tabId: number): Promise<void> {
+  const hold = routeHolds.get(tabId);
+  if (!hold) return;
+  routeHolds.delete(tabId);
+  await hold.session.send("Fetch.disable").catch(() => {});
+  await hold.release().catch(() => {});
+}
+
+async function addPageRoute(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const match = strArg(args.match, "match", 512);
+  if (match === undefined) {
+    throw toolError("proto.invalid", "browser.page.route requires args.match (URL substring)");
+  }
+  const status = numArg(args.status, "status", 100, 599) ?? 200;
+  const contentType = strArg(args.contentType, "contentType", 200);
+  const headersRaw = args.headers;
+  const headers: Record<string, string> = {};
+  if (headersRaw !== undefined) {
+    if (typeof headersRaw !== "object" || headersRaw === null || Array.isArray(headersRaw)) {
+      throw toolError("proto.invalid", "args.headers must be an object of string values");
+    }
+    for (const [k, v] of Object.entries(headersRaw as Record<string, unknown>)) {
+      if (typeof v !== "string" || k.length === 0 || k.length > 100 || v.length > 8192) {
+        throw toolError("proto.invalid", "args.headers values must be strings (name ≤100, value ≤8192 chars)");
+      }
+      headers[k] = v;
+    }
+  }
+  if (contentType !== undefined) headers["Content-Type"] = contentType;
+  let bodyBase64 = "";
+  if (args.body !== undefined) {
+    if (typeof args.body !== "string") {
+      throw toolError("proto.invalid", "args.body must be a string");
+    }
+    if (args.body.length > ROUTE_BODY_MAX) {
+      throw toolError("proto.payload_too_large", `args.body exceeds ${ROUTE_BODY_MAX} chars`);
+    }
+    bodyBase64 = utf8ToBase64(args.body);
+  }
+  const hold = await routeHold(deps, tabId);
+  if (hold.rules.size >= ROUTE_RULES_MAX) {
+    throw toolError("proto.invalid", `route rule cap reached (${ROUTE_RULES_MAX}) — unroute first`);
+  }
+  const id = crypto.randomUUID();
+  hold.rules.set(id, { id, match, status, headers, bodyBase64 });
+  return { routeId: id, match, status, rules: hold.rules.size, resolvedTabId: tabId };
+}
+
+async function removePageRoutes(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const hold = routeHolds.get(tabId);
+  const routeId = str(args.routeId);
+  if (!hold || hold.rules.size === 0) {
+    return { removed: 0, remaining: 0, resolvedTabId: tabId };
+  }
+  let removed = 0;
+  if (routeId !== undefined) {
+    removed = hold.rules.delete(routeId) ? 1 : 0;
+    if (removed === 0) {
+      throw toolError("browser.not_found", `no route rule ${routeId} on this tab`);
+    }
+  } else {
+    removed = hold.rules.size;
+    hold.rules.clear();
+  }
+  if (hold.rules.size === 0) {
+    await releaseRouteHold(tabId);
+  }
+  return { removed, remaining: routeId !== undefined ? hold.rules.size : 0, resolvedTabId: tabId };
 }
 
 /** OOPIF path for setInputFiles: locate the frame's debugger target by
