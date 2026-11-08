@@ -541,6 +541,7 @@ const toolHostHandler = createToolHostHandler({
         ...(opts.top !== undefined ? { top: opts.top } : {}),
         ...(opts.width !== undefined ? { width: opts.width } : {}),
         ...(opts.height !== undefined ? { height: opts.height } : {}),
+        ...(opts.drawAttention !== undefined ? { drawAttention: opts.drawAttention } : {}),
       }),
     // Window destruction crashes headless Chromium outright — both
     // chrome.windows.remove AND last-tab-close (BUS_ADRALN, reproduced

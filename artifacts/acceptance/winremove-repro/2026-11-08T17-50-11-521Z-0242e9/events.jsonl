@@ -1,0 +1,5 @@
+{"seq":1,"taskId":"01M6Y4HMEHCVEAS4CR5V2G4J0B","type":"task.created","payload":{"type":"task.created","taskId":"01M6Y4HMEHCVEAS4CR5V2G4J0B","profileId":"codex","providerId":"codex","backend":{"backendId":"chrome-extension","pinnedBy":"user"}},"at":1794160251348}
+{"seq":2,"taskId":"01M6Y4HMEHCVEAS4CR5V2G4J0B","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794160251349}
+{"seq":3,"taskId":"01M6Y4HMEHCVEAS4CR5V2G4J0B","type":"tool.started","payload":{"type":"tool.started","turnId":"","toolCallId":"rpc-mw84otzu-kqr5tk","tool":"browser.windows.list","source":"browser","input":{}},"at":1794160251355}
+{"seq":null,"taskId":null,"type":"gateway.diagnostics","payload":{},"at":1794160251357}
+{"seq":4,"taskId":"01M6Y4HMEHCVEAS4CR5V2G4J0B","type":"tool.completed","payload":{"type":"tool.completed","turnId":"","toolCallId":"rpc-mw84otzu-kqr5tk","tool":"browser.windows.list","source":"browser","outcome":"failed","output":{"error":{"code":"browser.no_host","message":"no browser host for task scope (no_host)"}},"verified":"unknown"},"at":1794160251358}

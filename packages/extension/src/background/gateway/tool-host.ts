@@ -177,6 +177,7 @@ export interface ToolHostDeps {
     top?: number;
     width?: number;
     height?: number;
+    drawAttention?: boolean;
   }): Promise<unknown>;
   /** chrome.windows.remove — closes the window and every tab in it.
    *  Absent on headless Chromium (window teardown crashes the browser
@@ -4008,8 +4009,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const top = boundArg("top", -32768);
         const width = boundArg("width", 1);
         const height = boundArg("height", 1);
-        if (focused === undefined && state === undefined && left === undefined && top === undefined && width === undefined && height === undefined) {
-          throw toolError("proto.invalid", "browser.windows.update requires at least one of focused|state|left|top|width|height");
+        const drawAttention = typeof args.drawAttention === "boolean" ? args.drawAttention : undefined;
+        if (args.drawAttention !== undefined && drawAttention === undefined) {
+          throw toolError("proto.invalid", "browser.windows.update args.drawAttention must be a boolean");
+        }
+        if (focused === undefined && state === undefined && left === undefined && top === undefined && width === undefined && height === undefined && drawAttention === undefined) {
+          throw toolError("proto.invalid", "browser.windows.update requires at least one of focused|state|left|top|width|height|drawAttention");
         }
         await deps.updateWindow(windowId, {
           ...(focused !== undefined ? { focused } : {}),
@@ -4018,6 +4023,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(top !== undefined ? { top } : {}),
           ...(width !== undefined ? { width } : {}),
           ...(height !== undefined ? { height } : {}),
+          ...(drawAttention !== undefined ? { drawAttention } : {}),
         });
         return { updated: windowId };
       }

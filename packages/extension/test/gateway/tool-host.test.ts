@@ -383,6 +383,9 @@ describe("tool host (P1-09)", () => {
     expect(calls).toEqual([{ left: -100, top: 50, width: 800, height: 600 }]);
     await h(req("browser.windows.update", { windowId: 3, width: 1024 }));
     expect(calls[1]).toEqual({ width: 1024 });
+    await h(req("browser.windows.update", { windowId: 3, drawAttention: true }));
+    expect(calls[2]).toEqual({ drawAttention: true });
+    await expect(h(req("browser.windows.update", { windowId: 3, drawAttention: "yes" }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.windows.update", { windowId: 3, width: 0 }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.windows.update", { windowId: 3, width: "wide" }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.windows.update", { windowId: 3, left: Number.NaN }))).rejects.toMatchObject({ code: "proto.invalid" });

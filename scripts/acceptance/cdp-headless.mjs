@@ -1717,11 +1717,20 @@ await runScenario(
           taskId, "browser.windows.update", { windowId: wp.windowId, width: 0 }, token, 60_000,
         ).catch(() => null);
         wp.badBoundsOk = wpBadB?.status === "failed" && (wpBadB?.error?.code ?? "") === "proto.invalid";
+        // drawAttention: dispatch must reach chrome.windows.update —
+        // visual flash is unverifiable headless, but the call completing
+        // (not erroring) proves the field is forwarded
+        const wpAtt = await runner.browserToolCall(
+          taskId, "browser.windows.update",
+          { windowId: wp.windowId, drawAttention: true }, token, 60_000,
+        );
+        wp.attOk = (wpAtt?.result ?? wpAtt ?? {}).updated === wp.windowId;
       }
       evidence.note(`windows.popup → ${JSON.stringify(wp).slice(0, 300)}`);
       results.windowsPopup = {
         ok: wp.badTypeOk === true && wp.createOk === true && wp.listedOk === true &&
-          wp.updateOk === true && wp.boundsOk === true && wp.badBoundsOk === true,
+          wp.updateOk === true && wp.boundsOk === true && wp.badBoundsOk === true &&
+          wp.attOk === true,
         ...wp,
       };
 

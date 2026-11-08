@@ -1,0 +1,37 @@
+{
+  "scenario": "tab-close-last",
+  "runId": "2026-11-08T18-49-29-583Z-05d699",
+  "status": "FAIL",
+  "summary": "browser host died after closing last tab of a window (headless window-teardown crash)",
+  "durationMs": 17648,
+  "details": {
+    "windowId": 95491726,
+    "tabId": 95491727,
+    "close": {
+      "toolCallId": "rpc-mw86scr7-4ok5a2",
+      "tool": "browser.tab.close",
+      "status": "failed",
+      "error": {
+        "code": "browser.host_error",
+        "message": "connection closed"
+      }
+    },
+    "probe": {
+      "toolCallId": "rpc-mw86slis-ctq4au",
+      "tool": "browser.windows.list",
+      "status": "failed",
+      "error": {
+        "code": "browser.no_host",
+        "message": "no browser host for task scope (no_host)"
+      }
+    },
+    "gone": null
+  },
+  "notes": [
+    "[2026-11-08T18:49:34.698Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T18:49:34.866Z] windows.create → {\"toolCallId\":\"rpc-mw86scnk-s6o0hy\",\"tool\":\"browser.windows.create\",\"status\":\"completed\",\"result\":{\"windowId\":95491726,\"id\":95491726,\"focused\":false,\"state\":\"normal\",\"tabs\":[{\"id\":95491727,\"url\":\"\",\"title\":\"\",\"active\":true}],\"openedTabId\":95491727,\"tabId\":95491727,\"resolvedTabId\":95491727}}",
+    "[2026-11-08T18:49:35.690Z] tab.close → {\"toolCallId\":\"rpc-mw86scr7-4ok5a2\",\"tool\":\"browser.tab.close\",\"status\":\"failed\",\"error\":{\"code\":\"browser.host_error\",\"message\":\"connection closed\"}}",
+    "[2026-11-08T18:49:47.232Z] post-close probe → {\"toolCallId\":\"rpc-mw86slis-ctq4au\",\"tool\":\"browser.windows.list\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}} alive=false",
+    "[2026-11-08T18:49:47.232Z] windowGone=null playwrightBrowserAlive=false"
+  ]
+}

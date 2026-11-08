@@ -1158,7 +1158,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.windows.update": {
     description:
-      "Update an existing window's focus, state (normal|minimized|maximized|fullscreen), and/or bounds (left/top/width/height in screen px). Bounds require state normal — restore from minimized/maximized/fullscreen first or Chrome rejects the update. windowId comes from browser.windows.list. Not tab-scoped.",
+      "Update an existing window's focus, state (normal|minimized|maximized|fullscreen), bounds (left/top/width/height in screen px), and/or drawAttention (flash the window/taskbar to get the user's eyes — the window-level attention signal alongside the toolbar badge). Bounds require state normal — restore from minimized/maximized/fullscreen first or Chrome rejects the update. drawAttention is a visual no-op on platforms without a taskbar flash. windowId comes from browser.windows.list. Not tab-scoped.",
     inputSchema: objectSchema(
       {
         windowId: { type: "integer", description: "Window id from browser.windows.list (required)." },
@@ -1168,6 +1168,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         top: { type: "number", description: "Window top edge in screen px." },
         width: { type: "number", description: "Window width in px (>= 1)." },
         height: { type: "number", description: "Window height in px (>= 1)." },
+        drawAttention: { type: "boolean", description: "Flash the window/taskbar to draw the user's attention (chrome.windows.update drawAttention)." },
       },
       ["windowId"],
     ),

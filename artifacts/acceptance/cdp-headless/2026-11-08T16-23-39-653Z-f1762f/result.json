@@ -1,0 +1,357 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T16-23-39-653Z-f1762f",
+  "status": "FAIL",
+  "summary": "results={\"responseBody\":{\"ok\":false,\"snippet\":\"{}\"},\"webSocket\":{\"ok\":false,\"frames\":0,\"snippet\":\"\"},\"route\":{\"ok\":false,\"mocked\":\"pong:ok\",\"real\":\"pong:ok\",\"aborted\":\"pong:ok\",\"modified\":\"pong:ok\"},\"aria\":{\"ok\":false},\"trustedClick\":{\"ok\":false,\"untrusted\":\"none\",\"trusted\":\"none\"},\"trustedHover\":{\"ok\":false,\"mouseover\":\"none\",\"cssOutline\":\"none\"},\"trustedPress\":{\"ok\":false,\"untrusted\":\"none\",\"trusted\":\"none\"},\"trustedType\":{\"ok\":false,\"status\":\"failed\",\"value\":\"\",\"out\":\"none\"},\"trustedFill\":{\"ok\":false,\"status\":\"failed\",\"value\":\"\"},\"trustedDrag\":{\"ok\":false,\"down\":\"none\",\"out\":\"idle\",\"status\":\"failed\"},\"trustedFramePress\":{\"ok\":false,\"kout\":null},\"trustedFrameClick\":{\"ok\":false,\"same\":{\"ok\":false,\"pout\":null},\"cross\":{\"ok\":false,\"pout\":null}},\"frameSetInputFiles\":{\"ok\":false,\"fout2\":null},\"frameElementScreenshot\":{\"ok\":false},\"frameUpload\":{\"ok\":false,\"fout2\":null},\"oopifSetInputFiles\":{\"ok\":false,\"fout2\":null},\"frameResponseBody\":{\"ok\":false},\"pdf\":{\"ok\":false},\"mhtml\":{\"ok\":false},\"emulate\":{\"ok\":false,\"reset\":\"failed\"},\"dialog\":{\"ok\":false,\"handled\":false,\"pageText\":\"none\"},\"alertDialog\":{\"ok\":false,\"pageText\":\"none\"},\"setInputFiles\":{\"ok\":false,\"status\":\"failed\",\"fname\":\"none\"},\"cookies\":{\"ok\":false,\"setOk\":false,\"echo\":\"\",\"listOk\":false,\"httpOnlyOk\":false,\"valuesOk\":false,\"clearOk\":true},\"localStorage\":{\"ok\":false,\"keysOk\":false,\"getOk\":false,\"domOk\":false,\"sessionOk\":false,\"clearOk\":true},\"indexedDB\":{\"ok\":false,\"noCreate\":false,\"createOk\":false,\"getOk\":false,\"keysOk\":false,\"domOk\":false,\"deleteOk\":false},\"caches\":{\"ok\":false,\"noCreate\":false,\"putOk\":false,\"keysOk\":false,\"matchOk\":false,\"domOk\":false,\"clearOk\":true},\"serviceWorker\":{\"ok\":false,\"listOk\":false,\"stateOk\":false,\"updOk\":false,\"unregOk\":false,\"emptyOk\":false},\"cdp\":{\"ok\":false,\"treeOk\":false,\"errOk\":false},\"coverage\":{\"ok\":false,\"statusIdleOk\":false,\"stopRefusedOk\":false,\"startCode\":\"browser.no_host\",\"startOk\":false,\"startUnsupportedOk\":false,\"statusRunOk\":false},\"tabGroups\":{\"ok\":false,\"createOk\":false,\"listOk\":false,\"updateOk\":false,\"ungroupOk\":true,\"badColorOk\":false},\"tabMove\":{\"ok\":false,\"listOk\":false,\"moveOk\":false,\"badIndexOk\":false,\"autoDiscardableOk\":false,\"freezeOk\":false,\"freezeHalted\":false,\"freezeAliveOk\":false,\"unfreezeOk\":false,\"resumeOk\":false,\"freezeEffectiveOk\":true},\"siteSettings\":{\"ok\":false,\"setStatus\":\"failed\",\"setCode\":\"browser.no_host\",\"setUnsupportedOk\":false,\"setMsg\":\"no browser host for task scope (no_host)\",\"getUnsupportedOk\":false},\"sessions\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"restoreUnsupportedOk\":false},\"proxy\":{\"ok\":false,\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false},\"privacy\":{\"ok\":false,\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false},\"management\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"uninstallUnsupportedOk\":false},\"notifications\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"sendUnsupportedOk\":false},\"dnr\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"addUnsupportedOk\":false},\"userScripts\":{\"ok\":false,\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"registerUnsupportedOk\":false},\"systemProcesses\":{\"ok\":false,\"memoryUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"processesUnsupportedOk\":false},\"dnsPower\":{\"ok\":false,\"dnsUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"powerUnsupportedOk\":false},\"downloadsOpen\":{\"ok\":false,\"reachedChrome\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"windowsGet\":{\"ok\":false,\"listOk\":false,\"byIdOk\":false,\"lastFocusedOk\":false,\"badIdOk\":false},\"runtime\":{\"ok\":false,\"browserVersion\":null,\"extId\":null},\"bookmarks\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"historyDelete\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"},\"browsingDataClear\":{\"ok\":false,\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}}",
+  "durationMs": 104111,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": false,
+        "snippet": "{}"
+      },
+      "webSocket": {
+        "ok": false,
+        "frames": 0,
+        "snippet": ""
+      },
+      "route": {
+        "ok": false,
+        "mocked": "pong:ok",
+        "real": "pong:ok",
+        "aborted": "pong:ok",
+        "modified": "pong:ok"
+      },
+      "aria": {
+        "ok": false
+      },
+      "trustedClick": {
+        "ok": false,
+        "untrusted": "none",
+        "trusted": "none"
+      },
+      "trustedHover": {
+        "ok": false,
+        "mouseover": "none",
+        "cssOutline": "none"
+      },
+      "trustedPress": {
+        "ok": false,
+        "untrusted": "none",
+        "trusted": "none"
+      },
+      "trustedType": {
+        "ok": false,
+        "status": "failed",
+        "value": "",
+        "out": "none"
+      },
+      "trustedFill": {
+        "ok": false,
+        "status": "failed",
+        "value": ""
+      },
+      "trustedDrag": {
+        "ok": false,
+        "down": "none",
+        "out": "idle",
+        "status": "failed"
+      },
+      "trustedFramePress": {
+        "ok": false,
+        "kout": null
+      },
+      "trustedFrameClick": {
+        "ok": false,
+        "same": {
+          "ok": false,
+          "pout": null
+        },
+        "cross": {
+          "ok": false,
+          "pout": null
+        }
+      },
+      "frameSetInputFiles": {
+        "ok": false,
+        "fout2": null
+      },
+      "frameElementScreenshot": {
+        "ok": false
+      },
+      "frameUpload": {
+        "ok": false,
+        "fout2": null
+      },
+      "oopifSetInputFiles": {
+        "ok": false,
+        "fout2": null
+      },
+      "frameResponseBody": {
+        "ok": false
+      },
+      "pdf": {
+        "ok": false
+      },
+      "mhtml": {
+        "ok": false
+      },
+      "emulate": {
+        "ok": false,
+        "reset": "failed"
+      },
+      "dialog": {
+        "ok": false,
+        "handled": false,
+        "pageText": "none"
+      },
+      "alertDialog": {
+        "ok": false,
+        "pageText": "none"
+      },
+      "setInputFiles": {
+        "ok": false,
+        "status": "failed",
+        "fname": "none"
+      },
+      "cookies": {
+        "ok": false,
+        "setOk": false,
+        "echo": "",
+        "listOk": false,
+        "httpOnlyOk": false,
+        "valuesOk": false,
+        "clearOk": true
+      },
+      "localStorage": {
+        "ok": false,
+        "keysOk": false,
+        "getOk": false,
+        "domOk": false,
+        "sessionOk": false,
+        "clearOk": true
+      },
+      "indexedDB": {
+        "ok": false,
+        "noCreate": false,
+        "createOk": false,
+        "getOk": false,
+        "keysOk": false,
+        "domOk": false,
+        "deleteOk": false
+      },
+      "caches": {
+        "ok": false,
+        "noCreate": false,
+        "putOk": false,
+        "keysOk": false,
+        "matchOk": false,
+        "domOk": false,
+        "clearOk": true
+      },
+      "serviceWorker": {
+        "ok": false,
+        "listOk": false,
+        "stateOk": false,
+        "updOk": false,
+        "unregOk": false,
+        "emptyOk": false
+      },
+      "cdp": {
+        "ok": false,
+        "treeOk": false,
+        "errOk": false
+      },
+      "coverage": {
+        "ok": false,
+        "statusIdleOk": false,
+        "stopRefusedOk": false,
+        "startCode": "browser.no_host",
+        "startOk": false,
+        "startUnsupportedOk": false,
+        "statusRunOk": false
+      },
+      "tabGroups": {
+        "ok": false,
+        "createOk": false,
+        "listOk": false,
+        "updateOk": false,
+        "ungroupOk": true,
+        "badColorOk": false
+      },
+      "tabMove": {
+        "ok": false,
+        "listOk": false,
+        "moveOk": false,
+        "badIndexOk": false,
+        "autoDiscardableOk": false,
+        "freezeOk": false,
+        "freezeHalted": false,
+        "freezeAliveOk": false,
+        "unfreezeOk": false,
+        "resumeOk": false,
+        "freezeEffectiveOk": true
+      },
+      "siteSettings": {
+        "ok": false,
+        "setStatus": "failed",
+        "setCode": "browser.no_host",
+        "setUnsupportedOk": false,
+        "setMsg": "no browser host for task scope (no_host)",
+        "getUnsupportedOk": false
+      },
+      "sessions": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "restoreUnsupportedOk": false
+      },
+      "proxy": {
+        "ok": false,
+        "getUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "setUnsupportedOk": false
+      },
+      "privacy": {
+        "ok": false,
+        "getUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "setUnsupportedOk": false
+      },
+      "management": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "uninstallUnsupportedOk": false
+      },
+      "notifications": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "sendUnsupportedOk": false
+      },
+      "dnr": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "addUnsupportedOk": false
+      },
+      "userScripts": {
+        "ok": false,
+        "listUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "registerUnsupportedOk": false
+      },
+      "systemProcesses": {
+        "ok": false,
+        "memoryUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "processesUnsupportedOk": false
+      },
+      "dnsPower": {
+        "ok": false,
+        "dnsUnsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)",
+        "powerUnsupportedOk": false
+      },
+      "downloadsOpen": {
+        "ok": false,
+        "reachedChrome": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "windowsGet": {
+        "ok": false,
+        "listOk": false,
+        "byIdOk": false,
+        "lastFocusedOk": false,
+        "badIdOk": false
+      },
+      "runtime": {
+        "ok": false,
+        "browserVersion": null,
+        "extId": null
+      },
+      "bookmarks": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "historyDelete": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      },
+      "browsingDataClear": {
+        "ok": false,
+        "status": "failed",
+        "code": "browser.no_host",
+        "unsupportedOk": false,
+        "msg": "no browser host for task scope (no_host)"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T16:24:20.408Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-08T16:24:20.409Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-08T16:24:20.639Z] responseBody prime → {\"toolCallId\":\"rpc-mw81lkt0-340vw9\",\"tool\":\"browser.page.responseBody\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T16:24:36.100Z] responseBody → {}",
+    "[2026-11-08T16:24:52.102Z] webSocket → {\"frames\":0,\"sample\":\"\"}",
+    "[2026-11-08T16:24:52.291Z] route → mocked=pong:ok real=pong:ok aborted=pong:ok modified=pong:ok",
+    "[2026-11-08T16:24:52.294Z] aria snapshot → {\"toolCallId\":\"rpc-mw81m98k-pm2a80\",\"tool\":\"browser.page.snapshot\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T16:24:52.325Z] trusted snap=failed snapId=null",
+    "[2026-11-08T16:24:52.329Z] untrusted click → null",
+    "[2026-11-08T16:24:52.329Z] trusted click → null",
+    "[2026-11-08T16:24:52.351Z] isTrusted results: untrusted=none trusted=none",
+    "[2026-11-08T16:24:52.765Z] hover: mouseover=none cssOutline=none status=failed",
+    "[2026-11-08T16:24:53.207Z] press: untrusted=none trusted=none",
+    "[2026-11-08T16:24:53.207Z] press statuses: failed/failed",
+    "[2026-11-08T16:24:53.214Z] trusted type → status=failed value=\"\" out=none",
+    "[2026-11-08T16:24:53.218Z] trusted fill → status=failed value=\"\" out=none",
+    "[2026-11-08T16:24:53.550Z] drag: down=none out=idle status=failed",
+    "[2026-11-08T16:24:53.584Z] frame press → status=undefined kout=null",
+    "[2026-11-08T16:24:53.584Z] frame click same → status=undefined pout=null",
+    "[2026-11-08T16:24:53.584Z] frame click cross → status=undefined pout=null",
+    "[2026-11-08T16:24:53.584Z] frame setInputFiles → status=undefined fout2=null",
+    "[2026-11-08T16:24:53.584Z] frame screenshot → status=undefined bytes=undefined",
+    "[2026-11-08T16:24:53.584Z] frame upload → status=undefined fout2=null",
+    "[2026-11-08T16:24:53.584Z] frame responseBody → {}",
+    "[2026-11-08T16:24:53.587Z] pdf → {\"toolCallId\":\"rpc-mw81ma8h-bqrpvg\",\"tool\":\"browser.page.pdf\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T16:24:53.590Z] mhtml → {\"toolCallId\":\"rpc-mw81ma8j-vtpgsq\",\"tool\":\"browser.page.mhtml\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T16:24:53.596Z] emulate → {\"toolCallId\":\"rpc-mw81ma8m-lxt80z\",\"tool\":\"browser.page.emulate\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope  check=undefined",
+    "[2026-11-08T16:24:53.646Z] dialog snap=failed snapId=null",
+    "[2026-11-08T16:24:53.646Z] dialog → {}",
+    "[2026-11-08T16:24:53.701Z] dialog result text=none",
+    "[2026-11-08T16:24:53.710Z] alert → {\"toolCallId\":\"rpc-mw81mabv-wgkb94\",\"tool\":\"browser.page.dialog\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}} page=none",
+    "[2026-11-08T16:24:53.850Z] setInputFiles → {\"toolCallId\":\"rpc-mw81mafr-9zhchk\",\"tool\":\"browser.page.setInputFiles\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T16:24:53.861Z] fname=none",
+    "[2026-11-08T16:24:53.880Z] cookies → {\"setOk\":false,\"echo\":\"\",\"listOk\":false,\"httpOnlyOk\":false,\"valuesOk\":false,\"clearOk\":true}",
+    "[2026-11-08T16:24:53.893Z] localStorage → {\"keysOk\":false,\"getOk\":false,\"domOk\":false,\"sessionOk\":false,\"clearOk\":true}",
+    "[2026-11-08T16:24:53.921Z] indexedDB → {\"noCreate\":false,\"createOk\":false,\"getOk\":false,\"keysOk\":false,\"domOk\":false,\"deleteOk\":false}",
+    "[2026-11-08T16:24:53.933Z] caches → {\"noCreate\":false,\"putOk\":false,\"keysOk\":false,\"matchOk\":false,\"domOk\":false,\"clearOk\":true}",
+    "[2026-11-08T16:25:01.568Z] serviceWorker → {\"listOk\":false,\"stateOk\":false,\"updOk\":false,\"unregOk\":false,\"emptyOk\":false}",
+    "[2026-11-08T16:25:06.624Z] cdp → {\"treeOk\":false,\"errOk\":false}",
+    "[2026-11-08T16:25:06.627Z] coverage → {\"statusIdleOk\":false,\"stopRefusedOk\":false,\"startCode\":\"browser.no_host\",\"startOk\":false,\"startUnsupportedOk\":false,\"statusRunOk\":false}",
+    "[2026-11-08T16:25:06.633Z] tabGroups → {\"createOk\":false,\"listOk\":false,\"updateOk\":false,\"ungroupOk\":true,\"badColorOk\":false}",
+    "[2026-11-08T16:25:23.766Z] tabMove → {\"listOk\":false,\"moveOk\":false,\"badIndexOk\":false,\"autoDiscardableOk\":false,\"freezeOk\":false,\"freezeHalted\":false,\"freezeAliveOk\":false,\"unfreezeOk\":false,\"resumeOk\":false,\"freezeEffectiveOk\":true}",
+    "[2026-11-08T16:25:23.767Z] siteSettings → {\"setStatus\":\"failed\",\"setCode\":\"browser.no_host\",\"setUnsupportedOk\":false,\"setMsg\":\"no browser host for task scope (no_host)\",\"getUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.768Z] sessions → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"restoreUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.769Z] proxy → {\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.770Z] privacy → {\"getUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"setUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.771Z] management → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"uninstallUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.771Z] notifications → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"sendUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.772Z] dnr → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"addUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.773Z] userScripts → {\"listUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"registerUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.774Z] system/processes → {\"memoryUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"processesUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.775Z] dns/power → {\"dnsUnsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\",\"powerUnsupportedOk\":false}",
+    "[2026-11-08T16:25:23.776Z] downloads.open → {\"reachedChrome\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T16:25:23.777Z] windows.get → {\"listOk\":false,\"byIdOk\":false,\"lastFocusedOk\":false,\"badIdOk\":false}",
+    "[2026-11-08T16:25:23.778Z] runtime → {}",
+    "[2026-11-08T16:25:23.778Z] bookmarks → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T16:25:23.778Z] history.delete → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}",
+    "[2026-11-08T16:25:23.779Z] browsingData.clear → {\"status\":\"failed\",\"code\":\"browser.no_host\",\"unsupportedOk\":false,\"msg\":\"no browser host for task scope (no_host)\"}"
+  ]
+}

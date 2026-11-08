@@ -1,0 +1,69 @@
+{
+  "scenario": "tab-close-last",
+  "runId": "2026-11-08T18-49-05-552Z-4384df",
+  "status": "FAIL",
+  "summary": "could not resolve tabId in created window",
+  "durationMs": 5462,
+  "details": {
+    "wc": {
+      "toolCallId": "rpc-mw86ru6l-h99vfz",
+      "tool": "browser.windows.create",
+      "status": "completed",
+      "result": {
+        "windowId": 1675410618,
+        "id": 1675410618,
+        "focused": false,
+        "state": "normal",
+        "tabs": [
+          {
+            "id": 1675410619,
+            "url": "",
+            "title": "",
+            "active": true
+          }
+        ],
+        "openedTabId": 1675410619,
+        "tabId": 1675410619,
+        "resolvedTabId": 1675410619
+      }
+    },
+    "wl": {
+      "toolCallId": "rpc-mw86rub5-rzt83f",
+      "tool": "browser.windows.list",
+      "status": "completed",
+      "result": {
+        "windows": [
+          {
+            "id": 1675410616,
+            "focused": true,
+            "type": "normal",
+            "state": "normal",
+            "incognito": false,
+            "left": 22,
+            "top": 22,
+            "width": 1280,
+            "height": 720,
+            "tabCount": 1
+          },
+          {
+            "id": 1675410618,
+            "focused": false,
+            "type": "normal",
+            "state": "normal",
+            "incognito": false,
+            "left": 0,
+            "top": 0,
+            "width": 1280,
+            "height": 720,
+            "tabCount": 1
+          }
+        ]
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T18:49:10.772Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T18:49:10.957Z] windows.create → {\"toolCallId\":\"rpc-mw86ru6l-h99vfz\",\"tool\":\"browser.windows.create\",\"status\":\"completed\",\"result\":{\"windowId\":1675410618,\"id\":1675410618,\"focused\":false,\"state\":\"normal\",\"tabs\":[{\"id\":1675410619,\"url\":\"\",\"title\":\"\",\"active\":true}],\"openedTabId\":1675410619,\"tabId\":1675410619,\"resolvedTabId\":167541061",
+    "[2026-11-08T18:49:11.016Z] window 1675410618 tabs → {\"id\":1675410618,\"focused\":false,\"type\":\"normal\",\"state\":\"normal\",\"incognito\":false,\"left\":0,\"top\":0,\"width\":1280,\"height\":720,\"tabCount\":1}"
+  ]
+}

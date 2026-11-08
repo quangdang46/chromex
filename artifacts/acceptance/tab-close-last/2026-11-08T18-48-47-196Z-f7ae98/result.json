@@ -1,0 +1,44 @@
+{
+  "scenario": "tab-close-last",
+  "runId": "2026-11-08T18-48-47-196Z-f7ae98",
+  "status": "FAIL",
+  "summary": "could not resolve tabId in created window",
+  "durationMs": 6033,
+  "details": {
+    "wc": {
+      "toolCallId": "rpc-mw86rgew-s3uprb",
+      "tool": "browser.windows.create",
+      "status": "failed",
+      "error": {
+        "code": "proto.invalid",
+        "message": "proto.invalid: browser.windows.create only supports http(s) urls"
+      }
+    },
+    "wl": {
+      "toolCallId": "rpc-mw86rgmi-22p6ac",
+      "tool": "browser.windows.list",
+      "status": "completed",
+      "result": {
+        "windows": [
+          {
+            "id": 1895140559,
+            "focused": true,
+            "type": "normal",
+            "state": "normal",
+            "incognito": false,
+            "left": 22,
+            "top": 22,
+            "width": 1280,
+            "height": 720,
+            "tabCount": 1
+          }
+        ]
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T18:48:52.919Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T18:48:53.225Z] windows.create → {\"toolCallId\":\"rpc-mw86rgew-s3uprb\",\"tool\":\"browser.windows.create\",\"status\":\"failed\",\"error\":{\"code\":\"proto.invalid\",\"message\":\"proto.invalid: browser.windows.create only supports http(s) urls\"}}",
+    "[2026-11-08T18:48:53.230Z] window undefined tabs → undefined"
+  ]
+}

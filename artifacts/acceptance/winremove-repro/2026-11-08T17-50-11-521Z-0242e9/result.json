@@ -1,0 +1,13 @@
+{
+  "scenario": "winremove-repro",
+  "runId": "2026-11-08T17-50-11-521Z-0242e9",
+  "status": "FAIL",
+  "summary": "browser host never registered — launch flake, not a windows.remove signal",
+  "durationMs": 39835,
+  "details": {},
+  "notes": [
+    "[2026-11-08T17:50:51.310Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-08T17:50:51.310Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-08T17:50:51.358Z] baseline → status=failed code=browser.no_host wins=0"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "scenario": "winremove-repro",
+  "runId": "2026-11-08T17-46-38-846Z-dd70c9",
+  "status": "PASS",
+  "summary": "repro complete — see notes",
+  "durationMs": 51295,
+  "details": {},
+  "notes": [
+    "[2026-11-08T17:47:19.505Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-08T17:47:19.505Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-08T17:47:19.554Z] baseline → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:19.560Z] created windowId=undefined",
+    "[2026-11-08T17:47:20.064Z] after-create → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:20.067Z] remove → {\"toolCallId\":\"rpc-mw84kayp-qs13f5\",\"tool\":\"browser.windows.remove\",\"status\":\"failed\",\"error\":{\"code\":\"browser.no_host\",\"message\":\"no browser host for task scope (no_host)\"}}",
+    "[2026-11-08T17:47:21.071Z] t+1s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:22.077Z] t+2s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:23.101Z] t+3s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:24.106Z] t+4s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:25.113Z] t+5s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:26.118Z] t+6s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:27.123Z] t+7s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:28.127Z] t+8s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:29.132Z] t+9s → status=failed code=browser.no_host wins=0",
+    "[2026-11-08T17:47:30.142Z] t+10s → status=failed code=browser.no_host wins=0"
+  ]
+}
