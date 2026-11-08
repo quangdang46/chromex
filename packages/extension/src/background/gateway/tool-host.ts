@@ -1320,6 +1320,23 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           return await trustedClick(deps, tabId, args, expectCond);
         }
+        if (tool === "browser.page.press" && args.trusted === true) {
+          if (frameId !== 0) {
+            throw toolError(
+              "proto.unsupported",
+              "trusted press is only supported in the top frame (CDP Input is viewport-level)",
+            );
+          }
+          return await trustedPress(deps, tabId, args, expectCond);
+        }
+        // args.trusted is a CDP-tier opt-in — never silently ignored on
+        // tools that have no trusted path.
+        if (args.trusted === true) {
+          throw toolError(
+            "proto.unsupported",
+            `args.trusted is not supported for ${tool} (trusted input exists only for click and press)`,
+          );
+        }
         const step = domStepFor(tool, args);
         const result = (await deps.sendToTab(tabId, {
           type: "page.dom.perform",
@@ -1739,7 +1756,9 @@ async function cdpLocateElement(
 }
 
 const CDP_MOUSE_BUTTONS = new Set(["left", "right", "middle"]);
-const CDP_MOUSE_MODIFIERS: Record<string, number> = {
+// CDP modifier bitmask is shared by Input.dispatchMouseEvent and
+// Input.dispatchKeyEvent: Alt=1, Control=2, Meta=4, Shift=8.
+const CDP_MODIFIERS: Record<string, number> = {
   Alt: 1,
   Control: 2,
   Meta: 4,
@@ -1767,7 +1786,7 @@ async function trustedClick(
   const modifiers = Array.isArray(args.modifiers)
     ? args.modifiers.filter((m): m is string => typeof m === "string")
     : [];
-  const modifierMask = modifiers.reduce((mask, m) => mask | (CDP_MOUSE_MODIFIERS[m] ?? 0), 0);
+  const modifierMask = modifiers.reduce((mask, m) => mask | (CDP_MODIFIERS[m] ?? 0), 0);
 
   const xArg = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
   const yArg = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
@@ -1827,6 +1846,183 @@ async function trustedClick(
     ok: true,
     summary: `trusted click at ${Math.round(point.x)},${Math.round(point.y)}`,
     step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+// --- trusted keyboard (browser.page.press args.trusted) -------------------
+// US-layout key table for Input.dispatchKeyEvent. `text` is the string the
+// key produces (undefined for non-printing keys); vk/code drive the
+// KeyboardEvent fields pages actually inspect.
+
+interface CdpKeyDef {
+  key: string;
+  code?: string;
+  vk?: number;
+  text?: string;
+}
+
+const CDP_NAMED_KEYS: Record<string, CdpKeyDef> = {
+  enter: { key: "Enter", code: "Enter", vk: 13, text: "\r" },
+  return: { key: "Enter", code: "Enter", vk: 13, text: "\r" },
+  tab: { key: "Tab", code: "Tab", vk: 9 },
+  escape: { key: "Escape", code: "Escape", vk: 27 },
+  esc: { key: "Escape", code: "Escape", vk: 27 },
+  backspace: { key: "Backspace", code: "Backspace", vk: 8 },
+  delete: { key: "Delete", code: "Delete", vk: 46 },
+  del: { key: "Delete", code: "Delete", vk: 46 },
+  insert: { key: "Insert", code: "Insert", vk: 45 },
+  ins: { key: "Insert", code: "Insert", vk: 45 },
+  home: { key: "Home", code: "Home", vk: 36 },
+  end: { key: "End", code: "End", vk: 35 },
+  pageup: { key: "PageUp", code: "PageUp", vk: 33 },
+  pgup: { key: "PageUp", code: "PageUp", vk: 33 },
+  pagedown: { key: "PageDown", code: "PageDown", vk: 34 },
+  pgdn: { key: "PageDown", code: "PageDown", vk: 34 },
+  arrowleft: { key: "ArrowLeft", code: "ArrowLeft", vk: 37 },
+  left: { key: "ArrowLeft", code: "ArrowLeft", vk: 37 },
+  arrowup: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+  up: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+  arrowright: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
+  right: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
+  arrowdown: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
+  down: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
+  " ": { key: " ", code: "Space", vk: 32, text: " " },
+  space: { key: " ", code: "Space", vk: 32, text: " " },
+  spacebar: { key: " ", code: "Space", vk: 32, text: " " },
+};
+for (let i = 1; i <= 12; i++) {
+  CDP_NAMED_KEYS[`f${i}`] = { key: `F${i}`, code: `F${i}`, vk: 111 + i };
+}
+
+// Printable single characters, US layout. Punctuation maps the physical
+// key; shiftedText is what the key produces with Shift held.
+const CDP_PRINTABLE: Record<string, { code: string; vk: number; shifted?: string }> = {
+  a: { code: "KeyA", vk: 65 }, b: { code: "KeyB", vk: 66 }, c: { code: "KeyC", vk: 67 },
+  d: { code: "KeyD", vk: 68 }, e: { code: "KeyE", vk: 69 }, f: { code: "KeyF", vk: 70 },
+  g: { code: "KeyG", vk: 71 }, h: { code: "KeyH", vk: 72 }, i: { code: "KeyI", vk: 73 },
+  j: { code: "KeyJ", vk: 74 }, k: { code: "KeyK", vk: 75 }, l: { code: "KeyL", vk: 76 },
+  m: { code: "KeyM", vk: 77 }, n: { code: "KeyN", vk: 78 }, o: { code: "KeyO", vk: 79 },
+  p: { code: "KeyP", vk: 80 }, q: { code: "KeyQ", vk: 81 }, r: { code: "KeyR", vk: 82 },
+  s: { code: "KeyS", vk: 83 }, t: { code: "KeyT", vk: 84 }, u: { code: "KeyU", vk: 85 },
+  v: { code: "KeyV", vk: 86 }, w: { code: "KeyW", vk: 87 }, x: { code: "KeyX", vk: 88 },
+  y: { code: "KeyY", vk: 89 }, z: { code: "KeyZ", vk: 90 },
+  "0": { code: "Digit0", vk: 48, shifted: ")" }, "1": { code: "Digit1", vk: 49, shifted: "!" },
+  "2": { code: "Digit2", vk: 50, shifted: "@" }, "3": { code: "Digit3", vk: 51, shifted: "#" },
+  "4": { code: "Digit4", vk: 52, shifted: "$" }, "5": { code: "Digit5", vk: 53, shifted: "%" },
+  "6": { code: "Digit6", vk: 54, shifted: "^" }, "7": { code: "Digit7", vk: 55, shifted: "&" },
+  "8": { code: "Digit8", vk: 56, shifted: "*" }, "9": { code: "Digit9", vk: 57, shifted: "(" },
+  "-": { code: "Minus", vk: 189, shifted: "_" }, "=": { code: "Equal", vk: 187, shifted: "+" },
+  "[": { code: "BracketLeft", vk: 219, shifted: "{" }, "]": { code: "BracketRight", vk: 221, shifted: "}" },
+  ";": { code: "Semicolon", vk: 186, shifted: ":" }, "'": { code: "Quote", vk: 222, shifted: '"' },
+  "`": { code: "Backquote", vk: 192, shifted: "~" }, "\\": { code: "Backslash", vk: 220, shifted: "|" },
+  ",": { code: "Comma", vk: 188, shifted: "<" }, ".": { code: "Period", vk: 190, shifted: ">" },
+  "/": { code: "Slash", vk: 191, shifted: "?" },
+};
+// Reverse lookup: shifted symbol → base key (e.g. "!" means Shift+1).
+const CDP_SHIFTED_TO_BASE: Record<string, string> = {};
+for (const [base, def] of Object.entries(CDP_PRINTABLE)) {
+  if (def.shifted) CDP_SHIFTED_TO_BASE[def.shifted] = base;
+  if (/[a-z]/.test(base)) CDP_SHIFTED_TO_BASE[base.toUpperCase()] = base;
+}
+
+function cdpKeyDef(rawKey: string, modifierMask: number): { def: CdpKeyDef; modifiers: number } | null {
+  const named = CDP_NAMED_KEYS[rawKey.toLowerCase()];
+  if (named) return { def: named, modifiers: modifierMask };
+  if (rawKey.length !== 1) return null;
+  let ch = rawKey;
+  let mask = modifierMask;
+  let base = ch.toLowerCase();
+  const isUpperAlpha = /[A-Z]/.test(ch);
+  const shiftedSymbol = CDP_SHIFTED_TO_BASE[ch];
+  if (shiftedSymbol !== undefined) {
+    base = shiftedSymbol;
+    mask |= CDP_MODIFIERS["Shift"] ?? 8;
+  } else if (isUpperAlpha) {
+    mask |= CDP_MODIFIERS["Shift"] ?? 8;
+  }
+  const phys = CDP_PRINTABLE[base];
+  if (!phys) return null;
+  const shifted = (mask & (CDP_MODIFIERS["Shift"] ?? 8)) !== 0;
+  const produced = shifted && phys.shifted ? phys.shifted : shifted && /[a-z]/.test(base) ? base.toUpperCase() : base;
+  return {
+    def: { key: produced, code: phys.code, vk: phys.vk, text: produced },
+    modifiers: mask,
+  };
+}
+
+/** browser.page.press args.trusted — Input.dispatchKeyEvent produces
+ *  isTrusted=true key events. With an element target the element is
+ *  focused first (focus() is not gesture-gated; the trusted part is the
+ *  key event itself). No target → the currently focused element/page.
+ *  Top frame only, same constraint as trustedClick. */
+async function trustedPress(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+): Promise<Record<string, unknown>> {
+  const key = str(args.key);
+  if (!key) throw toolError("proto.invalid", "browser.page.press requires args.key");
+  const modifiers = Array.isArray(args.modifiers)
+    ? args.modifiers.filter((m): m is string => typeof m === "string")
+    : [];
+  const modifierMask = modifiers.reduce((mask, m) => mask | (CDP_MODIFIERS[m] ?? 0), 0);
+  const resolved = cdpKeyDef(key, modifierMask);
+  if (!resolved) {
+    throw toolError(
+      "proto.invalid",
+      `browser.page.press trusted key '${key}' is not in the US-layout key table (named keys, a-z, 0-9, common punctuation)`,
+    );
+  }
+  cdpRequired(deps); // fail proto.unsupported before any page work
+
+  const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+  if (hasTarget) {
+    const loc = await cdpLocateElement(deps, tabId, args);
+    const focusRes = (await deps.sendToTab(tabId, {
+      type: "page.dom.perform",
+      steps: [{ action: "focus", selector: loc.selector, reason: "trusted press focus" }],
+    })) as BrowserDomActionResult;
+    const focusStep = focusRes?.results?.[0];
+    if (focusRes?.ok === false || focusStep?.ok === false) {
+      throw toolError(
+        typeof focusStep?.code === "string" && focusStep.code.startsWith("browser.")
+          ? focusStep.code
+          : "browser.action_failed",
+        focusStep?.message ?? focusRes?.summary ?? "could not focus the press target element",
+      );
+    }
+  }
+
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const params: Record<string, unknown> = {
+      key: resolved.def.key,
+      modifiers: resolved.modifiers,
+    };
+    if (resolved.def.code !== undefined) params.code = resolved.def.code;
+    if (resolved.def.vk !== undefined) params.windowsVirtualKeyCode = resolved.def.vk;
+    if (resolved.def.text !== undefined) params.text = resolved.def.text;
+    await session.send("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+    await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted press ${resolved.def.key}`,
+    step: { action: "press", trusted: true, key: resolved.def.key, ok: true },
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

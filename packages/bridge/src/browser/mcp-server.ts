@@ -442,6 +442,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
         items: { type: "string" },
         description: "Modifier keys: 'control', 'alt', 'shift', 'meta'.",
       },
+      trusted: { type: "boolean", description: "Dispatch via CDP Input.dispatchKeyEvent so the page sees isTrusted=true (chrome-extension debugger tier, top frame only; US-layout key table). Default false = untrusted DOM key events." },
     }, ["key"]),
     expectable: true,
   },

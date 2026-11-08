@@ -1367,6 +1367,8 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     await expect(h(req("browser.page.responseBody", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.snapshot", { tabId: 501, mode: "aria" }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(h(req("browser.page.click", { tabId: 501, selector: "#b", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.press", { tabId: 501, key: "Enter", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h(req("browser.page.fill", { tabId: 501, selector: "#i", text: "x", trusted: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
   test("snapshot mode:aria returns a formatted AX tree", async () => {
@@ -1527,5 +1529,49 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     const types = cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent").map((s) => s.params?.type);
     expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
     await expect(h(req("browser.page.click", { tabId: 510, selector: "#b", trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("press trusted dispatches keyDown/keyUp and focuses an element target", async () => {
+    const cdp = fakeCdp();
+    const sentToTab: Array<Record<string, unknown>> = [];
+    const h = createToolHostHandler(cdpDeps(511, cdp, {
+      sendToTab: vi.fn(async (_t: number, message: Record<string, unknown>) => {
+        sentToTab.push(message);
+        if (message.type === "page.dom.locate") {
+          return { found: true, x: 1, y: 2, width: 3, height: 4, selector: "#k", tagName: "input", visible: true };
+        }
+        return { ok: true, results: [{ ok: true }] };
+      }),
+    }));
+    const res = (await h(req("browser.page.press", {
+      tabId: 511, selector: "#k", key: "Enter", trusted: true,
+    }))) as { ok: boolean; step?: { trusted?: boolean; key?: string } };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    expect(res.step?.key).toBe("Enter");
+    // focus step went through the content script before the key events
+    const perform = sentToTab.find((m) => m.type === "page.dom.perform");
+    expect((perform?.steps as Array<{ action?: string; selector?: string }>)?.[0]).toMatchObject({
+      action: "focus", selector: "#k",
+    });
+    const keyEvents = cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent");
+    expect(keyEvents.map((s) => s.params?.type)).toEqual(["keyDown", "keyUp"]);
+    expect(keyEvents[0]?.params).toMatchObject({
+      key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r",
+    });
+  });
+
+  test("press trusted normalizes shifted chars; rejects unknown keys", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(512, cdp));
+    // "A" → Shift+a; "!" → Shift+1 (US layout)
+    await h(req("browser.page.press", { tabId: 512, key: "A", trusted: true }));
+    await h(req("browser.page.press", { tabId: 512, key: "!", trusted: true }));
+    const downs = cdp.sent.filter((s) => s.method === "Input.dispatchKeyEvent" && s.params?.type === "keyDown");
+    expect(downs[0]?.params).toMatchObject({ key: "A", code: "KeyA", windowsVirtualKeyCode: 65, text: "A", modifiers: 8 });
+    expect(downs[1]?.params).toMatchObject({ key: "!", code: "Digit1", windowsVirtualKeyCode: 49, text: "!", modifiers: 8 });
+    await expect(h(req("browser.page.press", { tabId: 512, key: "F13", trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.press", { tabId: 512, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.press", { tabId: 512, key: "Enter", trusted: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 });

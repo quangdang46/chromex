@@ -76,8 +76,10 @@ for Testing:
   `accessibility: true` (snapshot `mode:"aria"`), `nativeDialogs: true`
   (`browser.page.dialog`), `networkBodies: true`
   (`browser.page.responseBody`). `trustedGesture` stays `false` — only
-  `browser.page.click` has a trusted path (`args.trusted`); press/type/
-  fill/drag remain untrusted DOM events. `filePicker` stays `false` —
+  `browser.page.click` (`args.trusted`) and `browser.page.press`
+  (`args.trusted`, US-layout key table, element targets focused first)
+  have trusted paths; type/fill/drag/hover remain untrusted DOM events.
+  `filePicker` stays `false` —
   `browser.page.setInputFiles` writes `input.files` by path; the native
   picker UI remains unreachable.
 - CDP-only tools (`browser.page.dialog`, `browser.page.setInputFiles`,

@@ -102,12 +102,13 @@ export interface BrowserBackendCapabilities {
  * user's file-access opt-in, same as every other tool on those pages.
  * CDP tier (docs/adr/debugger-tier.md, verified headless: cdp-headless):
  * real AX tree (snapshot mode:"aria"), JS dialog handling
- * (browser.page.dialog), trusted click via args.trusted
- * (Input.dispatchMouseEvent → isTrusted=true), file inputs by absolute
+ * (browser.page.dialog), trusted click+press via args.trusted
+ * (Input.dispatchMouseEvent/dispatchKeyEvent → isTrusted=true), file
+ * inputs by absolute
  * path (browser.page.setInputFiles), response bodies
  * (browser.page.responseBody). trustedGesture stays false — only click
- * has a trusted path; press/type/fill/drag remain untrusted DOM events.
- * filePicker stays false — setInputFiles ≠ the native picker.
+ * and press have trusted paths; type/fill/drag/hover remain untrusted
+ * DOM events. filePicker stays false — setInputFiles ≠ the native picker.
  * playwright-isolated: isolated profile, no user session/tabs; iframe "all"
  * stays PROVISIONAL until spike-B4 frame tests pass — default reported
  * conservatively as "none" until then? NO: plan marks it PROVISIONAL(spike-B4),
@@ -134,8 +135,8 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // CDP Page.javascriptDialogOpening/handleJavaScriptDialog.
     nativeDialogs: true,
     filePicker: false,
-    // Only browser.page.click args.trusted is trusted; the rest of the
-    // input surface is still untrusted DOM events.
+    // Only browser.page.click/press args.trusted are trusted; the rest
+    // of the input surface is still untrusted DOM events.
     trustedGesture: false,
     browserChrome: false,
     tabCreate: true,

@@ -6,6 +6,7 @@
 // (docs/adr/debugger-tier.md):
 //   - snapshot mode:"aria"  → Accessibility.getFullAXTree
 //   - click args.trusted     → Input.dispatchMouseEvent (isTrusted=true)
+//   - press args.trusted     → Input.dispatchKeyEvent (isTrusted=true)
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
@@ -138,6 +139,30 @@ await runScenario(
         clickStatus: trustedClick?.status,
       };
 
+      // --- trusted press: CDP key events vs synthetic DOM key events ---
+      await page.goto(fixture.url("/keys"), { waitUntil: "domcontentloaded" });
+      await page.bringToFront();
+      // /keys #k records 'key:<key>,trusted:<isTrusted>' on keydown
+      const untrustedPress = await runner.browserToolCall(
+        taskId, "browser.page.press",
+        { selector: "#k", key: "a" }, token, 60_000,
+      );
+      await sleep(200);
+      const outUntrusted = await page.locator("#out").textContent();
+      const trustedPress = await runner.browserToolCall(
+        taskId, "browser.page.press",
+        { selector: "#k", key: "Enter", trusted: true }, token, 60_000,
+      );
+      await sleep(200);
+      const outTrusted = await page.locator("#out").textContent();
+      evidence.note(`press: untrusted=${outUntrusted} trusted=${outTrusted}`);
+      evidence.note(`press statuses: ${untrustedPress?.status}/${trustedPress?.status}`);
+      results.trustedPress = {
+        ok: outUntrusted === "key:a,trusted:false" && outTrusted === "key:Enter,trusted:true",
+        untrusted: outUntrusted,
+        trusted: outTrusted,
+      };
+
       // --- dialog: click schedules confirm(), CDP handles it ---
       await page.goto(fixture.url("/dialog"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
@@ -195,7 +220,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click (isTrusted=true vs false control), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press (isTrusted=true vs false controls), JS dialog accept, setInputFiles by path, responseBody tap+get"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };
