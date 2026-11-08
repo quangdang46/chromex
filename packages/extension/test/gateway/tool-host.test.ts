@@ -1595,4 +1595,21 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     }))).rejects.toMatchObject({ code: "proto.invalid" });
     expect(cdp.sent.length).toBe(before);
   });
+
+  test("hover trusted dispatches a single mouseMoved; coords or target", async () => {
+    const cdp = fakeCdp();
+    const h = createToolHostHandler(cdpDeps(514, cdp));
+    const res = (await h(req("browser.page.hover", { tabId: 514, selector: "#btn", trusted: true }))) as {
+      ok: boolean; step?: { trusted?: boolean };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.step?.trusted).toBe(true);
+    const moves = cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent");
+    expect(moves).toHaveLength(1);
+    expect(moves[0]?.params).toMatchObject({ type: "mouseMoved", x: 10, y: 20 });
+    await h(req("browser.page.hover", { tabId: 514, x: 5, y: 6, trusted: true }));
+    expect(cdp.sent.filter((s) => s.method === "Input.dispatchMouseEvent")).toHaveLength(2);
+    await expect(h(req("browser.page.hover", { tabId: 514, selector: "#b", x: 1, y: 2, trusted: true }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.hover", { tabId: 514, trusted: true, frameId: 3 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
 });

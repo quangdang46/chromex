@@ -102,7 +102,7 @@ export interface BrowserBackendCapabilities {
  * user's file-access opt-in, same as every other tool on those pages.
  * CDP tier (docs/adr/debugger-tier.md, verified headless: cdp-headless):
  * real AX tree (snapshot mode:"aria"), JS dialog handling
- * (browser.page.dialog), trusted click/press/type via args.trusted
+ * (browser.page.dialog), trusted click/press/type/hover via args.trusted
  * (Input.dispatchMouseEvent/dispatchKeyEvent → isTrusted=true), file
  * inputs by absolute
  * path (browser.page.setInputFiles), response bodies
@@ -135,7 +135,7 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // CDP Page.javascriptDialogOpening/handleJavaScriptDialog.
     nativeDialogs: true,
     filePicker: false,
-    // Only browser.page.click/press/type args.trusted are trusted; the rest
+    // Only browser.page.click/press/type/hover args.trusted are trusted; the rest
     // of the input surface is still untrusted DOM events.
     trustedGesture: false,
     browserChrome: false,

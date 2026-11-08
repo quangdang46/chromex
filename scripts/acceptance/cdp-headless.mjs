@@ -7,6 +7,7 @@
 //   - snapshot mode:"aria"  → Accessibility.getFullAXTree
 //   - click args.trusted     → Input.dispatchMouseEvent (isTrusted=true)
 //   - press/type args.trusted → Input.dispatchKeyEvent (isTrusted=true)
+//   - hover args.trusted    → Input.dispatchMouseEvent (isTrusted + :hover)
 //   - page.dialog            → Page.javascriptDialogOpening/handle
 //   - page.setInputFiles     → DOM.setFileInputFiles by absolute path
 //   - page.responseBody      → Network tap + getResponseBody
@@ -139,6 +140,29 @@ await runScenario(
         clickStatus: trustedClick?.status,
       };
 
+      // trusted hover: CDP mouseMoved → isTrusted mouseover + :hover CSS
+      const hoverRes = await runner.browserToolCall(
+        taskId, "browser.page.hover",
+        { selector: "#hov", trusted: true }, token, 60_000,
+      );
+      await sleep(200);
+      const rHover = await page.locator("#r-hover").textContent();
+      // move onto the CSS-hover probe and read computed style
+      await runner.browserToolCall(
+        taskId, "browser.page.hover",
+        { selector: "#hov-css", trusted: true }, token, 60_000,
+      );
+      await sleep(200);
+      const hovCssOutline = await page.evaluate(
+        () => getComputedStyle(document.getElementById("hov-css")).outlineStyle,
+      );
+      evidence.note(`hover: mouseover=${rHover} cssOutline=${hovCssOutline} status=${hoverRes?.status}`);
+      results.trustedHover = {
+        ok: rHover === "isTrusted:true" && hovCssOutline !== "none" && hoverRes?.status === "completed",
+        mouseover: rHover,
+        cssOutline: hovCssOutline,
+      };
+
       // --- trusted press: CDP key events vs synthetic DOM key events ---
       await page.goto(fixture.url("/keys"), { waitUntil: "domcontentloaded" });
       await page.bringToFront();
@@ -235,7 +259,7 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type (isTrusted=true vs false controls), JS dialog accept, setInputFiles by path, responseBody tap+get"
+          ? "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+hover (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get"
           : `results=${JSON.stringify(results)}`,
         details: { results },
       };

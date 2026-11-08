@@ -76,10 +76,11 @@ for Testing:
   `accessibility: true` (snapshot `mode:"aria"`), `nativeDialogs: true`
   (`browser.page.dialog`), `networkBodies: true`
   (`browser.page.responseBody`). `trustedGesture` stays `false` — only
-  `browser.page.click`, `browser.page.press` and `browser.page.type`
-  (`args.trusted`; press/type share a US-layout key table and focus
-  element targets through the content script first) have trusted
-  paths; fill/select/submit/drag/hover remain untrusted DOM events.
+  `browser.page.click`, `browser.page.press`, `browser.page.type` and
+  `browser.page.hover` (`args.trusted`; press/type share a US-layout
+  key table and focus element targets through the content script
+  first) have trusted paths; fill/select/submit/drag remain untrusted
+  DOM events.
   `filePicker` stays `false` —
   `browser.page.setInputFiles` writes `input.files` by path; the native
   picker UI remains unreachable.

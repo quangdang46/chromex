@@ -425,11 +425,12 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     }),
   },
   "browser.page.hover": {
-    description: `Move the pointer over an element — or to viewport coordinates (x,y) for canvas/surface hover states (mutually exclusive with ref/selector/label). Untrusted DOM events only: JS listeners see them but :hover CSS state and trusted listeners may not fire. ${SNAPSHOT_FIRST}`,
+    description: `Move the pointer over an element — or to viewport coordinates (x,y) for canvas/surface hover states (mutually exclusive with ref/selector/label). Default dispatch is untrusted DOM events: JS listeners see them but :hover CSS state and trusted listeners may not fire — pass args.trusted for real :hover/trusted events (debugger tier). ${SNAPSHOT_FIRST}`,
     inputSchema: objectSchema({
       ...ELEMENT_TARGET_WITH_TAB,
       x: { type: "number", description: "Viewport x (CSS px) — coordinate hover for canvas/surface states; mutually exclusive with ref/selector/label. Requires y." },
       y: { type: "number", description: "Viewport y (CSS px)." },
+      trusted: { type: "boolean", description: "Dispatch via CDP Input.dispatchMouseEvent so the page sees isTrusted=true and real :hover CSS state (chrome-extension debugger tier, top frame only). Default false = untrusted DOM hover." },
     }),
     expectable: true,
   },

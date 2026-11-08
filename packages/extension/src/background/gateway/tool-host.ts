@@ -1338,12 +1338,21 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           }
           return await trustedType(deps, tabId, args, expectCond);
         }
+        if (tool === "browser.page.hover" && args.trusted === true) {
+          if (frameId !== 0) {
+            throw toolError(
+              "proto.unsupported",
+              "trusted hover is only supported in the top frame (CDP Input is viewport-level)",
+            );
+          }
+          return await trustedHover(deps, tabId, args, expectCond);
+        }
         // args.trusted is a CDP-tier opt-in — never silently ignored on
         // tools that have no trusted path.
         if (args.trusted === true) {
           throw toolError(
             "proto.unsupported",
-            `args.trusted is not supported for ${tool} (trusted input exists only for click, press and type)`,
+            `args.trusted is not supported for ${tool} (trusted input exists only for click, press, type and hover)`,
           );
         }
         const step = domStepFor(tool, args);
@@ -1861,7 +1870,54 @@ async function trustedClick(
   };
 }
 
-// --- trusted keyboard (browser.page.press args.trusted) -------------------
+/** browser.page.hover args.trusted — a single Input.dispatchMouseEvent
+ *  mouseMoved produces isTrusted=true mouseover/mouseenter/mousemove and
+ *  real :hover CSS state, which synthetic DOM events cannot. */
+async function trustedHover(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  expectCond: BrowserExpectCondition | null,
+): Promise<Record<string, unknown>> {
+  const xArg = typeof args.x === "number" && Number.isFinite(args.x) ? args.x : undefined;
+  const yArg = typeof args.y === "number" && Number.isFinite(args.y) ? args.y : undefined;
+  if ((xArg === undefined) !== (yArg === undefined)) {
+    throw toolError("proto.invalid", "browser.page.hover args.x and args.y must be provided together");
+  }
+  const hasTarget = str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+  if (xArg !== undefined && hasTarget) {
+    throw toolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
+  }
+  cdpRequired(deps);
+  const point = xArg !== undefined
+    ? { x: xArg, y: yArg! }
+    : await cdpLocateElement(deps, tabId, args);
+
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    await session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+  } finally {
+    await release();
+  }
+
+  let verified: boolean | "unknown" | undefined;
+  let expectInfo: { met: boolean | "unknown"; elapsedMs?: number } | undefined;
+  if (expectCond) {
+    const check = await runExpectCondition(deps, tabId, expectCond, 0);
+    expectInfo = check;
+    verified = check.met === true ? true : check.met === false ? false : "unknown";
+  }
+  return {
+    ok: true,
+    summary: `trusted hover at ${Math.round(point.x)},${Math.round(point.y)}`,
+    step: { action: "hover", trusted: true, x: point.x, y: point.y, ok: true },
+    ...(verified !== undefined ? { verified } : {}),
+    ...(expectInfo ? { expect: expectInfo } : {}),
+    resolvedTabId: tabId,
+  };
+}
+
+// --- trusted keyboard (browser.page.press/type args.trusted) ---------------
 // US-layout key table for Input.dispatchKeyEvent. `text` is the string the
 // key produces (undefined for non-printing keys); vk/code drive the
 // KeyboardEvent fields pages actually inspect.

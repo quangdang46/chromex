@@ -144,6 +144,10 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <p id="r-untrusted">none</p>
 <button id="t-trusted" onclick="document.getElementById('r-trusted').textContent='isTrusted:'+event.isTrusted">trusted</button>
 <p id="r-trusted">none</p>
+<div id="hov" style="width:60px;height:60px;background:#eee" onmouseover="document.getElementById('r-hover').textContent='isTrusted:'+event.isTrusted">hover</div>
+<p id="r-hover">none</p>
+<style>#hov-css:hover{outline:3px solid rgb(255,0,0)}</style>
+<div id="hov-css" style="width:60px;height:60px;background:#def">css-hover</div>
 </body></html>`,
 
   // dialog proof (CDP tier): the confirm opens on a macrotask so the
