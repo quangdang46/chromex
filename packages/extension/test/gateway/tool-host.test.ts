@@ -1025,6 +1025,74 @@ describe("tool host (P1-09)", () => {
     await expect(h(req("browser.page.screenshot"))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("page.screenshot fullPage captures beyond viewport via CDP", async () => {
+    const sent: Array<{ method: string; params: unknown }> = [];
+    const d = deps({
+      getTab: vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active: true })),
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async (method: string, params?: unknown) => {
+          sent.push({ method, params });
+          if (method === "Page.getLayoutMetrics") {
+            return { cssContentSize: { width: 800, height: 2400 } };
+          }
+          if (method === "Page.captureScreenshot") return { data: "QUJD" };
+          return {};
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async () => {}),
+      uploadArtifact: vi.fn(async () => ({ artifactRef: "artifact:fp", sha256: "x", bytes: 3 })),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.screenshot", { fullPage: true }))) as {
+      artifactRef: string;
+      dataBase64: string;
+    };
+    expect(res.artifactRef).toBe("artifact:fp");
+    expect(res.dataBase64).toBe("QUJD");
+    const cap = sent.find((s) => s.method === "Page.captureScreenshot");
+    expect(cap?.params).toMatchObject({ captureBeyondViewport: true, format: "jpeg" });
+    expect((cap?.params as { clip?: unknown })?.clip).toMatchObject({ width: 800, height: 2400 });
+    // invalid combos refused before any CDP dispatch
+    const before = sent.length;
+    await expect(h(req("browser.page.screenshot", { fullPage: "yes" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screenshot", { fullPage: true, selector: "#x" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.screenshot", { fullPage: true, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    expect(sent.length).toBe(before);
+  });
+
+  test("page.screenshot background tab uses CDP, never captureVisibleTab", async () => {
+    const cdpCalls: string[] = [];
+    const visibleCalls: number[] = [];
+    const mkDeps = (active: boolean) =>
+      deps({
+        getTab: vi.fn(async () => ({ id: 7, url: "https://x", windowId: 3, active })),
+        captureVisibleTab: vi.fn(async (windowId: number) => {
+          visibleCalls.push(windowId);
+          return "data:image/jpeg;base64,VklTSUJMRQ==";
+        }),
+        acquireCdp: vi.fn(async () => ({
+          send: vi.fn(async (method: string) => {
+            cdpCalls.push(method);
+            return method === "Page.captureScreenshot" ? { data: "Q0RQ" } : {};
+          }),
+        }) as never),
+        releaseCdp: vi.fn(async () => {}),
+        uploadArtifact: vi.fn(async () => ({ artifactRef: "artifact:s", sha256: "x", bytes: 3 })),
+      });
+    // inactive tab → CDP captures THIS tab; captureVisibleTab would
+    // silently return the window's active (different) tab
+    const hBg = createToolHostHandler(mkDeps(false));
+    const resBg = (await hBg(req("browser.page.screenshot"))) as { dataBase64: string };
+    expect(resBg.dataBase64).toBe("Q0RQ");
+    expect(visibleCalls).toHaveLength(0);
+    expect(cdpCalls).toContain("Page.captureScreenshot");
+    // active tab → captureVisibleTab path unchanged
+    const hAct = createToolHostHandler(mkDeps(true));
+    const resAct = (await hAct(req("browser.page.screenshot"))) as { dataBase64: string };
+    expect(resAct.dataBase64).toBe("VklTSUJMRQ==");
+    expect(visibleCalls).toEqual([3]);
+  });
+
   test("tab.create opens a tab, returns scope ids, strips query/hash (chromex-he2)", async () => {
     const created: Array<{ url?: string; active?: boolean }> = [];
     const d = deps({

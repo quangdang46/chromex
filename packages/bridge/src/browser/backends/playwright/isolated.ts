@@ -1606,13 +1606,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         "element-targeted screenshots are not supported on playwright-isolated",
       );
     }
+    if (args.fullPage !== undefined && typeof args.fullPage !== "boolean") {
+      throw protocolError("proto.invalid", "browser.page.screenshot args.fullPage must be a boolean");
+    }
+    const fullPage = args.fullPage === true;
     const page = await this.#pageFor(taskId, args);
     // chromex-22wi: the result IS the provider's image input — there is
     // no artifact.upload channel on this backend, so the payload must be
     // bounded inline. Same 512KiB decoded ceiling the gateway artifact
     // store enforces; retry at lower jpeg quality, then fail honestly.
     for (const quality of SCREENSHOT_JPEG_QUALITIES) {
-      const buf = await page.screenshot({ type: "jpeg", quality });
+      const buf = await page.screenshot({ type: "jpeg", quality, fullPage });
       if (buf.length <= SCREENSHOT_MAX_BYTES) {
         return { dataBase64: buf.toString("base64"), mimeType: "image/jpeg", bytes: buf.length };
       }

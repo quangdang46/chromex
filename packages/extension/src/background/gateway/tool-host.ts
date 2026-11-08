@@ -793,16 +793,11 @@ function base64DecodedBytes(dataBase64: string): number {
   return Math.max(0, Math.floor((dataBase64.length * 3) / 4) - padding);
 }
 
-async function captureScreenshotWithinArtifactCap(
-  capture: (windowId: number, opts?: { quality?: number }) => Promise<string>,
-  windowId: number,
+/** Shared 512KiB artifact-cap retry: attempt() returns {mimeType,
+ *  dataBase64}; quality steps down until the decoded payload fits. */
+async function shotWithinArtifactCap(
+  attempt: (quality?: number) => Promise<{ mimeType: string; dataBase64: string }>,
 ): Promise<{ mimeType: string; dataBase64: string }> {
-  const attempt = async (quality?: number) => {
-    const dataUrl = await capture(windowId, quality === undefined ? undefined : { quality });
-    const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(dataUrl);
-    if (!m) throw toolError("browser.action_failed", "captureVisibleTab returned unexpected format");
-    return { mimeType: m[1]!, dataBase64: m[2]! };
-  };
   let shot = await attempt();
   for (const quality of SCREENSHOT_QUALITY_RETRY) {
     if (base64DecodedBytes(shot.dataBase64) <= SCREENSHOT_MAX_DECODED_BYTES) return shot;
@@ -815,6 +810,82 @@ async function captureScreenshotWithinArtifactCap(
     );
   }
   return shot;
+}
+
+async function captureScreenshotWithinArtifactCap(
+  capture: (windowId: number, opts?: { quality?: number }) => Promise<string>,
+  windowId: number,
+): Promise<{ mimeType: string; dataBase64: string }> {
+  return shotWithinArtifactCap(async (quality) => {
+    const dataUrl = await capture(windowId, quality === undefined ? undefined : { quality });
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/s.exec(dataUrl);
+    if (!m) throw toolError("browser.action_failed", "captureVisibleTab returned unexpected format");
+    return { mimeType: m[1]!, dataBase64: m[2]! };
+  });
+}
+
+/** Full-page capture via CDP Page.captureScreenshot captureBeyondViewport
+ *  — the whole document, not just the visible viewport. Content size
+ *  comes from Page.getLayoutMetrics; clip is in page CSS pixels. Very
+ *  tall pages can still exceed the 512KiB artifact cap → the shared
+ *  quality-retry runs, then artifact.too_large honestly (element clips
+ *  remain the fallback for huge pages). */
+async function captureFullPageScreenshot(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<{ mimeType: string; dataBase64: string }> {
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const metrics = await session.send<{
+      cssContentSize?: { width?: number; height?: number };
+      contentSize?: { width?: number; height?: number };
+    }>("Page.getLayoutMetrics");
+    const size = metrics?.cssContentSize ?? metrics?.contentSize;
+    const width = size?.width;
+    const height = size?.height;
+    if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
+      throw toolError("browser.action_failed", "Page.getLayoutMetrics returned no content size");
+    }
+    return await shotWithinArtifactCap(async (quality) => {
+      const res = await session.send<{ data?: string }>("Page.captureScreenshot", {
+        format: "jpeg",
+        ...(quality !== undefined ? { quality } : {}),
+        captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width, height, scale: 1 },
+      });
+      if (typeof res?.data !== "string" || res.data.length === 0) {
+        throw toolError("browser.action_failed", "Page.captureScreenshot returned no image data");
+      }
+      return { mimeType: "image/jpeg", dataBase64: res.data };
+    });
+  } finally {
+    await release();
+  }
+}
+
+/** Viewport capture via CDP Page.captureScreenshot WITHOUT clip —
+ *  captures THIS tab's own target. Needed for background/inactive tabs:
+ *  chrome.tabs.captureVisibleTab only sees the window's ACTIVE tab and
+ *  would silently return another tab's pixels. */
+async function captureViewportScreenshot(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<{ mimeType: string; dataBase64: string }> {
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    return await shotWithinArtifactCap(async (quality) => {
+      const res = await session.send<{ data?: string }>("Page.captureScreenshot", {
+        format: "jpeg",
+        ...(quality !== undefined ? { quality } : {}),
+      });
+      if (typeof res?.data !== "string" || res.data.length === 0) {
+        throw toolError("browser.action_failed", "Page.captureScreenshot returned no image data");
+      }
+      return { mimeType: "image/jpeg", dataBase64: res.data };
+    });
+  } finally {
+    await release();
+  }
 }
 
 /** Element-targeted screenshot via CDP Page.captureScreenshot clip.
@@ -4158,32 +4229,51 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const hasElementTarget =
           str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined;
+        const fullPage = args.fullPage === true;
+        if (args.fullPage !== undefined && typeof args.fullPage !== "boolean") {
+          throw toolError("proto.invalid", "browser.page.screenshot args.fullPage must be a boolean");
+        }
+        if (fullPage && hasElementTarget) {
+          throw toolError("proto.invalid", "args.fullPage cannot combine with an element target (ref/selector/label)");
+        }
         let shot: { mimeType: string; dataBase64: string };
         if (hasElementTarget) {
           // Element clip via CDP Page.captureScreenshot — works on
           // chrome-extension only; subframe targets resolve through the
           // geometry chain. Element is scrolled into view first.
           shot = await captureElementScreenshot(deps, tabId, args, frameIdArg(args));
+        } else if (fullPage) {
+          if (frameIdArg(args) !== 0) {
+            throw toolError("proto.invalid", "args.frameId is not supported with args.fullPage");
+          }
+          shot = await captureFullPageScreenshot(deps, tabId);
         } else {
           if (frameIdArg(args) !== 0) {
             // whole-tab capture is frame-agnostic — refuse rather than
             // silently ignore the scope the caller asked for
             throw toolError("proto.invalid", "args.frameId requires an element target (ref/selector/label) on browser.page.screenshot");
           }
-          if (!deps.captureVisibleTab) {
-            throw toolError("proto.unsupported", "screenshot capture is not available on this host");
-          }
           const tab = await deps.getTab(tabId);
           if (typeof tab?.windowId !== "number") {
             throw toolError("browser.no_tab", `tab ${tabId} has no window`);
           }
-          // chromex-22wi: the artifact store caps uploads at 512KiB decoded
-          // (gateway artifact.upload). Retry at lower jpeg quality until
-          // the capture fits — the same bytes are returned inline as
-          // dataBase64 so the provider receives image input, not just a
-          // reference it cannot resolve. Bounded egress: the tool is
-          // already classified agentEgress "screenshot" upstream.
-          shot = await captureScreenshotWithinArtifactCap(deps.captureVisibleTab, tab.windowId);
+          if (tab.active === true) {
+            if (!deps.captureVisibleTab) {
+              throw toolError("proto.unsupported", "screenshot capture is not available on this host");
+            }
+            // chromex-22wi: the artifact store caps uploads at 512KiB decoded
+            // (gateway artifact.upload). Retry at lower jpeg quality until
+            // the capture fits — the same bytes are returned inline as
+            // dataBase64 so the provider receives image input, not just a
+            // reference it cannot resolve. Bounded egress: the tool is
+            // already classified agentEgress "screenshot" upstream.
+            shot = await captureScreenshotWithinArtifactCap(deps.captureVisibleTab, tab.windowId);
+          } else {
+            // captureVisibleTab(windowId) captures the window's ACTIVE
+            // tab — for a background tab that silently returns ANOTHER
+            // tab's pixels. CDP captures this tab's own target instead.
+            shot = await captureViewportScreenshot(deps, tabId);
+          }
         }
         if (!deps.uploadArtifact) {
           // no artifact channel → the durable artifactRef cannot be
