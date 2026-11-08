@@ -684,7 +684,18 @@ export function selectDomActionElement(element: HTMLElement, value: string, valu
     throw new Error("Target select is single-choice; pass one value.");
   }
   for (const opt of Array.from(element.options)) opt.selected = matches.includes(opt);
-  if (!element.multiple) element.value = matches[0]!.value;
+  if (!element.multiple) {
+    // Prototype setter, not element.value=: framework value trackers
+    // (React et al.) wrap the instance property — a direct assignment
+    // updates the tracker too, so the synthetic change event reads as
+    // "no change" and controlled components never see the new value.
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    if (setter) {
+      setter.call(element, matches[0]!.value);
+    } else {
+      element.value = matches[0]!.value;
+    }
+  }
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }

@@ -53,6 +53,35 @@ const PAGES = {
 <div id="out"></div>
 </body></html>`,
 
+  // framework-tracker fidelity: the select's own 'value' property is a
+  // React-style tracker — assignments through it update the tracked
+  // value, prototype-setter bypass leaves tracked stale. A change
+  // listener reports real vs tracked so the scenario can prove the
+  // action used the bypass (tracked stays old → framework sees change).
+  "/tracked-select": `<!doctype html><html><body>
+<select id="ts">
+  <option value="a">A</option><option value="b">B</option>
+</select>
+<div id="tout">none</div>
+<script>
+(function(){
+  var sel = document.getElementById('ts');
+  var d = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  var tracked = d.get.call(sel);
+  Object.defineProperty(sel, 'value', {
+    configurable: true,
+    get: function(){ return tracked; },
+    set: function(v){ tracked = v; d.set.call(sel, v); }
+  });
+  sel.addEventListener('change', function(){
+    var real = d.get.call(sel);
+    document.getElementById('tout').textContent =
+      'real=' + real + ' tracked=' + tracked + ' mismatch=' + (real !== tracked);
+  });
+})();
+</script>
+</body></html>`,
+
   // S2/S6: deliberate bug — the "Fix" button throws and never updates status;
   // a broken inline handler references a missing function.
   "/buggy": `<!doctype html><html><head><title>Buggy Page</title></head><body>

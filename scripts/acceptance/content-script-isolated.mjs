@@ -221,6 +221,19 @@ try {
   assert(String(outAfterFree?.text ?? "").includes("free-clicked"), "uncovered click reached the page");
   await occ.page.close();
 
+  // ── Loop 7: select must bypass framework value trackers ─────────────
+  const ts = await openWithContent("/tracked-select");
+  const selRes = await ts.send(
+    perform([{ action: "select", selector: "#ts", value: "b", reason: "e2e" }]),
+  );
+  assert(selRes?.ok === true, `select action ok (${selRes?.summary})`);
+  const tout = await ts.send({ type: "page.extract", selector: "#tout" });
+  assert(
+    String(tout?.text ?? "").includes("mismatch=true") && String(tout?.text ?? "").includes("real=b"),
+    `select bypassed the value tracker so frameworks see the change (got "${tout?.text}")`,
+  );
+  await ts.page.close();
+
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(
     join(ARTIFACT_DIR, "result.json"),
