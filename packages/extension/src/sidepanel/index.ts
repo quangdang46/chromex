@@ -15370,8 +15370,10 @@ async function hydrateQueuedComposerMessages(): Promise<void> {
     if (entries && typeof entries === "object") {
       restoreQueuedComposerMessages(entries as Record<string, QueuedComposerMessage[]>);
     }
-  } catch {
-    // storage unavailable — start with an empty queue
+  } catch (error) {
+    // Queue restore failure is otherwise invisible — the user's queued
+    // work silently vanishes on reload. Warn so it's diagnosable.
+    console.warn("[chromex] queued composer hydration failed", error);
   }
 }
 
