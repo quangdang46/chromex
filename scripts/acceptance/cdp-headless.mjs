@@ -2173,7 +2173,7 @@ await runScenario(
               pj.waitTimeoutOk = (wBad?.error?.code ?? "") === "browser.timeout";
               const wSolo = await runner.browserToolCall(
                 taskId, "browser.page.wait",
-                { tabId: pjTab, pierceText: "x" }, token, 60_000,
+                { tabId: pjTab, pierceRef: st.ref }, token, 60_000,
               ).catch(() => null);
               pj.waitPairOk = (wSolo?.error?.code ?? "") === "proto.invalid";
             } else {
@@ -2238,6 +2238,44 @@ await runScenario(
             } else {
               pj.scrollCallOk = pj.scrollValOk = false;
             }
+            // discovery wait: pierceText WITHOUT pierceRef must poll
+            // pierce until a late-rendering closed-root element appears
+            // and hand back an actionable fresh ref. Arm the append via
+            // element-scoped evaluate (deterministic — no wall-clock race
+            // with tool latency).
+            const armEl = elements.find((e) => e.id === "psubmit") ?? elements[0];
+            const armRes = await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: pjTab, ref: armEl?.ref,
+                expression: "(function(r){setTimeout(function(){var b=document.createElement('button');b.id='plate';b.textContent='late-widget-ready';b.setAttribute('role','button');b.setAttribute('aria-label','late-widget-ready');r.appendChild(b)},800);return 'armed'})(this.getRootNode())" },
+              token, 60_000,
+            ).catch(() => null);
+            pj.armOk = String(armRes?.result?.value ?? armRes?.value ?? "") === "armed";
+            const dwT0 = Date.now();
+            const dwRes = await runner.browserToolCall(
+              taskId, "browser.page.wait",
+              { tabId: pjTab, pierceText: "late-widget-ready", timeoutMs: 8000 }, token, 60_000,
+            ).catch(() => null);
+            const dw = dwRes?.result ?? dwRes ?? {};
+            pj.discWaitOk = dw.matched === "pierce"
+              && dw.pierce?.discovered === true
+              && typeof dw.pierce?.ref === "string";
+            pj.discWaitElapsedOk = Date.now() - dwT0 >= 500;
+            if (pj.discWaitOk) {
+              const pev2 = await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, ref: dw.pierce.ref, expression: "this.id==='plate'?'yes':'no'" },
+                token, 60_000,
+              ).catch(() => null);
+              pj.discWaitRefOk = String(pev2?.result?.value ?? pev2?.value ?? "") === "yes";
+            } else {
+              pj.discWaitRefOk = false;
+            }
+            const dwBad = await runner.browserToolCall(
+              taskId, "browser.page.wait",
+              { tabId: pjTab, pierceText: "never-appears-xyz", timeoutMs: 1500 }, token, 60_000,
+            ).catch(() => null);
+            pj.discTimeoutOk = (dwBad?.error?.code ?? "") === "browser.timeout";
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
             ).catch(() => null);
@@ -2246,8 +2284,8 @@ await runScenario(
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
             pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
           pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
-            pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
-            pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
+          pj.armOk = pj.discWaitOk = pj.discWaitElapsedOk = pj.discWaitRefOk = pj.discTimeoutOk = false;
+          pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
             pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
             pj.stOk = pj.waitOk = pj.waitElapsedOk = pj.waitTimeoutOk = pj.waitPairOk = false;
@@ -2257,6 +2295,7 @@ await runScenario(
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = pj.shotOk = false;
           pj.submitOk = pj.submitCallOk = pj.submitValOk = pj.focusOk = pj.focusCallOk = pj.focusValOk = false;
           pj.scrollOk = pj.scrollCallOk = pj.scrollValOk = false;
+            pj.armOk = pj.discWaitOk = pj.discWaitElapsedOk = pj.discWaitRefOk = pj.discTimeoutOk = false;
           pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           pj.upOk = pj.uploadOk = pj.filesOk = pj.selOk = pj.selectOk = pj.selectValOk = false;
           pj.dragOk = pj.dragCallOk = pj.dragValOk = false;
@@ -2274,6 +2313,8 @@ await runScenario(
           pj.submitOk === true && pj.submitCallOk === true && pj.submitValOk === true &&
           pj.focusOk === true && pj.focusCallOk === true && pj.focusValOk === true &&
           pj.scrollOk === true && pj.scrollCallOk === true && pj.scrollValOk === true &&
+          pj.armOk === true && pj.discWaitOk === true && pj.discWaitElapsedOk === true &&
+          pj.discWaitRefOk === true && pj.discTimeoutOk === true &&
           pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
           pj.evalOk === true && pj.upOk === true && pj.uploadOk === true && pj.filesOk === true &&
           pj.selOk === true && pj.selectOk === true && pj.selectValOk === true &&

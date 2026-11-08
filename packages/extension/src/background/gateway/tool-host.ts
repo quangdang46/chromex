@@ -1993,14 +1993,17 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // live state (value/textContent) via Runtime.callFunctionOn —
         // the async barrier for embedded widgets (payment status,
         // captcha clearing) that content-script waits cannot see.
-        // State condition, not lookback: it polls forward only.
+        // pierceText WITHOUT pierceRef is the discovery barrier: poll
+        // browser.page.pierce until a matching closed-root element
+        // appears (async widgets that render late), returning its
+        // fresh ref. State condition, not lookback: polls forward only.
         const pierceRef = str(args.pierceRef);
         const pierceText = str(args.pierceText);
         if (pierceText !== undefined && (pierceText.length === 0 || pierceText.length > 512)) {
           throw toolError("proto.invalid", "browser.page.wait args.pierceText must be a non-empty string ≤512 chars");
         }
-        if ((pierceRef === undefined) !== (pierceText === undefined)) {
-          throw toolError("proto.invalid", "args.pierceRef and args.pierceText must be provided together");
+        if (pierceRef !== undefined && pierceText === undefined) {
+          throw toolError("proto.invalid", "args.pierceRef requires args.pierceText");
         }
         if (pierceRef !== undefined) {
           if (!PIERCE_REF_RE.test(pierceRef)) {
@@ -2010,8 +2013,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             throw toolError("proto.invalid", "pierce refs carry their own frame — drop args.frameId");
           }
           cdpRequired(deps);
+        } else if (pierceText !== undefined) {
+          cdpRequired(deps);
         }
-        const hasPierceCondition = pierceRef !== undefined;
+        const hasPierceCondition = pierceRef !== undefined || pierceText !== undefined;
         const hasConsoleCondition = consoleText !== undefined;
         const hasResponseCondition = responseUrl !== undefined;
         const hasContentCondition =
@@ -2159,7 +2164,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return { ok: true, matched: "networkIdle", resolvedTabId: tabId };
           }
         }
-        if (hasPierceCondition) {
+        if (pierceRef !== undefined) {
           // Live-state poll on the closed-root node — value +
           // textContent haystack, substring match. The node is resolved
           // once; a detached node fails the poll as element_not_found.
@@ -2203,6 +2208,49 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               ok: true,
               matched: "pierce",
               pierce: { ref: pierceRef, excerpt: pierceHitText.slice(0, 500) },
+              resolvedTabId: tabId,
+            };
+          }
+        } else if (pierceText !== undefined) {
+          // Discovery barrier: poll browser.page.pierce until a
+          // closed-root element matching pierceText appears — covers
+          // async widgets that render after the wait starts (no ref
+          // could have been minted yet). Each poll re-mints the
+          // scope's refs; the matched element's fresh ref comes back
+          // so the caller can act on it immediately. args.frameId
+          // scopes discovery to that frame (OOPIF support).
+          const discFrameId = frameIdArg(args);
+          const deadline = Date.now() + waitTimeoutMs;
+          let found: Record<string, unknown> | undefined;
+          while (Date.now() < deadline) {
+            const pz = await pagePierce(deps, tabId, {
+              text: pierceText,
+              limit: 5,
+              ...(discFrameId !== 0 ? { frameId: discFrameId } : {}),
+            });
+            const els = (pz.elements as Array<Record<string, unknown>> | undefined) ?? [];
+            if (els.length > 0) {
+              found = els[0];
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+          if (!found) {
+            throw toolError(
+              "browser.timeout",
+              `no pierce element matching "${pierceText}" within ${waitTimeoutMs}ms`,
+            );
+          }
+          if (!hasContentCondition && !networkIdle && !hasResponseCondition && !hasConsoleCondition) {
+            return {
+              ok: true,
+              matched: "pierce",
+              pierce: {
+                ref: found.ref,
+                discovered: true,
+                ...(found.name !== undefined ? { name: found.name } : {}),
+                ...(found.role !== undefined ? { role: found.role } : {}),
+              },
               resolvedTabId: tabId,
             };
           }

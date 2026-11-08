@@ -284,6 +284,9 @@ sr.getElementById('pform').addEventListener('submit', (e) => {
   e.preventDefault();
   window.__pierceSubmit = (e.submitter && e.submitter.id) || 'no-submitter';
 });
+// late-rendering widget target is armed on demand by the acceptance
+// leg (pierce evaluate schedules the append inside the closed root)
+// — a pierce taken before the arm cannot see it.
 </script>
 </body></html>`,
 

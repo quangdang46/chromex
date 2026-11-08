@@ -4762,10 +4762,18 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
       })),
     ).rejects.toMatchObject({ code: "browser.timeout" });
     expect(polls).toBeGreaterThan(pollsBefore);
-    // pair validation + bad ref + frameId
+    // pair validation + bad ref + frameId — pierceText alone is now
+    // the discovery barrier (valid), pierceRef alone is not
+    const dw = (await h(req("browser.page.wait", {
+      tabId: 527, pierceText: "status", timeoutMs: 3000,
+    }))) as { ok: boolean; matched?: string; pierce?: { ref?: string; discovered?: boolean } };
+    expect(dw.ok).toBe(true);
+    expect(dw.matched).toBe("pierce");
+    expect(dw.pierce?.discovered).toBe(true);
+    expect(dw.pierce?.ref).toMatch(/^pz-\d+$/);
     await expect(
-      h(req("browser.page.wait", { tabId: 527, pierceText: "x" })),
-    ).rejects.toMatchObject({ code: "proto.invalid" });
+      h(req("browser.page.wait", { tabId: 527, pierceText: "zzz-never", timeoutMs: 300 })),
+    ).rejects.toMatchObject({ code: "browser.timeout" });
     await expect(
       h(req("browser.page.wait", { tabId: 527, pierceRef: "pz-1" })),
     ).rejects.toMatchObject({ code: "proto.invalid" });
