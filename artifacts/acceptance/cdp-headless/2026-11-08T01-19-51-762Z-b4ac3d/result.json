@@ -1,0 +1,103 @@
+{
+  "scenario": "cdp-headless",
+  "runId": "2026-11-08T01-19-51-762Z-b4ac3d",
+  "status": "PASS",
+  "summary": "CDP tier end-to-end on real extension: aria AX tree, trusted click+press+type+fill+hover+drag (isTrusted=true, real :hover CSS), JS dialog accept, setInputFiles by path, responseBody tap+get",
+  "durationMs": 9027,
+  "details": {
+    "results": {
+      "responseBody": {
+        "ok": true,
+        "snippet": "{\"requestId\":\"63048.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:51621/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794100795777,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"body"
+      },
+      "aria": {
+        "ok": true
+      },
+      "trustedClick": {
+        "ok": true,
+        "untrusted": "isTrusted:false",
+        "trusted": "isTrusted:true",
+        "clickStatus": "completed"
+      },
+      "trustedHover": {
+        "ok": true,
+        "mouseover": "isTrusted:true",
+        "cssOutline": "solid"
+      },
+      "trustedPress": {
+        "ok": true,
+        "untrusted": "key:a,trusted:false",
+        "trusted": "key:Enter,trusted:true"
+      },
+      "trustedType": {
+        "ok": true,
+        "status": "completed",
+        "value": "Hi!",
+        "out": "key:!,trusted:true"
+      },
+      "trustedFill": {
+        "ok": true,
+        "status": "completed",
+        "value": "xy"
+      },
+      "trustedDrag": {
+        "ok": true,
+        "down": "isTrusted:true",
+        "out": "up@360,80",
+        "status": "completed"
+      },
+      "trustedFramePress": {
+        "ok": true,
+        "status": "completed",
+        "kout": "key:x,trusted:true"
+      },
+      "trustedFrameClick": {
+        "ok": true,
+        "same": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        },
+        "cross": {
+          "ok": true,
+          "status": "completed",
+          "pout": "down:true up:true"
+        }
+      },
+      "dialog": {
+        "ok": true,
+        "handled": true,
+        "pageText": "confirm:true"
+      },
+      "setInputFiles": {
+        "ok": true,
+        "status": "completed",
+        "fname": "chromex-cdp-upload.txt"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-08T01:19:55.458Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-08T01:19:55.767Z] responseBody prime → {\"toolCallId\":\"rpc-mw75ahkf-4vgde4\",\"tool\":\"browser.page.responseBody\",\"status\":\"completed\",\"result\":{\"requests\":[],\"capturingSince\":1794100795766,\"resolvedTabId\":1012272421}}",
+    "[2026-11-08T01:19:56.307Z] responseBody → {\"requestId\":\"63048.4\",\"method\":\"GET\",\"url\":\"http://127.0.0.1:51621/api/ping\",\"type\":\"Fetch\",\"status\":200,\"mimeType\":\"application/json\",\"finished\":true,\"ts\":1794100795777,\"body\":\"{\\\"v\\\":\\\"ok\\\"}\",\"bodyBytes\":10,\"truncated\":false,\"resolvedTabId\":1012272421}",
+    "[2026-11-08T01:19:56.567Z] aria snapshot → {\"mode\":\"aria\",\"tree\":\"- RootWebArea\\n  - heading \\\"Fetch Page\\\"\\n    - StaticText \\\"Fetch Page\\\"\\n  - paragraph\\n    - StaticText \\\"pong:ok\\\"\",\"nodeCount\":9,\"truncated\":false,\"resolvedTabId\":1012272421}",
+    "[2026-11-08T01:19:56.841Z] trusted snap=completed snapId=snap:eb025e0b-bb0d-4bca-ba2e-343d152cfe27",
+    "[2026-11-08T01:19:57.137Z] untrusted click → {\"toolCallId\":\"rpc-mw75aill-mz40fb\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.",
+    "[2026-11-08T01:19:57.137Z] trusted click → {\"toolCallId\":\"rpc-mw75ait1-uq4nwj\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 36,161\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":36.3828125,\"y\":",
+    "[2026-11-08T01:19:57.150Z] isTrusted results: untrusted=isTrusted:false trusted=isTrusted:true",
+    "[2026-11-08T01:19:57.572Z] hover: mouseover=isTrusted:true cssOutline=solid status=completed",
+    "[2026-11-08T01:19:58.016Z] press: untrusted=key:a,trusted:false trusted=key:Enter,trusted:true",
+    "[2026-11-08T01:19:58.016Z] press statuses: completed/completed",
+    "[2026-11-08T01:19:58.031Z] trusted type → status=completed value=\"Hi!\" out=key:!,trusted:true",
+    "[2026-11-08T01:19:58.043Z] trusted fill → status=completed value=\"xy\" out=key:y,trusted:true",
+    "[2026-11-08T01:19:58.460Z] drag: down=isTrusted:true out=up@360,80 status=completed",
+    "[2026-11-08T01:19:59.061Z] frame press → status=completed kout=key:x,trusted:true",
+    "[2026-11-08T01:19:59.382Z] frame click same → status=completed pout=down:true up:true",
+    "[2026-11-08T01:19:59.701Z] frame click cross → status=completed pout=down:true up:true",
+    "[2026-11-08T01:19:59.976Z] dialog snap=completed snapId=snap:3d0ec55a-e6a5-48c5-9c77-865700aac444",
+    "[2026-11-08T01:20:00.239Z] dialog → {\"handled\":true,\"accept\":true,\"resolvedTabId\":1012272421}",
+    "[2026-11-08T01:20:00.249Z] dialog result text=confirm:true",
+    "[2026-11-08T01:20:00.781Z] setInputFiles → {\"ok\":true,\"files\":1,\"fileNames\":[\"chromex-cdp-upload.txt\"],\"resolvedTabId\":1012272421}",
+    "[2026-11-08T01:20:00.790Z] fname=chromex-cdp-upload.txt"
+  ]
+}
