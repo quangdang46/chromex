@@ -42,6 +42,21 @@ import { chromexCacheOp } from "../../content/caches.js";
 import { chromexSwOp } from "../../content/sw.js";
 import type { CdpSession } from "../cdp.js";
 
+/** Sanitized single-window chrome state — same fields windows.list
+ *  surfaces (no tab payloads → no page-text egress). */
+export interface WindowInfo {
+  id?: number | undefined;
+  focused?: boolean | undefined;
+  type?: string | undefined;
+  state?: string | undefined;
+  incognito?: boolean | undefined;
+  left?: number | undefined;
+  top?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
+  tabCount?: number | undefined;
+}
+
 export interface ToolHostDeps {
   /** chrome.tabs.captureVisibleTab → data:image/...;base64 URL.
    *  `opts.quality` (jpeg only) lets the screenshot path retry at lower
@@ -151,6 +166,12 @@ export interface ToolHostDeps {
     tabs?: Array<{ id?: number | undefined; url?: string | undefined; title?: string | undefined; active?: boolean | undefined }> | undefined;
   }>;
   updateWindow?(windowId: number, opts: { focused?: boolean; state?: string }): Promise<unknown>;
+  /** chrome.windows.get / getLastFocused (browser.windows.get) —
+   *  single-window chrome state, same sanitized shape as listWindows;
+   *  absent deps → proto.unsupported. */
+  getWindow?(windowId: number): Promise<WindowInfo | null>;
+  getLastFocusedWindow?(): Promise<WindowInfo | null>;
+
   /** chrome.tabGroups + chrome.tabs.group/ungroup (browser.tabGroups) —
    *  absent → proto.unsupported. */
   tabGroups?: {
@@ -480,6 +501,7 @@ const SUPPORTED = new Set([
   "browser.downloads.cancel",
   "browser.downloads.open",
   "browser.windows.list",
+  "browser.windows.get",
   "browser.windows.create",
   "browser.windows.update",
   "browser.page.network",
@@ -3401,19 +3423,39 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         return {
           windows: (Array.isArray(windows) ? windows : [])
             .filter((w) => w.id !== undefined)
-            .map((w) => ({
-              id: w.id,
-              focused: w.focused === true,
-              type: w.type ?? "normal",
-              state: w.state ?? "normal",
-              incognito: w.incognito === true,
-              ...(typeof w.left === "number" ? { left: w.left } : {}),
-              ...(typeof w.top === "number" ? { top: w.top } : {}),
-              ...(typeof w.width === "number" ? { width: w.width } : {}),
-              ...(typeof w.height === "number" ? { height: w.height } : {}),
-              ...(typeof w.tabCount === "number" ? { tabCount: w.tabCount } : {}),
-            })),
+            .map(sanitizeWindowInfo),
         };
+      }
+      case "browser.windows.get": {
+        // Single-window chrome state — windowId from windows.list, or
+        // lastFocused:true → the window the user is looking at
+        // (deliverable-surfacing target). No tab payloads → no egress.
+        const lastFocused = args.lastFocused === true;
+        const windowId = args.windowId;
+        if (lastFocused) {
+          if (!deps.getLastFocusedWindow) {
+            throw toolError("proto.unsupported", "window focus query is not available on this host");
+          }
+          if (windowId !== undefined) {
+            throw toolError("proto.invalid", "browser.windows.get takes args.windowId OR args.lastFocused, not both");
+          }
+          const win = await deps.getLastFocusedWindow();
+          if (!win || win.id === undefined) {
+            throw toolError("proto.unsupported", "no focused window reported by the browser");
+          }
+          return { window: sanitizeWindowInfo(win), lastFocused: true };
+        }
+        if (typeof windowId !== "number" || !Number.isInteger(windowId) || windowId < 0) {
+          throw toolError("proto.invalid", "browser.windows.get requires args.windowId (integer) or args.lastFocused:true");
+        }
+        if (!deps.getWindow) {
+          throw toolError("proto.unsupported", "window lookup is not available on this host");
+        }
+        const win = await deps.getWindow(windowId);
+        if (!win || win.id === undefined) {
+          throw toolError("browser.action_failed", `window ${windowId} not found`);
+        }
+        return { window: sanitizeWindowInfo(win) };
       }
       case "browser.windows.create": {
         // Not tab-scoped: opens a new browser window. http(s)/blank
@@ -4092,6 +4134,21 @@ function normalizeUploadFiles(raw: unknown): Array<{ name: string; mimeType: str
 // the DOM tier cannot express: trusted input, JS dialogs, file inputs by
 // path, response bodies, and the real accessibility tree.
 // ---------------------------------------------------------------------------
+
+function sanitizeWindowInfo(w: WindowInfo) {
+  return {
+    id: w.id,
+    focused: w.focused === true,
+    type: w.type ?? "normal",
+    state: w.state ?? "normal",
+    incognito: w.incognito === true,
+    ...(typeof w.left === "number" ? { left: w.left } : {}),
+    ...(typeof w.top === "number" ? { top: w.top } : {}),
+    ...(typeof w.width === "number" ? { width: w.width } : {}),
+    ...(typeof w.height === "number" ? { height: w.height } : {}),
+    ...(typeof w.tabCount === "number" ? { tabCount: w.tabCount } : {}),
+  };
+}
 
 function cdpRequired(deps: ToolHostDeps): {
   acquire: NonNullable<ToolHostDeps["acquireCdp"]>;

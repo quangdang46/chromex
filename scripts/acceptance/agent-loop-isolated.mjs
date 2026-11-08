@@ -933,6 +933,7 @@ try {
   await expectReject("browser.power", { action: "request" }, "does not support", "power refused on isolated (no host power API)");
   await expectReject("browser.runtime", { action: "info" }, "does not support", "runtime refused on isolated (no extension runtime)");
   await expectReject("browser.downloads.open", { downloadId: 1 }, "does not support", "downloads.open refused on isolated (no OS-handler channel)");
+  await expectReject("browser.windows.get", { lastFocused: true }, "does not support", "windows.get refused on isolated (no window manager)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

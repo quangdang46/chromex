@@ -1052,6 +1052,14 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
     inputSchema: objectSchema({}),
   },
+  "browser.windows.get": {
+    description:
+      "Get one window's chrome state — id, focused, state, bounds, incognito, tabCount (same shape as browser.windows.list entries, no tab payloads so no page-text egress). Pass args.windowId from browser.windows.list, OR args.lastFocused:true to get the window the USER is currently looking at (chrome.windows.getLastFocused) — use it to surface deliverables where the human actually is. Read-only; not tab-scoped.",
+    inputSchema: objectSchema({
+      windowId: { type: "integer", description: "Window id from browser.windows.list (omit when lastFocused is true)." },
+      lastFocused: { type: "boolean", description: "true → return the last-focused window instead of windowId." },
+    }),
+  },
   "browser.windows.create": {
     description:
       "Open a new browser window — optionally with an http(s) URL, size/position, initial state, and focus. Returns windowId plus the window's tabs (sanitized urls); the first tab enters this task's scope as openedTabId. Lets the agent work in its own window without disturbing the user's. chrome-extension backend only.",

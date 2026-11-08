@@ -1494,6 +1494,35 @@ await runScenario(
       evidence.note(`downloads.open → ${JSON.stringify(dlo).slice(0, 300)}`);
       results.downloadsOpen = { ok: dlo.reachedChrome === true, ...dlo };
 
+      // --- windows.get: real chrome.windows.get / getLastFocused ---
+      let wg = {};
+      const wlRes = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 60_000);
+      const wlWins = (wlRes?.result ?? wlRes ?? {}).windows ?? [];
+      wg.listOk = wlWins.length > 0 && typeof wlWins[0]?.id === "number";
+      const firstWinId = wlWins[0]?.id;
+      const wgById = await runner.browserToolCall(
+        taskId, "browser.windows.get", { windowId: firstWinId }, token, 60_000,
+      );
+      const wgWin = (wgById?.result ?? wgById ?? {}).window ?? {};
+      wg.byIdOk = wgWin.id === firstWinId && typeof wgWin.tabCount === "number";
+      const wgLf = await runner.browserToolCall(
+        taskId, "browser.windows.get", { lastFocused: true }, token, 60_000,
+      );
+      const wgLfWin = (wgLf?.result ?? wgLf ?? {}).window ?? {};
+      // lastFocused must be a REAL window — its id appears in windows.list
+      wg.lastFocusedOk = typeof wgLfWin.id === "number" &&
+        wlWins.some((w) => w.id === wgLfWin.id);
+      const wgBad = await runner.browserToolCall(
+        taskId, "browser.windows.get", { windowId: 999999 }, token, 60_000,
+      );
+      wg.badIdOk = (wgBad?.error?.code ?? "") !== "proto.unsupported" &&
+        /no window|not found|invalid/i.test(String(wgBad?.error?.message ?? ""));
+      evidence.note(`windows.get → ${JSON.stringify(wg).slice(0, 300)}`);
+      results.windowsGet = {
+        ok: wg.listOk === true && wg.byIdOk === true && wg.lastFocusedOk === true && wg.badIdOk === true,
+        ...wg,
+      };
+
       // --- runtime: no permission needed — verify REAL host info ---
       const rtRes = await runner.browserToolCall(
         taskId, "browser.runtime", { action: "info" }, token, 60_000,

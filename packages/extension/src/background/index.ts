@@ -454,6 +454,36 @@ const toolHostHandler = createToolHostHandler({
           tabCount: Array.isArray(w.tabs) ? w.tabs.length : 0,
         }));
     },
+    getWindow: async (windowId) => {
+      const w = await chrome.windows.get(windowId, { populate: true });
+      return {
+        id: w.id,
+        focused: w.focused === true,
+        type: w.type ?? "normal",
+        state: w.state ?? "normal",
+        incognito: w.incognito === true,
+        ...(typeof w.left === "number" ? { left: w.left } : {}),
+        ...(typeof w.top === "number" ? { top: w.top } : {}),
+        ...(typeof w.width === "number" ? { width: w.width } : {}),
+        ...(typeof w.height === "number" ? { height: w.height } : {}),
+        tabCount: Array.isArray(w.tabs) ? w.tabs.length : 0,
+      };
+    },
+    getLastFocusedWindow: async () => {
+      const w = await chrome.windows.getLastFocused({ populate: true });
+      return {
+        id: w.id,
+        focused: w.focused === true,
+        type: w.type ?? "normal",
+        state: w.state ?? "normal",
+        incognito: w.incognito === true,
+        ...(typeof w.left === "number" ? { left: w.left } : {}),
+        ...(typeof w.top === "number" ? { top: w.top } : {}),
+        ...(typeof w.width === "number" ? { width: w.width } : {}),
+        ...(typeof w.height === "number" ? { height: w.height } : {}),
+        tabCount: Array.isArray(w.tabs) ? w.tabs.length : 0,
+      };
+    },
     createWindow: async (opts) => {
       const win = await chrome.windows.create({
         ...(opts.url ? { url: opts.url } : {}),

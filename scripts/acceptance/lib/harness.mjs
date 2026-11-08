@@ -185,14 +185,16 @@ async function findPlaywrightChromiumExecutable() {
     }
   }
   if (found.length === 0) return null;
-  // Chrome for Testing only reads NM manifests from the root-owned
-  // /Library/Google/ChromeForTesting dir → connectNative always fails there.
-  // Real Chromium reads ~/Library/Application Support/Chromium — prefer it.
-  const realChromium = found.find((p) => p.includes("/Chromium.app/"));
+  // Newest revision first — current playwright ships Chrome-for-Testing
+  // builds (chromium-1254+) which DO read profile-local
+  // NativeMessagingHosts manifests (verified: cdp-headless authed=2).
+  // Older leftover dirs (e.g. chromium-1134 real Chromium) can be
+  // broken/stale — preferring them caused SIGTRAP launch failures.
   const override = process.env.CHROMEX_ACCEPTANCE_BROWSER;
   if (override === "cft") return found.find((p) => p.includes("Chrome for Testing")) ?? found[0];
-  if (override === "chromium") return realChromium ?? found[0];
-  return realChromium ?? found[0];
+  if (override === "chromium")
+    return found.find((p) => p.includes("/Chromium.app/")) ?? found[0];
+  return found[0];
 }
 
 export async function resolveChromiumLaunchOptions() {
@@ -252,6 +254,9 @@ export async function launchChromiumWithExtension({ gatewayHome, headless, prepa
 
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: useHeadless,
+    // generous default — heavily-loaded dev machines can starve the
+    // DevTools pipe handshake past playwright's 30s default
+    timeout: Number(process.env.CHROMEX_ACCEPTANCE_LAUNCH_TIMEOUT ?? 300_000),
     acceptDownloads: true,
     args: [
       `--disable-extensions-except=${staged.path}`,

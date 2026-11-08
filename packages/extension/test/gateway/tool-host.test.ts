@@ -290,6 +290,39 @@ describe("tool host (P1-09)", () => {
     expect(res.windows[1]).toMatchObject({ id: 2, focused: false, state: "minimized", width: 800 });
   });
 
+  test("windows.get resolves windowId and lastFocused, validates args", async () => {
+    const got: number[] = [];
+    const d = deps();
+    d.getWindow = async (id: number) => {
+      got.push(id);
+      return id === 5
+        ? { id: 5, focused: false, state: "normal", tabCount: 2, incognito: false }
+        : null;
+    };
+    d.getLastFocusedWindow = async () => ({ id: 9, focused: true, state: "maximized", tabCount: 4 });
+    const h = createToolHostHandler(d);
+    const byId = (await h(req("browser.windows.get", { windowId: 5 }))) as { window: Record<string, unknown> };
+    expect(byId.window).toMatchObject({ id: 5, tabCount: 2 });
+    expect(got).toEqual([5]);
+    const lf = (await h(req("browser.windows.get", { lastFocused: true }))) as {
+      window: Record<string, unknown>; lastFocused?: boolean;
+    };
+    expect(lf.window).toMatchObject({ id: 9, focused: true, state: "maximized" });
+    expect(lf.lastFocused).toBe(true);
+
+    await expect(h(req("browser.windows.get", {}))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.windows.get", { windowId: 1, lastFocused: true }))).rejects.toMatchObject({
+      code: "proto.invalid",
+    });
+    await expect(h(req("browser.windows.get", { windowId: -1 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // unknown window → honest failure, not a fabricated entry
+    await expect(h(req("browser.windows.get", { windowId: 77 }))).rejects.toThrow(/not found/);
+    // deps absent → proto.unsupported
+    const h2 = createToolHostHandler(deps({}));
+    await expect(h2(req("browser.windows.get", { windowId: 1 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    await expect(h2(req("browser.windows.get", { lastFocused: true }))).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("windows.create validates url/state and surfaces first tab into scope", async () => {
     const d = deps();
     let created: Record<string, unknown> | undefined;

@@ -337,6 +337,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.downloads.cancel",
   "browser.downloads.open",
   "browser.windows.list",
+  "browser.windows.get",
   "browser.windows.create",
   "browser.windows.update",
   "browser.history.search",

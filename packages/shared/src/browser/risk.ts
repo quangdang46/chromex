@@ -157,6 +157,7 @@ const READ_TOOLS = new Set([
   // metadata, same read+egress class as console/network.
   "browser.page.coverage",
   "browser.windows.list",
+  "browser.windows.get",
   // browsing history is personal data leaving the browser — same
   // egress gate as page text (approval for non-local destinations)
   "browser.history.search",

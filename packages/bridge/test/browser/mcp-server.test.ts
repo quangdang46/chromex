@@ -366,6 +366,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.downloads.cancel": { downloadId: 42 },
   "browser.downloads.open": { downloadId: 42 },
   "browser.windows.list": {},
+  "browser.windows.get": { windowId: 1 },
   "browser.windows.create": { url: "https://example.com", focused: false },
   "browser.windows.update": { windowId: 1, focused: true },
 };
