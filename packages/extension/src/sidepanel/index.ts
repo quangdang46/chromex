@@ -15279,6 +15279,10 @@ type SendPromptOptions = {
   displayMessage?: string;
   preserveComposerDraft?: boolean;
   profileId?: string;
+  /** fired once the runtime accepts the prompt (prompt.send/turn.steer
+   *  returned a real result) — lets the composer queue distinguish
+   *  "delivered" from early-return paths that consume nothing */
+  onPromptAccepted?: () => void;
 };
 
 function clearOrRestoreComposerDraftAfterSubmit(
@@ -15400,7 +15404,19 @@ async function flushQueuedComposerMessage(conversationId: string): Promise<void>
       return;
     }
     state.fileAttachments = [...next.fileAttachments];
-    await sendPrompt(next.text, next.profileId ? { profileId: next.profileId } : {});
+    let accepted = false;
+    await sendPrompt(next.text, {
+      ...(next.profileId ? { profileId: next.profileId } : {}),
+      onPromptAccepted: () => {
+        accepted = true;
+      },
+    });
+    if (!accepted) {
+      // sendPrompt early-returned (guard reject, auth, voice command…)
+      // without delivering anything — put the message back at the head.
+      requeueQueuedComposerMessage(conversationId, next);
+      persistQueuedComposerMessages();
+    }
   } catch {
     // Never drop a queued message on a failed flush — put it back at the head.
     requeueQueuedComposerMessage(conversationId, next);
@@ -15455,6 +15471,7 @@ async function sendPrompt(
 
   if (smokeTestMode) {
     smokeDryRunSubmissions.push(message);
+    options.onPromptAccepted?.();
     state.composerDraft = "";
     clearTransientComposerCommandPill();
     if (composer) {
@@ -15477,6 +15494,7 @@ async function sendPrompt(
       if (isCancelledResult(response)) {
         return;
       }
+      options.onPromptAccepted?.();
       state.composerDraft = "";
       clearTransientComposerCommandPill();
       state.liveCaption = message;
@@ -15684,6 +15702,7 @@ async function sendPrompt(
       });
       return;
     }
+    options.onPromptAccepted?.();
     if (!sendAsTurnSteer && result.planClarification?.question?.trim()) {
       state.currentConversationId = result.currentConversationId ?? state.currentConversationId;
       state.actionCards = mergePromptResultActionCards(state.actionCards, result.actionCards ?? []);

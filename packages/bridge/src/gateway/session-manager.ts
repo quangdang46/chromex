@@ -261,7 +261,7 @@ export class SessionManager {
       error: null,
     };
     this.opts.store.createTask(task);
-    this.#persist(taskId, { type: "task.created", taskId, profileId: task.profileId, providerId: task.providerId, backend: task.backend });
+    this.#publishLive(taskId, { type: "task.created", taskId, profileId: task.profileId, providerId: task.providerId, backend: task.backend });
     this.#setTaskStatus(task, "active");
     return this.opts.store.getTask(taskId)!;
   }
@@ -343,7 +343,7 @@ export class SessionManager {
       startedAt: null,
     };
     store.upsertTurn(turn);
-    this.#persist(taskId, {
+    this.#publishLive(taskId, {
       type: "user.message.created",
       turnId,
       message: {
@@ -362,7 +362,7 @@ export class SessionManager {
         return { turnId, queued: true, duplicate: false };
       }
       store.upsertTurn(transitionTurn(turn, "failed", { error: busyError() }));
-      this.#persist(taskId, {
+      this.#publishLive(taskId, {
         type: "turn.failed",
         turnId,
         error: busyError(),
@@ -381,11 +381,10 @@ export class SessionManager {
     // 1b: turn.started + started_at BEFORE provider call (§4.4.1 step 5)
     const started = transitionTurn(turn, "running", { startedAt: Date.now() });
     store.upsertTurn(started);
-    // 1b persist is gateway-synthesized — #persist alone never reaches
-    // clients, so broadcast the envelope explicitly (turn boundaries
-    // drive sidepanel activeTurn state + composer queue reconcile).
-    const startedEnv = this.#persist(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
-    this.#publish(task.taskId, startedEnv, false);
+    // gateway-synthesized — #persist alone never reaches clients, so
+    // publish explicitly (turn boundaries drive sidepanel activeTurn
+    // state + composer queue reconcile).
+    this.#publishLive(task.taskId, { type: "turn.started", turnId: turn.turnId } as DurableTaskEvent);
     this.#armTurnTimeout(task.taskId, turn.turnId);
     if (task.status === "queued") {
       this.#setTaskStatus(task, "active");
@@ -410,7 +409,7 @@ export class SessionManager {
         error: toProtocolError(err, "provider.turn_start_failed"),
       });
       store.upsertTurn(failed);
-      this.#persist(task.taskId, {
+      this.#publishLive(task.taskId, {
         type: "turn.failed",
         turnId: turn.turnId,
         error: failed.error!,
@@ -503,7 +502,7 @@ export class SessionManager {
     for (const t of store.listTurns(taskId)) {
       if (t.status === "queued") {
         store.upsertTurn(transitionTurn(t, "cancelled", { endedAt: Date.now(), stopReason: reason }));
-        this.#persist(taskId, { type: "turn.cancelled", turnId: t.turnId, reason } as DurableTaskEvent);
+        this.#publishLive(taskId, { type: "turn.cancelled", turnId: t.turnId, reason } as DurableTaskEvent);
       }
     }
     // any still-running turn the interrupt couldn't confirm → unknown
@@ -516,7 +515,7 @@ export class SessionManager {
     try {
       if (["active", "paused", "queued"].includes(fresh.status)) {
         this.#setTaskStatus(fresh, "cancelled");
-        this.#persist(taskId, { type: "task.cancelled", reason } as DurableTaskEvent);
+        this.#publishLive(taskId, { type: "task.cancelled", reason } as DurableTaskEvent);
       }
     } finally {
       this.cancelling.delete(taskId);
@@ -620,7 +619,7 @@ export class SessionManager {
     }
     const next = { ...task, backend, updatedAt: Date.now() };
     this.opts.store.putTask(next);
-    this.#persist(taskId, {
+    this.#publishLive(taskId, {
       type: "task.backend_changed",
       from: task.backend,
       to: backend,
@@ -888,7 +887,7 @@ export class SessionManager {
     }
     if (task.status === "active" && !this.cancelling.has(taskId)) {
       this.#setTaskStatus(task, "completed");
-      this.#persist(taskId, { type: "task.completed" } as DurableTaskEvent);
+      this.#publishLive(taskId, { type: "task.completed" } as DurableTaskEvent);
     }
   }
 
@@ -921,11 +920,20 @@ export class SessionManager {
     return this.opts.store.appendTaskEvent(taskId, event);
   }
 
+  /** Gateway-synthesized durable events must reach live clients too —
+   *  #persist alone only lands in the store, so without this push the
+   *  UI learns turn/task boundaries solely on the next task.sync. */
+  #publishLive(taskId: string, event: DurableTaskEvent): DurableTaskEventEnvelope {
+    const env = this.#persist(taskId, event);
+    this.#publish(taskId, env, false);
+    return env;
+  }
+
   #setTaskStatus(task: TaskRecord, to: TaskStatus, pauseReason?: PauseReason): TaskRecord {
     const next = transitionTask(task, to, pauseReason);
     this.opts.store.putTask(next);
     if (task.status !== to) {
-      this.#persist(task.taskId, {
+      this.#publishLive(task.taskId, {
         type: "task.status_changed",
         from: task.status,
         to,
@@ -978,7 +986,7 @@ export class SessionManager {
     if (interruptWait) await Promise.race([interruptWait, grace]);
     const after = this.opts.store.getTurn(turnId);
     if (after && ["completed", "failed", "cancelled", "unknown"].includes(after.status)) {
-      this.#persist(taskId, {
+      this.#publishLive(taskId, {
         type: "provider.notice",
         level: "warn",
         message: `turn exceeded budget ${budgetMs}ms; stop confirmed`,
@@ -1009,7 +1017,7 @@ export class SessionManager {
     } else if (turn.status === "running") {
       this.opts.store.upsertTurn({ ...turn, status: "unknown", endedAt: Date.now(), stopReason: reason });
     }
-    this.#persist(taskId, { type: "turn.unknown", turnId, reason } as DurableTaskEvent);
+    this.#publishLive(taskId, { type: "turn.unknown", turnId, reason } as DurableTaskEvent);
   }
 
   /** Attention for snapshots/hello — derived per §4.7. */

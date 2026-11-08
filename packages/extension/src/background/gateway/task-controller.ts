@@ -215,7 +215,29 @@ export class TaskController {
    *  Duplicate/out-of-order replay (seq ≤ lastSeq) is dropped — replay
    *  and live push can overlap after reconnect. */
   #applyEvent(env: DurableTaskEventEnvelope): void {
-    const view = this.#tasks.get(env.taskId);
+    let view = this.#tasks.get(env.taskId);
+    if (!view) {
+      // Live task.created can arrive before any hello seeds the view —
+      // create a minimal one so listTasks()/syncTask see it; the
+      // following task.status_changed corrects status/attention.
+      const p = env.payload as { type?: string; backend?: { id?: string } };
+      if (p.type !== "task.created") {
+        this.#opts.onTaskEvent?.(env.taskId, env);
+        this.#opts.onTasksChanged?.();
+        return;
+      }
+      view = {
+        taskId: env.taskId,
+        status: "active",
+        lastSeq: 0,
+        lastReadSeq: 0,
+        attention: null,
+        title: null,
+        backendId: p.backend?.id ?? null,
+        updatedAt: Date.now(),
+      };
+      this.#tasks.set(env.taskId, view);
+    }
     if (view) {
       if (env.seq <= view.lastSeq && view.lastSeq > 0) return;
       view.lastSeq = Math.max(view.lastSeq, env.seq);
