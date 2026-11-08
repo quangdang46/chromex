@@ -1006,6 +1006,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (expression.length === 0 || expression.length > 65536) {
       throw protocolError("proto.invalid", "browser.page.evaluate requires args.expression (≤64KiB)");
     }
+    if (args.ref !== undefined) {
+      throw protocolError(
+        "proto.invalid",
+        "element-scoped evaluate (pz pierce refs) is chrome-extension only — isolated has no closed-shadow-root pierce",
+      );
+    }
     const timeoutMs =
       typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
         ? Math.min(Math.max(args.timeoutMs, 100), 15_000)

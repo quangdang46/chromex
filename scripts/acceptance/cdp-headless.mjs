@@ -2025,8 +2025,16 @@ await runScenario(
                 { tabId: pjTab, expression: "window.__pierceValue||''" }, token, 60_000,
               ).catch(() => null);
               pj.valueOk = String(ev2?.result?.value ?? ev2?.value ?? "") === "pierce-text!";
+              // element-scoped evaluate — `this` binds to the closed-root
+              // input; reads state content scripts cannot reach
+              const pev = await runner.browserToolCall(
+                taskId, "browser.page.evaluate",
+                { tabId: pjTab, ref: inp.ref, expression: "this.value" },
+                token, 60_000,
+              ).catch(() => null);
+              pj.evalOk = String(pev?.result?.value ?? "") === "pierce-text!";
             } else {
-              pj.fillOk = pj.typeOk = pj.valueOk = false;
+              pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
             }
             const filt = await runner.browserToolCall(
               taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
@@ -2034,12 +2042,12 @@ await runScenario(
             pj.filterOk = ((filt?.result ?? filt ?? {}).elements ?? []).length >= 1;
           } else {
             pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
-            pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = false;
+            pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
           }
           await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
         } else {
           pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
-          pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = false;
+          pj.inpOk = pj.fillOk = pj.typeOk = pj.valueOk = pj.evalOk = false;
         }
       } catch (e) {
         pj.error = String(e?.message ?? e).slice(0, 200);
@@ -2049,7 +2057,8 @@ await runScenario(
         ok: pj.createOk === true && pj.rootsOk === true && pj.btnOk === true &&
           pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
           pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true &&
-          pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true,
+          pj.inpOk === true && pj.fillOk === true && pj.typeOk === true && pj.valueOk === true &&
+          pj.evalOk === true,
         ...pj,
       };
 

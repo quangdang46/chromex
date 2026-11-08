@@ -4306,6 +4306,59 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     ).rejects.toMatchObject({ code: "browser.element_not_found" });
   });
 
+  test("pz ref evaluate scopes `this` to the closed-root element", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "INPUT", backendNodeId: 42,
+                attributes: ["id", "field"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "textbox" } }],
+      }),
+      "DOM.resolveNode": () => ({ object: { objectId: "obj-9" } }),
+      "Runtime.callFunctionOn": (params: Record<string, unknown>) => ({
+        result: { value: String(params.functionDeclaration).includes("this.value") ? "read-ok" : "unexpected" },
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(524, cdp));
+    const res = (await h(req("browser.page.pierce", { tabId: 524 }))) as {
+      elements: Array<{ ref: string }>;
+    };
+    const ref = res.elements[0]!.ref;
+    const ev = (await h(req("browser.page.evaluate", {
+      tabId: 524, ref, expression: "this.value",
+    }))) as { ok: boolean; value: unknown; pierced?: boolean };
+    expect(ev.ok).toBe(true);
+    expect(ev.value).toBe("read-ok");
+    expect(ev.pierced).toBe(true);
+    // frameId + pz ref → proto.invalid
+    await expect(
+      h(req("browser.page.evaluate", { tabId: 524, ref, expression: "1", frameId: 2 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // unknown ref → element_not_found
+    await expect(
+      h(req("browser.page.evaluate", { tabId: 524, ref: "pz-999999", expression: "1" })),
+    ).rejects.toMatchObject({ code: "browser.element_not_found" });
+    // no CDP dep → proto.unsupported
+    const h2 = createToolHostHandler(deps());
+    await expect(
+      h2(req("browser.page.evaluate", { tabId: 525, ref: "pz-1", expression: "1" })),
+    ).rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.pierce → proto.unsupported without CDP dep; frameId/text validated", async () => {
     const h = createToolHostHandler(deps());
     await expect(h(req("browser.page.pierce", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });

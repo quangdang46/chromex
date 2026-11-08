@@ -315,6 +315,13 @@ try {
     "unsupported",
     "pierce refused on isolated",
   );
+  // element-scoped evaluate (pz refs) is pierce-only → also refused here
+  await expectReject(
+    "browser.page.evaluate",
+    { tabId: sTab, expression: "this.value", ref: "pz-1" },
+    "invalid",
+    "pierce-ref evaluate refused on isolated",
+  );
 
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });

@@ -1482,9 +1482,6 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // approval-gated by the risk classifier — the expression is
         // opaque to it. Result is JSON-bounded; page-thrown errors come
         // back as {ok:false,error} rather than a tool failure.
-        if (!deps.runInMainWorld) {
-          throw toolError("proto.unsupported", "page evaluation requires the scripting permission");
-        }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
         const expression = str(args.expression);
         if (expression === undefined || expression.trim().length === 0) {
@@ -1498,6 +1495,20 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
             ? Math.min(Math.max(args.timeoutMs, 100), 15_000)
             : 10_000;
+        // pz refs scope the expression to a closed-shadow-root element —
+        // `this` binds to the node via Runtime.callFunctionOn. Same
+        // approval gate applies (opaque expression, risk classifier).
+        const evalRef = str(args.ref);
+        if (evalRef !== undefined && PIERCE_REF_RE.test(evalRef)) {
+          if (frameId !== 0) {
+            throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+          }
+          cdpRequired(deps);
+          return await pierceEvaluate(deps, tabId, evalRef, expression, timeoutMs);
+        }
+        if (!deps.runInMainWorld) {
+          throw toolError("proto.unsupported", "page evaluation requires the scripting permission");
+        }
         const evaluateDispatchedAt = Date.now();
         let timer: ReturnType<typeof setTimeout> | undefined;
         let res = (await Promise.race([
@@ -5525,6 +5536,74 @@ async function pierceSelectAll(session: CdpSession, backendNodeId: number): Prom
       "browser.action_failed",
       "pierce fill target is not fillable (needs input/textarea/contenteditable)",
     );
+  }
+}
+
+/** Element-scoped evaluate for pz refs — the READ counterpart of pierce
+ *  actions. Runtime.callFunctionOn binds `this` to the closed-root node,
+ *  so `return this.value` / `this.textContent` reach state content
+ *  scripts cannot. Same expression contract as page.evaluate
+ *  (`return (EXPR)` in an async context, awaitPromise). */
+async function pierceEvaluate(
+  deps: ToolHostDeps,
+  tabId: number,
+  ref: string,
+  expression: string,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
+  const backendNodeId = pierceBackendNodeId(tabId, ref);
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const node = (await session.send("DOM.resolveNode", { backendNodeId })) as {
+      object?: { objectId?: string };
+    };
+    const objectId = node?.object?.objectId;
+    if (!objectId) {
+      throw toolError("browser.element_not_found", "pierce target detached — re-run browser.page.pierce");
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cdpRes = (await Promise.race([
+      session.send<{
+        result?: { value?: unknown };
+        exceptionDetails?: { text?: string; exception?: { description?: string } };
+      }>("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration: `async function(){ return (\n${expression}\n); }`,
+        returnByValue: true,
+        awaitPromise: true,
+      }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(toolError("browser.timeout", `pierce evaluate exceeded ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer))) as {
+      result?: { value?: unknown };
+      exceptionDetails?: { text?: string; exception?: { description?: string } };
+    };
+    const exc = cdpRes?.exceptionDetails;
+    if (exc) {
+      throw toolError(
+        "browser.action_failed",
+        `pierce evaluation failed: ${exc.exception?.description ?? exc.text ?? "page threw"}`,
+      );
+    }
+    let value = cdpRes?.result?.value ?? null;
+    let truncated = false;
+    try {
+      const json = JSON.stringify(value);
+      if (json !== undefined && json.length > 256 * 1024) {
+        value = typeof value === "string" ? value.slice(0, 256 * 1024) : json.slice(0, 256 * 1024);
+        truncated = true;
+      }
+    } catch {
+      value = null;
+      truncated = true;
+    }
+    return { ok: true, value, truncated, pierced: true, resolvedTabId: tabId };
+  } finally {
+    await release();
   }
 }
 
