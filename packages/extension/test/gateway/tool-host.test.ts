@@ -2494,10 +2494,12 @@ describe("tool host tab scope (chromex-9e3)", () => {
     });
     const res = (await h(scopedReq("browser.page.get", { tabId: 9 }, scope))) as { resolvedTabId: number };
     expect(res.resolvedTabId).toBe(9);
-    // page.get resolves via getTab; the only sendToTab is the read-only
-    // scrollpos probe — never a DOM mutation.
-    expect(d.sent).toHaveLength(1);
-    expect((d.sent[0].message as { type: string }).type).toBe("page.scrollpos");
+    // page.get resolves via getTab; the only sendToTab calls are the
+    // read-only scrollpos + page.state probes — never a DOM mutation.
+    expect(d.sent.map((s) => (s.message as { type: string }).type)).toEqual([
+      "page.scrollpos",
+      "page.state",
+    ]);
   });
 
   test("bound task defaults to its bound tab, not the active tab", async () => {
@@ -2820,6 +2822,52 @@ describe("tool host expect verification (chromex-0fza)", () => {
     await expect(h(req("browser.page.get", { key: "bogus" }))).rejects.toMatchObject({
       code: "proto.invalid",
     });
+  });
+
+  test("page.get surfaces liveness fields; probe failure omits page honestly", async () => {
+    const d = deps({
+      getTab: vi.fn(async () => ({
+        id: 7,
+        url: "https://x",
+        title: "X",
+        active: true,
+        status: "complete",
+        discarded: false,
+        autoDiscardable: true,
+        mutedInfo: { muted: true },
+      })),
+      sendToTab: vi.fn(async (_tabId: number, msg: { type: string }) => {
+        if (msg.type === "page.state") {
+          return { readyState: "complete", visibilityState: "visible", hasFocus: true, online: true };
+        }
+        return { scrollY: 0 };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.get"))) as {
+      discarded?: boolean;
+      autoDiscardable?: boolean;
+      muted?: boolean;
+      page?: { readyState?: string; visibilityState?: string };
+    };
+    expect(res.discarded).toBe(false);
+    expect(res.autoDiscardable).toBe(true);
+    expect(res.muted).toBe(true);
+    expect(res.page?.readyState).toBe("complete");
+    expect(res.page?.visibilityState).toBe("visible");
+
+    // Unreachable content script → page field omitted, tab fields kept.
+    const d2 = deps({
+      sendToTab: vi.fn(async () => {
+        throw new Error("Could not establish connection");
+      }),
+    });
+    const res2 = (await createToolHostHandler(d2)(req("browser.page.get"))) as {
+      page?: unknown;
+      url?: string;
+    };
+    expect(res2.page).toBeUndefined();
+    expect(res2.url).toBe("https://x/");
   });
 });
 

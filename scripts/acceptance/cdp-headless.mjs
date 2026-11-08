@@ -358,6 +358,21 @@ await runScenario(
       const crossFrame = frames.find(
         (f) => String(f.url ?? "").includes("localhost") && String(f.url ?? "").includes("/iframe-child"),
       );
+      // page.get liveness probe: real readyState/visibilityState plus
+      // chrome.tabs fields (status/discarded/autoDiscardable/muted).
+      const getPayload = getFrames?.result ?? getFrames ?? {};
+      results.pageGetLiveness = {
+        ok:
+          typeof getPayload?.page?.readyState === "string" &&
+          typeof getPayload?.page?.visibilityState === "string" &&
+          typeof getPayload?.status === "string",
+        page: getPayload?.page,
+        status: getPayload?.status,
+        discarded: getPayload?.discarded,
+        autoDiscardable: getPayload?.autoDiscardable,
+        muted: getPayload?.muted,
+      };
+      evidence.note(`page.get liveness → ${JSON.stringify(results.pageGetLiveness)}`);
       let framePress = null;
       let koutText = null;
       if (childFrame?.frameId) {

@@ -646,9 +646,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #get(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     const key = typeof args.key === "string" ? args.key : "text";
-    // Scroll/viewport parity with the extension host's page.scrollpos
-    // probe — evaluate is backend-internal, not the agent-facing tool.
-    const scroll = await page
+    // Scroll/viewport + page-liveness parity with the extension host's
+    // page.scrollpos / page.state probes — evaluate is backend-internal,
+    // not the agent-facing tool.
+    const probe = await page
       .evaluate(() => ({
         scrollX: window.scrollX,
         scrollY: window.scrollY,
@@ -656,13 +657,37 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         viewportHeight: window.innerHeight,
         documentWidth: document.documentElement.scrollWidth,
         documentHeight: document.documentElement.scrollHeight,
+        readyState: document.readyState,
+        visibilityState: document.visibilityState,
+        hasFocus: document.hasFocus(),
+        online: navigator.onLine,
       }))
       .catch(() => undefined);
+    const scroll = probe
+      ? {
+          scrollX: probe.scrollX,
+          scrollY: probe.scrollY,
+          viewportWidth: probe.viewportWidth,
+          viewportHeight: probe.viewportHeight,
+          documentWidth: probe.documentWidth,
+          documentHeight: probe.documentHeight,
+        }
+      : undefined;
+    const pageState = probe
+      ? {
+          readyState: probe.readyState,
+          visibilityState: probe.visibilityState,
+          hasFocus: probe.hasFocus,
+          online: probe.online,
+        }
+      : undefined;
     const context = await this.#contextFor(taskId);
     const base = {
       tabId: context.pages().indexOf(page),
       url: stripQuery(page.url()),
       ...(scroll ? { scroll } : {}),
+      ...(pageState ? { page: pageState } : {}),
+      ...(pageState ? { status: pageState.readyState === "loading" ? "loading" : "complete" } : {}),
     };
     if (key === "text") {
       const text = await page.locator("body").evaluate(deepInnerText).catch(() => "");

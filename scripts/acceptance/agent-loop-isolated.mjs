@@ -155,6 +155,9 @@ try {
   await call("browser.page.scroll", { tabId: tTab, direction: "down", amountPx: 1200 });
   const pos = await call("browser.page.get", { tabId: tTab });
   assert((pos?.scroll?.scrollY ?? 0) > 0, `scroll moved viewport (scrollY=${pos?.scroll?.scrollY})`);
+  assert(pos?.page?.readyState === "complete", `page.get liveness probe readyState (got ${pos?.page?.readyState})`);
+  assert(typeof pos?.page?.visibilityState === "string", "page.get liveness probe visibilityState");
+  assert(pos?.status === "complete", `page.get status mapped from readyState (got ${pos?.status})`);
 
   // ── Loop 6b: drag — coordinate form and element form ───────────────
   const drag = await call("browser.tab.create", { url: fixture.url("/drag"), active: false });

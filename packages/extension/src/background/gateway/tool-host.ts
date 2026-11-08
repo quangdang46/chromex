@@ -1381,6 +1381,16 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         } catch {
           scroll = undefined;
         }
+        // Page-liveness probe (readyState/visibilityState/focus/online) —
+        // same honest-omission rule as scroll: unreachable content script
+        // (crashed tab, chrome:// page, no injection) → field absent.
+        let pageState: Record<string, unknown> | undefined;
+        try {
+          const ps = (await deps.sendToTab(tabId, { type: "page.state" })) as Record<string, unknown>;
+          if (ps && typeof ps.readyState === "string") pageState = ps;
+        } catch {
+          pageState = undefined;
+        }
         // Same privacy rule as tabs.list/frames — query/hash can carry
         // tokens; strip to origin+pathname.
         let safeTabUrl = "";
@@ -1421,6 +1431,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           ...(typeof tab.windowId === "number" ? { windowId: tab.windowId } : {}),
           ...(typeof tab.status === "string" ? { status: tab.status } : {}),
           ...(typeof tab.pinned === "boolean" ? { pinned: tab.pinned } : {}),
+          ...(typeof tab.discarded === "boolean" ? { discarded: tab.discarded } : {}),
+          ...(typeof tab.autoDiscardable === "boolean" ? { autoDiscardable: tab.autoDiscardable } : {}),
+          ...(typeof tab.mutedInfo?.muted === "boolean" ? { muted: tab.mutedInfo.muted } : {}),
+          ...(pageState ? { page: pageState } : {}),
           ...(typeof tab.groupId === "number" ? { groupId: tab.groupId } : {}),
           ...(scroll ? { scroll } : {}),
           ...(frames ? { frames } : {}),

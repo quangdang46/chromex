@@ -327,6 +327,16 @@ function chromexRuntimeMessageListener(
     return false;
   }
 
+  if (message.type === "page.state") {
+    sendResponse({
+      readyState: document.readyState,
+      visibilityState: document.visibilityState,
+      hasFocus: document.hasFocus(),
+      online: navigator.onLine,
+    });
+    return false;
+  }
+
   /** §4.8: when the caller carries expectedTarget facts (approved by
    *  the risk classifier), the resolved element must still match them —
    *  checked synchronously with resolution, the closest atomic point
