@@ -229,6 +229,35 @@ try {
   const netFiltered = await call("browser.page.network", { tabId: fTab, status: "2xx", type: "fetch" });
   assert((netFiltered?.requests ?? []).some((r) => String(r.url).includes("/api/ping")), "status/type filters work");
 
+  // ── Loop 11: open shadow DOM on the isolated backend — playwright
+  //  locators pierce open roots natively; text/extract must too ─────
+  const shTab = await call("browser.tab.create", { url: fixture.url("/shadow"), active: false });
+  const shId = shTab?.tabId ?? shTab?.id;
+  const shGet = await call("browser.page.get", { tabId: shId, key: "text" });
+  assert(
+    String(shGet?.value ?? "").includes("shadow-secret-text"),
+    "page.get text sees open-shadow content",
+  );
+  const shExt = await call("browser.page.extract", { tabId: shId, selector: "#stext" });
+  assert(
+    String(shExt?.text ?? "").includes("shadow-secret-text"),
+    "extract reads open-shadow content",
+  );
+  await call("browser.page.fill", { tabId: shId, selector: "#sin", value: "shadow-typed" });
+  const shVal = await call("browser.page.evaluate", {
+    expression: "document.getElementById('host').shadowRoot.getElementById('sin').value",
+  });
+  assert(
+    String(shVal?.value ?? shVal?.result?.value ?? "") === "shadow-typed",
+    `fill reached the open-shadow input (got ${JSON.stringify(shVal).slice(0, 120)})`,
+  );
+  await call("browser.page.click", { tabId: shId, selector: "#sbtn" });
+  const shOut = await call("browser.page.extract", { tabId: shId, selector: "#out" });
+  assert(
+    String(shOut?.text ?? "").includes("shadow-clicked"),
+    "click reached the open-shadow button and fired its handler",
+  );
+
   // ── Honesty checks: refused paths must fail loudly, never fake ─────
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);

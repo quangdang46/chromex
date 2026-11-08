@@ -416,7 +416,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const b = boundText(aria ?? "", MAX_EXTRACT_CHARS);
       return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
     } catch {
-      const text = await page.locator("body").innerText().catch(() => "");
+      const text = await page.locator("body").evaluate(deepInnerText).catch(() => "");
       const b = boundText(text, MAX_EXTRACT_CHARS);
       return { snapshot: b.text, truncated: b.truncated, url: stripQuery(page.url()) };
     }
@@ -444,7 +444,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ...(scroll ? { scroll } : {}),
     };
     if (key === "text") {
-      const text = await page.locator("body").innerText().catch(() => "");
+      const text = await page.locator("body").evaluate(deepInnerText).catch(() => "");
       return { value: boundText(text, MAX_EXTRACT_CHARS).text, ...base };
     }
     if (key === "title") return { value: await page.title(), ...base };
@@ -464,7 +464,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const raw =
       format === "html"
         ? await locator.evaluate((el) => (el as Element).outerHTML).catch(() => "")
-        : await locator.innerText().catch(() => "");
+        : await locator.evaluate(deepInnerText).catch(() => "");
     const bounded = boundText(raw, Math.min(maxChars, MAX_EXTRACT_CHARS));
     return { text: bounded.text, truncated: bounded.truncated, url: stripQuery(page.url()) };
   }
@@ -752,7 +752,26 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           : null;
     const facts = await page
       .evaluate((selector: string | null) => {
-        const el = selector ? document.querySelector(selector) : document.activeElement;
+        // querySelector does not cross shadow boundaries — mirror the
+        // extension host's deep lookup so shadow targets describe the
+        // same element the (shadow-piercing) locator will act on.
+        const deepQueryAll = (sel: string): Element[] => {
+          const out = Array.from(document.querySelectorAll(sel));
+          const walk = (scope: ParentNode): void => {
+            for (const node of Array.from(scope.querySelectorAll("*"))) {
+              const sr = (node as HTMLElement).shadowRoot;
+              if (sr) {
+                out.push(...Array.from(sr.querySelectorAll(sel)));
+                walk(sr);
+              }
+            }
+          };
+          walk(document);
+          return out;
+        };
+        const el = selector
+          ? (deepQueryAll(selector)[0] ?? null)
+          : document.activeElement;
         if (!(el instanceof HTMLElement)) {
           return { found: false, reason: "not_found" };
         }
@@ -1629,6 +1648,38 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 }
 
 const PRESS_MODIFIERS = new Set(["control", "alt", "shift", "meta"]);
+
+/** innerText does not cross shadow boundaries — collect each open
+ *  shadow root's top-level children's innerText recursively so
+ *  web-component UIs are visible to text extraction. Runs in-page via
+ *  locator.evaluate; must stay self-contained (Playwright serializes
+ *  the function source). */
+function deepInnerText(el: Element): string {
+  const parts: string[] = [];
+  const own = (el as HTMLElement).innerText;
+  if (own) parts.push(own);
+  const expand = (sr: ShadowRoot): void => {
+    for (const child of Array.from(sr.children)) {
+      if (child instanceof HTMLElement && child.innerText) parts.push(child.innerText);
+    }
+  };
+  const walk = (scope: ParentNode): void => {
+    const self = scope instanceof Element ? (scope as HTMLElement).shadowRoot : null;
+    if (self) {
+      expand(self);
+      walk(self);
+    }
+    for (const node of Array.from(scope.querySelectorAll("*"))) {
+      const sr = (node as HTMLElement).shadowRoot;
+      if (sr) {
+        expand(sr);
+        walk(sr);
+      }
+    }
+  };
+  walk(el);
+  return parts.join("\n");
+}
 
 /** Build a Playwright chord ("Control+Shift+A") from key + modifier args.
  *  Modifier names are case-insensitive; unknown entries are dropped. */
