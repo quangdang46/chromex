@@ -71,6 +71,9 @@ export interface ActionContext {
   /** browser.siteSettings sub-action — get is a read, set/clear change
    *  what an origin is allowed to do across the whole profile. */
   siteSettingsOp?: string;
+  /** browser.sessions sub-action — list reads recently-closed tabs/
+   *  windows (personal URLs), restore reopens one (browser mutation). */
+  sessionOp?: string;
   /**
    * Data LEAVING the browser. Separate dimension: dataClass × destination
    * (trust boundary). Plan §4.8 P1.7/P1.8.
@@ -527,6 +530,23 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       // Reads fall through to the agentEgress dimension above —
       // bookmark titles/URLs are personal data (page-text class).
       return verdict("read", { reason: "bookmark read" });
+    }
+
+    case "browser.sessions": {
+      const op = ctx.sessionOp ?? "list";
+      if (op === "restore") {
+        // Reopening a closed tab/window loads an arbitrary previously-
+        // visited URL — browser mutation, never task-eligible.
+        return verdict("external_mutation", {
+          needsApproval: true,
+          kind: "browser_action",
+          allowTaskEligible: false,
+          reason: "session restore reopens a closed tab/window",
+        });
+      }
+      // list reads recently-closed entries — personal URLs, page-text
+      // egress class (handled by the agentEgress dimension above).
+      return verdict("read", { reason: "recently-closed session list" });
     }
 
     case "browser.page.caches": {

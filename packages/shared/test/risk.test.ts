@@ -330,6 +330,19 @@ describe("classifyActionRisk — §4.8 matrix", () => {
     expect(classifyActionRisk(ctx({ action: "browser.tabGroups" })).risk).toBe("read");
   });
 
+  test("browser.sessions: list is read, restore always approval", () => {
+    const list = classifyActionRisk(ctx({ action: "browser.sessions", sessionOp: "list" }));
+    expect(list.risk).toBe("read");
+    expect(list.needsApproval).toBe(false);
+    const restore = classifyActionRisk(ctx({ action: "browser.sessions", sessionOp: "restore" }));
+    expect(restore.risk).toBe("external_mutation");
+    expect(restore.needsApproval).toBe(true);
+    expect(restore.allowTaskEligible).toBe(false);
+    expect(restore.kind).toBe("browser_action");
+    // missing op defaults to list (read)
+    expect(classifyActionRisk(ctx({ action: "browser.sessions" })).risk).toBe("read");
+  });
+
   test("browser.page.cdp: always approval, never task-eligible", () => {
     for (const action of ["browser.page.cdp"] as const) {
       const v = classifyActionRisk(ctx({ action }));

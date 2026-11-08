@@ -554,6 +554,71 @@ const toolHostHandler = createToolHostHandler({
         return {};
       },
     },
+    sessions: {
+      // chrome.sessions recently-closed entries — optional "sessions"
+      // permission checked per call (runtime grant works without SW
+      // restart); Chrome hides the namespace while ungranted.
+      list: async (maxResults) => {
+        const granted = await chrome.permissions.contains({ permissions: ["sessions"] });
+        if (!granted) return "permission";
+        const api = chrome.sessions as unknown as {
+          getRecentlyClosed?(f: { maxResults: number }): Promise<Array<{
+            lastModified: number;
+            tab?: { sessionId?: string; url?: string; title?: string };
+            window?: { sessionId?: string; tabs?: Array<{ url?: string; title?: string }> };
+          }>>;
+        } | undefined;
+        if (!api?.getRecentlyClosed) return null;
+        const sessions = await api.getRecentlyClosed({ maxResults });
+        return sessions.map((s) => s.tab
+          ? {
+              kind: "tab" as const,
+              sessionId: s.tab.sessionId ?? "",
+              lastModified: s.lastModified,
+              url: s.tab.url ?? "",
+              title: s.tab.title ?? "",
+            }
+          : {
+              kind: "window" as const,
+              sessionId: s.window?.sessionId ?? "",
+              lastModified: s.lastModified,
+              url: s.window?.tabs?.[0]?.url ?? "",
+              title: s.window?.tabs?.[0]?.title ?? "",
+              tabCount: s.window?.tabs?.length ?? 0,
+            });
+      },
+      restore: async (sessionId) => {
+        const granted = await chrome.permissions.contains({ permissions: ["sessions"] });
+        if (!granted) return "permission";
+        const api = chrome.sessions as unknown as {
+          restore?(id?: string): Promise<{
+            lastModified: number;
+            tab?: { sessionId?: string; id?: number; url?: string; title?: string };
+            window?: { sessionId?: string; id?: number; tabs?: Array<{ url?: string; title?: string }> };
+          }>;
+        } | undefined;
+        if (!api?.restore) return null;
+        const s = await api.restore(sessionId);
+        return s.tab
+          ? {
+              kind: "tab",
+              sessionId: s.tab.sessionId ?? "",
+              tabId: s.tab.id ?? null,
+              url: s.tab.url ?? "",
+              title: s.tab.title ?? "",
+              lastModified: s.lastModified,
+            }
+          : {
+              kind: "window",
+              sessionId: s.window?.sessionId ?? "",
+              windowId: s.window?.id ?? null,
+              url: s.window?.tabs?.[0]?.url ?? "",
+              title: s.window?.tabs?.[0]?.title ?? "",
+              tabCount: s.window?.tabs?.length ?? 0,
+              lastModified: s.lastModified,
+            };
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;

@@ -960,16 +960,25 @@ await runScenario(
           taskId, "browser.tab.create", { url: fixture.url("/iframe-parent") }, token, 60_000,
         );
         const cdpFrameTabId = cdpFrameTab?.result?.tabId ?? cdpFrameTab?.result?.openedTabId ?? cdpFrameTab?.tabId;
-        const cdpFramesRes = await runner.browserToolCall(
-          taskId, "browser.page.get", { tabId: cdpFrameTabId }, token, 60_000,
-        );
-        const cdpFrames = cdpFramesRes?.result?.frames ?? cdpFramesRes?.frames ?? [];
-        const cdpCross = cdpFrames.find(
-          (f) => String(f.url ?? "").includes("localhost") && String(f.url ?? "").includes("/iframe-child"),
-        );
-        const cdpSame = cdpFrames.find(
-          (f) => String(f.url ?? "").includes("127.0.0.1") && String(f.url ?? "").includes("/iframe-child"),
-        );
+        // frame discovery lags navigation — poll until both iframes
+        // register in webNavigation.getAllFrames (OOPIF commits last).
+        let cdpFrames = [];
+        let cdpCross = null;
+        let cdpSame = null;
+        for (let i = 0; i < 20; i++) {
+          const cdpFramesRes = await runner.browserToolCall(
+            taskId, "browser.page.get", { tabId: cdpFrameTabId }, token, 60_000,
+          );
+          cdpFrames = cdpFramesRes?.result?.frames ?? cdpFramesRes?.frames ?? [];
+          cdpCross = cdpFrames.find(
+            (f) => String(f.url ?? "").includes("localhost") && String(f.url ?? "").includes("/iframe-child"),
+          );
+          cdpSame = cdpFrames.find(
+            (f) => String(f.url ?? "").includes("127.0.0.1") && String(f.url ?? "").includes("/iframe-child"),
+          );
+          if (cdpCross?.frameId && cdpSame?.frameId) break;
+          await sleep(250);
+        }
         if (cdpCross?.frameId) {
           const cdpFrRes = await runner.browserToolCall(
             taskId, "browser.page.cdp",
@@ -1107,6 +1116,25 @@ await runScenario(
       results.siteSettings = {
         ok: ss.setUnsupportedOk === true && ss.getUnsupportedOk === true,
         ...ss,
+      };
+
+      // --- sessions: optional "sessions" permission — ungranted → honest unsupported ---
+      let sn = {};
+      const snRes = await runner.browserToolCall(
+        taskId, "browser.sessions", { action: "list" }, token, 60_000,
+      );
+      const snErr = snRes?.error ?? {};
+      sn.listUnsupportedOk = snRes?.status === "failed" && snErr.code === "proto.unsupported";
+      sn.msg = String(snErr.message ?? "").slice(0, 160);
+      const snRestore = await runner.browserToolCall(
+        taskId, "browser.sessions", { action: "restore", sessionId: "bogus" }, token, 60_000,
+      );
+      const snRestoreErr = snRestore?.error ?? {};
+      sn.restoreUnsupportedOk = snRestore?.status === "failed" && snRestoreErr.code === "proto.unsupported";
+      evidence.note(`sessions → ${JSON.stringify(sn).slice(0, 300)}`);
+      results.sessions = {
+        ok: sn.listUnsupportedOk === true && sn.restoreUnsupportedOk === true,
+        ...sn,
       };
 
       // --- bookmarks: optional permission — ungranted → honest unsupported ---

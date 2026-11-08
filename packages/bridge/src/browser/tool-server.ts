@@ -312,6 +312,8 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.bookmarks": "page-text",
   // group titles are user-authored text — same egress gate on list.
   "browser.tabGroups": "page-text",
+  // recently-closed entries carry personal URLs — same egress gate.
+  "browser.sessions": "page-text",
 };
 
 /** Tools that never target a tab — the implicit-target ambiguity check
@@ -331,6 +333,7 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.browsingData.clear",
   "browser.tabGroups",
   "browser.siteSettings",
+  "browser.sessions",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"
@@ -456,6 +459,9 @@ export function buildActionContext(
       : {}),
     ...(req.tool === "browser.siteSettings"
       ? { siteSettingsOp: typeof args.action === "string" ? args.action : "get" }
+      : {}),
+    ...(req.tool === "browser.sessions"
+      ? { sessionOp: typeof args.action === "string" ? args.action : "list" }
       : {}),
     withinTabScope,
     // press may legitimately target the focused element with no explicit

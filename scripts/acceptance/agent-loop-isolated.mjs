@@ -865,6 +865,7 @@ try {
   await expectReject("browser.tab.create", { url: fixture.url("/"), muted: true }, "chrome-extension only", "muted arg refused (no silent drop)");
   await expectReject("browser.downloads.cancel", {}, "downloadId", "downloads.cancel without id refused");
   await expectReject("browser.tabGroups", { action: "list" }, "does not support", "tabGroups refused on isolated (no playwright equivalent)");
+  await expectReject("browser.sessions", { action: "list" }, "does not support", "sessions refused on isolated (closed pages cannot reopen)");
 
   const tabs = await call("browser.tabs.list", {});
   const count = Array.isArray(tabs) ? tabs.length : tabs?.tabs?.length ?? 0;

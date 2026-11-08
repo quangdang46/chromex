@@ -873,6 +873,15 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       scope: { type: "string", enum: ["regular", "incognito_session_only", "off_the_record", "span_incognito", "regular_only"], description: "Optional setting scope (default regular)." },
     }, ["contentType", "origin"]),
   },
+  "browser.sessions": {
+    description:
+      "Query and restore recently-closed browsing sessions — the undo surface for tab.close/window closes. args.action: 'list' (default) returns recently closed tabs and windows ({sessionId via tab.sessionId/window.sessionId, lastModified, url, title, kind}) most-recent first, capped by args.maxResults (1–25, default 25); 'restore' reopens the entry identified by args.sessionId (chrome.sessions.restore — omitting sessionId restores the most recent). 'restore' ALWAYS requires approval and is never task-eligible — it loads an arbitrary previously-visited URL. 'list' returns personal browsing data (page-text egress gate). On chrome-extension this uses chrome.sessions and requires the optional 'sessions' permission — ungranted → proto.unsupported. On playwright-isolated → proto.unsupported (closed pages cannot be reopened).",
+    inputSchema: objectSchema({
+      action: { type: "string", enum: ["list", "restore"], description: "Operation (default list)." },
+      sessionId: { type: "string", description: "restore: the tab.sessionId or window.sessionId from a list entry." },
+      maxResults: { type: "integer", description: "list: max entries (1–25, default 25)." },
+    }),
+  },
   "browser.windows.list": {
     description:
       "List the browser's normal windows — id, focused, state, bounds, incognito, tabCount. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",

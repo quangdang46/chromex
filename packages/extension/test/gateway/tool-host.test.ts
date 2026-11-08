@@ -1376,6 +1376,68 @@ describe("tool host (P1-09)", () => {
     }))).rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.sessions marshals list/restore + validates", async () => {
+    const calls: Array<{ op: string; args: unknown[] }> = [];
+    const d = deps({
+      sessions: {
+        list: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "list", args });
+          return [{ kind: "tab", sessionId: "s1", url: "https://x/", title: "X" }];
+        }),
+        restore: vi.fn(async (...args: unknown[]) => {
+          calls.push({ op: "restore", args });
+          return { kind: "tab", sessionId: "s1", tabId: 42, url: "https://x/" };
+        }),
+      },
+    });
+    const h = createToolHostHandler(d);
+    const listRes = (await h(req("browser.sessions", {}))) as { entries: unknown[]; count: number };
+    expect(listRes.count).toBe(1);
+    expect(calls[0]).toEqual({ op: "list", args: [25] });
+    const maxRes = (await h(req("browser.sessions", { maxResults: 5 }))) as { count: number };
+    expect(maxRes.count).toBe(1);
+    expect(calls[1]).toEqual({ op: "list", args: [5] });
+    const restoreRes = (await h(req("browser.sessions", { action: "restore", sessionId: "s1" }))) as {
+      restored: boolean; tabId: number;
+    };
+    expect(restoreRes.restored).toBe(true);
+    expect(restoreRes.tabId).toBe(42);
+    expect(calls[2]).toEqual({ op: "restore", args: ["s1"] });
+    // restore without sessionId → most-recent entry
+    await h(req("browser.sessions", { action: "restore" }));
+    expect(calls[3]).toEqual({ op: "restore", args: [undefined] });
+    // validation
+    await expect(h(req("browser.sessions", { action: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.sessions", { maxResults: 0 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.sessions", { maxResults: 26 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.sessions", { action: "restore", sessionId: "" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // permission sentinel → distinct proto.unsupported
+    const dPerm = deps({
+      sessions: {
+        list: vi.fn(async () => "permission" as const),
+        restore: vi.fn(async () => "permission" as const),
+      },
+    });
+    await expect(createToolHostHandler(dPerm)(req("browser.sessions", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("sessions permission") });
+    // null → API unavailable
+    const dNull = deps({
+      sessions: {
+        list: vi.fn(async () => null),
+        restore: vi.fn(async () => null),
+      },
+    });
+    await expect(createToolHostHandler(dNull)(req("browser.sessions", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.sessions", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("page.hover/page.press map to dom.perform steps (chromex-cly)", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

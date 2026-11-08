@@ -181,6 +181,13 @@ export interface ToolHostDeps {
     ): Promise<unknown | "permission" | null>;
     clear(contentType: string, primaryPattern: string): Promise<unknown | "permission" | null>;
   } | undefined;
+  /** chrome.sessions (browser.sessions) — recently-closed tabs and
+   *  windows. "permission" → optional sessions permission not granted;
+   *  null → API unavailable → proto.unsupported. */
+  sessions?: {
+    list(maxResults: number): Promise<unknown[] | "permission" | null>;
+    restore(sessionId?: string): Promise<Record<string, unknown> | "permission" | null>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -347,6 +354,7 @@ const SUPPORTED = new Set([
   "browser.browsingData.clear",
   "browser.tabGroups",
   "browser.siteSettings",
+  "browser.sessions",
   "browser.downloads.list",
   "browser.downloads.save",
   "browser.downloads.cancel",
@@ -2167,6 +2175,50 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", `content type '${contentType}' is not available in this Chrome version`);
         }
         return { contentType, origin: originUrl.origin, pattern: primaryPattern, cleared: true };
+      }
+      case "browser.sessions": {
+        // Not tab-scoped: chrome.sessions recently-closed entries.
+        // Optional "sessions" permission — ungranted → unsupported.
+        if (!deps.sessions) {
+          throw toolError("proto.unsupported", "session data is not available on this host");
+        }
+        const action = str(args.action) ?? "list";
+        if (action !== "list" && action !== "restore") {
+          throw toolError("proto.invalid", "browser.sessions args.action must be list|restore");
+        }
+        if (action === "restore") {
+          if (args.sessionId !== undefined && args.sessionId !== null) {
+            const sessionId = str(args.sessionId);
+            if (sessionId === undefined || sessionId.length > 256) {
+              throw toolError("proto.invalid", "browser.sessions args.sessionId must be 1-256 chars");
+            }
+          }
+          const sessionId = str(args.sessionId);
+          const res = await deps.sessions.restore(sessionId);
+          if (res === "permission") {
+            throw toolError("proto.unsupported", "sessions permission is not granted");
+          }
+          if (res === null) {
+            throw toolError("proto.unsupported", "session restore is not available on this host");
+          }
+          return { ...(res as Record<string, unknown>), restored: true };
+        }
+        let maxResults = 25;
+        if (args.maxResults !== undefined && args.maxResults !== null) {
+          const n = args.maxResults;
+          if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > 25) {
+            throw toolError("proto.invalid", "browser.sessions args.maxResults must be an integer 1-25");
+          }
+          maxResults = n;
+        }
+        const res = await deps.sessions.list(maxResults);
+        if (res === "permission") {
+          throw toolError("proto.unsupported", "sessions permission is not granted");
+        }
+        if (res === null) {
+          throw toolError("proto.unsupported", "session data is not available on this host");
+        }
+        return { entries: res, count: res.length };
       }
       case "browser.windows.list": {
         // Not tab-scoped: chrome.windows.getAll across normal windows.

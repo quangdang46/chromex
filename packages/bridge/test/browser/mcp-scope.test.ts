@@ -73,7 +73,8 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     expect(tools).not.toContain("browser.windows.update");
     expect(tools).not.toContain("browser.tab.discard");
     expect(tools).not.toContain("browser.tabGroups");
-    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 5);
+    expect(tools).not.toContain("browser.sessions");
+    expect(tools.length).toBe(BROWSER_TOOL_NAMES.length - 6);
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 
