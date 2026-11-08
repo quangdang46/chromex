@@ -837,6 +837,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
             ? Math.min(Math.max(args.timeoutMs, 100), 15_000)
             : 10_000;
+        const evaluateDispatchedAt = Date.now();
         let timer: ReturnType<typeof setTimeout> | undefined;
         let res = (await Promise.race([
           deps.runInMainWorld!(tabId, chromexEvaluate as (...fnArgs: unknown[]) => unknown, [expression], [frameId]),
@@ -886,10 +887,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `page evaluation failed: ${res?.error ?? "no result"}`);
         }
+        const openedTabs = await collectOpenedTabs(deps, tabId, evaluateDispatchedAt);
         return {
           ok: true,
           value: res.value ?? null,
           truncated: res.truncated === true,
+          ...(openedTabs.length > 0 ? { openedTabs } : {}),
           resolvedTabId: tabId,
           frameId,
         };
@@ -1722,7 +1725,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // subframes — element targets resolve to absolute viewport
         // coordinates via CDP DOM quads before dispatch.
         if (tool === "browser.page.press" && args.trusted === true) {
-          return await trustedPress(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const startedAt = Date.now();
+          const res = await trustedPress(deps, tabId, args, expectCond, frameId, expectedTarget);
+          const openedTabs = await collectOpenedTabs(deps, tabId, startedAt);
+          return openedTabs.length > 0 ? { ...res, openedTabs } : res;
         }
         if (tool === "browser.page.type" && args.trusted === true) {
           return await trustedType(deps, tabId, args, expectCond, frameId, expectedTarget);
@@ -1771,7 +1777,9 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           else verified = verified ?? "unknown";
         }
         const openedTabs =
-          tool === "browser.page.click" || tool === "browser.page.submit"
+          tool === "browser.page.click" ||
+          tool === "browser.page.submit" ||
+          tool === "browser.page.press"
             ? await collectOpenedTabs(deps, tabId, actionDispatchedAt)
             : [];
         return {
