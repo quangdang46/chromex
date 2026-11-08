@@ -993,7 +993,15 @@ try {
   const frSnap = await call("browser.page.snapshot", { tabId: frTabId, frameId: frSame.frameId });
   assert(String(frSnap?.snapshot ?? "").includes("Frame Child"), "snapshot scoped to the same-origin frame");
   await expectReject("browser.page.evaluate", { tabId: frTabId, frameId: 99, expression: "1" }, "out of range", "frameId out of range refused");
-  await expectReject("browser.page.click", { tabId: frTabId, frameId: frCross.frameId, x: 10, y: 10 }, "coordinate", "coordinate click + frameId refused (page-level mouse)");
+  // coordinate click INSIDE the frame — coords are frame-relative,
+  // translated by the iframe's page offset (#pb pointer button writes #pout)
+  const frRect = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "JSON.stringify(document.getElementById('pb').getBoundingClientRect())" });
+  const frBox = JSON.parse(String(frRect?.value ?? "{}"));
+  assert(frBox.width > 0, `frame button rect readable (got ${frRect?.value})`);
+  await call("browser.page.click", { tabId: frTabId, frameId: frCross.frameId, x: Math.round(frBox.x + frBox.width / 2), y: Math.round(frBox.y + frBox.height / 2) });
+  await new Promise((r) => setTimeout(r, 200));
+  const frPout = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.getElementById('pout').textContent" });
+  assert(String(frPout?.value ?? "").includes("down:true") && String(frPout?.value ?? "").includes("up:true"), `coordinate click translated into the frame hit #pb (got ${JSON.stringify(frPout).slice(0, 120)})`);
   await expectReject("browser.page.screenshot", { tabId: frTabId, frameId: frCross.frameId }, "not supported", "screenshot + frameId refused (page-level capture)");
   await call("browser.tab.close", { tabId: frTabId });
 

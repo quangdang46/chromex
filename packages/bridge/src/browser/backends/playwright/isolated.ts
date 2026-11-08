@@ -331,6 +331,19 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     return this.#trackPage(await context.newPage());
   }
 
+  /** Page-viewport offset of a frame target — the iframe element's
+   *  bounding-box origin. Coordinate mouse ops take page pixels, so a
+   *  frame-relative coordinate translates by this offset. Returns null
+   *  when the frame element can't be resolved — callers refuse rather
+   *  than silently clicking the wrong position. */
+  async #frameMouseOffset(page: PwPage, target: PwTarget): Promise<{ x: number; y: number } | null> {
+    if (target === page) return { x: 0, y: 0 };
+    if (typeof (target as PwFrame).frameElement !== "function") return null;
+    const fe = await (target as PwFrame).frameElement().catch(() => null);
+    const box = fe ? await fe.boundingBox().catch(() => null) : null;
+    return box ? { x: box.x, y: box.y } : null;
+  }
+
   /** Resolve the element-scoped action target: the Page itself, or the
    *  Frame at args.frameId (index into page.frames() — 0/absent = main
    *  frame). Out-of-range ids fail proto.invalid rather than silently
@@ -1756,6 +1769,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const page = await this.#pageFor(taskId, args);
     const target = await this.#frameTarget(taskId, args);
     const frameScoped = (typeof args.frameId === "number" ? args.frameId : 0) !== 0;
+    // Page-viewport offset of the frame target — coordinate mouse ops
+    // take page pixels, so frame-relative coords translate by the
+    // iframe element's bounding-box origin (0,0 for the main frame).
+    // Unresolvable offset → refuse: a mis-translated click hits the
+    // wrong element silently.
+    const frameOffset = frameScoped ? await this.#frameMouseOffset(page, target) : { x: 0, y: 0 };
+    if (frameScoped && frameOffset === null) {
+      throw protocolError("proto.unsupported", "frame mouse offset unresolvable — coordinate ops need the iframe element's bounding box");
+    }
+    const offset = frameOffset ?? { x: 0, y: 0 };
     // press may target the focused element/page with no selector —
     // page.keyboard.press is the honest equivalent (Page-only API).
     if (tool === "browser.page.press") {
@@ -1765,10 +1788,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const sel = args.selector ?? args.ref;
       if (typeof sel === "string" && sel.length > 0) {
         await target.locator(sel).first().press(chord, { timeout: DEFAULT_NAV_TIMEOUT_MS });
+      } else if (frameScoped) {
+        // Selector-less press inside a frame: focus the frame's body
+        // and send the chord — keyboard events land in the focused
+        // frame's document, the honest equivalent of activeElement.
+        await target.locator("body").first().press(chord, { timeout: DEFAULT_NAV_TIMEOUT_MS });
       } else {
-        if (frameScoped) {
-          throw protocolError("proto.unsupported", "selector-less browser.page.press needs page keyboard focus — args.frameId unsupported for this arg shape");
-        }
         await page.keyboard.press(chord);
       }
       return { pressed: key };
@@ -1789,9 +1814,6 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         }
         if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
           throw protocolError("proto.invalid", "browser.page.click accepts coordinates or an element target, not both");
-        }
-        if (frameScoped) {
-          throw protocolError("proto.unsupported", "coordinate browser.page.click needs page-level mouse — args.frameId unsupported for this arg shape");
         }
         const button = typeof args.button === "string" ? args.button : "left";
         if (!["left", "right", "middle"].includes(button)) {
@@ -1814,7 +1836,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           : [];
         for (const mod of mods) await page.keyboard.down(mod);
         try {
-          await page.mouse.click(x, y, {
+          await page.mouse.click(offset.x + x, offset.y + y, {
             button: button as "left" | "right" | "middle",
             clickCount: clickCount as 1 | 2,
           });
@@ -1838,22 +1860,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
           throw protocolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
         }
-        if (frameScoped) {
-          throw protocolError("proto.unsupported", "coordinate browser.page.hover needs page-level mouse — args.frameId unsupported for this arg shape");
-        }
-        await page.mouse.move(x, y);
+        await page.mouse.move(offset.x + x, offset.y + y);
         return { hovered: true, x, y };
       }
     }
     // Drag resolves its own targets — coordinate form has no selector,
     // element form needs source + drop selectors (not the single-target
-    // #requireSelector path). Mouse is Page-only — frame-scoped drag
-    // would need viewport-translation, refused honestly for now.
+    // #requireSelector path). Element bounding boxes are page-absolute
+    // even inside frames; coordinate form translates by frameOffset.
     if (tool === "browser.page.drag") {
-      if (frameScoped) {
-        throw protocolError("proto.unsupported", "browser.page.drag is page-level (mouse) — args.frameId unsupported");
-      }
-      return this.#drag(page, args);
+      return this.#drag(page, target, offset, args);
     }
     // Page-level scroll needs no selector — window scroll is a valid
     // target (extension host parity). Handled before #requireSelector.
@@ -1990,7 +2006,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  Element form resolves source/drop bounding-box centers; invisible
    *  targets fail with retryable browser.element_not_visible, matching
    *  the extension's pointer-reachability gate. */
-  async #drag(page: PwPage, args: Record<string, unknown>): Promise<unknown> {
+  async #drag(
+    page: PwPage,
+    target: PwTarget,
+    offset: { x: number; y: number },
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
     const mouseDrag = async (sx: number, sy: number, dx: number, dy: number) => {
       await page.mouse.move(sx, sy);
       await page.mouse.down();
@@ -2013,7 +2034,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ) {
         throw protocolError("proto.invalid", "browser.page.drag accepts coordinates or element targets, not both");
       }
-      await mouseDrag(x, y, dropX, dropY);
+      await mouseDrag(offset.x + x, offset.y + y, offset.x + dropX, offset.y + dropY);
       return { dragged: true, x, y, dropX, dropY };
     }
     const srcSel = args.selector ?? args.ref;
@@ -2024,8 +2045,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         "browser.page.drag requires a source target (selector/ref) and a drop target (toSelector/toRef)",
       );
     }
-    const src = page.locator(srcSel).first();
-    const dst = page.locator(dstSel).first();
+    const src = target.locator(srcSel).first();
+    const dst = target.locator(dstSel).first();
     const sb = await src.boundingBox({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null);
     const db = await dst.boundingBox({ timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => null);
     if (!sb) {
@@ -3894,6 +3915,7 @@ const FRAME_CAPABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.scroll",
   "browser.page.hover",
   "browser.page.press",
+  "browser.page.drag",
   "browser.page.upload",
   "browser.page.setInputFiles",
 ]);

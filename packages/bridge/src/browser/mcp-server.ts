@@ -173,7 +173,7 @@ const SNAPSHOT_ID: JsonSchema = {
 const FRAME_ID: JsonSchema = {
   type: "integer",
   description:
-    "Frame inside the tab to act on: a frameId from browser.page.get's frames[] list. Omit or 0 = top frame. On chrome-extension these are webNavigation frameIds; on playwright-isolated they are indexes into page.frames() (OOPIFs included). Refs and snapshotIds are per-frame — a snapshot taken in one frame cannot drive actions in another. Page-level arg shapes (coordinate mouse ops, selector-less press, drag) and page-level tools refuse frameId on playwright-isolated.",
+    "Frame inside the tab to act on: a frameId from browser.page.get's frames[] list. Omit or 0 = top frame. On chrome-extension these are webNavigation frameIds; on playwright-isolated they are indexes into page.frames() (OOPIFs included) — coordinate mouse ops and drag take frame-relative pixels there (translated by the iframe's page offset). Refs and snapshotIds are per-frame — a snapshot taken in one frame cannot drive actions in another. Page-level tools (screenshot/pdf/navigate/etc.) refuse frameId on playwright-isolated.",
 };
 const TAB_TARGET_PROPS: Record<string, JsonSchema> = {
   tabId: TAB_ID,
@@ -1151,7 +1151,7 @@ export function toolListEntry(
       )
       .replace(
         "Pages with iframes: call browser.page.get first for the frames[] list, then snapshot each frame with args.frameId — refs are per-frame. ",
-        "Pages with iframes: call browser.page.get first for the frames[] list — args.frameId is the frame's index there and scopes element actions to that subframe (evaluate/snapshot/extract/find/wait/click/focus/type/fill/select/submit/scroll/hover/press/upload/setInputFiles); page-level arg shapes (coordinate mouse ops, selector-less press, drag) and page-level tools still refuse it. ",
+        "Pages with iframes: call browser.page.get first for the frames[] list — args.frameId is the frame's index there and scopes element actions to that subframe (evaluate/snapshot/extract/find/wait/click/focus/type/fill/select/submit/scroll/hover/press/drag/upload/setInputFiles; coordinate mouse ops take frame-relative pixels). Page-level tools still refuse it. ",
       )
       .replace(
         "Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly.",
