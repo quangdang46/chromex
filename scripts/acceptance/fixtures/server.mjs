@@ -238,6 +238,26 @@ addEventListener("wheel", (e) => {
 <script>setTimeout(() => window.close(), 600);</script>
 </body></html>`,
 
+  // closed shadow root: content scripts cannot see inside (shadowRoot
+  // is null); only the CDP pierce path (browser.page.pierce) reaches it.
+  // Click proof writes to window.__pierceClicks — readable via
+  // page.evaluate in the MAIN world.
+  "/closed-shadow": `<!doctype html><html><body>
+<h1>Closed Shadow Page</h1>
+<div id="host"></div>
+<script>
+const h = document.getElementById('host');
+const sr = h.attachShadow({ mode: 'closed' });
+sr.innerHTML = \`
+  <button id="inner" style="width:140px;height:44px">closed action</button>
+  <input id="field" placeholder="closed-input" style="width:200px;height:30px">
+\`;
+sr.getElementById('inner').addEventListener('click', () => {
+  window.__pierceClicks = (window.__pierceClicks || 0) + 1;
+});
+</script>
+</body></html>`,
+
   // mouse-drag proof: records the mouseup position — deterministic
   // observable state for coordinate and element drags.
   "/drag": `<!doctype html><html><body>

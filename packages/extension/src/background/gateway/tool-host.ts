@@ -533,6 +533,7 @@ const SUPPORTED = new Set([
   "browser.page.upload",
   "browser.page.drag",
   "browser.page.find",
+  "browser.page.pierce",
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",
@@ -2117,6 +2118,10 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           truncated: res.truncated === true,
           resolvedTabId: tabId,
         };
+      }
+      case "browser.page.pierce": {
+        const tabId = await resolveScopedTabId(deps, args, tabScope);
+        return await pagePierce(deps, tabId, args);
       }
       case "browser.page.dialog": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
@@ -4660,8 +4665,22 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // Element targets inside subframes are converted to absolute
         // viewport coords via DOM.getContentQuads. Never silently
         // downgrades — absent CDP dep fails proto.unsupported.
-        if (tool === "browser.page.click" && args.trusted === true) {
+        // pierce refs (pz-N from browser.page.pierce) can ONLY dispatch
+        // via CDP — auto-route them to the trusted path even without
+        // args.trusted, since no untrusted path exists for closed
+        // shadow roots. There is no silent downgrade: the result still
+        // reports trusted:true honestly.
+        const pierceClick =
+          tool === "browser.page.click" &&
+          typeof args.ref === "string" && PIERCE_REF_RE.test(args.ref);
+        if (tool === "browser.page.click" && (args.trusted === true || pierceClick)) {
           return await trustedClick(deps, tabId, args, expectCond, frameId, expectedTarget);
+        }
+        const pierceHover =
+          tool === "browser.page.hover" &&
+          typeof args.ref === "string" && PIERCE_REF_RE.test(args.ref);
+        if (tool === "browser.page.hover" && (args.trusted === true || pierceHover)) {
+          return await trustedHover(deps, tabId, args, expectCond, frameId, expectedTarget);
         }
         // Keyboard trusted ops work in subframes too: the element is
         // focused through that frame's content script and CDP key
@@ -5169,6 +5188,8 @@ interface AxNode {
   ignored?: boolean;
   role?: { value?: string };
   name?: { value?: string };
+  value?: { value?: unknown };
+  backendDOMNodeId?: number;
   childIds?: string[];
 }
 
@@ -5213,6 +5234,242 @@ function formatAxTree(nodes: AxNode[]): { tree: string; nodeCount: number; trunc
     }
   }
   return { tree: lines.join("\n"), nodeCount: nodes.length, truncated };
+}
+
+// --- browser.page.pierce — closed shadow roots via CDP DOM pierce ------
+// Content scripts cannot see closed shadow roots (element.shadowRoot is
+// null for mode:"closed"). CDP DOM.getDocument {pierce:true} DOES traverse
+// them — the same data DevTools uses to render #closed roots. We collect
+// element backendNodeIds under closed/user-agent shadow roots, join with
+// Accessibility.getFullAXTree for semantic role/name/value, and mint pz-N
+// refs. Click/hover resolve the ref → fresh DOM.getBoxModel → trusted
+// Input coordinates (there is no untrusted dispatch path for them).
+
+const PIERCE_REF_RE = /^pz-\d+$/;
+const pierceRefs = new Map<string, { tabId: number; backendNodeId: number }>();
+let pierceSeq = 0;
+
+interface PierceDomNode {
+  nodeId?: number;
+  backendNodeId?: number;
+  nodeType?: number;
+  nodeName?: string;
+  shadowRootType?: string;
+  attributes?: string[];
+  children?: PierceDomNode[];
+  shadowRoots?: PierceDomNode[];
+  contentDocument?: PierceDomNode;
+}
+
+interface PierceElInfo { nodeName: string; attrs: Record<string, string> }
+
+function pierceAttrs(attrs: string[] | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i + 1 < (attrs?.length ?? 0); i += 2) {
+    const k = attrs![i]!;
+    if (k === "style" || k === "class") continue;
+    out[k] = (attrs![i + 1] ?? "").slice(0, 200);
+  }
+  return out;
+}
+
+/** Collect closed/user-agent shadowRoot nodes anywhere in the pierced
+ *  document (same-process subframes included via contentDocument). */
+function findPierceRoots(
+  node: PierceDomNode | undefined,
+  roots: PierceDomNode[],
+  budget: { left: number },
+): void {
+  if (!node || budget.left <= 0) return;
+  budget.left -= 1;
+  for (const sr of node.shadowRoots ?? []) {
+    if (sr.shadowRootType === "closed" || sr.shadowRootType === "user-agent") {
+      roots.push(sr);
+    }
+  }
+  for (const c of node.children ?? []) findPierceRoots(c, roots, budget);
+  if (node.contentDocument) findPierceRoots(node.contentDocument, roots, budget);
+}
+
+/** Every ELEMENT descendant of a shadow root (nested roots + subframe
+ *  docs included) → backendNodeId → tag/attrs. */
+function collectPierceElements(
+  node: PierceDomNode | undefined,
+  into: Map<number, PierceElInfo>,
+  budget: { left: number },
+): void {
+  if (!node || budget.left <= 0) return;
+  if (node.nodeType === 1 && typeof node.backendNodeId === "number") {
+    budget.left -= 1;
+    into.set(node.backendNodeId, {
+      nodeName: (node.nodeName ?? "").toLowerCase(),
+      attrs: pierceAttrs(node.attributes),
+    });
+  }
+  for (const c of node.children ?? []) collectPierceElements(c, into, budget);
+  for (const sr of node.shadowRoots ?? []) collectPierceElements(sr, into, budget);
+  if (node.contentDocument) collectPierceElements(node.contentDocument, into, budget);
+}
+
+function axScalar(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  return String(v).slice(0, 160);
+}
+
+/** browser.page.pierce — discover elements inside closed shadow roots.
+ *  Read-only: mints pz-N refs bound to backendNodeIds for this tab. */
+async function pagePierce(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  cdpRequired(deps);
+  if (frameIdArg(args) !== 0) {
+    throw toolError("proto.invalid", "browser.page.pierce is tab-scoped; args.frameId is not supported");
+  }
+  const text = str(args.text);
+  if (text !== undefined && text.length > 512) {
+    throw toolError("proto.invalid", "browser.page.pierce args.text must be ≤512 chars");
+  }
+  const limit =
+    typeof args.limit === "number" && Number.isFinite(args.limit)
+      ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
+      : 50;
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const doc = (await session.send("DOM.getDocument", { depth: -1, pierce: true })) as {
+      root?: PierceDomNode;
+    };
+    const roots: PierceDomNode[] = [];
+    findPierceRoots(doc.root, roots, { left: 2000 });
+    const elInfo = new Map<number, PierceElInfo>();
+    for (const r of roots) collectPierceElements(r, elInfo, { left: 5000 });
+    if (elInfo.size === 0) {
+      return { ok: true, closedRoots: roots.length, scanned: 0, truncated: false, elements: [], resolvedTabId: tabId };
+    }
+    const ax = (await session.send("Accessibility.getFullAXTree")) as { nodes?: AxNode[] };
+    const seen = new Set<number>();
+    interface Cand { backendNodeId: number; role: string; name: string; value?: string }
+    const cands: Cand[] = [];
+    for (const n of ax.nodes ?? []) {
+      const bid = n.backendDOMNodeId;
+      if (typeof bid !== "number" || !elInfo.has(bid) || seen.has(bid)) continue;
+      seen.add(bid);
+      const value = axScalar(n.value?.value);
+      cands.push({
+        backendNodeId: bid,
+        role: n.role?.value ?? "",
+        name: (n.name?.value ?? "").slice(0, 200),
+        ...(value !== undefined ? { value } : {}),
+      });
+      if (cands.length >= 500) break;
+    }
+    const needle = text?.toLowerCase();
+    const filtered = needle
+      ? cands.filter((c) => `${c.name} ${c.value ?? ""}`.toLowerCase().includes(needle))
+      : cands;
+    // Refs are per-call: drop this tab's previous pz refs before minting.
+    for (const k of [...pierceRefs.keys()]) {
+      if (k.startsWith(`${tabId}:`)) pierceRefs.delete(k);
+    }
+    const elements: Array<Record<string, unknown>> = [];
+    for (const c of filtered.slice(0, limit)) {
+      const ref = `pz-${++pierceSeq}`;
+      pierceRefs.set(`${tabId}:${ref}`, { tabId, backendNodeId: c.backendNodeId });
+      const info = elInfo.get(c.backendNodeId)!;
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      try {
+        const bm = (await session.send("DOM.getBoxModel", { backendNodeId: c.backendNodeId })) as {
+          model?: { content?: number[] };
+        };
+        const q = bm?.model?.content;
+        if (q && q.length >= 8) {
+          const xs = [q[0]!, q[2]!, q[4]!, q[6]!];
+          const ys = [q[1]!, q[3]!, q[5]!, q[7]!];
+          const x0 = Math.min(...xs);
+          const y0 = Math.min(...ys);
+          box = {
+            x: Math.round(x0),
+            y: Math.round(y0),
+            width: Math.round(Math.max(...xs) - x0),
+            height: Math.round(Math.max(...ys) - y0),
+          };
+        }
+      } catch {
+        // display:none / detached → box:null, element still listed
+      }
+      elements.push({
+        ref,
+        tagName: info.nodeName,
+        role: c.role,
+        name: c.name,
+        ...(c.value !== undefined ? { value: c.value } : {}),
+        ...(info.attrs.id ? { id: info.attrs.id } : {}),
+        ...(info.attrs["aria-label"] ? { ariaLabel: info.attrs["aria-label"] } : {}),
+        box,
+      });
+    }
+    return {
+      ok: true,
+      closedRoots: roots.length,
+      scanned: cands.length,
+      truncated: filtered.length > limit,
+      elements,
+      resolvedTabId: tabId,
+    };
+  } finally {
+    await release();
+  }
+}
+
+/** Resolve a pz-N pierce ref → fresh viewport center via DOM.getBoxModel.
+ *  Returns null when the ref is unknown to this tab; throws
+ *  element_not_found when the node lost layout (detached/hidden). */
+async function piercePoint(
+  deps: ToolHostDeps,
+  tabId: number,
+  ref: string,
+): Promise<{ x: number; y: number } | null> {
+  const hit = pierceRefs.get(`${tabId}:${ref}`);
+  if (!hit) return null;
+  const { session, release } = await cdpAcquire(deps, tabId);
+  try {
+    const bm = (await session.send("DOM.getBoxModel", { backendNodeId: hit.backendNodeId })) as {
+      model?: { content?: number[] };
+    };
+    const q = bm?.model?.content;
+    if (!q || q.length < 8) {
+      throw toolError("browser.element_not_found", `pierce target "${ref}" has no layout — re-run browser.page.pierce`);
+    }
+    const xs = [q[0]!, q[2]!, q[4]!, q[6]!];
+    const ys = [q[1]!, q[3]!, q[5]!, q[7]!];
+    return {
+      x: (Math.min(...xs) + Math.max(...xs)) / 2,
+      y: (Math.min(...ys) + Math.max(...ys)) / 2,
+    };
+  } catch (e) {
+    if ((e as { code?: string })?.code === "browser.element_not_found") throw e;
+    throw toolError("browser.element_not_found", `pierce target "${ref}" is gone — re-run browser.page.pierce`);
+  } finally {
+    await release();
+  }
+}
+
+/** piercePoint + unknown-ref → element_not_found (one call site shape
+ *  for trusted click/hover). */
+async function pierceTargetPoint(
+  deps: ToolHostDeps,
+  tabId: number,
+  ref: string,
+): Promise<{ x: number; y: number }> {
+  const p = await piercePoint(deps, tabId, ref);
+  if (!p) {
+    throw toolError(
+      "browser.element_not_found",
+      `unknown pierce ref "${ref}" — re-run browser.page.pierce for fresh refs`,
+    );
+  }
+  return p;
 }
 
 // --- browser.dnr rule validation -------------------------------------
@@ -5767,13 +6024,27 @@ async function trustedClick(
   }
   cdpRequired(deps); // fail proto.unsupported before any page work
 
+  // pz-N pierce refs resolve through CDP DOM.getBoxModel — top frame
+  // only (subframe quad coordinates are not viewport-correct), and they
+  // can't be combined with selector/label (one target per dispatch).
+  const clickRef = str(args.ref);
+  const isPierceRef = clickRef !== undefined && PIERCE_REF_RE.test(clickRef);
+  if (isPierceRef && frameId !== 0) {
+    throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+  }
+  if (isPierceRef && (str(args.selector) !== undefined || str(args.label) !== undefined)) {
+    throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+  }
+
   const point = xArg !== undefined
     ? { x: xArg, y: yArg! }
-    : frameId !== 0
-      ? await frameAbsolutePoint(deps, tabId, {
-          ref: str(args.ref), selector: str(args.selector), label: str(args.label),
-        }, frameId, false, expectedTarget)
-      : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
+    : isPierceRef
+      ? await pierceTargetPoint(deps, tabId, clickRef!)
+      : frameId !== 0
+        ? await frameAbsolutePoint(deps, tabId, {
+            ref: str(args.ref), selector: str(args.selector), label: str(args.label),
+          }, frameId, false, expectedTarget)
+        : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   const actionDispatchedAt = Date.now();
@@ -5814,6 +6085,7 @@ async function trustedClick(
     ok: true,
     summary: `trusted click at ${Math.round(point.x)},${Math.round(point.y)}`,
     step: { action: "click", trusted: true, x: point.x, y: point.y, ok: true, frameId },
+    ...(isPierceRef ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     ...(openedTabs.length > 0 ? { openedTabs } : {}),
@@ -5842,13 +6114,23 @@ async function trustedHover(
     throw toolError("proto.invalid", "browser.page.hover accepts coordinates or an element target, not both");
   }
   cdpRequired(deps);
+  const hoverRef = str(args.ref);
+  const isPierceRef = hoverRef !== undefined && PIERCE_REF_RE.test(hoverRef);
+  if (isPierceRef && frameId !== 0) {
+    throw toolError("proto.invalid", "pierce refs are top-frame only; drop args.frameId");
+  }
+  if (isPierceRef && (str(args.selector) !== undefined || str(args.label) !== undefined)) {
+    throw toolError("proto.invalid", "a pierce ref cannot be combined with selector/label");
+  }
   const point = xArg !== undefined
     ? { x: xArg, y: yArg! }
-    : frameId !== 0
-      ? await frameAbsolutePoint(deps, tabId, {
-          ref: str(args.ref), selector: str(args.selector), label: str(args.label),
-        }, frameId, false, expectedTarget)
-      : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
+    : isPierceRef
+      ? await pierceTargetPoint(deps, tabId, hoverRef!)
+      : frameId !== 0
+        ? await frameAbsolutePoint(deps, tabId, {
+            ref: str(args.ref), selector: str(args.selector), label: str(args.label),
+          }, frameId, false, expectedTarget)
+        : await cdpLocateElement(deps, tabId, args, 0, false, expectedTarget);
 
   const { session, release } = await cdpAcquire(deps, tabId);
   try {
@@ -5868,6 +6150,7 @@ async function trustedHover(
     ok: true,
     summary: `trusted hover at ${Math.round(point.x)},${Math.round(point.y)}`,
     step: { action: "hover", trusted: true, x: point.x, y: point.y, ok: true, frameId },
+    ...(isPierceRef ? { pierced: true } : {}),
     ...(verified !== undefined ? { verified } : {}),
     ...(expectInfo ? { expect: expectInfo } : {}),
     resolvedTabId: tabId,

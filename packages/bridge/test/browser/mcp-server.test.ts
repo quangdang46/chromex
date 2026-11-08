@@ -337,6 +337,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.page.route": { match: "/api/ping", status: 200, body: "{}" },
   "browser.page.unroute": {},
   "browser.page.find": { text: "Sign in", limit: 10 },
+  "browser.page.pierce": { text: "checkout", limit: 20 },
   "browser.page.history": { action: "back" },
   "browser.page.cookies": { action: "list" },
   "browser.page.localStorage": { action: "list" },

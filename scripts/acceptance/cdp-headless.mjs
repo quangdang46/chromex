@@ -1950,6 +1950,68 @@ await runScenario(
         ...td,
       };
 
+      // --- pierce: closed shadow roots via CDP DOM pierce. Content
+      // scripts cannot see inside mode:"closed" roots; the pierce tool
+      // must surface the button and a pz ref click must land (verified
+      // by window.__pierceClicks in the MAIN world).
+      let pj = {};
+      try {
+        const pjCreate = await runner.browserToolCall(
+          taskId, "browser.tab.create",
+          { url: fixture.url("/closed-shadow"), active: true }, token, 60_000,
+        );
+        const pjTab = (pjCreate?.result ?? pjCreate ?? {}).openedTabId ??
+          (pjCreate?.result ?? pjCreate ?? {}).tabId;
+        pj.createOk = typeof pjTab === "number";
+        if (pj.createOk) {
+          await sleep(800);
+          const pierceRes = await runner.browserToolCall(
+            taskId, "browser.page.pierce", { tabId: pjTab }, token, 60_000,
+          );
+          const pjBody = pierceRes?.result ?? pierceRes ?? {};
+          pj.rootsOk = (pjBody.closedRoots ?? 0) >= 1;
+          const elements = Array.isArray(pjBody.elements) ? pjBody.elements : [];
+          const btn = elements.find((e) => e.tagName === "button");
+          pj.btnOk = typeof btn?.ref === "string" && /^pz-\d+$/.test(btn.ref);
+          pj.nameOk = String(btn?.name ?? "") !== "";
+          pj.boxOk = btn?.box != null && btn.box.width > 0;
+          if (pj.btnOk) {
+            // no trusted flag — pz refs auto-route to CDP dispatch
+            const clk = await runner.browserToolCall(
+              taskId, "browser.page.click", { tabId: pjTab, ref: btn.ref }, token, 60_000,
+            ).catch(() => null);
+            pj.clickOk = (clk?.result ?? clk ?? {}).pierced === true || clk?.status === "completed";
+            const ev = await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: pjTab, expression: "window.__pierceClicks||0" }, token, 60_000,
+            ).catch(() => null);
+            pj.effectOk = String(ev?.result?.value ?? ev?.value ?? "").includes("1");
+            const bad = await runner.browserToolCall(
+              taskId, "browser.page.click", { tabId: pjTab, ref: "pz-999999" }, token, 60_000,
+            ).catch(() => null);
+            pj.badRefOk = (bad?.error?.code ?? "") === "browser.element_not_found";
+            const filt = await runner.browserToolCall(
+              taskId, "browser.page.pierce", { tabId: pjTab, text: "closed action" }, token, 60_000,
+            ).catch(() => null);
+            pj.filterOk = ((filt?.result ?? filt ?? {}).elements ?? []).length >= 1;
+          } else {
+            pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+          }
+          await runner.browserToolCall(taskId, "browser.tab.close", { tabId: pjTab }, token, 60_000).catch(() => null);
+        } else {
+          pj.rootsOk = pj.btnOk = pj.nameOk = pj.boxOk = pj.clickOk = pj.effectOk = pj.badRefOk = pj.filterOk = false;
+        }
+      } catch (e) {
+        pj.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`pierce → ${JSON.stringify(pj).slice(0, 300)}`);
+      results.pierce = {
+        ok: pj.createOk === true && pj.rootsOk === true && pj.btnOk === true &&
+          pj.nameOk === true && pj.boxOk === true && pj.clickOk === true &&
+          pj.effectOk === true && pj.badRefOk === true && pj.filterOk === true,
+        ...pj,
+      };
+
       // --- siteSettings: optional "contentSettings" permission — ungranted → honest unsupported ---
       // Same pattern as bookmarks/history: the acceptance profile never
       // grants it → proto.unsupported, approval gate fires first for

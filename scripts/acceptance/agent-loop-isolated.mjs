@@ -307,6 +307,15 @@ try {
   );
   await call("browser.tab.close", { tabId: clTab }).catch(() => null);
 
+  // browser.page.pierce is chrome-extension only — closed shadow roots
+  // need the CDP DOM pierce tier playwright-isolated doesn't have.
+  await expectReject(
+    "browser.page.pierce",
+    {},
+    "unsupported",
+    "pierce refused on isolated",
+  );
+
   // ── Loop 5: coordinate click on a fixed-position target ────────────
   const coord = await call("browser.tab.create", { url: fixture.url("/coord"), active: false });
   const cTab = coord?.tabId ?? coord?.id;

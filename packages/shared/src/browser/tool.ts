@@ -45,6 +45,7 @@ export type BrowserToolName =
   | "browser.page.route"
   | "browser.page.unroute"
   | "browser.page.find"
+  | "browser.page.pierce"
   | "browser.page.history"
   | "browser.page.cookies"
   | "browser.page.localStorage"
@@ -128,6 +129,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.page.route",
   "browser.page.unroute",
   "browser.page.find",
+  "browser.page.pierce",
   "browser.page.history",
   "browser.page.cookies",
   "browser.page.localStorage",

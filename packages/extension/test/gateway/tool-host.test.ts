@@ -4185,6 +4185,87 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(types).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
   });
 
+  test("page.pierce discovers closed-root elements; pz ref click auto-routes to trusted CDP", async () => {
+    const cdp = fakeCdp({
+      "DOM.getDocument": () => ({
+        root: {
+          nodeType: 9, nodeName: "#document", backendNodeId: 1,
+          children: [{
+            nodeType: 1, nodeName: "DIV", backendNodeId: 2,
+            attributes: ["id", "host"],
+            shadowRoots: [{
+              nodeType: 11, nodeName: "#document-fragment", backendNodeId: 3,
+              shadowRootType: "closed",
+              children: [{
+                nodeType: 1, nodeName: "BUTTON", backendNodeId: 42,
+                attributes: ["id", "inner"],
+              }],
+            }],
+          }],
+        },
+      }),
+      "Accessibility.getFullAXTree": () => ({
+        nodes: [{ backendDOMNodeId: 42, role: { value: "button" }, name: { value: "closed action" } }],
+      }),
+      "DOM.getBoxModel": () => ({ model: { content: [10, 10, 110, 10, 110, 50, 10, 50] } }),
+    });
+    const h = createToolHostHandler(cdpDeps(520, cdp));
+    const res = (await h(req("browser.page.pierce", { tabId: 520 }))) as {
+      ok: boolean; closedRoots: number;
+      elements: Array<{ ref: string; tagName: string; role: string; name: string; box: { x: number; y: number; width: number; height: number } | null }>;
+    };
+    expect(res.ok).toBe(true);
+    expect(res.closedRoots).toBe(1);
+    expect(res.elements).toHaveLength(1);
+    const el = res.elements[0]!;
+    expect(el.ref).toMatch(/^pz-\d+$/);
+    expect(el.tagName).toBe("button");
+    expect(el.role).toBe("button");
+    expect(el.name).toBe("closed action");
+    expect(el.box).toMatchObject({ x: 10, y: 10, width: 100, height: 40 });
+    // click WITHOUT trusted:true — pz refs auto-route to CDP dispatch
+    const clk = (await h(req("browser.page.click", { tabId: 520, ref: el.ref }))) as {
+      ok: boolean; pierced?: boolean;
+    };
+    expect(clk.ok).toBe(true);
+    expect(clk.pierced).toBe(true);
+    const first = cdp.sent.find((s) => s.method === "Input.dispatchMouseEvent");
+    expect(first?.params).toMatchObject({ type: "mouseMoved", x: 60, y: 30 });
+    // unknown pz ref → element_not_found
+    await expect(
+      h(req("browser.page.click", { tabId: 520, ref: "pz-999999" })),
+    ).rejects.toMatchObject({ code: "browser.element_not_found" });
+    // second pierce call re-mints refs — old ref is gone
+    await h(req("browser.page.pierce", { tabId: 520 }));
+    await expect(
+      h(req("browser.page.click", { tabId: 520, ref: el.ref })),
+    ).rejects.toMatchObject({ code: "browser.element_not_found" });
+  });
+
+  test("page.pierce → proto.unsupported without CDP dep; frameId/text validated", async () => {
+    const h = createToolHostHandler(deps());
+    await expect(h(req("browser.page.pierce", { tabId: 501 }))).rejects.toMatchObject({ code: "proto.unsupported" });
+    const cdp = fakeCdp();
+    const h2 = createToolHostHandler(cdpDeps(521, cdp));
+    await expect(
+      h2(req("browser.page.pierce", { tabId: 521, frameId: 3 })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      h2(req("browser.page.pierce", { tabId: 521, text: "x".repeat(600) })),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    // no closed roots → honest empty result
+    const cdp3 = fakeCdp({
+      "DOM.getDocument": () => ({ root: { nodeType: 9, nodeName: "#document", children: [] } }),
+      "Accessibility.getFullAXTree": () => ({ nodes: [] }),
+    });
+    const h3 = createToolHostHandler(cdpDeps(522, cdp3));
+    const empty = (await h3(req("browser.page.pierce", { tabId: 522 }))) as {
+      ok: boolean; closedRoots: number; elements: unknown[];
+    };
+    expect(empty.ok).toBe(true);
+    expect(empty.elements).toHaveLength(0);
+  });
+
   test("trusted click aborts with browser.target_changed when locate reports drift — nothing dispatched", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(510, cdp, {

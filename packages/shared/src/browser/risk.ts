@@ -156,6 +156,7 @@ const READ_TOOLS = new Set([
   "browser.page.wait",
   "browser.page.console",
   "browser.page.find",
+  "browser.page.pierce",
   "browser.downloads.list",
   "browser.page.network",
   // CDP tier (docs/adr/debugger-tier.md): response bodies are page
