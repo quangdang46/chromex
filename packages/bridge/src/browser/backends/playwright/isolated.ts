@@ -1806,16 +1806,43 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #screenshot(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    // Element clips are a chrome-extension CDP capability — refuse
-    // rather than silently returning a full-page capture.
-    if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
-      throw protocolError(
-        "proto.unsupported",
-        "element-targeted screenshots are not supported on playwright-isolated",
-      );
-    }
+    const hasElementTarget =
+      args.ref !== undefined || args.selector !== undefined || args.label !== undefined;
     if (args.fullPage !== undefined && typeof args.fullPage !== "boolean") {
       throw protocolError("proto.invalid", "browser.page.screenshot args.fullPage must be a boolean");
+    }
+    // Element clip via locator.screenshot() — same contract as the
+    // extension's CDP element path (scrolls into view, frameId scopes
+    // to that frame's locator). label-only targets stay proto.invalid
+    // like every other DOM action on this backend.
+    if (hasElementTarget) {
+      if (args.fullPage === true) {
+        throw protocolError(
+          "proto.invalid",
+          "browser.page.screenshot args.fullPage cannot combine with an element target",
+        );
+      }
+      const target = await this.#frameTarget(taskId, args);
+      const sel = args.selector ?? args.ref;
+      if (typeof sel !== "string" || !sel) {
+        throw protocolError(
+          "proto.invalid",
+          "element screenshot requires args.selector or args.ref",
+        );
+      }
+      for (const quality of SCREENSHOT_JPEG_QUALITIES) {
+        const buf = await target
+          .locator(sel)
+          .first()
+          .screenshot({ type: "jpeg", quality });
+        if (buf.length <= SCREENSHOT_MAX_BYTES) {
+          return { dataBase64: buf.toString("base64"), mimeType: "image/jpeg", bytes: buf.length };
+        }
+      }
+      throw protocolError(
+        "artifact.too_large",
+        `element screenshot exceeds ${SCREENSHOT_MAX_BYTES} bytes even at the lowest jpeg quality`,
+      );
     }
     const fullPage = args.fullPage === true;
     const page = await this.#pageFor(taskId, args);
@@ -4132,17 +4159,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   // ---- downloads ----
 
-  /** Lazily attach the context 'download' listener once per task and
-   *  return the task's log. Passive page-initiated downloads land here
-   *  too — they stay in_progress until saveAs persists them (playwright
-   *  deletes unsaved download artifacts when the context closes). */
-  async #ensureDownloadLog(taskId: string): Promise<DownloadLogEntry[]> {
-    const context = await this.#contextFor(taskId);
-    const existing = this.#downloadLogs.get(taskId);
-    if (existing) return existing;
-    const log: DownloadLogEntry[] = [];
-    this.#downloadLogs.set(taskId, log);
-    context.on("download", (d) => {
+  /** Pages already wired for download capture — page.on('download') is
+   *  a Page event (BrowserContext has none), so each page in the
+   *  task's context gets its own listener. */
+  readonly #downloadWired = new WeakSet<PwPage>();
+
+  #wirePageDownload(page: PwPage, taskId: string): void {
+    if (this.#downloadWired.has(page) || typeof page.on !== "function") return;
+    this.#downloadWired.add(page);
+    page.on("download", (d: PwDownload) => {
+      const log = this.#downloadLogs.get(taskId);
+      if (!log) return;
       log.push({
         id: ++this.#downloadSeq,
         url: stripQuery(d.url()),
@@ -4154,6 +4181,26 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         download: d,
       });
     });
+  }
+
+  async #ensureDownloadLog(taskId: string): Promise<DownloadLogEntry[]> {
+    const context = await this.#contextFor(taskId);
+    const existing = this.#downloadLogs.get(taskId);
+    if (existing) {
+      // Log already exists — still wire any pages created since (the
+      // context "page" hook below only runs once per context).
+      for (const p of context.pages()) this.#wirePageDownload(p, taskId);
+      return existing;
+    }
+    const log: DownloadLogEntry[] = [];
+    this.#downloadLogs.set(taskId, log);
+    // 'download' is a Page event, not a BrowserContext event — context.on
+    // never receives it (verified: playwright types expose it on Page
+    // only). Wire every current page plus future ones via "page".
+    for (const p of context.pages()) this.#wirePageDownload(p, taskId);
+    if (typeof context.on === "function") {
+      context.on("page", (p: PwPage) => this.#wirePageDownload(p, taskId));
+    }
     return log;
   }
 
