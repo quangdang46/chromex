@@ -459,6 +459,15 @@ export interface ToolHostDeps {
     url?: string;
     limit: number;
   }): Promise<unknown | null>;
+  /** chrome.storage.session route-rule persistence (browser.page.route)
+   *  — survives an MV3 service-worker restart so mocks re-arm on the
+   *  next route call instead of silently vanishing. Absent dep →
+   *  rules stay memory-only (previous behavior). */
+  routeRulesStore?: {
+    get(tabId: number): Promise<Array<Record<string, unknown>> | undefined>;
+    set(tabId: number, rules: Array<Record<string, unknown>>): Promise<void>;
+    delete(tabId: number): Promise<void>;
+  };
 }
 
 function toolError(code: string, message: string): Error {
@@ -8347,6 +8356,69 @@ const routeHolds = new Map<number, RouteHold>();
 const ROUTE_BODY_MAX = 256 * 1024;
 const ROUTE_RULES_MAX = 50;
 
+/** Persisted rules are plain JSON — RouteRule fields are all
+ *  serializable. Restore validates the shape and skips malformed
+ *  entries rather than crashing the hold. */
+function routeRuleFromStored(raw: Record<string, unknown>): RouteRule | null {
+  if (typeof raw.id !== "string" || typeof raw.match !== "string") return null;
+  if (raw.action !== "fulfill" && raw.action !== "abort" && raw.action !== "modify") return null;
+  if (typeof raw.status !== "number" || typeof raw.bodyBase64 !== "string") return null;
+  if (typeof raw.headers !== "object" || raw.headers === null || Array.isArray(raw.headers)) return null;
+  const rule: RouteRule = {
+    id: raw.id,
+    match: raw.match,
+    action: raw.action,
+    status: raw.status,
+    headers: raw.headers as Record<string, string>,
+    bodyBase64: raw.bodyBase64,
+    ...(typeof raw.frameId === "number" ? { frameId: raw.frameId } : {}),
+    ...(typeof raw.url === "string" ? { url: raw.url } : {}),
+    ...(typeof raw.requestHeaders === "object" && raw.requestHeaders !== null
+      ? { requestHeaders: raw.requestHeaders as Record<string, string> }
+      : {}),
+    ...(typeof raw.requestBodyBase64 === "string" ? { requestBodyBase64: raw.requestBodyBase64 } : {}),
+  };
+  return rule;
+}
+
+async function persistRouteRules(
+  deps: ToolHostDeps,
+  tabId: number,
+  hold: RouteHold,
+): Promise<void> {
+  if (!deps.routeRulesStore) return;
+  const rules = [...hold.rules.values()].map((r) => ({ ...r }));
+  try {
+    if (rules.length === 0) await deps.routeRulesStore.delete(tabId);
+    else await deps.routeRulesStore.set(tabId, rules);
+  } catch {
+    // storage.session write failure must not break the live hold —
+    // rules still work in memory until the next restart.
+  }
+}
+
+/** Re-arm rules persisted before an SW restart. Called once per fresh
+ *  hold; restored rules take effect immediately because Fetch.enable
+ *  is already wired. Returns the number restored. */
+async function restoreRouteRules(
+  deps: ToolHostDeps,
+  tabId: number,
+  hold: RouteHold,
+): Promise<number> {
+  if (!deps.routeRulesStore || hold.rules.size > 0) return 0;
+  const stored = await deps.routeRulesStore.get(tabId).catch(() => undefined);
+  if (!stored || stored.length === 0) return 0;
+  let restored = 0;
+  for (const raw of stored) {
+    if (hold.rules.size >= ROUTE_RULES_MAX) break;
+    const rule = routeRuleFromStored(raw);
+    if (!rule || hold.rules.has(rule.id)) continue;
+    hold.rules.set(rule.id, rule);
+    restored++;
+  }
+  return restored;
+}
+
 function utf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text);
   let bin = "";
@@ -8540,6 +8612,9 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
   });
   hold.unsubs.push(...wireRouteFetch(hold, deps, tabId, session, { type: "tab" }));
   await syncOopifRouteTargets(deps, tabId, hold);
+  // Re-arm rules persisted across an SW restart — they take effect
+  // immediately since Fetch.enable is already wired above.
+  await restoreRouteRules(deps, tabId, hold);
   return hold;
 }
 
@@ -8701,6 +8776,7 @@ async function addPageRoute(
     ...(Object.keys(modHeaders).length > 0 ? { requestHeaders: modHeaders } : {}),
     ...(modBodyBase64 !== undefined ? { requestBodyBase64: modBodyBase64 } : {}),
   });
+  await persistRouteRules(deps, tabId, hold);
   return {
     routeId: id, match, action, status, rules: hold.rules.size, resolvedTabId: tabId,
     ...(ruleFrameId !== undefined ? { frameId: ruleFrameId } : {}),
@@ -8712,10 +8788,21 @@ async function removePageRoutes(
   tabId: number,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const hold = routeHolds.get(tabId);
+  let hold = routeHolds.get(tabId);
+  // No live hold — but rules persisted before an SW restart would
+  // silently re-arm on the next route call. Materialize the hold so
+  // unroute can actually clear them instead of reporting removed:0
+  // while mocks stay armed in storage.
+  if (!hold && deps.routeRulesStore) {
+    const stored = await deps.routeRulesStore.get(tabId).catch(() => undefined);
+    if (stored && stored.length > 0) hold = await routeHold(deps, tabId);
+  }
   const routeId = str(args.routeId);
   if (hold) await syncOopifRouteTargets(deps, tabId, hold);
   if (!hold || hold.rules.size === 0) {
+    // A freshly materialized hold with nothing to remove must not
+    // leak its debugger attach.
+    if (hold) await releaseRouteHold(tabId);
     return { removed: 0, remaining: 0, resolvedTabId: tabId };
   }
   let removed = 0;
@@ -8728,6 +8815,7 @@ async function removePageRoutes(
     removed = hold.rules.size;
     hold.rules.clear();
   }
+  await persistRouteRules(deps, tabId, hold);
   if (hold.rules.size === 0) {
     await releaseRouteHold(tabId);
   }

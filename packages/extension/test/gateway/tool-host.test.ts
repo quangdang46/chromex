@@ -5630,6 +5630,58 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cdp.sent.filter((s) => s.method === "Page.getFrameTree").length).toBeGreaterThanOrEqual(2);
   });
 
+  test("page.route rules persist across hold disposal and re-arm", async () => {
+    const cdp = fakeCdp();
+    const store = new Map<number, Array<Record<string, unknown>>>();
+    const h = createToolHostHandler(cdpDeps(525, cdp, {
+      routeRulesStore: {
+        get: vi.fn(async (t: number) => store.get(t)),
+        set: vi.fn(async (t: number, rules: Array<Record<string, unknown>>) => { store.set(t, rules); }),
+        delete: vi.fn(async (t: number) => { store.delete(t); }),
+      },
+    }));
+    await h(req("browser.page.route", { tabId: 525, match: "/mock", body: "persisted" }));
+    expect(store.get(525)).toHaveLength(1);
+    // Simulate an SW restart: the hold dies, storage.session survives.
+    const { disposeBrowserToolTabState } = await import("../../src/background/gateway/tool-host.js");
+    await disposeBrowserToolTabState(525);
+    expect(cdp.sent.filter((s) => s.method === "Fetch.disable").length).toBeGreaterThan(0);
+    // Next route call re-creates the hold AND re-arms the persisted rule.
+    const res = (await h(req("browser.page.route", { tabId: 525, match: "/other" }))) as { rules: number };
+    expect(res.rules).toBe(2);
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "re-1", request: { url: "http://x.test/mock" },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    const fulfill = cdp.sent.filter((s) => s.method === "Fetch.fulfillRequest");
+    expect(fulfill.some((s) => s.params?.requestId === "re-1")).toBe(true);
+    // unroute clears both live and persisted rules.
+    await h(req("browser.page.unroute", { tabId: 525 }));
+    expect(store.has(525)).toBe(false);
+  });
+
+  test("page.unroute clears persisted rules without a live hold", async () => {
+    const cdp = fakeCdp();
+    const store = new Map<number, Array<Record<string, unknown>>>([
+      [526, [{
+        id: "stale-1", match: "/ghost", action: "fulfill", status: 200,
+        headers: {}, bodyBase64: "eA==",
+      }]],
+    ]);
+    const h = createToolHostHandler(cdpDeps(526, cdp, {
+      routeRulesStore: {
+        get: vi.fn(async (t: number) => store.get(t)),
+        set: vi.fn(async (t: number, rules: Array<Record<string, unknown>>) => { store.set(t, rules); }),
+        delete: vi.fn(async (t: number) => { store.delete(t); }),
+      },
+    }));
+    const res = (await h(req("browser.page.unroute", { tabId: 526 }))) as { removed: number };
+    expect(res.removed).toBe(1);
+    expect(store.has(526)).toBe(false);
+    // The materialized hold was released — no dangling Fetch.enable.
+    expect(cdp.sent.filter((s) => s.method === "Fetch.disable").length).toBeGreaterThan(0);
+  });
+
   test("page.route validates args honestly", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(522, cdp));

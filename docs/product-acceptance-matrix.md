@@ -114,7 +114,15 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   frame tap (page.on websocket, 8KiB/frame caps), route/unroute
   (fulfill/abort/modify via page.route, first-match, 50-rule cap,
   full detach on empty) — fulfill+modify+abort+responseBody verified
-  in `agent-loop-isolated` Loop 10b; **page.dialog parity**: track-time
+  in `agent-loop-isolated` Loop 10b; **route rule persistence**:
+  chrome-extension serializes rules to chrome.storage.session on every
+  mutation — an MV3 service-worker restart no longer silently drops
+  mocks; the next route/unroute call re-arms them on a fresh hold
+  (unroute with no live hold materializes one to clear persisted rules
+  honestly; tab close deletes the key so a reused tabId can't inherit
+  mocks; restore validates shape and skips malformed entries) —
+  verified tool-host units (dispose→re-arm→fulfill, unroute-clears-
+  persisted); **page.dialog parity**: track-time
   dialog listener holds JS dialogs open (real browser semantics —
   playwright auto-dismisses only with no listener), accept/dismiss +
   promptText + no_dialog honest result — confirm accept, alert

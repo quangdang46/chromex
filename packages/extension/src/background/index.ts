@@ -255,6 +255,23 @@ const toolHostHandler = createToolHostHandler({
         ...(typeof f.parentFrameId === "number" ? { parentFrameId: f.parentFrameId } : {}),
       }));
     },
+    // Route rules persist in storage.session — survives an MV3
+    // service-worker restart (session storage dies with the browser,
+    // never leaks into the next session). Keyed per tab.
+    routeRulesStore: {
+      get: async (tabId) => {
+        const key = `chromex.routeRules.${tabId}`;
+        const got = await chrome.storage.session.get(key);
+        const v = got?.[key];
+        return Array.isArray(v) ? (v as Array<Record<string, unknown>>) : undefined;
+      },
+      set: async (tabId, rules) => {
+        await chrome.storage.session.set({ [`chromex.routeRules.${tabId}`]: rules });
+      },
+      delete: async (tabId) => {
+        await chrome.storage.session.remove(`chromex.routeRules.${tabId}`);
+      },
+    },
     queryTabs: async () => chrome.tabs.query({}),
     recentTabCreations: () => [...recentTabCreations],
     activateTab: async (tabId) => {
@@ -1839,6 +1856,9 @@ chrome.tabs.onCreated.addListener((tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   toolHostSnapshotRegistry().invalidateTab(tabId);
   resetNetworkTab(tabId);
+  // Persisted route rules are keyed by tabId — drop them so a reused
+  // tab id can never inherit another tab's mocks.
+  void chrome.storage.session.remove(`chromex.routeRules.${tabId}`).catch(() => {});
   void disposeBrowserToolTabState(tabId);
 });
 
