@@ -2,7 +2,7 @@
 
 > **Trạng thái hiện tại (ghi đè kết luận cũ trong các bảng traceability):**
 > - **Gate A (semantic): CHƯA KÝ** — chờ duyệt §0.0 (v4.2.1 consistency) + §0.1 (v4.1 P0).
-> - **Gate A-final (implementation): CHƯA MỞ** — chờ **B5 (IPC), B6 (browser identity), B7 (durability benchmark)**. Ba mục này **không** chặn Gate A semantic.
+> - **Gate A-final (implementation): spikes ĐÃ XONG** — B5 (IPC: unix socket + token, `docs/adr/ipc-transport.md`), B6 (`browserInstanceId` qua chromePpid, `docs/adr/browser-instance.md` + `native-host/browser-instance.ts`), B7 (`synchronous=FULL` giữ nguyên, `docs/adr/durability.md` + `store/db.ts`). Còn lại là sign-off/verification, không còn spike mở. Ba mục này **không** chặn Gate A semantic.
 > - **Gate C (implementation-ready): CHƯA ĐẠT** — theo 10 tiêu chí §12.
 > - **`synchronous = FULL`:** **đã chốt** làm mặc định. B7 chỉ xem xét có lý do hạ xuống NORMAL; nếu hạ phải cập nhật cam kết §5.6.
 >
@@ -360,7 +360,7 @@ Không copy implementation Claude adapter (rất lớn), broker, storage. Chỉ 
 | `hostInstanceId` | **một process** background/native host | một instance process | native host/background khi connect | Phát hiện host mới; log; **không** dùng cho affinity |
 | `connectionId` | một kết nối | một IPC/NM connection | Gateway cấp khi `hello` | Correlation, cleanup pending khi connection đóng |
 
-**Cách `browserInstanceId` sống qua SW restart — ứng viên, CHƯA xác nhận (Gate B6):**
+**Cách `browserInstanceId` sống qua SW restart — ĐÃ CHỐT (B6, `docs/adr/browser-instance.md`):** native host mint ID một lần per (chromePpid, chromePpidStartedAt), persist trong gateway dataDir; SW restart giữ ID, extension reload/disable→enable mất ID → `needs_confirmation` (không `stale`), Chrome quit → ID mới. Phân tích ứng viên gốc giữ lại để tham chiếu:
 
 | Sự kiện | Chrome còn chạy? | `chrome.storage.session` |
 |---|---|---|
@@ -2438,8 +2438,8 @@ Mỗi PR: build/test/typecheck xanh; flag; test mới; `gatewayMode=off` không 
 7. Retention defaults + event size caps.
 8. `profileId` multi-Chrome-profile UX (adopt task).
 9. Background turns/subagents (P2+).
-10. **Cơ chế `browserInstanceId`** (B6) — *còn mở*: storage.session vs native-host supervisor vs chrome-PID fallback. **Đã chốt:** nếu không chứng minh được → `needs_confirmation`, không `stale`.
-11. **`PRAGMA synchronous`** — *đã chốt mặc định `FULL` toàn database*; B7 chỉ benchmark để xem có cần hạ xuống NORMAL hay không (và nếu hạ phải cập nhật cam kết §5.6).
+10. **Cơ chế `browserInstanceId`** (B6) — *đã chốt*: native-host supervisor mint per (chromePpid, chromePpidStartedAt), persist trong gateway dataDir (`docs/adr/browser-instance.md`). ID mất → `needs_confirmation`, không `stale`.
+11. **`PRAGMA synchronous`** — *đã chốt `FULL` toàn database*; B7 benchmark xong, giữ FULL (`docs/adr/durability.md`, `store/db.ts`).
 12. **Refresh token** — *đã chốt*: Gateway chủ động refresh (§9.1). *Còn mở*: adapter nào hot-update được, adapter nào buộc drain + restart MCP connection.
 
 ---
