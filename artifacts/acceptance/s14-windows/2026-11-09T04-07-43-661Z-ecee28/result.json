@@ -1,0 +1,27 @@
+{
+  "scenario": "s14-windows",
+  "runId": "2026-11-09T04-07-43-661Z-ecee28",
+  "status": "PASS",
+  "summary": "agent created a dedicated window, drove its tab in-scope, targeted tab.create at windowId, maximized+restored window state, bogus state refused, windows.remove closed it and the host stayed alive",
+  "durationMs": 9217,
+  "details": {
+    "windowId": 751391454,
+    "winTabId": 751391455,
+    "tab2Id": 751391456,
+    "beforeCount": 1
+  },
+  "notes": [
+    "[2026-11-09T04:07:47.952Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T04:07:47.958Z] task 01M6Z7V9FKM0G2804QCMCHK7YG",
+    "[2026-11-09T04:07:47.959Z] browser.mcp scope acquired",
+    "[2026-11-09T04:07:47.967Z] windows before=1 ids=751391452",
+    "[2026-11-09T04:07:48.087Z] windows.create → windowId=751391454 tabId=751391455 tabs=1",
+    "[2026-11-09T04:07:49.152Z] page.get on window tab → {\"id\":751391455,\"tabId\":751391455,\"url\":\"http://127.0.0.1:60720/\",\"title\":\"Fixture Home\",\"active\":true,\"resolvedTabId\":751391455,\"value\":\"Fixture Home\",\"windowI",
+    "[2026-11-09T04:07:49.159Z] tab.create windowId=751391454 → tabId=751391456",
+    "[2026-11-09T04:07:49.165Z] tabs.list row for tab2 → {\"id\":751391456,\"title\":\"127.0.0.1:60720/slow\",\"url\":\"http://127.0.0.1:60720/slow\",\"origin\":\"http://127.0.0.1:60720\",\"active\":false,\"windowId\":751391454,\"status\":\"loading\",\"pinned\":false,\"groupId\":-1,",
+    "[2026-11-09T04:07:49.931Z] windows.update maximized → state=maximized",
+    "[2026-11-09T04:07:50.302Z] bogus state refused → proto.invalid",
+    "[2026-11-09T04:07:50.556Z] windows.remove → {\"toolCallId\":\"rpc-mw8qq9zz-ur9fgh\",\"tool\":\"browser.windows.remove\",\"status\":\"completed\",\"result\":{\"removed\":true,\"tabsClosed\":2}}",
+    "[2026-11-09T04:07:51.360Z] post-remove window present=false (host alive = list answered)"
+  ]
+}

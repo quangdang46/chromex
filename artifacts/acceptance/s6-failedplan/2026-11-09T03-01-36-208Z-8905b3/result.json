@@ -1,0 +1,30 @@
+{
+  "scenario": "s6-failedplan",
+  "runId": "2026-11-09T03-01-36-208Z-8905b3",
+  "status": "PASS",
+  "summary": "stale snapshotId rejected loudly; re-observe + retry succeeded",
+  "durationMs": 5556,
+  "details": {
+    "staleFailed": true,
+    "clickStatus": "completed",
+    "snap2Status": "completed",
+    "formAdvanced": false,
+    "stale": {
+      "toolCallId": "rpc-mw8od6ml-385iaq",
+      "tool": "browser.page.click",
+      "status": "failed",
+      "error": {
+        "code": "browser.stale_snapshot",
+        "message": "browser.stale_snapshot: snapshot expired or belongs to another tab; call browser.page.snapshot again"
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-09T03:01:39.854Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T03:01:40.162Z] snapshot1 status=completed snapshotId=snap:38436786-5fc6-40aa-b759-b860307a4838",
+    "[2026-11-09T03:01:40.173Z] navigate → completed",
+    "[2026-11-09T03:01:40.186Z] stale click → {\"toolCallId\":\"rpc-mw8od6ml-385iaq\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.stale_snapshot\",\"message\":\"browser.stale_snapshot: snapshot expired or belongs to another tab; call browser.page.snapshot again\"}}",
+    "[2026-11-09T03:01:40.445Z] snapshot2 status=completed snapshotId=snap:e8b9ea72-ab87-4c7b-8f48-a69e667e5b42",
+    "[2026-11-09T03:01:41.071Z] fresh click → {\"toolCallId\":\"rpc-mw8od6u5-mfsltj\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"label\":\"Next\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Next\",\"tagName\":\"button\",\"con"
+  ]
+}

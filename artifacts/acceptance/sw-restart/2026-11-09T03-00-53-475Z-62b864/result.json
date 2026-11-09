@@ -1,0 +1,34 @@
+{
+  "scenario": "sw-restart",
+  "runId": "2026-11-09T03-00-53-475Z-62b864",
+  "status": "PASS",
+  "summary": "extension reload → new SW + NM host re-registered → calls + CDP tier recovered → post-reload click delivered exactly once",
+  "durationMs": 8506,
+  "details": {
+    "newSw": "chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
+    "authed": 2,
+    "getStatus": "completed",
+    "click2Status": "completed",
+    "count1": "1",
+    "count2": "2",
+    "ariaOk": true
+  },
+  "notes": [
+    "[2026-11-09T03:00:57.183Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T03:00:57.482Z] baseline snapshot=completed ref=dom-1",
+    "[2026-11-09T03:00:58.120Z] baseline click → completed",
+    "[2026-11-09T03:00:58.424Z] count after baseline=1",
+    "[2026-11-09T03:00:58.684Z] route arm → completed \"\"",
+    "[2026-11-09T03:00:58.699Z] interception check title=pong:routed",
+    "[2026-11-09T03:00:58.884Z] reload trigger failed: page.evaluate: Target page, context or browser has been closed",
+    "[2026-11-09T03:00:58.884Z] extension reload triggered (sws before=1)",
+    "[2026-11-09T03:00:59.386Z] new service worker=chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/background.js",
+    "[2026-11-09T03:00:59.386Z] authed gateway connections post-reload=2",
+    "[2026-11-09T03:01:00.531Z] post-reload page.get → completed \"\"",
+    "[2026-11-09T03:01:00.789Z] post-reload snapshot=completed ref=dom-1",
+    "[2026-11-09T03:01:01.414Z] post-reload click → {\"toolCallId\":\"rpc-mw8occ8m-pk5fsw\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-1\",\"action\":\"click\",\"",
+    "[2026-11-09T03:01:01.716Z] count after post-reload click=2",
+    "[2026-11-09T03:01:01.973Z] post-reload aria snapshot=completed len=279",
+    "[2026-11-09T03:01:01.982Z] post-reload fetch title=pong:ok"
+  ]
+}

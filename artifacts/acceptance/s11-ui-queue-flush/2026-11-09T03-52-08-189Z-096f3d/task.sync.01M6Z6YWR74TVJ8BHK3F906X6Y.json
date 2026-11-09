@@ -1,0 +1,224 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 1,
+      "ts": 1794196337417,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 2,
+      "ts": 1794196337417,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 3,
+      "ts": 1794196337422,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6Z6YWRE1B3MMRPSH96WBBFN",
+        "message": {
+          "gatewayTurnId": "01M6Z6YWRE1B3MMRPSH96WBBFN",
+          "clientMessageId": "prompt-1794196335103-6at4vnsi576",
+          "content": [
+            {
+              "type": "text",
+              "text": "first turn — finish soon"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794196335103-6at4vnsi576"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 4,
+      "ts": 1794196337426,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6Z6YWRE1B3MMRPSH96WBBFN"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 5,
+      "ts": 1794196362492,
+      "type": "assistant.message",
+      "payload": {
+        "type": "assistant.message",
+        "turnId": "01M6Z6YWRE1B3MMRPSH96WBBFN",
+        "text": "startingworking… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… working… "
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 6,
+      "ts": 1794196362503,
+      "type": "turn.completed",
+      "payload": {
+        "type": "turn.completed",
+        "turnId": "01M6Z6YWRE1B3MMRPSH96WBBFN",
+        "stopReason": "end_turn"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 7,
+      "ts": 1794196362508,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "active",
+        "to": "completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 8,
+      "ts": 1794196362509,
+      "type": "task.attention_changed",
+      "payload": {
+        "type": "task.attention_changed",
+        "attention": "turn_finished"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 9,
+      "ts": 1794196362509,
+      "type": "task.completed",
+      "payload": {
+        "type": "task.completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 10,
+      "ts": 1794196363612,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M6Z6ZPAWTRR87Q68YB5541SE",
+        "message": {
+          "gatewayTurnId": "01M6Z6ZPAWTRR87Q68YB5541SE",
+          "clientMessageId": "prompt-1794196362507-57qybjpap5p",
+          "content": [
+            {
+              "type": "text",
+              "text": "auto-flush me after turn one"
+            }
+          ]
+        },
+        "clientMessageId": "prompt-1794196362507-57qybjpap5p"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 11,
+      "ts": 1794196363613,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M6Z6ZPAWTRR87Q68YB5541SE"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 12,
+      "ts": 1794196365119,
+      "type": "assistant.message",
+      "payload": {
+        "type": "assistant.message",
+        "turnId": "01M6Z6ZPAWTRR87Q68YB5541SE",
+        "text": "startingworking… working… "
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6Z6YWR74TVJ8BHK3F906X6Y",
+      "seq": 13,
+      "ts": 1794196365120,
+      "type": "turn.completed",
+      "payload": {
+        "type": "turn.completed",
+        "turnId": "01M6Z6ZPAWTRR87Q68YB5541SE",
+        "stopReason": "end_turn"
+      }
+    }
+  ],
+  "nextSeq": 13,
+  "hasMore": false
+}

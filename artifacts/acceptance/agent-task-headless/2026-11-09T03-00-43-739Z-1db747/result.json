@@ -1,0 +1,33 @@
+{
+  "scenario": "agent-task-headless",
+  "runId": "2026-11-09T03-00-43-739Z-1db747",
+  "status": "PASS",
+  "summary": "scripted agent loop on the REAL extension: form submitted + verified server-side; stale-snapshot recovery in-loop; screenshot+pdf+evaluate deliverables",
+  "durationMs": 9063,
+  "details": {
+    "results": [
+      "ok — tab.create returned tabId=596204734",
+      "ok — snapshot observes the form page (title + interactive elements)",
+      "ok — click Next completed",
+      "ok — page.wait text=Submitted resolved",
+      "ok — extract verifies submit-ok page",
+      "ok — fixture server received POST /submit",
+      "ok — POST body carries name=Agent",
+      "ok — POST body carries plan field",
+      "ok — stale snapshotId rejected loudly mid-task",
+      "ok — re-observe after navigation",
+      "ok — screenshot artifact (11086 bytes)",
+      "ok — pdf artifact (31074 bytes)",
+      "ok — evaluate reads page title (\"Fixture Form\")",
+      "ok — route rule registered",
+      "ok — agent observes the fulfilled (mocked) response",
+      "ok — unroute restores the real server response",
+      "ok — empty evaluate refused, never faked"
+    ]
+  },
+  "notes": [
+    "[2026-11-09T03:00:47.591Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T03:00:50.220Z] recovery: stale snapshot → re-observe → fill succeeded",
+    "[2026-11-09T03:00:52.547Z] network: route fulfill → observed mock → unroute → real response"
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "scenario": "tab-close-last",
+  "runId": "2026-11-09T03-05-25-073Z-edb4b0",
+  "status": "PASS",
+  "summary": "refused=true alive=true workaround=true",
+  "durationMs": 5944,
+  "details": {
+    "windowId": 839095488,
+    "tabId": 839095489,
+    "siblingId": 839095490,
+    "close1": {
+      "toolCallId": "rpc-mw8oi35e-eq4rvq",
+      "tool": "browser.tab.close",
+      "status": "failed",
+      "error": {
+        "code": "proto.unsupported",
+        "message": "proto.unsupported: closing the last tab of a window tears the window down, which crashes headless Chromium — open another tab in the window first, then close this one"
+      }
+    },
+    "probe": {
+      "toolCallId": "rpc-mw8oi44h-pt9xg0",
+      "tool": "browser.windows.list",
+      "status": "completed",
+      "result": {
+        "windows": [
+          {
+            "id": 839095486,
+            "focused": true,
+            "type": "normal",
+            "state": "normal",
+            "incognito": false,
+            "left": 22,
+            "top": 52,
+            "width": 1280,
+            "height": 720,
+            "tabCount": 1
+          },
+          {
+            "id": 839095488,
+            "focused": false,
+            "type": "normal",
+            "state": "normal",
+            "incognito": false,
+            "left": 44,
+            "top": 74,
+            "width": 1280,
+            "height": 720,
+            "tabCount": 1
+          }
+        ]
+      }
+    },
+    "refusedOk": true,
+    "alive": true,
+    "workaroundOk": true
+  },
+  "notes": [
+    "[2026-11-09T03:05:28.891Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T03:05:28.945Z] windows.create → {\"toolCallId\":\"rpc-mw8oi344-qtdyqd\",\"tool\":\"browser.windows.create\",\"status\":\"completed\",\"result\":{\"windowId\":839095488,\"id\":839095488,\"focused\":false,\"state\":\"normal\",\"type\":\"normal\",\"tabs\":[{\"id\":839095489,\"url\":\"\",\"title\":\"\",\"active\":true}],\"openedTabId\":839095489,\"tabId\":839095489,\"resolvedTabId",
+    "[2026-11-09T03:05:29.206Z] last-tab close → {\"toolCallId\":\"rpc-mw8oi35e-eq4rvq\",\"tool\":\"browser.tab.close\",\"status\":\"failed\",\"error\":{\"code\":\"proto.unsupported\",\"message\":\"proto.unsupported: closing the last tab of a window tears the window down, which crashes headless Chromium — open another tab in the window first, then close this one\"}}",
+    "[2026-11-09T03:05:30.212Z] post-refusal probe → {\"toolCallId\":\"rpc-mw8oi44h-pt9xg0\",\"tool\":\"browser.windows.list\",\"status\":\"completed\",\"result\":{\"windows\":[{\"id\":839095486,\"focused\":true,\"type\":\"normal\",\"state\":\"normal\",\"incognito\":false,\"left\":22, alive=true",
+    "[2026-11-09T03:05:30.220Z] sibling create → {\"toolCallId\":\"rpc-mw8oi44k-uj0h3v\",\"tool\":\"browser.tab.create\",\"status\":\"completed\",\"result\":{\"openedTabId\":839095490,\"tabId\":839095490,\"resolvedTabId\":839095490,\"id\":839095490,\"url\":\"\",\"origin\":\"\",\"title\":\"\",\"active\":false}}",
+    "[2026-11-09T03:05:31.016Z] sibling-present close → {\"toolCallId\":\"rpc-mw8oi4iq-yq0vd1\",\"tool\":\"browser.tab.close\",\"status\":\"completed\",\"result\":{\"closed\":839095489,\"resolvedTabId\":839095489}}"
+  ]
+}

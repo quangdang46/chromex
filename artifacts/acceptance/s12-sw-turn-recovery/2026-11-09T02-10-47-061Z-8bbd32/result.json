@@ -1,0 +1,19 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-09T02-10-47-061Z-8bbd32",
+  "status": "FAIL",
+  "summary": "harness error: page.goto: net::ERR_BLOCKED_BY_CLIENT at chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\nCall log:\n\u001b[2m  - navigating to \"chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\", waiting until \"domcontentloaded\"\u001b[22m\n",
+  "durationMs": 39467,
+  "error": "page.goto: net::ERR_BLOCKED_BY_CLIENT at chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\nCall log:\n\u001b[2m  - navigating to \"chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\", waiting until \"domcontentloaded\"\u001b[22m\n\n    at runScenario.needsBrowser (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/s12-sw-turn-recovery.mjs:144:16)\n    at async runScenario (/Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/harness.mjs:806:20)\n    at async file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/s12-sw-turn-recovery.mjs:18:1",
+  "notes": [
+    "[2026-11-09T02:10:51.037Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T02:10:51.314Z] usage notice accept clicked=false",
+    "[2026-11-09T02:10:55.156Z] turn 1 active",
+    "[2026-11-09T02:10:56.160Z] gateway turn 1 established: task=01M6Z159NR8K4PDJJJ8NBDHJ6V activeTurn=01M6Z159P0GYDZ6647CEYWJ8BW",
+    "[2026-11-09T02:10:56.191Z] second message queued",
+    "[2026-11-09T02:10:56.191Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M6Z159NR8K4PDJJJ8NBDHJ6V\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794190255810}]}",
+    "[2026-11-09T02:10:56.379Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-09T02:11:26.452Z] new service worker=none",
+    "[2026-11-09T02:11:26.454Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794190286453,\"uptimeMs\":39137,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6Z151CE725XJRMEMBHXEXRS\"},\"startup\":null},\"endpoint\":{\"path\":\"u tasks={\"tasks\":[{\"taskId\":\"01M6Z159NR8K4PDJJJ8NBDHJ6V\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794190255810}]}"
+  ]
+}

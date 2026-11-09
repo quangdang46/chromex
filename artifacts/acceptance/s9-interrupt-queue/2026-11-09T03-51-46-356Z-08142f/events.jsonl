@@ -1,0 +1,21 @@
+{"seq":1,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"task.created","payload":{"type":"task.created","taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","profileId":"fakeacp","providerId":"fakeacp","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794196307316}
+{"seq":2,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794196307317}
+{"seq":3,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6Z6XZBVAZ1MPACECK9701D8","message":{"gatewayTurnId":"01M6Z6XZBVAZ1MPACECK9701D8","clientMessageId":"s9-t1-1794196307320","content":[{"type":"text","text":"first long turn"}]},"clientMessageId":"s9-t1-1794196307320"},"at":1794196307324}
+{"seq":4,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6Z6XZBVAZ1MPACECK9701D8"},"at":1794196307331}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196307523}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196308023}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196308522}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196309109}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196309620}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196310091}
+{"seq":5,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M6Z6Y2A4NBT7FRSDVH50PDJE","message":{"gatewayTurnId":"01M6Z6Y2A4NBT7FRSDVH50PDJE","clientMessageId":"s9-t2-1794196310338","content":[{"type":"text","text":"queued follow-up"}]},"clientMessageId":"s9-t2-1794196310338"},"at":1794196310342}
+{"seq":6,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"turn.cancelled","payload":{"type":"turn.cancelled","turnId":"01M6Z6XZBVAZ1MPACECK9701D8","reason":"interrupted"},"at":1794196310351}
+{"seq":7,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794196310354}
+{"seq":8,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"turn.started","payload":{"type":"turn.started","turnId":"01M6Z6Y2A4NBT7FRSDVH50PDJE"},"at":1794196310354}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196310409}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196310907}
+{"seq":null,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.delta","payload":{},"at":1794196311410}
+{"seq":9,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M6Z6Y2A4NBT7FRSDVH50PDJE","text":"startingworking… working… "},"at":1794196311856}
+{"seq":10,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M6Z6Y2A4NBT7FRSDVH50PDJE","stopReason":"end_turn"},"at":1794196311856}
+{"seq":11,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794196311857}
+{"seq":12,"taskId":"01M6Z6XZBFXAVAYEA1SGNTTMR1","type":"task.completed","payload":{"type":"task.completed"},"at":1794196311857}

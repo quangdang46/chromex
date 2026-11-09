@@ -635,6 +635,12 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         }
         // poll for resolution up to 60s (UI answers via permission.respond)
         for (let i = 0; i < 240; i++) {
+          // task.purge mid-approval: the approvals row cascades away and
+          // no client can ever answer — bail instead of polling a ghost
+          // for the full minute.
+          if (!store.getTask(tctx.taskId)) {
+            return { verdict: "denied" as const };
+          }
           const st = storeAny.approvalStatus?.(approvalId);
           if (st === "allowed" || st === "denied" || st === "expired") {
             diagnostics.recordApprovalLatency(Date.now() - approvalStartedAt);

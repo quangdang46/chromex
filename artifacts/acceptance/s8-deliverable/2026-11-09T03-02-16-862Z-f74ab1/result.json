@@ -1,0 +1,34 @@
+{
+  "scenario": "s8-deliverable",
+  "runId": "2026-11-09T03-02-16-862Z-f74ab1",
+  "status": "PASS",
+  "summary": "task.sync carries full tool evidence; sidepanel renders in real Chrome",
+  "durationMs": 7089,
+  "details": {
+    "durableOk": true,
+    "uiOk": true,
+    "events": 21,
+    "toolStarted": 5,
+    "toolCompleted": 5,
+    "classified": 5,
+    "callsOk": true,
+    "callStatuses": {
+      "nav": "completed",
+      "snap": "completed",
+      "click": "completed",
+      "get": "completed"
+    },
+    "spState": {
+      "title": "Chromex · Chat",
+      "bodyText": "Connected\nAssistant\n\nChromex uses the current page and selected tabs to answer questions and help with browser work.\n\nSummarize page\nChromex · Chat\nBasic permissions\nLoading models…\nVery high",
+      "hasComposer": true
+    },
+    "note": "agent-authored deliverable card requires a live provider turn (see s1)"
+  },
+  "notes": [
+    "[2026-11-09T03:02:20.970Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T03:02:22.199Z] calls: nav=completed snap=completed click=completed get=completed",
+    "[2026-11-09T03:02:22.243Z] durable events=21 started=5 completed=5 classified=5",
+    "[2026-11-09T03:02:23.945Z] sidepanel state: {\"title\":\"Chromex · Chat\",\"bodyText\":\"Connected\\nAssistant\\n\\nChromex uses the current page and selected tabs to answer questions and help with browser work.\\n\\nSummarize page\\nChromex · Chat\\nBasic permissions\\nLoading models…\\nVery high\",\"hasComposer\":true}"
+  ]
+}
