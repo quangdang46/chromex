@@ -93,9 +93,17 @@ async function main(): Promise<void> {
   const request = (method: string, params?: unknown): Promise<Record<string, unknown>> =>
     new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, resolve);
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`timeout waiting for ${method}`));
+      }, 60_000);
+      timer.unref();
+      pending.set(id, (msg) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        resolve(msg);
+      });
       child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-      setTimeout(() => reject(new Error(`timeout waiting for ${method}`)), 60_000).unref();
     });
 
   const init = await request("initialize", {
