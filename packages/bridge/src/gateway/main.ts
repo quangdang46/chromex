@@ -1738,7 +1738,18 @@ async function handleGatewayRequest(
     }
     case "browser.backend.status": {
       parsePayload(browserBackendSchema, req.payload);
-      return { playwrightIsolated: await ctx.playwrightRuntime.readStatus() };
+      const cfg = ctx.getConfig();
+      return {
+        playwrightIsolated: await ctx.playwrightRuntime.readStatus(),
+        // playwright-cdp needs no runtime install — just user opt-in +
+        // a configured CDP endpoint (reachability proven at execute).
+        playwrightCdp: {
+          enabledByUser: cfg.browser.playwright.enabledByUser,
+          endpointConfigured:
+            typeof cfg.browser.playwright.cdpEndpoint === "string" &&
+            cfg.browser.playwright.cdpEndpoint.length > 0,
+        },
+      };
     }
     case "diagnostics.snapshot": {
       parsePayload(configReadSchema, req.payload);
