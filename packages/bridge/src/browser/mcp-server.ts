@@ -173,7 +173,7 @@ const SNAPSHOT_ID: JsonSchema = {
 const FRAME_ID: JsonSchema = {
   type: "integer",
   description:
-    "Frame inside the tab to act on: a frameId from browser.page.get's frames[] list. Omit or 0 = top frame. On chrome-extension these are webNavigation frameIds; on playwright-isolated they are indexes into page.frames() (OOPIFs included) — coordinate mouse ops and drag take frame-relative pixels there (translated by the iframe's page offset). Refs and snapshotIds are per-frame — a snapshot taken in one frame cannot drive actions in another. Page-level tools (screenshot/pdf/navigate/etc.) refuse frameId on playwright-isolated.",
+    "Frame inside the tab to act on: a frameId from browser.page.get's frames[] list. Omit or 0 = top frame. On chrome-extension these are webNavigation frameIds; on playwright-isolated they are indexes into page.frames() (OOPIFs included) — coordinate mouse ops and drag take frame-relative pixels there (translated by the iframe's page offset). Refs and snapshotIds are per-frame — a snapshot taken in one frame cannot drive actions in another. Page-level tools (pdf/mhtml/navigate/etc.) refuse frameId on playwright-isolated; screenshot accepts it only with an element target (selector/ref) for the clip.",
 };
 const TAB_TARGET_PROPS: Record<string, JsonSchema> = {
   tabId: TAB_ID,
@@ -1292,7 +1292,7 @@ export function toolListEntry(
       )
       .replace(
         "Pages with iframes: call browser.page.get first for the frames[] list, then snapshot each frame with args.frameId — refs are per-frame. ",
-        "Pages with iframes: call browser.page.get first for the frames[] list — args.frameId is the frame's index there and scopes element actions to that subframe (evaluate/snapshot/extract/find/wait/click/focus/type/fill/select/submit/scroll/hover/press/drag/upload/setInputFiles; coordinate mouse ops take frame-relative pixels). Page-level tools still refuse it. ",
+        "Pages with iframes: call browser.page.get first for the frames[] list — args.frameId is the frame's index there and scopes element actions to that subframe (evaluate/snapshot/extract/find/wait/click/focus/type/fill/select/submit/scroll/hover/press/drag/upload/setInputFiles/**element screenshot clip**; coordinate mouse ops take frame-relative pixels). Page-level tools still refuse it. ",
       )
       .replace(
         "Target by ref from a fresh snapshot (preferred), else selector or label; pass snapshotId to bind the snapshot so staleness fails loudly.",
