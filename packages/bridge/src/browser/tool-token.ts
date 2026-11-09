@@ -94,6 +94,11 @@ export class ToolTokenManager {
     now?: number;
   }): { token: string; payload: ToolTokenPayload; expiresAt: number } {
     const now = scope.now ?? Date.now();
+    // drop grace entries whose validity window has fully passed —
+    // previousGenerations would otherwise grow one entry per rotation
+    for (const [jti, graceUntil] of this.previousGenerations) {
+      if (now > graceUntil) this.previousGenerations.delete(jti);
+    }
     // rotating jti retires the previous generation into the grace window
     if (this.current) {
       this.previousGenerations.set(this.current.payload.jti, this.current.payload.exp + TOOL_TOKEN_GRACE_MS);
