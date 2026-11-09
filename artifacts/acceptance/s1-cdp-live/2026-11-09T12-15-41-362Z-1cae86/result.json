@@ -1,0 +1,31 @@
+{
+  "scenario": "s1-cdp-live",
+  "runId": "2026-11-09T12-15-41-362Z-1cae86",
+  "status": "PASS",
+  "summary": "live provider iterated playwright-cdp browser tools observe→act→observe; user tab never leaked",
+  "durationMs": 84061,
+  "details": {
+    "taskId": "01M703RS37BNTHM4PRYBX11Z0G",
+    "turnId": "01M703RS3BRES5324JK6DGVSW7",
+    "terminal": "turn.completed",
+    "actions": [
+      "browser.page.navigate",
+      "browser.page.snapshot",
+      "browser.page.click",
+      "browser.page.snapshot",
+      "browser.page.extract",
+      "browser.page.extract",
+      "browser.page.extract"
+    ],
+    "classified": 7,
+    "browserDone": 7,
+    "browserSucceeded": 5,
+    "userTabLeaked": false
+  },
+  "notes": [
+    "[2026-11-09T12:15:45.337Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T12:15:45.768Z] task 01M703RS37BNTHM4PRYBX11Z0G provider=codex backend=playwright-cdp endpoint=http://127.0.0.1:19564",
+    "[2026-11-09T12:15:45.770Z] mcp descriptor scopeFile=/var/folders/dd/qv4ltr9158116jk2739rp61c0000gn/T/chromex-accept-gw-T2hJvE/mcp/01M703RS37BNTHM4PRYBX11Z0G.json",
+    "[2026-11-09T12:15:45.907Z] turn 01M703RS3BRES5324JK6DGVSW7"
+  ]
+}

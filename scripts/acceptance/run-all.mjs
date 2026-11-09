@@ -58,6 +58,7 @@ const ALL = [
   "agent-task-headless",
   "sw-restart",
   "s1-build-feature",
+  "s1-cdp-live",
   "s2-debug-live",
   "s3-multitab",
   "s5-interruption",
@@ -74,7 +75,7 @@ const ALL = [
   "task-purge",
   "tool-reconcile",
 ];
-const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
+const LIVE = new Set(["s1-build-feature", "s1-cdp-live", "s2-debug-live"]);
 
 const args = process.argv.slice(2);
 const onlyEnv = process.env.CHROMEX_ACCEPTANCE_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);
