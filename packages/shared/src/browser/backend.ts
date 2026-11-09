@@ -41,11 +41,16 @@ export interface BrowserBackendCapabilities {
   iframe: "none" | "same-origin" | "all";
   /** JS dialogs (alert/confirm/prompt/beforeunload) can be observed and
    *  accepted/dismissed. chrome-extension: CDP Page domain
-   *  (browser.page.dialog, verified headless cdp-headless). */
+   *  (browser.page.dialog, verified headless cdp-headless).
+   *  playwright-isolated: page.on('dialog') capture + same tool
+   *  (agent-loop-isolated Loop 10c). */
   nativeDialogs: boolean;
   /** extension: only via real user gesture; playwright: setInputFiles path */
   filePicker: boolean;
-  /** extension: partial — synthetic DOM click ≠ user gesture */
+  /** Gestures produce trusted (isTrusted=true) input events.
+   *  chrome-extension: only via args.trusted CDP dispatch — default DOM
+   *  path is synthetic. playwright-isolated: always true — every gesture
+   *  uses Playwright's real input pipeline. */
   trustedGesture: boolean;
   /** controlling browser chrome UI (address bar, menus) — always false */
   browserChrome: boolean;
@@ -191,9 +196,17 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // fill inside a cross-origin iframe child). Page-level tools
     // (screenshot/pdf/mhtml/navigate…) still refuse frameId honestly.
     iframe: "all",
-    nativeDialogs: false,
+    // page.on('dialog') capture holds dialogs open until
+    // browser.page.dialog resolves them — accept/dismiss/promptText +
+    // honest no_dialog, verified agent-loop-isolated Loop 10c.
+    nativeDialogs: true,
     filePicker: false, // setInputFiles works; native picker does not
-    trustedGesture: false,
+    // Every gesture goes through Playwright's real input pipeline
+    // (page.mouse/keyboard, locator.click) — isTrusted=true by
+    // construction; there is no synthetic-DOM path to opt out of.
+    // args.trusted is refused proto.unsupported because it is
+    // redundant, not because gestures are untrusted.
+    trustedGesture: true,
     browserChrome: false,
     tabCreate: true,
     consoleCapture: true,
