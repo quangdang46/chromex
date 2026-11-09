@@ -1543,6 +1543,10 @@ async function handleGatewayRequest(
       // MCP scope file — inert after purge (dead taskIds are rejected
       // before dispatch) but would otherwise accumulate per task.
       await removeMcpScopeFile(ctx.dataDir, p.taskId);
+      // Chunked snapshots are served WITHOUT a task-existence check —
+      // drop them so a purged task's event data can't be re-fetched
+      // by (taskId, snapshotRef) until LRU eviction.
+      ctx.snapshotChunks.drop(p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({
@@ -1562,6 +1566,11 @@ async function handleGatewayRequest(
     }
     case "task.snapshot.chunk": {
       const p = parsePayload(taskSnapshotChunkSchema, req.payload) as z.infer<typeof taskSnapshotChunkSchema>;
+      // Chunks outlive nothing: verify the task still exists so a
+      // deleted task's snapshot can't be reassembled from refs.
+      if (!ctx.store.getTask(p.taskId)) {
+        throw perr("task.not_found", `task ${p.taskId} not found`);
+      }
       const chunk = ctx.snapshotChunks.get(p.taskId, p.snapshotRef, p.chunkIndex);
       if (!chunk) throw perr("task.not_found", "snapshot chunk not found (expired or wrong ref)");
       return chunk;
