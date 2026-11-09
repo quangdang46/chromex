@@ -53,6 +53,13 @@ interface AffinityEntry {
   connectionId: string;
 }
 
+/** Affinity is kept after disconnect for stranded-tab semantics, but
+ *  every tab ever served would otherwise accumulate an entry for the
+ *  gateway's lifetime. Evicting the oldest is safe: resolveHost finds a
+ *  reconnected same-browserInstanceId host via #liveHostFor regardless;
+ *  affinity only refines tab preference and the stranded hint. */
+const MAX_AFFINITY_ENTRIES = 4096;
+
 export class BrowserHostRegistry {
   private readonly hosts = new Map<string, HostRegistration>(); // hostInstanceId → reg
   private readonly byConnection = new Map<string, string>(); // connectionId → hostInstanceId
@@ -60,6 +67,14 @@ export class BrowserHostRegistry {
   private readonly affinity = new Map<string, AffinityEntry>();
   /** degraded-mode affinity (connectionId-scoped) */
   private readonly degradedAffinity = new Map<string, AffinityEntry>();
+
+  #evictOldest(map: Map<string, AffinityEntry>): void {
+    while (map.size > MAX_AFFINITY_ENTRIES) {
+      const oldest = map.keys().next().value;
+      if (oldest === undefined) break;
+      map.delete(oldest);
+    }
+  }
 
   register(reg: HostRegistration): void {
     this.hosts.set(reg.hostInstanceId, reg);
@@ -94,12 +109,17 @@ export class BrowserHostRegistry {
       browserInstanceId: reg?.browserInstanceId ?? key.browserInstanceId,
       connectionId: reg?.connectionId ?? "",
     };
-    const mapKey = this.#affinityKey(key);
     if (key.browserInstanceId === null) {
       // degraded: scope by connectionId — never persisted, dies with conn
-      this.degradedAffinity.set(`${entry.connectionId}:${key.tabId ?? "*"}`, entry);
+      const dk = `${entry.connectionId}:${key.tabId ?? "*"}`;
+      this.degradedAffinity.delete(dk);
+      this.degradedAffinity.set(dk, entry);
+      this.#evictOldest(this.degradedAffinity);
     } else {
-      this.affinity.set(mapKey, entry);
+      const mk = this.#affinityKey(key);
+      this.affinity.delete(mk);
+      this.affinity.set(mk, entry);
+      this.#evictOldest(this.affinity);
     }
   }
 
