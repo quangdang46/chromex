@@ -721,6 +721,65 @@ await runScenario(
       };
       void fileRef;
 
+      // --- fileChooser: page.wait{fileChooser} arms CDP interception;
+      // a CONCURRENT click opens the native chooser; the returned
+      // fileChooserId feeds it via setInputFiles — the only path for
+      // chooser flows with no targetable input. ---
+      await page.goto(fixture.url("/chooser"), { waitUntil: "domcontentloaded" });
+      await page.bringToFront();
+      const fcWaitP = runner.browserToolCall(
+        taskId, "browser.page.wait",
+        { fileChooser: true, timeoutMs: 20_000 }, token, 90_000,
+      );
+      // The wait must finish debugger attach + Page.enable + interception
+      // before the click lands — a chooser opened pre-arm becomes a
+      // native dialog the wait can never see. Arm can take seconds on a
+      // cold SW, so click on a retry cadence until the wait resolves.
+      // trusted:true is REQUIRED: Chrome only opens a file chooser on
+      // transient user activation — an untrusted DOM .click() reaches
+      // the button handler but the nested input.click() is suppressed.
+      const fcClicks = [];
+      for (let i = 0; i < 6; i++) {
+        await sleep(i === 0 ? 2500 : 1500);
+        fcClicks.push(
+          runner.browserToolCall(
+            taskId, "browser.page.click", { selector: "#pick", trusted: true }, token, 60_000,
+          ).catch((e) => ({ status: "failed", error: String(e) })),
+        );
+        // stop retrying once the wait has settled either way
+        const settled = await Promise.race([
+          fcWaitP.then(() => "done", () => "done"),
+          sleep(50).then(() => "pending"),
+        ]);
+        if (settled === "done") break;
+      }
+      const fcWait = await fcWaitP;
+      const fcWaitPayload = fcWait?.result ?? fcWait ?? {};
+      const fcId = fcWaitPayload?.fileChooserId ?? null;
+      evidence.note(`fileChooser wait → ${JSON.stringify(fcWaitPayload).slice(0, 300)}`);
+      let fcFeed = null;
+      if (fcId) {
+        fcFeed = await runner.browserToolCall(
+          taskId, "browser.page.setInputFiles",
+          { fileChooserId: fcId, files: [uploadPath] }, token, 60_000,
+        );
+      }
+      await sleep(300);
+      const cout = await page.locator("#cout").textContent();
+      evidence.note(`fileChooser feed → status=${fcFeed?.status} cout=${cout}`);
+      const fcClickStatuses = (await Promise.all(fcClicks)).map((c) => c?.status ?? "failed");
+      results.fileChooser = {
+        ok:
+          fcClickStatuses.includes("completed") &&
+          fcWaitPayload?.matched === "fileChooser" &&
+          fcFeed?.status === "completed" &&
+          cout === "file:chromex-cdp-upload.txt",
+        clickStatuses: fcClickStatuses,
+        matched: fcWaitPayload?.matched ?? null,
+        feedStatus: fcFeed?.status ?? null,
+        cout,
+      };
+
       // --- cookies: CDP Network cookie storage incl. HttpOnly ---
       // set → server echo proves the cookie rides real requests; list
       // withholds values; httpOnly is invisible to document.cookie but

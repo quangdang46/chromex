@@ -87,6 +87,7 @@ import { GatewayDiagnostics } from "./diagnostics.js";
 import {
   BrowserToolServer,
   buildArgsPreview,
+  toolTimeoutMsFor,
   type ToolCallOutcome,
 } from "../browser/tool-server.js";
 import { boundJsonPreview } from "../store/event-payload.js";
@@ -506,8 +507,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
         );
         return {
           hostInstanceId: res.hostInstanceId,
-          send: (method, payload) =>
-            hostConn.request(method, payload, 15_000).catch((err) => {
+          send: (method, payload) => {
+            // The IPC request must outlive the tool-server's own budget —
+            // a flat 15s cap made every page.wait >15s (and any other
+            // long call) fail ipc.request_timeout AND evict a healthy
+            // conn as a zombie. +10s margin lets the typed
+            // browser.tool_timeout win instead.
+            const tool = (payload as { tool?: unknown })?.tool;
+            const ipcTimeoutMs =
+              toolTimeoutMsFor(typeof tool === "string" ? tool : "") + 10_000;
+            return hostConn.request(method, payload, ipcTimeoutMs).catch((err) => {
               // A conn that never answers is a zombie — a dead SW
               // generation whose native host lingers (S7). Evict it so
               // the next resolveHost picks a live host instead of
@@ -516,7 +525,8 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
                 hostConn.close();
               }
               throw err;
-            }),
+            });
+          },
           onDisconnect: (listener) => hostConn.onClose(() => listener("disconnect")),
         };
       },

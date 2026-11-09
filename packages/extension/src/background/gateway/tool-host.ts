@@ -2327,7 +2327,33 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           str(args.urlContains) !== undefined ||
           str(args.readyState) !== undefined ||
           str(args.visibleSelector) !== undefined;
-        const hasCondition = hasContentCondition || hasResponseCondition || hasConsoleCondition || hasPierceCondition;
+        // fileChooser arms CDP file-chooser interception for the wait
+        // window — the async barrier for button-triggered native file
+        // dialogs (input.click() flows the agent cannot target directly).
+        // Sole condition only: the armed chooser must be consumed by a
+        // setInputFiles call carrying the returned fileChooserId, and
+        // combining it with polled conditions would orphan the pending
+        // chooser if a later condition times out.
+        const fileChooserWait = args.fileChooser === true;
+        if (args.fileChooser !== undefined && args.fileChooser !== true) {
+          throw toolError("proto.invalid", "browser.page.wait args.fileChooser must be true when present");
+        }
+        const hasCondition =
+          hasContentCondition || hasResponseCondition || hasConsoleCondition ||
+          hasPierceCondition || fileChooserWait;
+        if (fileChooserWait) {
+          cdpRequired(deps);
+          if (args.frameId !== undefined && args.frameId !== null) {
+            throw toolError("proto.invalid", "args.frameId is meaningless for a fileChooser wait");
+          }
+          if (hasContentCondition || hasResponseCondition || hasConsoleCondition ||
+              hasPierceCondition || networkIdle) {
+            throw toolError(
+              "proto.invalid",
+              "fileChooser cannot combine with other wait conditions — run it as its own browser.page.wait",
+            );
+          }
+        }
         if (str(args.readyState) !== undefined &&
             !["loading", "interactive", "complete"].includes(str(args.readyState)!)) {
           throw toolError("proto.invalid", "browser.page.wait args.readyState must be loading|interactive|complete");
@@ -2575,6 +2601,67 @@ export function createToolHostHandler(deps: ToolHostDeps) {
               resolvedTabId: tabId,
             };
           }
+        }
+        if (fileChooserWait) {
+          // Arm interception BEFORE polling — the chooser must be
+          // opened by a concurrent tool call (click/type) while this
+          // wait holds the window open. On match the CDP session stays
+          // held inside pendingFileChoosers: backendNodeId is
+          // session-scoped, so setInputFiles must send
+          // DOM.setFileInputFiles on the same session that observed the
+          // event. Interception is disabled as soon as the wait settles
+          // so later choosers (user-initiated or unarmed agent flows)
+          // behave normally; the already-intercepted chooser remains
+          // consumable until setInputFiles or page teardown.
+          const { session, release } = await cdpAcquire(deps, tabId);
+          let seen:
+            | { backendNodeId: number | undefined; mode: string | undefined; frameId: string | undefined }
+            | undefined;
+          const unsub = session.on("Page.fileChooserOpened", (p) => {
+            seen = {
+              backendNodeId: typeof p.backendNodeId === "number" ? p.backendNodeId : undefined,
+              mode: typeof p.mode === "string" ? p.mode : undefined,
+              frameId: typeof p.frameId === "string" ? p.frameId : undefined,
+            };
+          });
+          try {
+            await Promise.race([
+              session.send("Page.enable").catch(() => {}),
+              new Promise((r) => setTimeout(r, 3_000)),
+            ]);
+            await session.send("Page.setInterceptFileChooserDialog", { enabled: true });
+            const deadline = Date.now() + waitTimeoutMs;
+            while (seen === undefined && Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 50));
+            }
+          } finally {
+            unsub();
+            await session.send("Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {});
+          }
+          if (seen?.backendNodeId === undefined) {
+            await release();
+            throw toolError(
+              "browser.timeout",
+              `no file chooser opened within ${waitTimeoutMs}ms`,
+            );
+          }
+          const fileChooserId = `fc-${Date.now().toString(36)}-${++fileChooserSeq}`;
+          pendingFileChoosers.set(fileChooserId, {
+            tabId,
+            backendNodeId: seen.backendNodeId,
+            ...(seen.mode !== undefined ? { mode: seen.mode } : {}),
+            ...(seen.frameId !== undefined ? { frameId: seen.frameId } : {}),
+            session,
+            release,
+          });
+          return {
+            ok: true,
+            matched: "fileChooser",
+            fileChooserId,
+            ...(seen.mode !== undefined ? { mode: seen.mode } : {}),
+            ...(seen.frameId !== undefined ? { frameId: seen.frameId } : {}),
+            resolvedTabId: tabId,
+          };
         }
         if (!hasContentCondition) {
           // Only host-side conditions were requested (response/console/
@@ -6053,6 +6140,24 @@ interface PierceHit {
 const pierceRefs = new Map<string, PierceHit>();
 let pierceSeq = 0;
 
+/** File choosers armed by browser.page.wait {fileChooser:true} and not
+ *  yet consumed by browser.page.setInputFiles {fileChooserId}. The CDP
+ *  session stays held: backendNodeId is session-scoped, so the feeding
+ *  call must reuse the session that observed Page.fileChooserOpened.
+ *  Entries die with the service worker — an unconsumed chooser leaves
+ *  the page's chooser flow blocked exactly like an unanswered native
+ *  dialog, which is the honest failure mode. */
+interface PendingFileChooser {
+  tabId: number;
+  backendNodeId: number;
+  mode?: string;
+  frameId?: string;
+  session: CdpSession;
+  release: () => Promise<void>;
+}
+const pendingFileChoosers = new Map<string, PendingFileChooser>();
+let fileChooserSeq = 0;
+
 interface PierceDomNode {
   nodeId?: number;
   backendNodeId?: number;
@@ -9187,6 +9292,55 @@ async function setInputFiles(
     }
     return f;
   });
+  // fileChooserId feeds an intercepted native chooser armed by
+  // page.wait {fileChooser:true} — the chooser carries no selector, so
+  // this is the only way to resolve it. backendNodeId is session-scoped:
+  // reuse the session that observed fileChooserOpened, then release it.
+  const chooserId = str(args.fileChooserId);
+  if (chooserId !== undefined) {
+    if (frameId !== 0) {
+      throw toolError("proto.invalid", "fileChooserId carries its own frame — drop args.frameId");
+    }
+    if (str(args.ref) !== undefined || str(args.selector) !== undefined || str(args.label) !== undefined) {
+      throw toolError("proto.invalid", "fileChooserId cannot be combined with ref/selector/label");
+    }
+    const pending = pendingFileChoosers.get(chooserId);
+    if (!pending) {
+      throw toolError(
+        "proto.invalid",
+        `unknown fileChooserId "${chooserId}" — it comes from a browser.page.wait {fileChooser:true} result and is consumed once`,
+      );
+    }
+    if (tabId !== pending.tabId) {
+      throw toolError(
+        "proto.invalid",
+        `fileChooserId "${chooserId}" belongs to tab ${pending.tabId}, not ${tabId}`,
+      );
+    }
+    pendingFileChoosers.delete(chooserId);
+    try {
+      await pending.session.send("DOM.enable").catch(() => {});
+      await pending.session.send("DOM.setFileInputFiles", {
+        backendNodeId: pending.backendNodeId,
+        files,
+      });
+    } catch (e) {
+      throw toolError(
+        "browser.action_failed",
+        `file chooser feed failed: ${String((e as Error)?.message ?? e)}`,
+      );
+    } finally {
+      await pending.release().catch(() => {});
+    }
+    return {
+      ok: true,
+      files: files.length,
+      fileNames: files.map(pathBaseName),
+      fileChooser: true,
+      ...(pending.mode !== undefined ? { mode: pending.mode } : {}),
+      resolvedTabId: pending.tabId,
+    };
+  }
   // pz refs resolve straight to a backendNodeId — no content-script
   // marker needed (it could never reach a closed shadow root anyway).
   const sifRef = str(args.ref);

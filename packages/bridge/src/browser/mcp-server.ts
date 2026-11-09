@@ -518,6 +518,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       consoleLevel: { type: "string", enum: ["log", "info", "warn", "error", "debug"], description: "Optional console level filter for consoleText (exact match)." },
       pierceRef: { type: "string", description: "Condition (with pierceText): a pz-N ref from browser.page.pierce — waits on that closed-shadow-root element's live state, resolved on the frame/target the ref was discovered in. Cannot combine with args.frameId." },
       pierceText: { type: "string", description: "With pierceRef: substring matched against that element's value + textContent, polled live (state condition — forward-looking, no lookback). WITHOUT pierceRef: discovery barrier — polls browser.page.pierce until a closed-shadow-root element matching this text appears, returning its fresh pz ref (args.frameId scopes the discovery). Returns matched:'pierce' with evidence either way." },
+      fileChooser: {
+        type: "boolean",
+        description: "Condition (sole — cannot combine with other wait conditions or args.frameId): arm interception for a native file chooser and wait until one opens. Issue this wait CONCURRENTLY with the action that triggers it (e.g. a click on an upload button) — sequential calls cannot work because the chooser blocks the page. On chrome-extension the triggering action needs transient user activation: use trusted input (click/type/press with args.trusted, or a real user gesture) — an untrusted DOM .click() reaches the handler but Chrome suppresses the chooser. Returns matched:'fileChooser' with fileChooserId + mode; feed the chooser via browser.page.setInputFiles {fileChooserId, files:[…]}. Times out with browser.timeout if no chooser opens. chrome-extension covers main-frame choosers via CDP Page.setInterceptFileChooserDialog (out-of-process iframe choosers are not covered — target the file input directly instead); playwright-isolated uses page.waitForEvent('filechooser'). An unconsumed chooser leaves the page's upload flow blocked like an unanswered native dialog.",
+      },
     }),
   },
   "browser.page.hover": {
@@ -611,7 +615,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.setInputFiles": {
     description:
-      "Set local file paths on a file input — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label. Always requires approval (sensitive data entry); paths must be absolute and exist. chrome-extension uses CDP DOM.setFileInputFiles (args.frameId targets a file input inside an iframe); playwright-isolated uses locator.setInputFiles (input-only, no drop-zone fallback — use browser.page.upload for drop zones).",
+      "Set local file paths on a file input — the path-based equivalent of browser.page.upload for real filesystem files. Targets a <input type=file> by ref/selector/label, OR a native file chooser armed by browser.page.wait {fileChooser:true} via fileChooserId (cannot combine fileChooserId with ref/selector/label/frameId; the id is single-use and task/tab-scoped). Always requires approval (sensitive data entry); paths must be absolute and exist. chrome-extension uses CDP DOM.setFileInputFiles (args.frameId targets a file input inside an iframe); playwright-isolated uses locator.setInputFiles (input-only, no drop-zone fallback — use browser.page.upload for drop zones).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
@@ -624,6 +628,10 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
           type: "array",
           items: { type: "string" },
           description: "Absolute local file paths to attach (1–10).",
+        },
+        fileChooserId: {
+          type: "string",
+          description: "Feed a native file chooser armed by browser.page.wait {fileChooser:true} — the returned fileChooserId. Mutually exclusive with ref/selector/label/frameId; single-use.",
         },
       },
       ["files"],

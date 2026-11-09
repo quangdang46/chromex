@@ -124,6 +124,7 @@ type PwResponse = import("playwright-core").Response;
 type PwRoute = import("playwright-core").Route;
 type PwWebSocket = import("playwright-core").WebSocket;
 type PwDialog = import("playwright-core").Dialog;
+type PwFileChooser = import("playwright-core").FileChooser;
 type PwFrame = import("playwright-core").Frame;
 /** Element-scoped target — a Page or one of its Frames. Frame shares
  *  the locator/evaluate/wait API surface used by the handlers below;
@@ -262,6 +263,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   /** Pages already wired with observation listeners — popup pages arrive
    *  via context "page" events and must not be double-tracked. */
   readonly #trackedPages = new WeakSet<PwPage>();
+
+  /** File choosers armed by browser.page.wait {fileChooser:true} and not
+   *  yet consumed by setInputFiles {fileChooserId}. Keyed by the
+   *  returned fileChooserId; entries die with the task context. */
+  readonly #pendingFileChoosers = new Map<string, {
+    taskId: string;
+    page: PwPage;
+    chooser: PwFileChooser;
+  }>();
+  #fileChooserSeq = 0;
 
   /** Per-task visit log backing browser.history.search — isolated
    *  contexts have no browser profile history, so the log records the
@@ -2426,9 +2437,31 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         "pierceRef/pierceText waits need browser.page.pierce — chrome-extension only (isolated has no closed-shadow-root pierce)",
       );
     }
+    // fileChooser waits on page.waitForEvent("filechooser") — the async
+    // barrier for button-triggered native dialogs. Sole condition only:
+    // the armed chooser must be consumed by setInputFiles
+    // {fileChooserId}, and combining it with polled conditions would
+    // orphan the pending chooser if a later condition times out.
+    const fileChooserWait = args.fileChooser === true;
+    if (args.fileChooser !== undefined && args.fileChooser !== true) {
+      throw protocolError("proto.invalid", "browser.page.wait args.fileChooser must be true when present");
+    }
     const hasCondition =
       selector !== null || selectorGone !== null || urlContains !== null || text !== null || textGone !== null || readyState !== null ||
-      visibleSelector !== null || networkIdle || responseUrl !== null || consoleText !== null;
+      visibleSelector !== null || networkIdle || responseUrl !== null || consoleText !== null || fileChooserWait;
+    if (fileChooserWait) {
+      if (typeof args.frameId === "number" && Number.isInteger(args.frameId) && args.frameId !== 0) {
+        throw protocolError("proto.invalid", "args.frameId is meaningless for a fileChooser wait");
+      }
+      if (selector !== null || selectorGone !== null || urlContains !== null || text !== null ||
+          textGone !== null || readyState !== null || visibleSelector !== null || networkIdle ||
+          responseUrl !== null || consoleText !== null) {
+        throw protocolError(
+          "proto.invalid",
+          "fileChooser cannot combine with other wait conditions — run it as its own browser.page.wait",
+        );
+      }
+    }
     if (selector !== null && selector === selectorGone) {
       throw protocolError("proto.invalid", "browser.page.wait args.selector and args.selectorGone must differ");
     }
@@ -2436,6 +2469,35 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       // plain timed wait — same contract as the extension host's ms sleep
       await page.waitForTimeout(Math.min(timeout, 30_000));
       return { ok: true, waitedMs: Math.min(timeout, 30_000) };
+    }
+    if (fileChooserWait) {
+      // waitForEvent must be armed before the triggering click/type
+      // lands — the agent issues this wait concurrently with the action
+      // (tool calls may run in parallel). Page-level: a Frame has no
+      // waitForEvent, and choosers belong to the page, not a frame.
+      const chooserPage = await this.#pageFor(taskId, args);
+      const waitMs = Math.min(timeout, 30_000);
+      let chooser: PwFileChooser;
+      try {
+        chooser = await chooserPage.waitForEvent("filechooser", { timeout: waitMs });
+      } catch (e) {
+        const name = (e as { name?: string })?.name;
+        throw protocolError(
+          name === "TimeoutError" ? "browser.timeout" : "browser.action_failed",
+          name === "TimeoutError"
+            ? `no file chooser opened within ${waitMs}ms`
+            : `file chooser wait failed: ${String((e as Error)?.message ?? e)}`,
+        );
+      }
+      const fileChooserId = `fc-${Date.now().toString(36)}-${++this.#fileChooserSeq}`;
+      this.#pendingFileChoosers.set(fileChooserId, { taskId, page: chooserPage, chooser });
+      return {
+        ok: true,
+        matched: "fileChooser",
+        fileChooserId,
+        mode: chooser.isMultiple() ? "selectMultiple" : "selectSingle",
+        elapsedMs: Date.now() - started,
+      };
     }
     if (responseUrl !== null) {
       // Same contract as the extension host: match completed/failed
@@ -4640,6 +4702,40 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
       return f;
     });
+    // fileChooserId feeds a chooser armed by page.wait {fileChooser:true}
+    // — no selector exists for a native dialog, so this is the only way
+    // to resolve it. Entries are task-scoped and consumed once.
+    const chooserId = typeof args.fileChooserId === "string" ? args.fileChooserId : null;
+    if (chooserId !== null) {
+      if (args.frameId !== undefined && args.frameId !== null && args.frameId !== 0) {
+        throw protocolError("proto.invalid", "fileChooserId carries its own page — drop args.frameId");
+      }
+      if (args.ref !== undefined || args.selector !== undefined || args.label !== undefined) {
+        throw protocolError("proto.invalid", "fileChooserId cannot be combined with ref/selector/label");
+      }
+      const pending = this.#pendingFileChoosers.get(chooserId);
+      if (!pending) {
+        throw protocolError(
+          "proto.invalid",
+          `unknown fileChooserId "${chooserId}" — it comes from a browser.page.wait {fileChooser:true} result and is consumed once`,
+        );
+      }
+      if (pending.taskId !== taskId) {
+        throw protocolError(
+          "proto.invalid",
+          `fileChooserId "${chooserId}" belongs to a different task`,
+        );
+      }
+      this.#pendingFileChoosers.delete(chooserId);
+      await pending.chooser.setFiles(paths);
+      return {
+        ok: true,
+        files: paths.length,
+        fileNames: paths.map((p) => p.split("/").pop() ?? p),
+        fileChooser: true,
+        mode: pending.chooser.isMultiple() ? "selectMultiple" : "selectSingle",
+      };
+    }
     const selector = await this.#requireSelector(args);
     await target.locator(selector).first().setInputFiles(paths);
     return { ok: true, files: paths.length };
@@ -4649,6 +4745,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   /** Release a task's isolated context (task.purge / shutdown). */
   async releaseTask(taskId: string): Promise<void> {
+    for (const [id, p] of this.#pendingFileChoosers) {
+      if (p.taskId === taskId) this.#pendingFileChoosers.delete(id);
+    }
     const ctx = this.#contexts.get(taskId);
     this.#contexts.delete(taskId);
     this.#activePages.delete(taskId);
@@ -4668,6 +4767,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       this.#consoleBuffers, this.#networkBuffers, this.#responseBuffers,
       this.#wsBuffers, this.#routeRules, this.#fulfilledBodies,
       this.#pendingDialogs,
+      this.#pendingFileChoosers,
     ]) map.clear();
     this.#visitLogs.clear();
     this.#sessionLogs.clear();

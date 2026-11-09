@@ -48,6 +48,19 @@ const PER_TOOL_TIMEOUT_MS: Record<string, number> = {
   "browser.page.cdp": 20_000,
 };
 
+/** Per-tool dispatch budget — the tool-server timer AND the host
+ *  channel's IPC timeout must agree on this: the IPC request has to
+ *  outlive the tool budget so a legitimately long call (page.wait up
+ *  to ~35s, fileChooser windows, screencast holds) resolves with the
+ *  typed browser.tool_timeout instead of ipc.request_timeout — which
+ *  the dispatcher treats as a zombie conn and closes. */
+export function toolTimeoutMsFor(
+  tool: string,
+  fallback: number = DEFAULT_TOOL_TIMEOUT_MS,
+): number {
+  return PER_TOOL_TIMEOUT_MS[tool] ?? fallback;
+}
+
 /** Tools that are hard-blocked (§9.1/§9.2). browser.page.evaluate was
  *  unblocked after the CDP/scripting tier landed: it runs in the page
  *  MAIN world but every call is approval-gated (risk classifier →
@@ -959,7 +972,7 @@ export class BrowserToolServer {
     expectedTarget?: Record<string, string>,
   ): Promise<ToolCallOutcome> {
     const timeoutMs =
-      PER_TOOL_TIMEOUT_MS[req.tool] ?? this.deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+      toolTimeoutMsFor(req.tool, this.deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
     return new Promise<ToolCallOutcome>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(req.toolCallId);

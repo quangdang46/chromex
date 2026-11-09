@@ -386,6 +386,16 @@ document.getElementById('dz').addEventListener('dragover', function(e){ e.preven
 </script>
 </body></html>`,
 
+  // native file-chooser proof: a button triggers input.click() on a
+  // hidden file input — the chooser has no selector/ref, so only the
+  // fileChooser wait + fileChooserId feed path can resolve it.
+  "/chooser": `<!doctype html><html><body>
+<h1>Chooser Page</h1>
+<input id="cf" type="file" style="display:none" onchange="document.getElementById('cout').textContent='file:'+(this.files[0]&&this.files[0].name)||'none'" />
+<button id="pick" onclick="document.getElementById('cf').click()">pick file</button>
+<p id="cout">none</p>
+</body></html>`,
+
   // trusted-input proof (CDP tier): two buttons record event.isTrusted —
   // a synthetic DOM .click() must report false, CDP Input must report true.
   "/trusted": `<!doctype html><html><body>

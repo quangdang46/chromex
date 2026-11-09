@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { fileURLToPath } from "node:url";
 
 import { BROWSER_TOOL_NAMES } from "@codex-sidepanel/shared";
 
@@ -322,6 +323,77 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
       waitedMs: number;
     };
     expect(plain).toMatchObject({ ok: true, waitedMs: 5 });
+  });
+
+  test("page.wait fileChooser arms waitForEvent; setInputFiles fileChooserId feeds it once", async () => {
+    const setFilesCalls: unknown[] = [];
+    const chooser = {
+      setFiles: async (files: unknown) => void setFilesCalls.push(files),
+      isMultiple: () => false,
+    };
+    const events: string[] = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      waitForEvent: async (ev: string) => {
+        events.push(ev);
+        return chooser;
+      },
+      waitForTimeout: async () => {},
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const self = fileURLToPath(import.meta.url);
+    const w = (await backend.execute("t1", "browser.page.wait", {
+      fileChooser: true,
+      timeoutMs: 5000,
+    })) as { ok: boolean; matched: string; fileChooserId: string; mode: string };
+    expect(events).toEqual(["filechooser"]);
+    expect(w).toMatchObject({ ok: true, matched: "fileChooser", mode: "selectSingle" });
+    expect(w.fileChooserId).toMatch(/^fc-/);
+
+    const feed = (await backend.execute("t1", "browser.page.setInputFiles", {
+      fileChooserId: w.fileChooserId,
+      files: [self],
+    })) as { ok: boolean; fileChooser: boolean; fileNames: string[] };
+    expect(feed).toMatchObject({ ok: true, fileChooser: true });
+    expect(feed.fileNames[0]).toBe("playwright-isolated.test.ts");
+    expect(setFilesCalls).toEqual([[self]]);
+
+    // single-use + exclusivity + unknown id all refuse honestly
+    await expect(backend.execute("t1", "browser.page.setInputFiles", {
+      fileChooserId: w.fileChooserId, files: [self],
+    })).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(backend.execute("t1", "browser.page.setInputFiles", {
+      fileChooserId: "fc-nope", files: [self],
+    })).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(backend.execute("t1", "browser.page.setInputFiles", {
+      fileChooserId: "fc-x", selector: "input", files: [self],
+    })).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("page.wait fileChooser refuses combos; timeout maps to browser.timeout", async () => {
+    const timeoutErr = Object.assign(new Error("Timeout 5000ms exceeded"), { name: "TimeoutError" });
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      waitForEvent: async () => { throw timeoutErr; },
+      waitForTimeout: async () => {},
+      locator: () => ({ count: async () => 0 }),
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    await expect(backend.execute("t1", "browser.page.wait", {
+      fileChooser: true, selector: "#x", timeoutMs: 50,
+    })).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(backend.execute("t1", "browser.page.wait", {
+      fileChooser: true, frameId: 2, timeoutMs: 50,
+    })).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(backend.execute("t1", "browser.page.wait", {
+      fileChooser: true, timeoutMs: 50,
+    })).rejects.toMatchObject({ code: "browser.timeout" });
   });
 
   test("page.history reload/back/forward dispatch to the page", async () => {

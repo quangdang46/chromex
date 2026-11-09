@@ -486,6 +486,38 @@ try {
   }).then(() => null).catch((e) => e);
   assert(sifBad !== null, "setInputFiles refused a relative path");
 
+  // fileChooser: wait{fileChooser} + CONCURRENT click on a button that
+  // triggers input.click() — the chooser has no selector, so only the
+  // fileChooserId feed path resolves it. waitForEvent must be armed
+  // before the click lands.
+  const chTab = await call("browser.tab.create", { url: fixture.url("/chooser"), active: false });
+  const chId = chTab?.tabId ?? chTab?.id;
+  const [fcWait, fcClick] = await Promise.all([
+    call("browser.page.wait", { tabId: chId, fileChooser: true, timeoutMs: 10_000 }),
+    (async () => {
+      await new Promise((r) => setTimeout(r, 400)); // let waitForEvent arm first
+      return call("browser.page.click", { tabId: chId, selector: "#pick" });
+    })(),
+  ]);
+  assert(fcWait?.matched === "fileChooser" && typeof fcWait?.fileChooserId === "string",
+    `fileChooser wait matched (${JSON.stringify(fcWait)?.slice(0, 200)})`);
+  assert(fcClick?.clicked === true || fcClick?.ok === true, `chooser trigger click landed (${JSON.stringify(fcClick)?.slice(0, 120)})`);
+  const fcFeed = await call("browser.page.setInputFiles", {
+    tabId: chId,
+    fileChooserId: fcWait.fileChooserId,
+    files: [pathFile],
+  });
+  assert(fcFeed?.ok === true && fcFeed?.fileChooser === true, `fileChooserId feed succeeded (${JSON.stringify(fcFeed)?.slice(0, 200)})`);
+  const cout = await call("browser.page.extract", { tabId: chId, selector: "#cout" });
+  assert(String(cout?.text ?? "").includes("chromex-acceptance-setinput.txt"),
+    `chooser-fed file reached the input (got "${cout?.text}")`);
+  // single-use: replaying the id refuses honestly
+  const fcReplay = await call("browser.page.setInputFiles", {
+    tabId: chId, fileChooserId: fcWait.fileChooserId, files: [pathFile],
+  }).then(() => null).catch((e) => e);
+  assert(fcReplay !== null, "fileChooserId is single-use");
+  await call("browser.tab.close", { tabId: chId });
+
   // tab.duplicate: new page in the same isolated context — session
   // (cookies/storage) carries over; lands on the source URL.
   const dup = await call("browser.tab.duplicate", { tabId: kTab });

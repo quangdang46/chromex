@@ -298,6 +298,114 @@ describe("tool host (P1-09)", () => {
     expect(msg).toMatchObject({ type: "page.dom.wait", visibleSelector: ".toast.show", timeoutMs: 3000 });
   });
 
+  test("page.wait fileChooser arms interception and returns a consumable fileChooserId", async () => {
+    const sent: Array<{ method: string; params: unknown }> = [];
+    let chooserHandler: ((p: Record<string, unknown>) => void) | undefined;
+    const released: string[] = [];
+    const d = deps({
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async (method: string, params?: unknown) => {
+          sent.push({ method, params });
+          return {};
+        }),
+        on: vi.fn((_event: string, cb: (p: Record<string, unknown>) => void) => {
+          chooserHandler = cb;
+          return () => {};
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async (tabId: number) => { released.push(`tab:${tabId}`); }),
+    });
+    const h = createToolHostHandler(d);
+    const waitP = h(req("browser.page.wait", { fileChooser: true, timeoutMs: 5000 })) as Promise<{
+      matched: string; fileChooserId: string; mode?: string;
+    }>;
+    // let the wait arm interception, then simulate the chooser opening
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent.map((s) => s.method)).toContain("Page.setInterceptFileChooserDialog");
+    chooserHandler?.({ backendNodeId: 42, mode: "selectSingle", frameId: "FRAME1" });
+    const res = await waitP;
+    expect(res.matched).toBe("fileChooser");
+    expect(res.fileChooserId).toMatch(/^fc-/);
+    expect(res.mode).toBe("selectSingle");
+    // interception disarmed after the wait settled
+    expect(sent.filter((s) => s.method === "Page.setInterceptFileChooserDialog").at(-1))
+      .toMatchObject({ params: { enabled: false } });
+    // session still held — not released until setInputFiles consumes it
+    expect(released).toHaveLength(0);
+
+    const feed = (await h(req("browser.page.setInputFiles", {
+      fileChooserId: res.fileChooserId,
+      files: ["/tmp/a.png"],
+    }))) as { ok: boolean; fileChooser: boolean; fileNames: string[] };
+    expect(feed).toMatchObject({ ok: true, fileChooser: true, fileNames: ["a.png"] });
+    expect(sent).toContainEqual({
+      method: "DOM.setFileInputFiles",
+      params: { backendNodeId: 42, files: ["/tmp/a.png"] },
+    });
+    expect(released).toHaveLength(1);
+    // single-use: second feed with the same id is refused
+    await expect(h(req("browser.page.setInputFiles", {
+      fileChooserId: res.fileChooserId,
+      files: ["/tmp/a.png"],
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
+  test("page.wait fileChooser times out honestly and releases the session", async () => {
+    const sent: Array<{ method: string; params: unknown }> = [];
+    const released: string[] = [];
+    const d = deps({
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async (method: string, params?: unknown) => {
+          sent.push({ method, params });
+          return {};
+        }),
+        on: vi.fn(() => () => {}),
+      }) as never),
+      releaseCdp: vi.fn(async (tabId: number) => { released.push(`tab:${tabId}`); }),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.wait", { fileChooser: true, timeoutMs: 60 })))
+      .rejects.toMatchObject({ code: "browser.timeout" });
+    expect(sent.filter((s) => s.method === "Page.setInterceptFileChooserDialog").at(-1))
+      .toMatchObject({ params: { enabled: false } });
+    expect(released).toHaveLength(1);
+  });
+
+  test("page.wait fileChooser refuses combos and missing CDP", async () => {
+    const d = deps({
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async () => ({})),
+        on: vi.fn(() => () => {}),
+      }) as never),
+      releaseCdp: vi.fn(async () => {}),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.wait", { fileChooser: true, selector: "#x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.wait", { fileChooser: true, frameId: 3 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.wait", { fileChooser: "yes" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    // no CDP tier → honest unsupported
+    const dNoCdp = deps();
+    await expect(createToolHostHandler(dNoCdp)(req("browser.page.wait", { fileChooser: true })))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
+  test("setInputFiles fileChooserId validates exclusivity and unknown ids", async () => {
+    const d = deps();
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.setInputFiles", {
+      fileChooserId: "fc-nope",
+      files: ["/tmp/a.png"],
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.setInputFiles", {
+      fileChooserId: "fc-nope",
+      ref: "e1",
+      files: ["/tmp/a.png"],
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
