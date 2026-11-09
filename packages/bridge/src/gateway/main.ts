@@ -1516,6 +1516,11 @@ async function handleGatewayRequest(
       }
       ctx.store.purgeTask(p.taskId);
       ctx.toolRefresher.untrack(p.taskId);
+      // In-flight browser calls of a purged task get the same
+      // best-effort cancel + honest `unknown` resolution as a task
+      // stop — otherwise they run to timeout and resolve against a
+      // task that no longer exists.
+      ctx.toolServer.cancelForTask(p.taskId);
       // chromex-9e3: release the task's runtime tab scope so its tabs
       // can bind to a future task.
       ctx.toolServer.releaseTask(p.taskId);
