@@ -4249,6 +4249,24 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(status2.running).toBe(false);
   });
 
+  test("disposeTab releases closure-held sessions so a closed tab reports not-running", async () => {
+    const cdp = fakeCdp();
+    const releaseCdp = vi.fn(async () => {});
+    const h = createToolHostHandler(cdpDeps(507, cdp, { releaseCdp }));
+    await h(req("browser.page.coverage", { tabId: 507, action: "start" }));
+    const running = (await h(req("browser.page.coverage", { tabId: 507, action: "status" }))) as { running: boolean };
+    expect(running.running).toBe(true);
+    await h.disposeTab?.(507);
+    // the held session was released and the stale entry dropped —
+    // status must not keep reporting a dead tab as running
+    const after = (await h(req("browser.page.coverage", { tabId: 507, action: "status" }))) as { running: boolean };
+    expect(after.running).toBe(false);
+    expect(releaseCdp).toHaveBeenCalledWith(507);
+    // idempotent — a second dispose is a no-op
+    await h.disposeTab?.(507);
+    expect(releaseCdp).toHaveBeenCalledTimes(1);
+  });
+
   test("page.coverage maps a missing Profiler domain to proto.unsupported", async () => {
     // chrome.debugger filters whole CDP domains — a -32601 "wasn't found"
     // reply is the honest unsupported boundary, not an internal error.

@@ -1940,6 +1940,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void chrome.storage.session.remove(`chromex.routeRules.${tabId}`).catch(() => {});
   void chrome.storage.session.remove(`chromex.emulation.${tabId}`).catch(() => {});
   void disposeBrowserToolTabState(tabId);
+  // Closure-held CDP sessions (coverage/metrics/screencast) live inside
+  // the tool host handler — release them so dead targets don't leak
+  // debugger refs or stale "running" state.
+  void toolHostHandler.disposeTab?.(tabId);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {

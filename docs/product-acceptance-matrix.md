@@ -84,7 +84,10 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   frameId reaches OOPIFs (`iframe-headless` evaluate leg PASS), and the
   result is page-text egress class. Residual: an approved expression
   can trigger in-page side effects no tool gate observes.
-  Native file picker still unreachable; headful re-verify pending
+  Native file chooser IS drivable: `browser.page.wait {fileChooser:true}`
+  + `setInputFiles {fileChooserId}` intercept and feed choosers on both
+  backends (cdp-headless + agent-loop-isolated verified; OOPIF choosers
+  remain a documented ext limitation). Headful re-verify pending
   (real Chrome S1–S8 gated on acceptance token)
 - Agent loop proofs: `agent-loop-isolated`/`agent-loop-mcp-isolated`
   (playwright backend) AND `agent-task-headless` PASS — a scripted

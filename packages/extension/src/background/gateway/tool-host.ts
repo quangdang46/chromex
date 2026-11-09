@@ -1245,7 +1245,15 @@ export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
   }
 }
 
-export function createToolHostHandler(deps: ToolHostDeps) {
+/** Tool-request handler plus tab-scoped cleanup for closure-held CDP
+ *  sessions (coverage/metrics/screencast) — index.ts calls disposeTab
+ *  from chrome.tabs.onRemoved alongside disposeBrowserToolTabState. */
+export interface BrowserToolHostHandler {
+  (payload: unknown): Promise<unknown>;
+  disposeTab?: (tabId: number) => Promise<void>;
+}
+
+export function createToolHostHandler(deps: ToolHostDeps): BrowserToolHostHandler {
   // JS-coverage sessions held across tool calls — one Profiler session
   // per tab, refcounted through the shared CDP layer so other CDP tools
   // keep working while coverage runs. Dies with the handler (SW
@@ -1274,7 +1282,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       unsubs: Array<() => void>;
     }
   >();
-  return async function handleToolRequest(payload: unknown): Promise<unknown> {
+  const handleToolRequest: BrowserToolHostHandler = async function handleToolRequest(payload: unknown): Promise<unknown> {
     const req = (payload ?? {}) as {
       toolCallId?: string;
       taskId?: string;
@@ -5657,6 +5665,32 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       }
     }
   };
+
+  // Tab-close cleanup for the closure-held CDP sessions — coverage,
+  // metrics and screencast holds would otherwise keep dead-target
+  // sessions + stale "running" state forever (cdp.ts drops its state
+  // on tabs.onRemoved without consulting these maps). Frames are
+  // dropped with the tab — an abandoned recording has no deliverable.
+  const disposeTabState = async (tabId: number): Promise<void> => {
+    const cov = coverageHolds.get(tabId);
+    if (cov) {
+      coverageHolds.delete(tabId);
+      await cov.release().catch(() => {});
+    }
+    const met = metricsHolds.get(tabId);
+    if (met) {
+      metricsHolds.delete(tabId);
+      await met.release().catch(() => {});
+    }
+    const cast = screencastHolds.get(tabId);
+    if (cast) {
+      screencastHolds.delete(tabId);
+      for (const un of cast.unsubs) un();
+      await cast.release().catch(() => {});
+    }
+  };
+  handleToolRequest.disposeTab = disposeTabState;
+  return handleToolRequest;
 }
 
 function domStepFor(tool: string, args: Record<string, unknown>): Record<string, unknown> {
