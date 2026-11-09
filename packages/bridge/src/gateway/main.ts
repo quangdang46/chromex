@@ -868,6 +868,33 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       log(`retention/prune sweep failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
+    // Long-lived gateways would otherwise only sweep at startup — a
+    // weeks-long session accumulates archived flags, resolved approvals
+    // and expired artifacts indefinitely. Re-run the same idempotent
+    // sweep every 6h; unref'd so it never keeps the process alive.
+    const retentionTimer = setInterval(() => {
+      try {
+        const n = runRetentionSweep(store as never).length;
+        if (n > 0) log(`retention sweep archived ${n} task(s)`);
+        const p = runPruneSweep(store as never);
+        if (p.eventsDeleted > 0) log(`prune sweep deleted ${p.eventsDeleted} events`);
+        const sa = store as {
+          sweepResolvedApprovals?: (ms: number) => number;
+          sweepExpiredArtifacts?: (ms: number) => Promise<{ rows: number; filesDeleted: number }>;
+        };
+        if (sa.sweepResolvedApprovals) {
+          const a = sa.sweepResolvedApprovals(Date.now() - APPROVAL_POST_TERMINAL_MS);
+          if (a > 0) log(`approval sweep removed ${a} resolved approval(s)`);
+        }
+        void sa.sweepExpiredArtifacts?.(Date.now() - ARTIFACT_TTL_MS).then((r) => {
+          if (r.rows > 0) log(`artifact sweep removed ${r.rows} row(s), ${r.filesDeleted} file(s)`);
+        });
+      } catch (err) {
+        log(`periodic retention sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 6 * 60 * 60 * 1000);
+    retentionTimer.unref();
+
     // recovery runs before ready (P1-02 wires real recovery); in-memory
     // store starts empty so nothing to recover yet.
     store.appendGatewayEvent({
@@ -894,6 +921,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       // no self-exit while active work — in-memory store has no active
       // turns yet; real check lands with P1-05 SessionManager.
       deltaCoalescer.dispose();
+      clearInterval(retentionTimer);
       db?.close();
       // playwright-isolated owns a real Chromium child — without this the
       // browser + its pipes leak past gateway shutdown.
