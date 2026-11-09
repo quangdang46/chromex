@@ -831,6 +831,103 @@ async function collectConsoleEntries(
   return { entries: merged.slice(-limit), captured };
 }
 
+/** Unscoped content-condition waits fan out across every frame —
+ *  positive conditions (text/selector/urlContains/readyState/
+ *  visibleSelector) are met when ANY frame satisfies them all;
+ *  negative conditions (textGone/selectorGone) must hold in EVERY
+ *  frame ("the spinner is gone" means gone everywhere, not just the
+ *  top document). Each frame's page.dom.wait polls independently for
+ *  the shared timeout; results combine host-side. A frame whose
+ *  content script is unreachable counts as not-matched for positive
+ *  conditions and not-cleared for negative ones — the wait can only
+ *  claim what it verified. Returns the winning frameId as evidence. */
+async function waitContentAllFrames(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+  frameIds: number[],
+): Promise<Record<string, unknown>> {
+  const started = Date.now();
+  const POS_KEYS = ["text", "selector", "urlContains", "readyState", "visibleSelector"] as const;
+  const NEG_KEYS = ["textGone", "selectorGone"] as const;
+  const pick = (keys: readonly string[]): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const k of keys) {
+      const v = str(args[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  };
+  const posArgs = pick(POS_KEYS);
+  const negArgs = pick(NEG_KEYS);
+  const hasPos = Object.keys(posArgs).length > 0;
+  const hasNeg = Object.keys(negArgs).length > 0;
+  const fids = frameIds.slice(0, CONSOLE_MERGE_FRAME_CAP);
+  type WaitRes = { ok?: boolean; timedOut?: boolean; elapsedMs?: number; error?: string };
+  type Job = { fid: number; group: "pos" | "neg"; res: WaitRes | undefined };
+  const waitOne = async (
+    fid: number,
+    extra: Record<string, string>,
+    group: "pos" | "neg",
+  ): Promise<Job> => {
+    const res = (await deps
+      .sendToTab(tabId, { type: "page.dom.wait", ...extra, timeoutMs }, { frameId: fid })
+      .catch(() => undefined)) as WaitRes | undefined;
+    return { fid, group, res };
+  };
+  // Early-finish coordinator: positive conditions resolve on the FIRST
+  // frame match, negative conditions need EVERY frame — waiting for
+  // all jobs would hold the full timeout even after the outcome is
+  // decided. Losing frames' content-script waits expire harmlessly.
+  return await new Promise<Record<string, unknown>>((resolve, reject) => {
+    let negPending = hasNeg ? fids.length : 0;
+    let negFailed = false;
+    let posSettled = 0;
+    let posTotal = 0;
+    let posWinner: number | undefined;
+    const timeoutErr = () =>
+      toolError(
+        "browser.timeout",
+        `wait condition was not met within ${timeoutMs}ms (${negFailed ? "condition still present in a frame" : "no frame satisfied the wait conditions"})`,
+      );
+    const check = () => {
+      if (negFailed || (hasPos && posWinner === undefined && posSettled === posTotal)) {
+        reject(timeoutErr());
+        return;
+      }
+      if ((!hasPos || posWinner !== undefined) && negPending === 0) {
+        resolve({
+          ok: true,
+          matched: "conditions",
+          elapsedMs: Date.now() - started,
+          frames: fids.length,
+          resolvedTabId: tabId,
+          ...(posWinner !== undefined ? { frameId: posWinner } : {}),
+        });
+      }
+    };
+    for (const fid of fids) {
+      if (hasPos) {
+        posTotal += 1;
+        void waitOne(fid, posArgs, "pos").then((j) => {
+          posSettled += 1;
+          if (j.res?.ok === true && posWinner === undefined) posWinner = j.fid;
+          check();
+        });
+      }
+      if (hasNeg) {
+        void waitOne(fid, negArgs, "neg").then((j) => {
+          negPending -= 1;
+          if (j.res?.ok !== true) negFailed = true;
+          check();
+        });
+      }
+    }
+    check();
+  });
+}
+
 /** Frame ids for an unscoped console read: all frames via webNavigation
  *  when available, else the top frame (frameId 0) as before. */
 async function consoleFrameIds(
@@ -2398,6 +2495,16 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           // networkIdle combos) — all matched above; a content-script
           // wait with zero conditions would be meaningless.
           return { ok: true, matched: "conditions", resolvedTabId: tabId };
+        }
+        // Unscoped content waits cover EVERY frame — text/selector
+        // conditions inside same-process and cross-origin subframes
+        // are just as much "the page" as top-frame DOM. Explicit
+        // args.frameId keeps the single-frame wait.
+        if (args.frameId === undefined || args.frameId === null) {
+          const fids = await consoleFrameIds(deps, tabId);
+          if (fids !== undefined && fids.length > 1) {
+            return await waitContentAllFrames(deps, tabId, args, waitTimeoutMs, fids);
+          }
         }
         const frameId = frameIdArg(args);
         const res = (await deps.sendToTab(tabId, {

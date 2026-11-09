@@ -1312,6 +1312,18 @@ await runScenario(
           ).catch(() => null);
           const findMatches = (findRes?.result ?? findRes ?? {}).matches ?? [];
           cdp.findOopifOk = findMatches.some((m) => m.frameId === cdpCross.frameId);
+          // Unscoped content wait must also see OOPIF DOM — "Frame
+          // Child" only exists inside the cross-origin iframe.
+          const waitRes = await runner.browserToolCall(
+            taskId, "browser.page.wait",
+            { tabId: cdpFrameTabId, text: "Frame Child", timeoutMs: 8000 }, token, 60_000,
+          ).catch(() => null);
+          const waitBody = waitRes?.result ?? waitRes ?? {};
+          // Both iframe fixtures serve "Frame Child" — the wait may
+          // legitimately match either frame; what matters is it matched
+          // a SUBFRAME (not top) and reported which one.
+          cdp.waitOopifTextOk = waitBody.ok === true &&
+            [cdpCross?.frameId, cdpSame?.frameId].includes(waitBody.frameId);
         }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
@@ -1327,7 +1339,7 @@ await runScenario(
           cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
           cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
           cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true &&
-          cdp.findOopifOk === true,
+          cdp.findOopifOk === true && cdp.waitOopifTextOk === true,
         ...cdp,
       };
 

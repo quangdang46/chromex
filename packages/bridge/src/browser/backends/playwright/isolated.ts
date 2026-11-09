@@ -2403,62 +2403,173 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return { ok: true, matched: "networkIdle", elapsedMs: Date.now() - started };
       }
     }
+    const domConds = { visibleSelector, selector, selectorGone, urlContains, text, textGone };
+    const hasDom = Object.values(domConds).some((v) => v !== null);
+    // Unscoped DOM-condition waits cover EVERY frame — Playwright
+    // auto-attaches OOPIFs so page.frames() reaches cross-origin
+    // subframes. Positive conditions are met when ANY frame satisfies
+    // them all; *Gone conditions must hold in EVERY frame. Explicit
+    // args.frameId keeps the single-frame wait.
+    if (!hasDom) {
+      return { ok: true, matched: "conditions", elapsedMs: Date.now() - started };
+    }
+    if (args.frameId === undefined || args.frameId === null) {
+      const mainPage = await this.#pageFor(taskId, args);
+      const allFrames = typeof mainPage.frames === "function" ? mainPage.frames() : [];
+      if (allFrames.length > 1) {
+        const POS_KEYS = ["selector", "urlContains", "text", "visibleSelector"] as const;
+        const NEG_KEYS = ["selectorGone", "textGone"] as const;
+        const pick = (keys: readonly string[]) => ({
+          visibleSelector: (keys as readonly string[]).includes("visibleSelector") ? visibleSelector : null,
+          selector: (keys as readonly string[]).includes("selector") ? selector : null,
+          selectorGone: (keys as readonly string[]).includes("selectorGone") ? selectorGone : null,
+          urlContains: (keys as readonly string[]).includes("urlContains") ? urlContains : null,
+          text: (keys as readonly string[]).includes("text") ? text : null,
+          textGone: (keys as readonly string[]).includes("textGone") ? textGone : null,
+        });
+        const posConds = pick(POS_KEYS);
+        const negConds = pick(NEG_KEYS);
+        const hasPos = Object.values(posConds).some((v) => v !== null);
+        const hasNeg = Object.values(negConds).some((v) => v !== null);
+        // Early-finish coordinator (same contract as the extension
+        // host): positive conditions resolve on the FIRST frame match,
+        // *Gone conditions need EVERY frame — awaiting all polls would
+        // hold the full timeout after the outcome is already decided.
+        return await new Promise<Record<string, unknown>>((resolve, reject) => {
+          let negPending = hasNeg ? allFrames.length : 0;
+          let negFailed = false;
+          let posSettled = 0;
+          let posTotal = 0;
+          let posWinner: number | undefined;
+          const timeoutErr = () =>
+            protocolError(
+              "browser.timeout",
+              `wait condition not met before timeout (${negFailed ? "condition still present in a frame" : "no frame satisfied the wait conditions"})`,
+            );
+          const check = () => {
+            if (negFailed || (hasPos && posWinner === undefined && posSettled === posTotal)) {
+              reject(timeoutErr());
+              return;
+            }
+            if ((!hasPos || posWinner !== undefined) && negPending === 0) {
+              resolve({
+                ok: true,
+                matched: "conditions",
+                elapsedMs: Date.now() - started,
+                frames: allFrames.length,
+                ...(posWinner !== undefined ? { frameId: posWinner } : {}),
+              });
+            }
+          };
+          allFrames.forEach((frame, i) => {
+            const target = frame as unknown as PwTarget;
+            if (hasPos) {
+              posTotal += 1;
+              void this.#pollDomConditions(target, posConds, deadline)
+                .then(() => {
+                  posSettled += 1;
+                  if (posWinner === undefined) posWinner = i;
+                  check();
+                })
+                .catch(() => {
+                  posSettled += 1;
+                  check();
+                });
+            }
+            if (hasNeg) {
+              void this.#pollDomConditions(target, negConds, deadline)
+                .then(() => {
+                  negPending -= 1;
+                  check();
+                })
+                .catch(() => {
+                  negPending -= 1;
+                  negFailed = true;
+                  check();
+                });
+            }
+          });
+          check();
+        });
+      }
+    }
+    await this.#pollDomConditions(page, domConds, deadline);
+    return { ok: true, matched: "conditions", elapsedMs: Date.now() - started };
+  }
+
+  /** Polls the DOM wait conditions on ONE target until deadline —
+   *  every specified condition must hold on that target. Throws
+   *  browser.timeout when the deadline passes. Shared by the
+   *  single-frame path and the unscoped all-frames fan-out. */
+  async #pollDomConditions(
+    target: PwTarget,
+    conds: {
+      visibleSelector: string | null;
+      selector: string | null;
+      selectorGone: string | null;
+      urlContains: string | null;
+      text: string | null;
+      textGone: string | null;
+    },
+    deadline: number,
+  ): Promise<void> {
+    const { visibleSelector, selector, selectorGone, urlContains, text, textGone } = conds;
     for (;;) {
       if (visibleSelector) {
-        const visible = await page.locator(visibleSelector).first().isVisible().catch(() => false);
+        const visible = await target.locator(visibleSelector).first().isVisible().catch(() => false);
         if (!visible) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }
-          await page.waitForTimeout(100);
+          await target.waitForTimeout(100);
           continue;
         }
       }
       if (selector) {
-        const count = await page.locator(selector).count().catch(() => 0);
+        const count = await target.locator(selector).count().catch(() => 0);
         if (count === 0) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }
-          await page.waitForTimeout(100);
+          await target.waitForTimeout(100);
           continue;
         }
       }
       if (selectorGone) {
-        const count = await page.locator(selectorGone).count().catch(() => 0);
+        const count = await target.locator(selectorGone).count().catch(() => 0);
         if (count !== 0) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }
-          await page.waitForTimeout(100);
+          await target.waitForTimeout(100);
           continue;
         }
       }
-      if (urlContains && !page.url().includes(urlContains)) {
+      if (urlContains && !target.url().includes(urlContains)) {
         if (Date.now() >= deadline) {
           throw protocolError("browser.timeout", "wait condition not met before timeout");
         }
-        await page.waitForTimeout(100);
+        await target.waitForTimeout(100);
         continue;
       }
       if (text !== null || textGone !== null) {
-        const bodyText = await this.#deepBodyText(page);
+        const bodyText = await this.#deepBodyText(target);
         if (text !== null && !bodyText.includes(text)) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }
-          await page.waitForTimeout(100);
+          await target.waitForTimeout(100);
           continue;
         }
         if (textGone !== null && bodyText.includes(textGone)) {
           if (Date.now() >= deadline) {
             throw protocolError("browser.timeout", "wait condition not met before timeout");
           }
-          await page.waitForTimeout(100);
+          await target.waitForTimeout(100);
           continue;
         }
       }
-      return { ok: true, matched: "conditions", elapsedMs: Date.now() - started };
+      return;
     }
   }
 

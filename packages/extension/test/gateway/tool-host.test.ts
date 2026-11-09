@@ -638,6 +638,59 @@ describe("tool host (P1-09)", () => {
     expect(res.waitedMs).toBe(1);
   });
 
+  test("page.wait unscoped fans out across frames — first positive match wins with frameId", async () => {
+    const calls: Array<{ frameId?: number; msg: Record<string, unknown> }> = [];
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab: vi.fn(async (_t: number, msg: Record<string, unknown>, opts?: { frameId?: number }) => {
+        calls.push({ frameId: opts?.frameId, msg });
+        return opts?.frameId === 20 ? { ok: true, elapsedMs: 5 } : { ok: false, timedOut: true };
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.wait", { text: "done", timeoutMs: 5000 }))) as {
+      ok: boolean; frameId?: number; frames?: number;
+    };
+    expect(res.ok).toBe(true);
+    expect(res.frameId).toBe(20);
+    expect(res.frames).toBe(2);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((c) => c.msg.type === "page.dom.wait" && c.msg.text === "done")).toBe(true);
+  });
+
+  test("page.wait selectorGone must clear in EVERY frame", async () => {
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab: vi.fn(async (_t: number, _m: unknown, opts?: { frameId?: number }) =>
+        opts?.frameId === 20 ? { ok: false, timedOut: true } : { ok: true, elapsedMs: 3 }),
+    });
+    const h = createToolHostHandler(d);
+    await expect(h(req("browser.page.wait", { selectorGone: ".spin", timeoutMs: 5000 }))).rejects.toMatchObject({
+      code: "browser.timeout",
+    });
+  });
+
+  test("page.wait explicit frameId stays single-frame", async () => {
+    const sendToTab = vi.fn(async () => ({ ok: true, elapsedMs: 2 }));
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab,
+    });
+    const h = createToolHostHandler(d);
+    await h(req("browser.page.wait", { selector: ".x", frameId: 20, timeoutMs: 1000 }));
+    expect(sendToTab).toHaveBeenCalledTimes(1);
+    expect(sendToTab.mock.calls[0]?.[2]).toMatchObject({ frameId: 20 });
+  });
+
   test("page.wait networkIdle drains in-flight requests then resolves", async () => {
     let inflight = 2;
     const d = deps({
