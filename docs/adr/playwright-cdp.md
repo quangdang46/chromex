@@ -58,7 +58,17 @@ not blocked on Playwright capability.
    one isolated context per task. The attached browser's own default
    context is never surfaced to tools.
 
-4. **Overlap with chrome-extension backend.** Both can drive a real
+4. **Orphaned contexts on disconnect.** Task contexts are created via
+   `Target.createBrowserContext` inside the ATTACHED browser. If the
+   gateway↔browser CDP connection drops, playwright loses the handles —
+   the browser-side contexts may persist as invisible targets the user
+   cannot see or close. Reconnect creates fresh contexts; the orphans
+   are a bounded leak (one per task-context at disconnect time) with no
+   API to enumerate/reap them from a new connection. Acceptable for the
+   research-tier backend; a future hardening pass could track created
+   context ids and issue Target.disposeBrowserContext best-effort.
+
+5. **Overlap with chrome-extension backend.** Both can drive a real
    browser. playwright-cdp's unique value is *no extension required* —
    useful for Chrome variants where extensions are unavailable
    (e.g. managed/enterprise, or driving a separate automation profile).
