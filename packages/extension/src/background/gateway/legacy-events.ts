@@ -163,6 +163,24 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
           diff: typeof payload.diff === "string" ? payload.diff : "",
         },
       };
+    case "goal.updated": {
+      const g = (payload.goal ?? {}) as Record<string, unknown>;
+      return {
+        type: "goal.updated",
+        ...base,
+        goal: {
+          threadId: taskId,
+          objective: typeof g.objective === "string" ? g.objective : "",
+          status: typeof g.status === "string" ? g.status : "",
+          ...(typeof g.tokenBudget === "number" || g.tokenBudget === null ? { tokenBudget: g.tokenBudget as number | null } : {}),
+          ...(typeof g.tokensUsed === "number" || g.tokensUsed === null ? { tokensUsed: g.tokensUsed as number | null } : {}),
+          ...(typeof g.timeUsedSeconds === "number" || g.timeUsedSeconds === null ? { timeUsedSeconds: g.timeUsedSeconds as number | null } : {}),
+          ...(typeof g.budgetLimited === "boolean" || g.budgetLimited === null ? { budgetLimited: g.budgetLimited as boolean | null } : {}),
+        },
+      };
+    }
+    case "goal.cleared":
+      return { type: "goal.cleared", ...base };
     case "turn.unknown":
       clearReasoning(taskId, turnId);
       return { type: "turn.failed", ...base, error: "turn outcome unknown after restart" };

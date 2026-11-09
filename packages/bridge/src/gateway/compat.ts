@@ -84,14 +84,30 @@ export const LEGACY_COMPAT: Record<string, CompatEntry> = {
         throw perr("proto.invalid", "prompt.send compat requires threadId (open a task first)");
       }
       const message = typeof p.message === "string" ? p.message : "";
+      const goalMetadata =
+        p.useGoal === true
+          ? {
+              useGoal: true,
+              ...(typeof p.goalObjective === "string" && p.goalObjective.trim()
+                ? { goalObjective: p.goalObjective.trim() }
+                : {}),
+            }
+          : {};
       return {
         method: "task.send",
         payload: {
           taskId: threadId,
           clientMessageId: legacyClientMessageId(p),
           content: [{ type: "text", text: message }],
-          ...(p.planMode === true
-            ? { ctx: { metadata: { planMode: true } } }
+          ...(p.planMode === true || p.useGoal === true
+            ? {
+                ctx: {
+                  metadata: {
+                    ...(p.planMode === true ? { planMode: true } : {}),
+                    ...goalMetadata,
+                  },
+                },
+              }
             : {}),
         },
       };

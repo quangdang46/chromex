@@ -11,7 +11,7 @@
  * task stream and ephemeral deltas to the delta channel (never seq).
  */
 
-import type { AgentEvent } from "@codex-sidepanel/shared";
+import type { AgentEvent, AgentGoalState } from "@codex-sidepanel/shared";
 
 export interface MappedAgentEvent {
   event: AgentEvent;
@@ -252,6 +252,18 @@ export class CodexEventMapper {
         this.deltas.clear();
         return;
       }
+      case "thread/goal/updated": {
+        // Thread-scoped, not turn-bound — goal.set can precede the turn
+        // that consumes it, so emit directly without withTurn.
+        const goal = asRecord(p.goal);
+        if (!goal) return;
+        this.emitDurable({ type: "goal.updated", goal: mapAgentGoal(goal) });
+        return;
+      }
+      case "thread/goal/cleared": {
+        this.emitDurable({ type: "goal.cleared" });
+        return;
+      }
       default:
         return;
     }
@@ -396,4 +408,23 @@ function permissionOptions(p: Record<string, unknown>): Array<{
       return id ? { id, label, kind } : null;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
+}
+
+function mapAgentGoal(goal: Record<string, unknown>): AgentGoalState {
+  const num = (v: unknown): number | null | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : v === null ? null : undefined;
+  const out: AgentGoalState = {
+    objective: str(goal.objective) ?? "",
+    status: str(goal.status) ?? "",
+  };
+  const tokenBudget = num(goal.tokenBudget);
+  if (tokenBudget !== undefined) out.tokenBudget = tokenBudget;
+  const tokensUsed = num(goal.tokensUsed);
+  if (tokensUsed !== undefined) out.tokensUsed = tokensUsed;
+  const timeUsedSeconds = num(goal.timeUsedSeconds);
+  if (timeUsedSeconds !== undefined) out.timeUsedSeconds = timeUsedSeconds;
+  if (typeof goal.budgetLimited === "boolean" || goal.budgetLimited === null) {
+    out.budgetLimited = goal.budgetLimited as boolean | null;
+  }
+  return out;
 }

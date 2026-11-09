@@ -80,7 +80,21 @@ export type AgentEvent =
   // crash/reconnect with undetermined outcome — never pretend failed/succeeded
   | { type: "turn.unknown"; turnId: string; reason: string }
   // DURABLE (auditable) provider notice
-  | { type: "provider.notice"; level: "info" | "warn"; message: string };
+  | { type: "provider.notice"; level: "info" | "warn"; message: string }
+  // Thread-scoped Codex goal state (thread/goal/* notifications). Not
+  // turn-bound: goal.set can precede the turn that consumes it, and the
+  // goal survives across turns until cleared or completed.
+  | { type: "goal.updated"; goal: AgentGoalState }
+  | { type: "goal.cleared" };
+
+export interface AgentGoalState {
+  objective: string;
+  status: string;
+  tokenBudget?: number | null;
+  tokensUsed?: number | null;
+  timeUsedSeconds?: number | null;
+  budgetLimited?: boolean | null;
+}
 
 /** Classifies which AgentEvent types are ephemeral (no durable seq). */
 export const EPHEMERAL_EVENT_TYPES = ["assistant.delta", "reasoning.delta"] as const;

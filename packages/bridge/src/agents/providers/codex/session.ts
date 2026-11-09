@@ -195,6 +195,25 @@ export class CodexAgentSession implements AgentSession {
     const items = buildCodexInputItems(input);
     const cwd = this.ctx.cwd;
 
+    // Goal mode (legacy /goal parity): set the thread goal BEFORE the
+    // turn so the provider's goal loop drives this turn. Objective falls
+    // back to the message text like codex-plane did. A failed set fails
+    // the turn honestly rather than silently running without the goal.
+    if (input.ctx?.metadata?.useGoal === true) {
+      const metaObjective =
+        typeof input.ctx.metadata.goalObjective === "string"
+          ? input.ctx.metadata.goalObjective.trim()
+          : "";
+      const fallback = items
+        .map((item) => (typeof item === "object" && item !== null && "text" in item ? String((item as { text?: unknown }).text ?? "") : ""))
+        .join(" ")
+        .trim();
+      const objective = metaObjective || fallback;
+      if (objective) {
+        await this.client.request("thread/goal/set", { threadId, objective });
+      }
+    }
+
     const turn = await requestTurnStartWithReasoningSummaryFallback(
       this.client,
       async () => undefined,
