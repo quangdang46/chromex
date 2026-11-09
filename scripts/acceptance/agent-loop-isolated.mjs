@@ -1217,7 +1217,7 @@ try {
   const ev = await call("browser.page.evaluate", { expression: "1 + 1" });
   assert(ev?.value === 2 || ev?.result?.value === 2, `evaluate returns expression value (${JSON.stringify(ev).slice(0, 120)})`);
   await expectReject("browser.page.evaluate", {}, "invalid", "evaluate without expression refused");
-  await expectReject("browser.page.screenshot", { frameId: 3 }, "not supported", "frameId refused on page-level tool (screenshot)");
+  await expectReject("browser.page.screenshot", { frameId: 3 }, "element target", "frameId without element target refused on page-level screenshot");
   await expectReject("browser.page.upload", { selector: "#f", files: ["/etc/passwd"] }, "refused", "local-path upload refused (bytes-only)");
   await expectReject("browser.downloads.save", { url: "file:///etc/passwd" }, "http(s)", "non-http(s) download url refused");
   await expectReject("browser.downloads.save", { url: fixture.url("/dl"), filename: "../escape.txt" }, "relative path", "traversal filename refused");
@@ -1297,7 +1297,9 @@ try {
   await new Promise((r) => setTimeout(r, 200));
   const frPout = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.getElementById('pout').textContent" });
   assert(String(frPout?.value ?? "").includes("down:true") && String(frPout?.value ?? "").includes("up:true"), `coordinate click translated into the frame hit #pb (got ${JSON.stringify(frPout).slice(0, 120)})`);
-  await expectReject("browser.page.screenshot", { tabId: frTabId, frameId: frCross.frameId }, "not supported", "screenshot + frameId refused (page-level capture)");
+  const frShot = await call("browser.page.screenshot", { tabId: frTabId, frameId: frCross.frameId, selector: "#fin" });
+  assert(typeof frShot?.dataBase64 === "string" && frShot.bytes > 0, `element screenshot inside cross-origin frame returned jpeg (${frShot?.bytes} bytes)`);
+  await expectReject("browser.page.screenshot", { tabId: frTabId, frameId: frCross.frameId }, "element target", "screenshot + frameId without element target refused (page-level capture)");
   await call("browser.tab.close", { tabId: frTabId });
 
   // ── sessions parity: tab.close legs above populated the task's

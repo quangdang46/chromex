@@ -1844,6 +1844,9 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         `element screenshot exceeds ${SCREENSHOT_MAX_BYTES} bytes even at the lowest jpeg quality`,
       );
     }
+    if (typeof args.frameId === "number" && args.frameId !== 0) {
+      throw protocolError("proto.invalid", "browser.page.screenshot is tab-scoped; args.frameId requires an element target (selector/ref)");
+    }
     const fullPage = args.fullPage === true;
     const page = await this.#pageFor(taskId, args);
     // chromex-22wi: the result IS the provider's image input — there is
@@ -4753,6 +4756,8 @@ const EXPECTABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
  *  on the top document. */
 const FRAME_CAPABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.evaluate",
+  // Element clips only — the page-level path refuses frameId itself.
+  "browser.page.screenshot",
   "browser.page.snapshot",
   "browser.page.extract",
   "browser.page.find",

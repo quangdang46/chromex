@@ -36,10 +36,9 @@ describe("PlaywrightIsolatedBackend", () => {
     const backend = new PlaywrightIsolatedBackend({
       loadPlaywright: async () => ({ chromium: { launch: async () => { throw new Error("no launch in test"); } } }) as never,
     });
-    // screenshot/pdf/navigate are page-level — frameId refuses before launch
-    await expect(
-      backend.execute("t1", "browser.page.screenshot", { frameId: 2 }),
-    ).rejects.toMatchObject({ code: "proto.unsupported" });
+    // pdf/mhtml/navigate are page-level — frameId refuses before launch
+    // (screenshot joined FRAME_CAPABLE_TOOLS for element clips; its
+    // page-level path refuses frameId itself with proto.invalid)
     await expect(
       backend.execute("t1", "browser.page.pdf", { frameId: 7 }),
     ).rejects.toMatchObject({ code: "proto.unsupported" });
