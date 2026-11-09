@@ -406,6 +406,36 @@ describe("tool host (P1-09)", () => {
     }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("disposeBrowserToolTabState releases an unconsumed file chooser", async () => {
+    const { disposeBrowserToolTabState } = await import("../../src/background/gateway/tool-host.js");
+    let chooserHandler: ((p: Record<string, unknown>) => void) | undefined;
+    const released: string[] = [];
+    const d = deps({
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async () => ({})),
+        on: vi.fn((_e: string, cb: (p: Record<string, unknown>) => void) => {
+          chooserHandler = cb;
+          return () => {};
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async (tabId: number) => { released.push(`tab:${tabId}`); }),
+    });
+    const h = createToolHostHandler(d);
+    const waitP = h(req("browser.page.wait", { fileChooser: true, timeoutMs: 5000 })) as Promise<{
+      fileChooserId: string;
+    }>;
+    await new Promise((r) => setTimeout(r, 30));
+    chooserHandler?.({ backendNodeId: 9, mode: "selectSingle" });
+    const res = await waitP;
+    expect(released).toHaveLength(0); // held for the feed
+    await disposeBrowserToolTabState(7);
+    expect(released).toHaveLength(1); // tab-close cleanup released it
+    await expect(h(req("browser.page.setInputFiles", {
+      fileChooserId: res.fileChooserId,
+      files: ["/tmp/a.png"],
+    }))).rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

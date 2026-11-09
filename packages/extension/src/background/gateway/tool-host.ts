@@ -1207,6 +1207,14 @@ async function captureElementScreenshot(
  *  detach on tab close regardless. */
 export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
   await releaseEmulationHold(tabId).catch(() => {});
+  // Armed file choosers die with their tab — release the held CDP
+  // session so the debugger refcount doesn't leak on a dead target.
+  for (const [id, p] of pendingFileChoosers) {
+    if (p.tabId === tabId) {
+      pendingFileChoosers.delete(id);
+      await p.release().catch(() => {});
+    }
+  }
   const tap = networkTaps.get(tabId);
   if (tap) {
     networkTaps.delete(tabId);
