@@ -51,6 +51,8 @@ async function waitFor(pred, label, timeoutMs = 8000) {
 }
 
 try {
+  // sqlite store so the restart leg survives on durable events
+  await writeFile(join(dataDir, "gateway.json"), JSON.stringify({ store: "sqlite" }));
   gateway = await startGateway({ dataDir, log: (m) => console.log(`[gw] ${m}`) });
   const ep = gateway.ipc.endpointPath();
   const token = (await readFile(join(dataDir, "auth", "token"), "utf8")).trim();
@@ -189,9 +191,8 @@ try {
     browserInstanceId: BROWSER_ID,
   });
   conns.push(host3);
-  let reconcileCount = 0;
-  host3.setRequestHandler(async (method) => {
-    if (method === "browser.tool.reconcile") reconcileCount += 1;
+  host3.setRequestHandler(async (method, payload) => {
+    if (payload?.args?.hold) return new Promise(() => {});
     return { tabs: [] };
   });
   await host3.request("diagnostics.snapshot", {});
@@ -202,7 +203,83 @@ try {
   ).length;
   assert(reconCount === 1, `exactly one tool.reconciled for tc-recon-a after re-register (got ${reconCount})`);
 
-  await ipc.request("task.purge", { taskId }).catch(() => {});
+  // ---- restart leg: gateway dies with an unknown call in flight;
+  // the durable seed must re-queue it for reconcile (§4.2 + §5.6) ----
+  host2.close(); // only host3 remains live for this browserInstanceId
+  conns.splice(conns.indexOf(host2), 1);
+  const callC = ipc.request("browser.tool.call", {
+    taskId, tool: "browser.tabs.list", args: { hold: true }, token: scope.token,
+    toolCallId: "tc-recon-c",
+  });
+  await sleep(400);
+  host3.close();
+  conns.splice(conns.indexOf(host3), 1);
+  const resC = await callC;
+  assert(
+    resC?.status === "unknown",
+    `tc-recon-c unknown before gateway restart (got ${resC?.status})`,
+  );
+
+  // Gateway restart on the SAME dataDir — durable events survive,
+  // in-memory unreconciled/outcomes are rebuilt by seeding.
+  await gateway.shutdown("restart leg");
+  gateway = await startGateway({ dataDir, log: (m) => console.log(`[gw2] ${m}`) });
+  const ep2 = gateway.ipc.endpointPath();
+  const token2 = (await readFile(join(dataDir, "auth", "token"), "utf8")).trim();
+
+  const ipc2 = new GatewayIpc(ep2.path, token2, hello("tool-reconcile-client-2"));
+  conns.push(ipc2);
+  const host4Methods = [];
+  const host4 = new GatewayIpc(ep2.path, token2, {
+    ...hello("fake-ext-host-r4"),
+    hostInstanceId: "fake-ext-host-r4",
+    browserInstanceId: BROWSER_ID,
+  });
+  conns.push(host4);
+  host4.setRequestHandler(async (method, payload) => {
+    host4Methods.push(method);
+    if (method === "browser.tool.reconcile") {
+      const ids = payload?.toolCallIds ?? [];
+      // Post-restart host truth: BOTH previously-unknown calls
+      // actually completed host-side while the gateway was down.
+      return {
+        outcomes: Object.fromEntries(
+          ids
+            .filter((id) => id === "tc-recon-b" || id === "tc-recon-c")
+            .map((id) => [id, { status: "completed", result: { ok: true, postRestart: true } }]),
+        ),
+      };
+    }
+    return { tabs: [] };
+  });
+  await host4.request("diagnostics.snapshot", {});
+  note("ok — gateway restarted; host v4 registered → seeded reconcile fired");
+
+  const events2 = await waitFor(async () => {
+    const sync = await ipc2.request("task.sync", { taskId, fromSeq: 0, maxEvents: 500 });
+    const evs = sync?.events ?? [];
+    const hasB = evs.some((e) => e.type === "tool.reconciled" && e.payload?.toolCallId === "tc-recon-b");
+    const hasC = evs.some((e) => e.type === "tool.reconciled" && e.payload?.toolCallId === "tc-recon-c");
+    return hasB && hasC ? evs : null;
+  }, "post-restart tool.reconciled for tc-recon-b and tc-recon-c");
+  for (const id of ["tc-recon-b", "tc-recon-c"]) {
+    const ev = events2.find((e) => e.type === "tool.reconciled" && e.payload?.toolCallId === id);
+    assert(ev?.payload?.outcome === "succeeded", `post-restart ${id} reconciled succeeded (got ${ev?.payload?.outcome})`);
+  }
+  assert(host4Methods.includes("browser.tool.reconcile"), "host v4 received browser.tool.reconcile");
+
+  // tc-recon-a was already amended pre-restart — its durable
+  // tool.reconciled makes the seed "completed", NOT reconcile-eligible.
+  const reconA2 = events2.filter((e) => e.type === "tool.reconciled" && e.payload?.toolCallId === "tc-recon-a");
+  assert(reconA2.length === 1, `tc-recon-a still has exactly one reconciled after restart (got ${reconA2.length})`);
+
+  const snap2 = await ipc2.request("task.snapshot", { taskId });
+  const toolCalls2 = Array.isArray(snap2?.toolCalls) ? snap2.toolCalls : [];
+  const byId2 = Object.fromEntries(toolCalls2.map((c) => [c.toolCallId, c]));
+  assert(byId2["tc-recon-b"]?.outcome === "succeeded", `post-restart snapshot tc-recon-b=succeeded (got ${byId2["tc-recon-b"]?.outcome})`);
+  assert(byId2["tc-recon-c"]?.outcome === "succeeded", `post-restart snapshot tc-recon-c=succeeded (got ${byId2["tc-recon-c"]?.outcome})`);
+
+  await ipc2.request("task.purge", { taskId }).catch(() => {});
 
   await mkdir(ARTIFACT_DIR, { recursive: true });
   await writeFile(

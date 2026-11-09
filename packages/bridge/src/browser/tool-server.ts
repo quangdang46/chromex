@@ -732,6 +732,7 @@ export class BrowserToolServer {
     toolCallId: string,
     tool: string,
     last: "started" | "completed" | "failed" | "cancelled" | "unknown",
+    taskId?: string,
   ): void {
     if (this.outcomes.has(toolCallId)) return;
     const interrupted = last === "started" || last === "unknown";
@@ -749,6 +750,15 @@ export class BrowserToolServer {
         : {}),
       verified: "unknown",
     });
+    // result_lost reconcile (§4.2): an interrupted seed is exactly the
+    // "host may still know" case — if the extension host outlived the
+    // gateway, its outcome buffer can amend this on the next hello.
+    // The seeded status stays "failed"+browser.interrupted so dedup
+    // replies keep their honest shape; reconcileForTask recognises the
+    // marker and amends it like a live `unknown`.
+    if (interrupted && taskId) {
+      this.#markUnreconciled(toolCallId, { taskId, tool });
+    }
   }
 
   async execute(req: ToolCallRequest): Promise<ToolCallOutcome> {
@@ -1210,9 +1220,14 @@ export class BrowserToolServer {
       const hostOutcome = outcomes[id];
       if (!hostOutcome || typeof hostOutcome !== "object") continue;
       const ho = hostOutcome as { status?: unknown; result?: unknown; error?: unknown };
-      // Only amend when the gateway's own record is still `unknown` —
-      // a later real outcome (or a prior reconcile) always wins.
-      if (this.outcomes.get(id)?.status !== "unknown") {
+      // Only amend while the gateway's own record is still unresolved —
+      // a live `unknown`, or a restart-seeded `failed` carrying the
+      // browser.interrupted marker. A real outcome always wins.
+      const prior = this.outcomes.get(id);
+      const amendable =
+        prior?.status === "unknown" ||
+        (prior?.status === "failed" && prior.error?.code === "browser.interrupted");
+      if (!amendable) {
         this.unreconciled.delete(id);
         continue;
       }

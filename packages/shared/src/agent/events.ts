@@ -61,6 +61,8 @@ export type AgentEvent =
       turnId: string;
       toolCallId: string;
       tool: string;
+      /** always "browser" — only host-confirmed browser calls reconcile */
+      source?: "provider" | "browser";
       outcome: Exclude<ToolOutcome, "unknown">;
       output?: unknown;
       verified?: VerificationResult;

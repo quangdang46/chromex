@@ -181,7 +181,7 @@ export function durableBrowserToolCalls(db: GatewayDb): DurableBrowserToolCall[]
   const rows = db
     .prepare(
       `SELECT task_id, payload_json FROM events
-       WHERE stream='task' AND type IN ('tool.started','tool.completed')
+       WHERE stream='task' AND type IN ('tool.started','tool.completed','tool.reconciled')
        ORDER BY seq`,
     )
     .all() as Array<{ task_id: string; payload_json: string }>;
@@ -198,11 +198,17 @@ export function durableBrowserToolCalls(db: GatewayDb): DurableBrowserToolCall[]
         source?: string;
         outcome?: string;
       };
-      if (p.source !== "browser" || !p.toolCallId) continue;
+      // tool.reconciled carries no source field — it only ever amends
+      // browser calls, so it counts as a browser record by type.
+      const isBrowserRecord = p.source === "browser" || p.type === "tool.reconciled";
+      if (!isBrowserRecord || !p.toolCallId) continue;
       const tool = p.tool ?? "unknown";
       if (p.type === "tool.started") {
         last.set(p.toolCallId, { kind: "started", outcome: undefined, tool, taskId: r.task_id });
-      } else if (p.type === "tool.completed") {
+      } else if (p.type === "tool.completed" || p.type === "tool.reconciled") {
+        // Event vocabulary is "succeeded"; the seeding vocabulary is
+        // "completed" — a reconciled amendment is a done record too and
+        // (being later in seq order) supersedes the unknown it corrects.
         last.set(p.toolCallId, { kind: "done", outcome: p.outcome, tool, taskId: r.task_id });
       }
     } catch {
@@ -216,8 +222,10 @@ export function durableBrowserToolCalls(db: GatewayDb): DurableBrowserToolCall[]
     last:
       v.kind === "started"
         ? "started"
-        : v.outcome === "completed" || v.outcome === "failed" || v.outcome === "cancelled"
-          ? v.outcome
+        : v.outcome === "succeeded" || v.outcome === "failed" || v.outcome === "cancelled"
+          ? v.outcome === "succeeded"
+            ? "completed"
+            : v.outcome
           : "unknown",
   }));
 }

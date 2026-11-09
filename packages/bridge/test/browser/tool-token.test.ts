@@ -215,6 +215,46 @@ describe("BrowserToolServer", () => {
     expect(s2.unreconciledTaskIds()).toEqual(["task-2"]);
   });
 
+  it("restart-seeded interrupted outcomes are reconcile-eligible (§4.2)", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const reconciled: unknown[] = [];
+    const host: ToolHostChannel = {
+      hostInstanceId: "h-live",
+      send: (method, payload) => {
+        if (method === "browser.tool.reconcile") {
+          const ids = (payload as { toolCallIds: string[] }).toolCallIds;
+          return Promise.resolve({
+            outcomes: Object.fromEntries(
+              ids.map((id) => [id, { status: "completed", result: { survived: true } }]),
+            ),
+          });
+        }
+        return Promise.resolve({ ok: true });
+      },
+      onDisconnect: () => {},
+    };
+    const s2 = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      onReconciled: (e) => reconciled.push(e),
+      now: () => NOW,
+    });
+    // Simulate post-restart seeding: durable last="started" →
+    // failed+browser.interrupted AND queued for reconcile.
+    s2.seedDurableOutcome("tc-seeded", "browser.tabs.list", "started", "task-9");
+    expect(s2.unreconciledTaskIds()).toEqual(["task-9"]);
+    // Dedup reply keeps the honest interrupted shape.
+    const dup = await s2.execute({ ...REQ, toolCallId: "tc-seeded", taskId: "task-9", token: issue(tokens, { taskId: "task-9" }).token });
+    expect(dup.status).toBe("failed");
+    expect(dup.error?.code).toBe("browser.duplicate_tool_call");
+    // Host survived the gateway → its buffer amends the seeded record.
+    expect(await s2.reconcileForTask("task-9")).toBe(1);
+    expect(reconciled[0]).toMatchObject({ toolCallId: "tc-seeded", taskId: "task-9", outcome: "succeeded" });
+    // A genuinely failed durable call is NOT reconcile-eligible.
+    s2.seedDurableOutcome("tc-realfail", "browser.tabs.list", "failed", "task-9");
+    expect(s2.unreconciledTaskIds()).toEqual([]);
+  });
+
   it("classifies via §4.8 risk engine: reads allow, unresolved mutations approve, hard-blocks deny", () => {
     const req = (tool: string, args: Record<string, unknown> = {}) => ({
       toolCallId: "tc-x",
