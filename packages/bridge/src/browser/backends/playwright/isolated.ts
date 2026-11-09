@@ -137,6 +137,9 @@ interface NetworkLogEntry {
   status?: number;
   error?: string;
   mimeType?: string;
+  /** page.frames() index of the requesting frame (0 = main) — same
+   *  frameId space the isolated backend uses everywhere else. */
+  frameId?: number;
   ts: number;
 }
 
@@ -225,7 +228,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  valid for body() after the event loop turns. */
   readonly #responseBuffers = new Map<PwPage, Array<{
     id: string; method: string; url: string; type: string;
-    status?: number; mimeType?: string; ts: number; res: PwResponse;
+    status?: number; mimeType?: string; frameId?: number; ts: number; res: PwResponse;
   }>>();
   #responseSeq = 0;
   /** page → WebSocket connections + bounded frames
@@ -1317,6 +1320,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         type: req.resourceType(),
         ts: Date.now(),
       };
+      const fi = page.frames().indexOf(req.frame());
+      if (fi >= 0) entry.frameId = fi;
       push(entry);
       this.#pendingRequests.set(req, entry);
     });
@@ -1378,7 +1383,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (this.#responseBuffers.has(page)) return;
     const buf: Array<{
       id: string; method: string; url: string; type: string;
-      status?: number; mimeType?: string; ts: number; res: PwResponse;
+      status?: number; mimeType?: string; frameId?: number; ts: number; res: PwResponse;
     }> = [];
     this.#responseBuffers.set(page, buf);
     page.on("response", (res) => {
@@ -1388,6 +1393,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       // already consumed the entry (listener order is registration
       // order, not guaranteed).
       const mime = res.headers()["content-type"];
+      const fi = page.frames().indexOf(req.frame());
       buf.push({
         id: `r${++this.#responseSeq}`,
         method: req.method(),
@@ -1395,6 +1401,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         type: req.resourceType(),
         status: res.status(),
         ...(mime ? { mimeType: mime.split(";")[0]!.slice(0, MAX_MIME_LEN) } : {}),
+        ...(fi >= 0 ? { frameId: fi } : {}),
         ts: Date.now(),
         res,
       });
@@ -1454,6 +1461,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ...(e.type ? { type: e.type } : {}),
       ...(e.status !== undefined ? { status: e.status } : {}),
       ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+      ...(e.frameId !== undefined ? { frameId: e.frameId } : {}),
       finished: true,
       ts: e.ts,
     });
@@ -2325,9 +2333,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         (typeof args.responseUrl !== "string" || args.responseUrl === "" || args.responseUrl.length > 512)) {
       throw protocolError("proto.invalid", "browser.page.wait args.responseUrl must be a non-empty string ≤512 chars");
     }
-    if (responseUrl !== null && typeof args.frameId === "number" && args.frameId !== 0) {
-      throw protocolError("proto.invalid", "args.frameId is not supported with args.responseUrl");
-    }
+    // frameId narrows responseUrl matching to one frame's requests —
+    // entries are tagged with the page.frames() index at capture.
     // consoleText waits on the per-page console buffer attached at page
     // birth — full lookback coverage, same contract as responseUrl.
     const consoleText = typeof args.consoleText === "string" ? args.consoleText : null;
@@ -2370,12 +2377,17 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       const buf = this.#ensureNetworkCapture(netPage);
       const since = started - Math.min(timeout, 30_000);
       const respDeadline = deadline;
+      const responseFrameId =
+        typeof args.frameId === "number" && Number.isInteger(args.frameId) && args.frameId >= 0
+          ? args.frameId
+          : null;
       let hit: NetworkLogEntry | undefined;
       for (;;) {
         hit = [...buf].reverse().find(
           (e) =>
             e.url.includes(responseUrl) &&
             e.ts >= since &&
+            (responseFrameId === null || e.frameId === responseFrameId) &&
             (e.status !== undefined || e.error !== undefined),
         );
         if (hit || Date.now() >= respDeadline) break;
@@ -2397,6 +2409,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
             url: hit.url ?? "",
             ...(typeof hit.status === "number" ? { status: hit.status } : {}),
             ...(hit.error ? { error: hit.error } : {}),
+            ...(hit.frameId !== undefined ? { frameId: hit.frameId } : {}),
             ts: hit.ts ?? 0,
           },
         };

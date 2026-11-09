@@ -198,7 +198,7 @@ try {
 
   // ── Loop 4d: wait responseUrl — completed-response condition over
   // the persistent network buffer; /cache-probe's document response
-  // must match with status evidence; frameId refused.
+  // must match with status evidence; frameId narrows to one frame.
   const wrCreated = await call("browser.tab.create", { url: fixture.url("/cache-probe"), active: false });
   const wrTab = wrCreated?.tabId ?? wrCreated?.id;
   await new Promise((r) => setTimeout(r, 700));
@@ -206,11 +206,16 @@ try {
   assert(wrRes?.matched === "response", `responseUrl wait matched (got ${JSON.stringify(wrRes).slice(0, 120)})`);
   assert(wrRes?.response?.status === 200, `matched response status 200 (got ${wrRes?.response?.status})`);
   assert(typeof wrRes?.response?.ts === "number", "matched response carries ts evidence");
+  // frameId narrows the match to one frame's requests (page.frames()
+  // index) — the document response is main-frame (0); an out-of-range
+  // frameId is refused before the wait starts.
+  const wrFrame = await call("browser.page.wait", { tabId: wrTab, responseUrl: "cache-probe", frameId: 0, timeoutMs: 5000 });
+  assert(wrFrame?.matched === "response" && wrFrame?.response?.frameId === 0, `responseUrl+frameId:0 matched main-frame entry (got ${JSON.stringify(wrFrame).slice(0, 140)})`);
   await expectReject(
     "browser.page.wait",
-    { tabId: wrTab, responseUrl: "x", frameId: 1 },
-    "frameId",
-    "responseUrl+frameId refused",
+    { tabId: wrTab, responseUrl: "cache-probe", frameId: 99, timeoutMs: 600 },
+    "out of range",
+    "responseUrl+frameId out-of-range frame refused",
   );
   await call("browser.tab.close", { tabId: wrTab }).catch(() => null);
 
@@ -1218,6 +1223,19 @@ try {
   await new Promise((r) => setTimeout(r, 400));
   const frOut = await call("browser.page.evaluate", { tabId: frTabId, frameId: frCross.frameId, expression: "document.getElementById('fout').textContent" });
   assert(frOut?.value === "frame-hit", `click inside frame fired its handler (got ${JSON.stringify(frOut).slice(0, 120)})`);
+  // the click's fetch('/api/frame-hit') ran inside the cross-origin
+  // frame — fire the SAME url from the same-origin frame too, then a
+  // frameId-scoped wait must return the OLDER cross-origin entry
+  // (unscoped newest-first would return the same-origin one).
+  await call("browser.page.click", { tabId: frTabId, frameId: frSame.frameId, selector: "#fb" });
+  await new Promise((r) => setTimeout(r, 400));
+  const frRespWait = await call("browser.page.wait", {
+    tabId: frTabId, responseUrl: "frame-hit", frameId: frCross.frameId, timeoutMs: 8000,
+  });
+  assert(
+    frRespWait?.matched === "response" && frRespWait?.response?.frameId === frCross.frameId,
+    `responseUrl wait scoped to the cross-origin frame matched its own entry (got ${JSON.stringify(frRespWait).slice(0, 160)})`,
+  );
   const frSnap = await call("browser.page.snapshot", { tabId: frTabId, frameId: frSame.frameId });
   assert(String(frSnap?.snapshot ?? "").includes("Frame Child"), "snapshot scoped to the same-origin frame");
   await expectReject("browser.page.evaluate", { tabId: frTabId, frameId: 99, expression: "1" }, "out of range", "frameId out of range refused");
