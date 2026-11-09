@@ -304,6 +304,11 @@ export class ClaudeEventMapper {
     if (this.activeGatewayTurnId === turn.gatewayTurnId) {
       this.activeGatewayTurnId = null;
     }
+    // Terminal reached — the buffer's full text/reasoning was already
+    // emitted (or deliberately dropped); keeping it would retain every
+    // turn's content for the session's lifetime.
+    this.turns.delete(turn.uuid);
+    this.turns.delete(turn.gatewayTurnId);
   }
 }
 

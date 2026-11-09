@@ -246,6 +246,10 @@ export class CodexEventMapper {
             this.emitDurable({ type: "turn.completed", turnId });
           }
         });
+        // Turn is terminal — delta offsets only matter intra-turn.
+        // (pending buffers must NOT be dropped here: bindTurn may still
+        // arrive after the completion notification and needs them.)
+        this.deltas.clear();
         return;
       }
       default:
