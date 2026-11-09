@@ -767,7 +767,11 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     // protection instead of re-dispatching a possibly-executed action.
     if (db) {
       for (const c of durableBrowserToolCalls(db)) {
-        toolServer.seedDurableOutcome(c.toolCallId, c.tool, c.last, c.taskId);
+        // Only extension-host calls can reconcile — isolated playwright
+        // has no outcome buffer to ask.
+        const t = store.getTask(c.taskId);
+        const reconcilable = (t?.backend.backendId ?? "chrome-extension") === "chrome-extension";
+        toolServer.seedDurableOutcome(c.toolCallId, c.tool, c.last, reconcilable ? c.taskId : undefined);
       }
     }
 

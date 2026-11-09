@@ -1023,8 +1023,10 @@ export class BrowserToolServer {
     const outcome = await this.dispatch(host, req, expectedTarget);
     // result_lost reconcile (§4.2): an `unknown` outcome means the host
     // may still know what actually happened — keep it queryable until
-    // a reconcile confirms or the entry ages out.
-    if (outcome.status === "unknown") {
+    // a reconcile confirms or the entry ages out. Only the extension
+    // host keeps an outcome buffer; in-process backends (isolated
+    // playwright) have nothing to reconcile against.
+    if (outcome.status === "unknown" && (req.backendId ?? "chrome-extension") === "chrome-extension") {
       this.#markUnreconciled(req.toolCallId, {
         taskId: req.taskId,
         ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
