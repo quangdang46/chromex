@@ -2669,6 +2669,7 @@ export function createToolHostHandler(deps: ToolHostDeps): BrowserToolHostHandle
           }
           const fileChooserId = `fc-${Date.now().toString(36)}-${++fileChooserSeq}`;
           pendingFileChoosers.set(fileChooserId, {
+            taskId: req.taskId ?? "",
             tabId,
             backendNodeId: seen.backendNodeId,
             ...(seen.mode !== undefined ? { mode: seen.mode } : {}),
@@ -2803,7 +2804,7 @@ export function createToolHostHandler(deps: ToolHostDeps): BrowserToolHostHandle
       }
       case "browser.page.setInputFiles": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        return await setInputFiles(deps, tabId, args, frameIdArg(args));
+        return await setInputFiles(deps, tabId, args, frameIdArg(args), req.taskId);
       }
       case "browser.page.responseBody": {
         const tabId = await resolveScopedTabId(deps, args, tabScope);
@@ -6196,6 +6197,7 @@ let pierceSeq = 0;
  *  the page's chooser flow blocked exactly like an unanswered native
  *  dialog, which is the honest failure mode. */
 interface PendingFileChooser {
+  taskId: string;
   tabId: number;
   backendNodeId: number;
   mode?: string;
@@ -9326,6 +9328,7 @@ async function setInputFiles(
   tabId: number,
   args: Record<string, unknown>,
   frameId = 0,
+  taskId?: string,
 ): Promise<Record<string, unknown>> {
   const rawFiles = args.files;
   if (!Array.isArray(rawFiles) || rawFiles.length === 0 || rawFiles.length > 10) {
@@ -9363,6 +9366,12 @@ async function setInputFiles(
       throw toolError(
         "proto.invalid",
         `fileChooserId "${chooserId}" belongs to tab ${pending.tabId}, not ${tabId}`,
+      );
+    }
+    if (pending.taskId !== "" && taskId !== undefined && pending.taskId !== taskId) {
+      throw toolError(
+        "proto.invalid",
+        `fileChooserId "${chooserId}" belongs to another task — re-arm via browser.page.wait {fileChooser:true}`,
       );
     }
     pendingFileChoosers.delete(chooserId);
