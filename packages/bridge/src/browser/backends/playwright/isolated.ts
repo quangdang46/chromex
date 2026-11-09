@@ -339,13 +339,18 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     const pw = await this.#playwright();
     if (this.#opts.acquireBrowser) {
       this.#browser = await this.#opts.acquireBrowser(pw);
-      return this.#browser;
+    } else {
+      const executablePath = await this.#opts.executablePath?.().catch(() => null);
+      this.#browser = await pw.chromium.launch({
+        ...(executablePath ? { executablePath } : {}),
+        ...(this.#opts.launchOptions ?? {}),
+      });
     }
-    const executablePath = await this.#opts.executablePath?.().catch(() => null);
-    this.#browser = await pw.chromium.launch({
-      ...(executablePath ? { executablePath } : {}),
-      ...(this.#opts.launchOptions ?? {}),
-    });
+    // Re-acquired browser → every context in #contexts belongs to the
+    // dead connection. Drop them so #contextFor recreates fresh ones
+    // instead of serving stale handles that fail every op.
+    this.#contexts.clear();
+    this.#activePages.clear();
     return this.#browser;
   }
 
@@ -353,7 +358,16 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  so nothing leaks between tasks or into the user's real profile. */
   async #contextFor(taskId: string): Promise<PwBrowserContext> {
     const existing = this.#contexts.get(taskId);
-    if (existing) return existing;
+    if (existing) {
+      // Stale-handle guard: a browser/context that died underneath us
+      // (CDP disconnect, renderer/browser crash) must be recreated —
+      // otherwise every op on it fails until gateway restart.
+      const owner = typeof existing.browser === "function" ? existing.browser() : null;
+      const dead =
+        owner != null && typeof owner.isConnected === "function" && !owner.isConnected();
+      if (!dead) return existing;
+      this.#contexts.delete(taskId);
+    }
     const browser = await this.#ensureBrowser();
     const context = await browser.newContext();
     // Popup tabs (target=_blank, window.open) join the same context and
@@ -361,6 +375,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     // network, WS, dialog and route capture work on agent-opened tabs.
     if (typeof context.on === "function") {
       context.on("page", (page) => this.#trackPage(page));
+      // A context closed out from under us (browser restart, external
+      // close) must not be served again — drop the map entry.
+      context.on("close", () => {
+        if (this.#contexts.get(taskId) === context) this.#contexts.delete(taskId);
+      });
     }
     this.#contexts.set(taskId, context);
     return context;
