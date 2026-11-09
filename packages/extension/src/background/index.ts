@@ -272,6 +272,24 @@ const toolHostHandler = createToolHostHandler({
         await chrome.storage.session.remove(`chromex.routeRules.${tabId}`);
       },
     },
+    // Emulation overrides persist the same way — the merged arg set is
+    // re-applied by the next CDP acquire after an SW restart.
+    emulationStore: {
+      get: async (tabId) => {
+        const key = `chromex.emulation.${tabId}`;
+        const got = await chrome.storage.session.get(key);
+        const v = got?.[key];
+        return v && typeof v === "object" && !Array.isArray(v)
+          ? (v as Record<string, unknown>)
+          : undefined;
+      },
+      set: async (tabId, state) => {
+        await chrome.storage.session.set({ [`chromex.emulation.${tabId}`]: state });
+      },
+      delete: async (tabId) => {
+        await chrome.storage.session.remove(`chromex.emulation.${tabId}`);
+      },
+    },
     queryTabs: async () => chrome.tabs.query({}),
     recentTabCreations: () => [...recentTabCreations],
     activateTab: async (tabId) => {
@@ -1856,9 +1874,11 @@ chrome.tabs.onCreated.addListener((tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   toolHostSnapshotRegistry().invalidateTab(tabId);
   resetNetworkTab(tabId);
-  // Persisted route rules are keyed by tabId — drop them so a reused
-  // tab id can never inherit another tab's mocks.
+  // Persisted route rules + emulation state are keyed by tabId — drop
+  // them so a reused tab id can never inherit another tab's mocks or
+  // viewport overrides.
   void chrome.storage.session.remove(`chromex.routeRules.${tabId}`).catch(() => {});
+  void chrome.storage.session.remove(`chromex.emulation.${tabId}`).catch(() => {});
   void disposeBrowserToolTabState(tabId);
 });
 

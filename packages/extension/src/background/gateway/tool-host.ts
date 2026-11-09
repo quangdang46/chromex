@@ -468,6 +468,15 @@ export interface ToolHostDeps {
     set(tabId: number, rules: Array<Record<string, unknown>>): Promise<void>;
     delete(tabId: number): Promise<void>;
   };
+  /** chrome.storage.session emulation persistence (browser.page.emulate)
+   *  — merged override args survive an MV3 service-worker restart so
+   *  the next CDP-touching call re-applies them instead of silently
+   *  rendering the page un-emulated. Absent dep → memory-only. */
+  emulationStore?: {
+    get(tabId: number): Promise<Record<string, unknown> | undefined>;
+    set(tabId: number, state: Record<string, unknown>): Promise<void>;
+    delete(tabId: number): Promise<void>;
+  };
 }
 
 function toolError(code: string, message: string): Error {
@@ -1851,10 +1860,12 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         try {
           if (args.reset === true) {
             await applyEmulationReset(hold.session);
+            await deps.emulationStore?.delete(tabId).catch(() => {});
             await releaseEmulationHold(tabId);
             return { ok: true, reset: true, resolvedTabId: tabId };
           }
           const applied = await applyEmulation(hold.session, args);
+          await persistEmulationArgs(deps, tabId, args);
           return { ok: true, applied, resolvedTabId: tabId };
         } catch (e) {
           if (e instanceof Error && "code" in e) throw e;
@@ -5758,6 +5769,10 @@ async function cdpAcquire(
       `debugger attach failed: ${String((e as Error)?.message ?? e)}`,
     );
   }
+  // SW-restart recovery: re-arm persisted emulation overrides so the
+  // caller observes the emulated page, not the raw one. Never lets a
+  // restore failure break this acquire.
+  await maybeRestoreEmulation(deps, tabId).catch(() => {});
   return { session, release: () => cdp.release(tabId) };
 }
 
@@ -8172,10 +8187,84 @@ function findMarkedNodeId(
 interface EmulationHold { session: CdpSession; release: () => Promise<void> }
 const emulationHolds = new Map<number, EmulationHold>();
 
+/** Args applyEmulation understands — the persisted merged override
+ *  set contains only these keys. */
+const EMULATION_ARG_KEYS = [
+  "width", "height", "deviceScaleFactor", "mobile", "screenWidth",
+  "screenHeight", "userAgent", "timezoneId", "geolocation",
+  "colorScheme", "reducedMotion", "cpuThrottle", "network",
+] as const;
+const emulationRestoreInflight = new Set<number>();
+
+/** Merge this call's emulation args into the persisted override set —
+ *  successive emulate calls accumulate (an unset field keeps its
+ *  previous override), matching how applyEmulation layers them. */
+async function persistEmulationArgs(
+  deps: ToolHostDeps,
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (!deps.emulationStore) return;
+  const stored: Record<string, unknown> =
+    (await deps.emulationStore.get(tabId).catch(() => undefined)) ?? {};
+  for (const k of EMULATION_ARG_KEYS) {
+    if (args[k] !== undefined) stored[k] = args[k];
+  }
+  await deps.emulationStore.set(tabId, stored).catch(() => {});
+}
+
+/** Re-apply persisted emulation after an SW restart. Called from
+ *  cdpAcquire — the choke point every CDP tool passes through — so the
+ *  NEXT debugger-touching call (screenshot, metrics, snapshot aria,
+ *  page.cdp, …) restores the overrides instead of silently observing
+ *  an un-emulated page. Uses its own acquire so callers keep their
+ *  refcount; failures leave the caller's session untouched and the
+ *  persisted state is dropped when re-apply itself fails. */
+async function maybeRestoreEmulation(
+  deps: ToolHostDeps,
+  tabId: number,
+): Promise<void> {
+  if (
+    !deps.emulationStore ||
+    emulationHolds.has(tabId) ||
+    emulationRestoreInflight.has(tabId)
+  ) return;
+  emulationRestoreInflight.add(tabId);
+  try {
+    const stored = await deps.emulationStore.get(tabId).catch(() => undefined);
+    if (!stored || Object.keys(stored).length === 0 || emulationHolds.has(tabId)) return;
+    const cdp = cdpRequired(deps);
+    let session: CdpSession;
+    try {
+      session = await cdp.acquire(tabId);
+    } catch {
+      return; // transient attach failure — next CDP call retries
+    }
+    const hold: EmulationHold = { session, release: () => cdp.release(tabId) };
+    emulationHolds.set(tabId, hold);
+    try {
+      await applyEmulation(session, stored);
+    } catch {
+      emulationHolds.delete(tabId);
+      await hold.release().catch(() => {});
+      await deps.emulationStore.delete(tabId).catch(() => {});
+    }
+  } finally {
+    emulationRestoreInflight.delete(tabId);
+  }
+}
+
 async function emulationHold(deps: ToolHostDeps, tabId: number): Promise<EmulationHold> {
   const existing = emulationHolds.get(tabId);
   if (existing) return existing;
   const { session, release } = await cdpAcquire(deps, tabId);
+  // cdpAcquire may have just restored a persisted hold — prefer it
+  // over stacking a second session on the same tab.
+  const restored = emulationHolds.get(tabId);
+  if (restored) {
+    await release().catch(() => {});
+    return restored;
+  }
   const hold: EmulationHold = { session, release };
   emulationHolds.set(tabId, hold);
   return hold;

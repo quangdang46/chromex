@@ -4333,6 +4333,36 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cdp.sent.some((s) => s.method === "Emulation.clearDeviceMetricsOverride")).toBe(true);
   });
 
+  test("page.emulate overrides persist and re-apply after hold disposal", async () => {
+    const cdp = fakeCdp();
+    const store = new Map<number, Record<string, unknown>>();
+    const h = createToolHostHandler(cdpDeps(515, cdp, {
+      emulationStore: {
+        get: vi.fn(async (t: number) => store.get(t)),
+        set: vi.fn(async (t: number, s: Record<string, unknown>) => { store.set(t, s); }),
+        delete: vi.fn(async (t: number) => { store.delete(t); }),
+      },
+    }));
+    await h(req("browser.page.emulate", { tabId: 515, width: 390, height: 844 }));
+    await h(req("browser.page.emulate", { tabId: 515, userAgent: "AgentUA/1.0" }));
+    // merged override set persisted — second call kept the viewport
+    expect(store.get(515)).toMatchObject({ width: 390, height: 844, userAgent: "AgentUA/1.0" });
+    // Simulate SW restart: hold dies, store survives. The next CDP
+    // acquire (here: another emulate's cdpAcquire path is bypassed —
+    // use page.cdp which goes through cdpAcquire) restores overrides.
+    const { disposeBrowserToolTabState } = await import("../../src/background/gateway/tool-host.js");
+    await disposeBrowserToolTabState(515);
+    cdp.sent.length = 0;
+    await h(req("browser.page.cdp", { tabId: 515, method: "Page.getFrameTree" }));
+    const reMetrics = cdp.sent.find((s) => s.method === "Emulation.setDeviceMetricsOverride");
+    const reUa = cdp.sent.find((s) => s.method === "Emulation.setUserAgentOverride");
+    expect(reMetrics?.params).toMatchObject({ width: 390, height: 844 });
+    expect(reUa?.params).toMatchObject({ userAgent: "AgentUA/1.0" });
+    // reset clears persisted state too
+    await h(req("browser.page.emulate", { tabId: 515, reset: true }));
+    expect(store.has(515)).toBe(false);
+  });
+
   test("page.emulate validates args and requires overrides", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(514, cdp));
