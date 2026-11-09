@@ -24,6 +24,10 @@ import type { GatewayClient } from "./gateway-client.js";
 const CURSOR_KEY = "chromex.gateway.cursors.v1";
 const MAX_SYNC_EVENTS = 500;
 
+type SyncResponse =
+  | { mode: "replay"; events: DurableTaskEventEnvelope[]; nextSeq: number; hasMore: boolean }
+  | { mode: "snapshot"; snapshot: TaskSnapshot; lastSeq: number };
+
 export interface TaskView {
   taskId: string;
   status: TaskStatus;
@@ -140,18 +144,37 @@ export class TaskController {
     await this.#saveCursors();
   }
 
+  /** Drop a task that the gateway no longer knows (purged while the
+   *  SW was away, or tombstone replayed): view + persisted cursors. */
+  #evict(taskId: string): void {
+    if (!this.#tasks.delete(taskId)) return;
+    delete this.#cursors.lastSeqByTask[taskId];
+    delete this.#cursors.lastReadSeqByTask[taskId];
+    void this.#saveCursors();
+    this.#opts.onTasksChanged?.();
+  }
+
   async syncTask(taskId: string): Promise<void> {
     const view = this.#tasks.get(taskId);
     if (!view) return;
     let fromSeq = view.lastSeq;
     for (;;) {
-      const res = (await this.#opts.client.request("task.sync", {
-        taskId,
-        fromSeq,
-        maxEvents: MAX_SYNC_EVENTS,
-      })) as
-        | { mode: "replay"; events: DurableTaskEventEnvelope[]; nextSeq: number; hasMore: boolean }
-        | { mode: "snapshot"; snapshot: TaskSnapshot; lastSeq: number };
+      let res: SyncResponse;
+      try {
+        res = (await this.#opts.client.request("task.sync", {
+          taskId,
+          fromSeq,
+          maxEvents: MAX_SYNC_EVENTS,
+        })) as SyncResponse;
+      } catch (err) {
+        // task.purge raced the sync (or the tombstone was missed) —
+        // evict instead of letting one dead task abort syncAll.
+        if ((err as { code?: string }).code === "task.not_found") {
+          this.#evict(taskId);
+          return;
+        }
+        throw err;
+      }
 
       if (res.mode === "snapshot") {
         await this.#applySnapshot(taskId, res.snapshot, res.lastSeq);
@@ -280,6 +303,13 @@ export class TaskController {
     if (env.stream === "gateway" && typeof env.seq === "number") {
       this.#cursors.lastSeqByGateway = Math.max(this.#cursors.lastSeqByGateway, env.seq);
       void this.#saveCursors();
+      // gateway.task_purged tombstone (live or replayed): the task is
+      // gone server-side — evict the view so it can't be synced again.
+      const ge = env as { type?: string; payload?: { taskId?: string } };
+      if (ge.type === "gateway.task_purged") {
+        const purged = ge.payload?.taskId;
+        if (typeof purged === "string" && purged) this.#evict(purged);
+      }
       return;
     }
     if (env.stream === "task" && "taskId" in env) {

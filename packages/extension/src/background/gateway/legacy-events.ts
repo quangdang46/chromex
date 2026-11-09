@@ -333,7 +333,7 @@ function permissionApprovalLegacyEvent(
 
 const REASONING_THROTTLE_MS = 200;
 const REASONING_MAX_CHARS = 8000;
-const reasoningBuf = new Map<string, { text: string; lastEmit: number }>();
+const reasoningBuf = new Map<string, { taskId: string; text: string; lastEmit: number }>();
 
 function reasoningKey(taskId: string, turnId: string): string {
   return `${taskId}${turnId}`;
@@ -341,9 +341,18 @@ function reasoningKey(taskId: string, turnId: string): string {
 
 function accumulateReasoning(taskId: string, turnId: string, delta: string): void {
   const key = reasoningKey(taskId, turnId);
-  const buf = reasoningBuf.get(key) ?? { text: "", lastEmit: 0 };
+  const buf = reasoningBuf.get(key) ?? { taskId, text: "", lastEmit: 0 };
   buf.text = (buf.text + delta).slice(-REASONING_MAX_CHARS);
   reasoningBuf.set(key, buf);
+}
+
+/** Drop every buffered reasoning entry for a task — called when the
+ *  gateway tombstones the task so a mid-turn purge can't leak buffers
+ *  for the SW's lifetime. */
+export function clearTaskReasoning(taskId: string): void {
+  for (const [key, buf] of reasoningBuf) {
+    if (buf.taskId === taskId) reasoningBuf.delete(key);
+  }
 }
 
 function reasoningText(taskId: string, turnId: string): string {

@@ -299,4 +299,45 @@ describe("TaskController (P1-08)", () => {
     ctl.handleEvent({ stream: "gateway", seq: 17 } as never);
     expect(ctl.helloCursors().lastSeqByGateway).toBe(42);
   });
+
+  test("task.sync task.not_found evicts the view instead of aborting syncAll", async () => {
+    const storage = memStorage();
+    const { client } = fakeClient((method, payload) => {
+      if (method === "task.sync") {
+        const taskId = (payload as { taskId: string }).taskId;
+        if (taskId === "dead") {
+          const err = new Error("task.not_found: task dead not found") as Error & { code?: string };
+          err.code = "task.not_found";
+          throw err;
+        }
+        return { mode: "replay", events: [taskEvent(taskId, 1, "turn.started", {})], nextSeq: 1, hasMore: false };
+      }
+      return {};
+    });
+    const ctl = new TaskController({ client, storage: storage as never });
+    await ctl.onHello(hello([{ taskId: "dead", lastSeq: 0 }, { taskId: "alive", lastSeq: 0 }]));
+    await ctl.syncAll();
+    expect(ctl.getTask("dead")).toBeUndefined();
+    expect(ctl.getTask("alive")?.lastSeq).toBe(1);
+  });
+
+  test("gateway.task_purged tombstone evicts the task view + cursors", async () => {
+    const storage = memStorage();
+    const { client } = fakeClient(() => ({}));
+    const ctl = new TaskController({ client, storage: storage as never });
+    await ctl.onHello(hello([{ taskId: "t1", lastSeq: 0 }]));
+    ctl.handleEvent({
+      v: 1, kind: "event", reliability: "durable", stream: "gateway", seq: 7, ts: Date.now(),
+      type: "gateway.task_purged",
+      payload: { type: "gateway.task_purged", taskId: "t1", purgedAt: Date.now(), reason: "user" },
+    } as never);
+    expect(ctl.getTask("t1")).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 0)); // flush fire-and-forget #saveCursors
+    const cursors = storage._map.get("chromex.gateway.cursors.v1") as {
+      lastSeqByTask: Record<string, number>;
+      lastSeqByGateway: number;
+    };
+    expect(cursors.lastSeqByTask.t1).toBeUndefined();
+    expect(cursors.lastSeqByGateway).toBe(7);
+  });
 });

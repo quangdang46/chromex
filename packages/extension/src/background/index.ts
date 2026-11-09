@@ -108,7 +108,7 @@ import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetN
 import { createToolHostHandler, disposeBrowserToolTabState, disposeBrowserToolTaskState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets, withCdp } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
-import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
+import { clearTaskReasoning, gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
 import { assertApiKeyLoginExplicitlyConfirmed } from "./api-key-login-guard.js";
 import { createUserProfileTemplate, updateUserProfileTemplate } from "../profile-templates.js";
@@ -1564,7 +1564,10 @@ void getGatewayRuntime().then((rt) => {
     const ge = env as { stream?: string; type?: string; payload?: { taskId?: string } };
     if (ge.stream === "gateway" && ge.type === "gateway.task_purged") {
       const purgedTaskId = typeof ge.payload?.taskId === "string" ? ge.payload.taskId : "";
-      if (purgedTaskId) void disposeBrowserToolTaskState(purgedTaskId);
+      if (purgedTaskId) {
+        void disposeBrowserToolTaskState(purgedTaskId);
+        clearTaskReasoning(purgedTaskId);
+      }
     }
   });
 });

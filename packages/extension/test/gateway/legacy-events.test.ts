@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gatewayEventToLegacy } from "../../src/background/gateway/legacy-events.js";
+import { clearTaskReasoning, gatewayEventToLegacy } from "../../src/background/gateway/legacy-events.js";
 import type { Envelope } from "@codex-sidepanel/shared";
 
 function durable(taskId: string, type: string, payload: Record<string, unknown>, seq = 1): Envelope {
@@ -39,6 +39,18 @@ describe("gatewayEventToLegacy", () => {
       status: "running",
     });
     expect((out as { thinkingText?: string }).thinkingText).toContain("think");
+  });
+  it("clearTaskReasoning drops buffered deltas for that task only", async () => {
+    gatewayEventToLegacy(eph("t1", "g1", "reasoning.delta", "old-t1"));
+    gatewayEventToLegacy(eph("t2", "g1", "reasoning.delta", "old-t2"));
+    clearTaskReasoning("t1");
+    await new Promise((r) => setTimeout(r, 210)); // reasoning throttle window
+    const out1 = gatewayEventToLegacy(eph("t1", "g1", "reasoning.delta", "new-t1")) as { thinkingText?: string } | null;
+    const out2 = gatewayEventToLegacy(eph("t2", "g1", "reasoning.delta", "new-t2")) as { thinkingText?: string } | null;
+    expect(out1?.thinkingText ?? "").not.toContain("old-t1");
+    expect(out1?.thinkingText ?? "").toContain("new-t1");
+    expect(out2?.thinkingText ?? "").toContain("old-t2");
+    expect(out2?.thinkingText ?? "").toContain("new-t2");
   });
   it("tool.started → turn.activity running with tool detail + inputText", () => {
     const out = gatewayEventToLegacy(durable("t1", "tool.started", {
