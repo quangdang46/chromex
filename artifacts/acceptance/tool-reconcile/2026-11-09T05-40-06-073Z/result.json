@@ -1,0 +1,22 @@
+{
+  "scenario": "tool-reconcile",
+  "status": "FAIL",
+  "error": "Error: ASSERT FAIL: tc-recon-c unknown before gateway restart (got completed)\n    at assert (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/tool-reconcile.mjs:26:20)\n    at file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/tool-reconcile.mjs:214:3",
+  "asserts": [
+    "ok — host v1 registered",
+    "ok — task.create → 01M6ZD49TQMBB8P8K1N4XVESSE",
+    "ok — baseline call completed (status=completed)",
+    "ok — host1 received the held browser.tool.request calls",
+    "ok — tc-recon-a resolved unknown/host_lost_after_dispatch (got unknown/browser.host_lost_after_dispatch)",
+    "ok — tc-recon-b resolved unknown/host_lost_after_dispatch (got unknown/browser.host_lost_after_dispatch)",
+    "ok — transport loss recorded honest unknown for both calls",
+    "ok — host v2 registered; reconcile fired on hello",
+    "ok — tool.reconciled outcome=succeeded (got succeeded)",
+    "ok — no tool.reconciled for unreported tc-recon-b",
+    "ok — original tool.completed stays unknown (reconcile amends, never rewrites)",
+    "ok — host v2 received browser.tool.reconcile",
+    "ok — snapshot tc-recon-a outcome=succeeded (got succeeded)",
+    "ok — snapshot tc-recon-b stays unknown (got unknown)",
+    "ok — exactly one tool.reconciled for tc-recon-a after re-register (got 1)"
+  ]
+}

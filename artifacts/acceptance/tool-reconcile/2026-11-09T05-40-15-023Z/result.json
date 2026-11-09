@@ -1,0 +1,24 @@
+{
+  "scenario": "tool-reconcile",
+  "status": "FAIL",
+  "error": "Error: task.not_found: task 01M6ZD4JJND2JSHKN2572GJ12W not found\n    at #onData (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/gateway-ipc.mjs:73:47)\n    at Socket.<anonymous> (file:///Users/tranquangdang21/Projects/chromex/scripts/acceptance/lib/gateway-ipc.mjs:46:44)\n    at Socket.emit (node:events:514:20)\n    at addChunk (node:internal/streams/readable:605:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:556:3)\n    at Readable.push (node:internal/streams/readable:436:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:194:23)",
+  "asserts": [
+    "ok — host v1 registered",
+    "ok — task.create → 01M6ZD4JJND2JSHKN2572GJ12W",
+    "ok — baseline call completed (status=completed)",
+    "ok — host1 received the held browser.tool.request calls",
+    "ok — tc-recon-a resolved unknown/host_lost_after_dispatch (got unknown/browser.host_lost_after_dispatch)",
+    "ok — tc-recon-b resolved unknown/host_lost_after_dispatch (got unknown/browser.host_lost_after_dispatch)",
+    "ok — transport loss recorded honest unknown for both calls",
+    "ok — host v2 registered; reconcile fired on hello",
+    "ok — tool.reconciled outcome=succeeded (got succeeded)",
+    "ok — no tool.reconciled for unreported tc-recon-b",
+    "ok — original tool.completed stays unknown (reconcile amends, never rewrites)",
+    "ok — host v2 received browser.tool.reconcile",
+    "ok — snapshot tc-recon-a outcome=succeeded (got succeeded)",
+    "ok — snapshot tc-recon-b stays unknown (got unknown)",
+    "ok — exactly one tool.reconciled for tc-recon-a after re-register (got 1)",
+    "ok — tc-recon-c unknown before gateway restart (got unknown)",
+    "ok — gateway restarted; host v4 registered → seeded reconcile fired"
+  ]
+}

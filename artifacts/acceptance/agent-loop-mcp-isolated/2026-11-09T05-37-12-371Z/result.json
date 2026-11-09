@@ -1,0 +1,19 @@
+{
+  "scenario": "agent-loop-mcp-isolated",
+  "status": "PASS",
+  "asserts": 16,
+  "approvals": [
+    {
+      "tool": "browser.page.submit",
+      "risk": "external_mutation"
+    },
+    {
+      "tool": "browser.tab.create",
+      "risk": "financial"
+    },
+    {
+      "tool": "browser.page.click",
+      "risk": "financial"
+    }
+  ]
+}
