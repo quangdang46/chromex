@@ -185,16 +185,18 @@ async function findPlaywrightChromiumExecutable() {
     }
   }
   if (found.length === 0) return null;
-  // Newest revision first — current playwright ships Chrome-for-Testing
-  // builds (chromium-1254+) which DO read profile-local
-  // NativeMessagingHosts manifests (verified: cdp-headless authed=2).
-  // Older leftover dirs (e.g. chromium-1134 real Chromium) can be
-  // broken/stale — preferring them caused SIGTRAP launch failures.
+  // Default: prefer real Chromium (Chromium.app) over Chrome for
+  // Testing. CfT builds (147/158 verified) never respawn an MV3
+  // service worker after chrome.runtime.reload() — headless AND
+  // headful — so sw-restart/s12 fail with browser.no_host while every
+  // other scenario passes. Real Chromium handles reload correctly and
+  // the full suite passed on chromium-1134. CfT remains available via
+  // CHROMEX_ACCEPTANCE_BROWSER=cft for scenarios that don't reload.
   const override = process.env.CHROMEX_ACCEPTANCE_BROWSER;
   if (override === "cft") return found.find((p) => p.includes("Chrome for Testing")) ?? found[0];
   if (override === "chromium")
     return found.find((p) => p.includes("/Chromium.app/")) ?? found[0];
-  return found[0];
+  return found.find((p) => p.includes("/Chromium.app/")) ?? found[0];
 }
 
 export async function resolveChromiumLaunchOptions() {
