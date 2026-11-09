@@ -42,13 +42,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  *  focus + permission). Requires the extension's clipboardRead /
  *  clipboardWrite permission AND the document's CLIPBOARD reason —
  *  both declared up front in ensureOffscreenDocument. */
-async function readClipboardText(): Promise<{ text: string } | { error: string }> {
+async function readClipboardText(): Promise<{ text: string; via?: string } | { error: string }> {
+  const attempts: string[] = [];
+  // 1) navigator.clipboard.readText — needs clipboardRead + a focused doc
   try {
     const text = await navigator.clipboard.readText();
-    return { text };
+    return { text, via: "readText" };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "clipboard read failed" };
+    attempts.push(`readText: ${error instanceof Error ? error.message : String(error)}`);
   }
+  // 2) execCommand paste into a focused textarea — legacy path that
+  //    extension contexts could use with clipboardRead granted.
+  try {
+    const ta = document.createElement("textarea");
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("paste");
+    } finally {
+      const text = ta.value;
+      ta.remove();
+      if (ok && text.length > 0) return { text, via: "execCommand-paste" };
+      attempts.push(`execCommand-paste ok=${ok} len=${text.length}`);
+    }
+  } catch (error) {
+    attempts.push(`execCommand-paste: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return { error: `clipboard read failed — ${attempts.join(" | ")}` };
 }
 
 async function writeClipboardText(text: unknown): Promise<{ ok: true } | { error: string }> {

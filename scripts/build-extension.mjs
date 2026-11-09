@@ -18,6 +18,7 @@ await build({
     sidepanel: resolve(root, "src/sidepanel/index.ts"),
     "mic-permission": resolve(root, "src/mic-permission/index.ts"),
     offscreen: resolve(root, "src/offscreen/index.ts"),
+    clipboard: resolve(root, "src/clipboard/index.ts"),
   },
   outdir,
   bundle: true,

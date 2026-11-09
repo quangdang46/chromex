@@ -106,7 +106,7 @@ import {
 import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab, setNetworkLogStore } from "./network-log.js";
 import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
-import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets } from "./cdp.js";
+import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets, withCdp } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
 import { snapshotToMessages } from "./gateway/snapshot-messages.js";
@@ -1446,15 +1446,22 @@ const toolHostHandler = createToolHostHandler({
           .contains({ permissions: ["clipboardRead"] })
           .catch(() => false);
         if (!granted) return null;
+        // Primary: offscreen document navigator.clipboard — works on
+        // Chrome builds that allow clipboard reads in unfocused
+        // extension documents.
         const ensured = await ensureOffscreenDocument().catch(() => false);
-        if (!ensured) return null;
-        const res = await chrome.runtime
-          .sendMessage({ target: "offscreen", type: "offscreen.clipboard.read" })
-          .catch(() => null);
-        if (!res || typeof res !== "object") return null;
-        const r = res as Record<string, unknown>;
-        if (typeof r.error === "string") throw new Error(r.error);
-        return { text: typeof r.text === "string" ? r.text : "" };
+        if (ensured) {
+          const res = await chrome.runtime
+            .sendMessage({ target: "offscreen", type: "offscreen.clipboard.read" })
+            .catch(() => null);
+          const r = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
+          if (r && typeof r.text === "string") return { text: r.text };
+        }
+        // Fallback: offscreen documents are never focused and service
+        // workers have no DOM — the only remaining honest context is a
+        // real extension page in a focused popup window (see
+        // clipboardReadViaPopupWindow).
+        return clipboardReadViaPopupWindow();
       },
       set: async (text: string) => {
         const granted = await chrome.permissions
@@ -5830,6 +5837,102 @@ async function ensureOffscreenDocument(): Promise<boolean> {
 function isOffscreenDocumentAlreadyExistsError(error: unknown): boolean {
   return toErrorMessage(error).toLowerCase().includes("single offscreen document");
 }
+
+interface ClipboardReadWaiter {
+  resolve: (text: string) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  port: chrome.runtime.Port | undefined;
+  windowId: number | undefined;
+}
+const clipboardReadWaiters: ClipboardReadWaiter[] = [];
+
+/** runtime.connect ports from clipboard.html report the read result.
+ *  Ports (not broadcast messages) so a concurrently-alive offscreen
+ *  document cannot race the response. Sender is verified to be our own
+ *  extension page. */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "chromex.clipboard.read") return;
+  const senderUrl = typeof port.sender?.url === "string" ? port.sender.url : "";
+  if (!senderUrl.startsWith(chrome.runtime.getURL(""))) {
+    port.disconnect();
+    return;
+  }
+  const waiter = clipboardReadWaiters.find((w) => w.port === undefined);
+  if (!waiter) {
+    port.disconnect();
+    return;
+  }
+  waiter.port = port;
+  port.onMessage.addListener((msg) => {
+    if ((msg as { type?: string })?.type !== "result") return;
+    const m = msg as { text?: unknown; error?: unknown };
+    const idx = clipboardReadWaiters.indexOf(waiter);
+    if (idx >= 0) clipboardReadWaiters.splice(idx, 1);
+    clearTimeout(waiter.timer);
+    if (typeof m.text === "string") waiter.resolve(m.text);
+    else waiter.reject(new Error(typeof m.error === "string" ? m.error : "clipboard read failed"));
+    port.disconnect();
+  });
+});
+
+/** Clipboard READ fallback for Chrome builds that refuse
+ *  navigator.clipboard in unfocused offscreen documents: open a small
+ *  focused popup window on our own clipboard.html — a real extension
+ *  page whose document IS focused, so readText() works with the
+ *  clipboardRead permission. The page posts the result over a
+ *  runtime.connect port; the window is always removed afterwards. */
+function clipboardReadViaPopupWindow(): Promise<{ text: string }> {
+  return new Promise((resolve, reject) => {
+    const waiter: ClipboardReadWaiter = {
+      resolve: (text) => {
+        // Close the helper window BEFORE reporting success — callers
+        // verifying window state must not race the teardown.
+        void cleanupClipboardReadWindow(waiter).then(() => resolve({ text }));
+      },
+      reject: (error) => {
+        void cleanupClipboardReadWindow(waiter).then(() => reject(error));
+      },
+      timer: setTimeout(() => {
+        const idx = clipboardReadWaiters.indexOf(waiter);
+        if (idx >= 0) clipboardReadWaiters.splice(idx, 1);
+        waiter.reject(new Error("clipboard read timed out waiting for the helper window"));
+      }, 8_000),
+      port: undefined,
+      windowId: undefined,
+    };
+    clipboardReadWaiters.push(waiter);
+    chrome.windows
+      .create({
+        url: chrome.runtime.getURL("clipboard.html"),
+        type: "popup",
+        focused: true,
+        width: 240,
+        height: 140,
+      })
+      .then((win) => {
+        waiter.windowId = typeof win?.id === "number" ? win.id : undefined;
+      })
+      .catch((error) => {
+        const idx = clipboardReadWaiters.indexOf(waiter);
+        if (idx >= 0) clipboardReadWaiters.splice(idx, 1);
+        clearTimeout(waiter.timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+  });
+}
+
+async function cleanupClipboardReadWindow(waiter: ClipboardReadWaiter): Promise<void> {
+  waiter.port?.disconnect();
+  if (typeof waiter.windowId === "number") {
+    await chrome.windows.remove(waiter.windowId).catch(() => {});
+  }
+}
+
+// Diagnostic hook — acceptance/debug can drive the clipboard read
+// fallback directly (SW evaluate already has full chrome.* access, so
+// this exposes nothing new). Returns {text} or throws.
+(globalThis as Record<string, unknown>).__chromexClipboardRead = clipboardReadViaPopupWindow;
 
 async function recordDiagnostic(event: string, details: Record<string, unknown> = {}): Promise<void> {
   await bridge

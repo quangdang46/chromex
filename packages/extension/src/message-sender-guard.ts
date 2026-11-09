@@ -79,9 +79,18 @@ export function sidepanelMayHandleMessage(
   return SIDEPANEL_CONTENT_SCRIPT_TYPES.has(type);
 }
 
+/** Message types the offscreen document serves — image crops plus the
+ *  system-clipboard ops (browser.clipboard.*). */
+const OFFSCREEN_MESSAGE_TYPES = new Set([
+  "offscreen.image.crop",
+  "offscreen.clipboard.read",
+  "offscreen.clipboard.write",
+]);
+
 /**
- * Offscreen gate: the document only serves the background worker's image
- * crop requests, so content-script senders are always rejected.
+ * Offscreen gate: the document only serves the background worker's
+ * crop/clipboard requests, so content-script senders are always
+ * rejected.
  */
 export function offscreenMayHandleMessage(
   message: unknown,
@@ -92,5 +101,5 @@ export function offscreenMayHandleMessage(
     return false;
   }
   const type = messageTypeOf(message);
-  return type === "offscreen.image.crop";
+  return type !== null && OFFSCREEN_MESSAGE_TYPES.has(type);
 }

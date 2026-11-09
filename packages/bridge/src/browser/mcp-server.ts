@@ -1186,7 +1186,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.clipboard.get": {
     description:
-      "Read the system clipboard's plain text (navigator.clipboard via a dedicated offscreen document — chrome-extension) or the task browser context's clipboard (playwright-isolated). The clipboard is arbitrary user data — passwords, 2FA codes, copied tokens, page fragments — so the result is treated as sensitive egress and requires approval for non-local destinations. Returns {text} (may be empty when the clipboard holds non-text content — honest, not an error). Requires the optional clipboardRead permission — ungranted → proto.unsupported with a hint to run browser.permissions request {permissions:['clipboardRead']} first (Chrome shows its own consent dialog).",
+      "Read the system clipboard's plain text — chrome-extension tries navigator.clipboard in the offscreen document first, then falls back to a small focused popup window on an internal helper page (offscreen documents are never focused, so readText is refused there on current Chrome; the popup is created and destroyed within the call). playwright-isolated reads via the task browser context's clipboard. The clipboard is arbitrary user data — passwords, 2FA codes, copied tokens, page fragments — so the result is treated as sensitive egress and requires approval for non-local destinations. Returns {text} (may be empty when the clipboard holds non-text content — honest, not an error). Requires the optional clipboardRead permission — ungranted → proto.unsupported with a hint to run browser.permissions request {permissions:['clipboardRead']} first (Chrome shows its own consent dialog).",
     inputSchema: objectSchema({}),
   },
   "browser.clipboard.set": {

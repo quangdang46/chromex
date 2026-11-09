@@ -116,6 +116,17 @@ describe("offscreenMayHandleMessage", () => {
     ).toBe(false);
   });
 
+  it("accepts the clipboard ops from the background worker only", () => {
+    for (const type of ["offscreen.clipboard.read", "offscreen.clipboard.write"]) {
+      expect(
+        offscreenMayHandleMessage({ target: "offscreen", type }, backgroundSender, RID),
+      ).toBe(true);
+      expect(
+        offscreenMayHandleMessage({ target: "offscreen", type }, contentScriptSender, RID),
+      ).toBe(false);
+    }
+  });
+
   it("rejects unexpected types and malformed messages", () => {
     expect(
       offscreenMayHandleMessage({ target: "offscreen", type: "ui.init" }, backgroundSender, RID),
