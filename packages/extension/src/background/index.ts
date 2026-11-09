@@ -5911,7 +5911,14 @@ function clipboardReadViaPopupWindow(): Promise<{ text: string }> {
         height: 140,
       })
       .then((win) => {
-        waiter.windowId = typeof win?.id === "number" ? win.id : undefined;
+        const id = typeof win?.id === "number" ? win.id : undefined;
+        // If the waiter already timed out while create() was in flight,
+        // nobody will ever clean this window up — remove it now.
+        if (!clipboardReadWaiters.includes(waiter)) {
+          if (id !== undefined) void chrome.windows.remove(id).catch(() => {});
+          return;
+        }
+        waiter.windowId = id;
       })
       .catch((error) => {
         const idx = clipboardReadWaiters.indexOf(waiter);
