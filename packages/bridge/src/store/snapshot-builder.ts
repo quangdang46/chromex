@@ -177,6 +177,23 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
         }
         break;
       }
+      case "tool.reconciled": {
+        // Host-confirmed amendment of an `unknown` outcome — same merge
+        // as tool.completed; seq ordering guarantees it lands after the
+        // guess it corrects.
+        const toolCallId = typeof p.toolCallId === "string" ? p.toolCallId : "";
+        const existing = toolByCallId.get(toolCallId);
+        const outcome =
+          p.outcome === "succeeded" || p.outcome === "failed" || p.outcome === "cancelled"
+            ? p.outcome
+            : null;
+        if (!existing || outcome === null) break;
+        existing.outcome = outcome;
+        if (p.output !== undefined) existing.outputSummary = boundOutputSummary(p.output);
+        if (p.verified)
+          existing.verified = p.verified as NonNullable<TaskSnapshotToolCall["verified"]>;
+        break;
+      }
       case "turn.diff.updated": {
         // keep the LATEST diff per turn — earlier diffs are superseded
         if (turnId && typeof p.diff === "string") turnDiffs.set(turnId, p.diff);

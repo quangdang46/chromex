@@ -247,7 +247,7 @@ export interface ToolHostChannel {
   readonly hostInstanceId: string;
   /** profile this host serves — checked against req.profileId */
   readonly profileId?: string;
-  send(method: "browser.tool.request" | "browser.tool.cancel", payload: unknown): Promise<unknown>;
+  send(method: "browser.tool.request" | "browser.tool.cancel" | "browser.tool.reconcile", payload: unknown): Promise<unknown>;
   onDisconnect(listener: (reason: "disconnect" | "timeout") => void): void;
 }
 
@@ -652,6 +652,17 @@ export interface ToolServerDeps {
   /** Redacted ActionContext audit hook (§4.8: logged for audit). */
   onClassified?(taskId: string, ctx: ActionContext, verdict: { risk: RiskLevel; needsApproval: boolean; reason: string }): void;
   onOutcome?(outcome: ToolCallOutcome): void;
+  /** result_lost reconcile (§4.2): fired when the host confirms the true
+   *  outcome of a call the gateway recorded as `unknown`. */
+  onReconciled?(event: {
+    toolCallId: string;
+    taskId: string;
+    turnId?: string;
+    tool: string;
+    outcome: "succeeded" | "failed" | "cancelled";
+    output?: unknown;
+    verified?: boolean | "unknown";
+  }): void;
   now?: () => number;
   defaultTimeoutMs?: number;
 }
@@ -673,10 +684,20 @@ function hostResultVerified(result: unknown): boolean | "unknown" | undefined {
  *  of truth (seedDurableOutcome). Uncapped, every browser tool call
  *  would grow this map for the gateway's lifetime. */
 const MAX_TRACKED_OUTCOMES = 8192;
+/** result_lost reconcile window — calls that finished `unknown` stay
+ *  queryable until the host confirms or the entry ages out. */
+const MAX_UNRECONCILED_CALLS = 512;
+const MAX_RECONCILE_BATCH = 64;
 
 export class BrowserToolServer {
   /** toolCallId → outcome — duplicate-execution protection (§9.1). */
   private readonly outcomes = new Map<string, ToolCallOutcome>();
+  /** toolCallId → context for calls whose outcome is still `unknown` —
+   *  candidates for host-side reconcile after a reconnect (§4.2). */
+  private readonly unreconciled = new Map<
+    string,
+    { taskId: string; turnId?: string; tool: string }
+  >();
   private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout; taskId: string; host: ToolHostChannel; req: ToolCallRequest }>();
   /** SEC chromex-9e3: runtime taskId→tabIds scope (chrome-extension
    *  backend only — playwright backends isolate tabs per task already). */
@@ -982,7 +1003,18 @@ export class BrowserToolServer {
     }
 
     // 6. Dispatch with per-tool timeout.
-    return this.dispatch(host, req, expectedTarget);
+    const outcome = await this.dispatch(host, req, expectedTarget);
+    // result_lost reconcile (§4.2): an `unknown` outcome means the host
+    // may still know what actually happened — keep it queryable until
+    // a reconcile confirms or the entry ages out.
+    if (outcome.status === "unknown") {
+      this.#markUnreconciled(req.toolCallId, {
+        taskId: req.taskId,
+        ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
+        tool: req.tool,
+      });
+    }
+    return outcome;
   }
 
   private dispatch(
@@ -1127,6 +1159,95 @@ export class BrowserToolServer {
    *  tabs can bind to a future task. */
   releaseTask(taskId: string): void {
     this.tabScope.releaseTask(taskId);
+    for (const [id, u] of this.unreconciled) {
+      if (u.taskId === taskId) this.unreconciled.delete(id);
+    }
+  }
+
+  #markUnreconciled(
+    toolCallId: string,
+    ctx: { taskId: string; turnId?: string; tool: string },
+  ): void {
+    this.unreconciled.delete(toolCallId);
+    this.unreconciled.set(toolCallId, ctx);
+    while (this.unreconciled.size > MAX_UNRECONCILED_CALLS) {
+      const oldest = this.unreconciled.keys().next().value;
+      if (oldest === undefined) break;
+      this.unreconciled.delete(oldest);
+    }
+  }
+
+  /** Task ids holding calls whose outcome is still `unknown`. */
+  unreconciledTaskIds(): string[] {
+    return [...new Set([...this.unreconciled.values()].map((u) => u.taskId))];
+  }
+
+  /** Ask the task's current host what happened to its `unknown` calls.
+   *  Only host-confirmed outcomes amend the record — absent ids stay
+   *  unknown forever (honest). Fire-and-forget safe: errors are
+   *  swallowed, entries simply remain for a later attempt. */
+  async reconcileForTask(taskId: string): Promise<number> {
+    const ids = [...this.unreconciled.entries()]
+      .filter(([, u]) => u.taskId === taskId)
+      .slice(0, MAX_RECONCILE_BATCH)
+      .map(([id]) => id);
+    if (ids.length === 0) return 0;
+    const resolved = this.deps.resolveHost(taskId);
+    if (!resolved || "error" in resolved) return 0;
+    let reply: unknown;
+    try {
+      reply = await resolved.send("browser.tool.reconcile", { toolCallIds: ids });
+    } catch {
+      return 0;
+    }
+    const outcomes =
+      reply && typeof reply === "object"
+        ? (reply as { outcomes?: Record<string, unknown> }).outcomes
+        : undefined;
+    if (!outcomes || typeof outcomes !== "object") return 0;
+    let amended = 0;
+    for (const id of ids) {
+      const hostOutcome = outcomes[id];
+      if (!hostOutcome || typeof hostOutcome !== "object") continue;
+      const ho = hostOutcome as { status?: unknown; result?: unknown; error?: unknown };
+      // Only amend when the gateway's own record is still `unknown` —
+      // a later real outcome (or a prior reconcile) always wins.
+      if (this.outcomes.get(id)?.status !== "unknown") {
+        this.unreconciled.delete(id);
+        continue;
+      }
+      const status =
+        ho.status === "completed" ? "succeeded"
+        : ho.status === "failed" ? "failed"
+        : ho.status === "cancelled" ? "cancelled"
+        : null;
+      if (status === null) continue;
+      const u = this.unreconciled.get(id);
+      if (!u) continue;
+      const verified = hostResultVerified(ho.result);
+      this.deps.onReconciled?.({
+        toolCallId: id,
+        taskId: u.taskId,
+        ...(u.turnId !== undefined ? { turnId: u.turnId } : {}),
+        tool: u.tool,
+        outcome: status,
+        ...(ho.result !== undefined ? { output: ho.result } : {}),
+        ...(verified !== undefined ? { verified } : {}),
+      });
+      this.unreconciled.delete(id);
+      amended += 1;
+    }
+    return amended;
+  }
+
+  /** Reconcile every task holding unknown outcomes — call when a
+   *  browser host (re)registers. */
+  async reconcileAll(): Promise<number> {
+    let amended = 0;
+    for (const taskId of this.unreconciledTaskIds()) {
+      amended += await this.reconcileForTask(taskId).catch(() => 0);
+    }
+    return amended;
   }
 
   /** Host reported browser.tool.result / disconnect. */

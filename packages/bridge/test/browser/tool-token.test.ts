@@ -146,6 +146,75 @@ describe("BrowserToolServer", () => {
     expect(s2.cancelForTask("other-task")).toHaveLength(0);
   });
 
+  it("reconcileForTask amends host-confirmed unknown outcomes only (§4.2)", async () => {
+    const tokens = ToolTokenManager.forTest(SECRET);
+    const { token } = issue(tokens, { allowedTools: ["browser.page.snapshot"] });
+    const reconciled: unknown[] = [];
+    const sentMethods: string[] = [];
+    // First host: request throws ipc.disconnected → outcome unknown.
+    const deadHost: ToolHostChannel = {
+      hostInstanceId: "h-dead",
+      send: (method) => {
+        sentMethods.push(method);
+        return Promise.reject(Object.assign(new Error("gone"), { code: "ipc.disconnected" }));
+      },
+      onDisconnect: () => {},
+    };
+    // Reconnected host: answers reconcile with the true outcome.
+    const liveHost: ToolHostChannel = {
+      hostInstanceId: "h-live",
+      send: (method, payload) => {
+        sentMethods.push(method);
+        if (method === "browser.tool.reconcile") {
+          const ids = (payload as { toolCallIds: string[] }).toolCallIds;
+          return Promise.resolve({
+            outcomes: Object.fromEntries(
+              ids.map((id) => [
+                id,
+                id === "tc-lost"
+                  ? { status: "completed", result: { ok: true, verified: true } }
+                  : { status: "failed", error: { code: "proto.invalid", message: "bad" } },
+              ]),
+            ),
+          });
+        }
+        return Promise.resolve({ ok: true });
+      },
+      onDisconnect: () => {},
+    };
+    let host: ToolHostChannel = deadHost;
+    const s2 = new BrowserToolServer({
+      tokens,
+      resolveHost: () => host,
+      onReconciled: (e) => reconciled.push(e),
+      now: () => NOW,
+    });
+    const lost = await s2.execute({ ...REQ, toolCallId: "tc-lost", tool: "browser.page.snapshot", token });
+    expect(lost.status).toBe("unknown");
+    expect(lost.error?.code).toBe("browser.host_lost_after_dispatch");
+    const other = await s2.execute({ ...REQ, toolCallId: "tc-other", taskId: "task-2", tool: "browser.page.snapshot", token: issue(tokens, { taskId: "task-2", allowedTools: ["browser.page.snapshot"] }).token });
+    expect(other.status).toBe("unknown");
+    expect(s2.unreconciledTaskIds().sort()).toEqual(["task-1", "task-2"]);
+
+    // Reconcile only task-1 — task-2's entries are untouched.
+    host = liveHost;
+    const amended = await s2.reconcileForTask("task-1");
+    expect(amended).toBe(1);
+    expect(sentMethods).toContain("browser.tool.reconcile");
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toMatchObject({
+      toolCallId: "tc-lost",
+      taskId: "task-1",
+      outcome: "succeeded",
+      verified: true,
+    });
+    // Second reconcile: entry already amended → no double-fire.
+    expect(await s2.reconcileForTask("task-1")).toBe(0);
+    expect(reconciled).toHaveLength(1);
+    // task-2 still pending reconcile.
+    expect(s2.unreconciledTaskIds()).toEqual(["task-2"]);
+  });
+
   it("classifies via §4.8 risk engine: reads allow, unresolved mutations approve, hard-blocks deny", () => {
     const req = (tool: string, args: Record<string, unknown> = {}) => ({
       toolCallId: "tc-x",

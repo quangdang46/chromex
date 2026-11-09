@@ -531,6 +531,20 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           onDisconnect: (listener) => hostConn.onClose(() => listener("disconnect")),
         };
       },
+      // result_lost reconcile (§4.2): the host confirmed what actually
+      // happened to a call we recorded `unknown` — amend the durable
+      // task stream so the snapshot/audit trail shows the truth.
+      onReconciled: (ev) => {
+        appendTaskEventBroadcast(ev.taskId, {
+          type: "tool.reconciled",
+          turnId: ev.turnId ?? "",
+          toolCallId: ev.toolCallId,
+          tool: ev.tool,
+          outcome: ev.outcome,
+          ...(ev.output !== undefined ? { output: boundJsonPreview(ev.output, BROWSER_TOOL_OUTPUT_MAX_CHARS) } : {}),
+          ...(ev.verified !== undefined ? { verified: ev.verified } : {}),
+        } as never);
+      },
       requestApproval: async (tctx) => {
         // Operator opt-in full-auto (gateway.json browser.policy.
         // approvalMode="auto"): every verdict reaching this gate was
@@ -1080,6 +1094,10 @@ async function handleGatewayRequest(
           // already carried by browserInstanceId + connection.
         });
         ctx.conn.onClose(() => ctx.hostRegistry.unregisterByConnection(ctx.conn.connectionId));
+        // result_lost reconcile (§4.2): a (re)registered host may still
+        // hold outcomes for calls the gateway recorded `unknown` while
+        // the channel was down — ask before new work starts.
+        void ctx.toolServer.reconcileAll().catch(() => 0);
       }
       return buildHelloResponse(parsed, {
         store: ctx.store,

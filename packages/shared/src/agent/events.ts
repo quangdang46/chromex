@@ -52,6 +52,19 @@ export type AgentEvent =
       outputArtifactRef?: string;
       verified?: VerificationResult;
     }
+  // DURABLE amendment: a call recorded `unknown` (host/result lost) was
+  // later reconciled against the host's outcome buffer — carries the
+  // TRUE outcome so the snapshot/audit trail supersedes the guess.
+  // Never emitted speculatively; only after host confirmation.
+  | {
+      type: "tool.reconciled";
+      turnId: string;
+      toolCallId: string;
+      tool: string;
+      outcome: Exclude<ToolOutcome, "unknown">;
+      output?: unknown;
+      verified?: VerificationResult;
+    }
   | { type: "permission.requested"; turnId?: string; request: PermissionRequest }
   | { type: "permission.resolved"; requestId: string; decision: PermissionDecision }
   | { type: "permission.expired"; requestId: string; reason: "task_terminal" | "restart" | "provider_unavailable" | "timeout" }
