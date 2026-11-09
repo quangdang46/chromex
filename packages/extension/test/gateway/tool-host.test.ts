@@ -570,6 +570,45 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("page.extract unscoped merges every frame's text with frame markers", async () => {
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab: vi.fn(async (_t: number, _m: unknown, opts?: { frameId?: number }) => ({
+        text: opts?.frameId === 20 ? "widget body" : "top body",
+        truncated: false,
+        url: opts?.frameId === 20 ? "https://widget.test/app" : "https://x.test/page",
+        title: "T",
+      })),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.extract", { maxChars: 4000 }))) as {
+      text: string; frames?: number; url: string;
+    };
+    expect(res.frames).toBe(2);
+    expect(res.text).toContain("--- frame 10: https://x.test/page ---\ntop body");
+    expect(res.text).toContain("--- frame 20: https://widget.test/app ---\nwidget body");
+    expect(res.url).toBe("https://x.test/page");
+  });
+
+  test("page.extract explicit frameId stays single-frame", async () => {
+    const sendToTab = vi.fn(async () => ({ text: "only", truncated: false, url: "https://x", title: "X" }));
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab,
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.extract", { frameId: 20 }))) as { text: string; frames?: number };
+    expect(sendToTab).toHaveBeenCalledTimes(1);
+    expect(res.text).toBe("only");
+    expect(res.frames).toBeUndefined();
+  });
+
   test("page.upload bytes path maps to dom.perform upload step with files", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

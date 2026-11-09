@@ -1346,6 +1346,16 @@ await runScenario(
           const lsTopBody = lsTop?.result ?? lsTop ?? {};
           cdp.storageFrameOk = JSON.stringify(lsFrBody).includes('"v"') &&
             !JSON.stringify(lsTopBody).includes('"v"');
+          // Unscoped extract must include subframe text under a
+          // frame marker — "Frame Child" only lives inside iframes.
+          const exRes = await runner.browserToolCall(
+            taskId, "browser.page.extract",
+            { tabId: cdpFrameTabId, maxChars: 20000 }, token, 60_000,
+          ).catch(() => null);
+          const exBody = exRes?.result ?? exRes ?? {};
+          cdp.extractOopifOk = typeof exBody.text === "string" &&
+            exBody.text.includes("Frame Child") &&
+            /--- frame \d+:/.test(exBody.text);
         }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
@@ -1362,7 +1372,7 @@ await runScenario(
           cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
           cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true &&
           cdp.findOopifOk === true && cdp.waitOopifTextOk === true &&
-          cdp.storageFrameOk === true,
+          cdp.storageFrameOk === true && cdp.extractOopifOk === true,
         ...cdp,
       };
 

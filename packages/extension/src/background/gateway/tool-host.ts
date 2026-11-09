@@ -5135,12 +5135,57 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         if (format !== undefined && format !== "text" && format !== "html") {
           throw toolError("proto.invalid", "browser.page.extract args.format must be text|html");
         }
-        const res = (await deps.sendToTab(tabId, {
+        const extractMsg = {
           type: "page.extract",
           maxChars,
           ...(str(args.selector) ? { selector: str(args.selector) } : {}),
           ...(format ? { format } : {}),
-        }, { frameId })) as { text?: string; truncated?: boolean; url?: string; title?: string; error?: string };
+        };
+        // Unscoped extract reads EVERY frame — text inside same-process
+        // and cross-origin subframes is page content too. Sections are
+        // joined with `--- frame <id>: <url> ---` markers (same honesty
+        // contract as the aria snapshot's Iframe markers); the merged
+        // text keeps the maxChars cap, so narrow with args.frameId for
+        // one frame's full text. Explicit frameId stays single-frame.
+        if (args.frameId === undefined || args.frameId === null) {
+          const fids = await consoleFrameIds(deps, tabId);
+          if (fids !== undefined && fids.length > 1) {
+            const sections: string[] = [];
+            let truncated = false;
+            let url = "";
+            let title = "";
+            let framesOk = 0;
+            for (const fid of fids.slice(0, CONSOLE_MERGE_FRAME_CAP)) {
+              const r = (await deps.sendToTab(tabId, extractMsg, { frameId: fid }).catch(() => undefined)) as
+                | { text?: string; truncated?: boolean; url?: string; title?: string; error?: string }
+                | undefined;
+              if (!r || typeof r.text !== "string") continue;
+              framesOk += 1;
+              if (!url) {
+                url = r.url ?? "";
+                title = r.title ?? "";
+              }
+              truncated = truncated || r.truncated === true;
+              sections.push(`--- frame ${fid}: ${urlOriginPath(r.url ?? "")} ---\n${r.text}`);
+            }
+            if (framesOk > 0) {
+              let merged = sections.join("\n");
+              if (merged.length > maxChars) {
+                merged = merged.slice(0, maxChars);
+                truncated = true;
+              }
+              return {
+                text: merged,
+                truncated,
+                url: urlOriginPath(url),
+                title,
+                frames: framesOk,
+                resolvedTabId: tabId,
+              };
+            }
+          }
+        }
+        const res = (await deps.sendToTab(tabId, extractMsg, { frameId })) as { text?: string; truncated?: boolean; url?: string; title?: string; error?: string };
         return {
           text: res.text ?? "",
           truncated: res.truncated === true,

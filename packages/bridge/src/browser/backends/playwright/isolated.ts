@@ -898,13 +898,53 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   }
 
   async #extract(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const target = await this.#frameTarget(taskId, args);
     const selector = typeof args.selector === "string" && args.selector ? args.selector : "body";
     const maxChars = typeof args.maxChars === "number" ? args.maxChars : MAX_EXTRACT_CHARS;
     const format = args.format === undefined ? "text" : args.format === "html" ? "html" : null;
     if (format === null) {
       throw protocolError("proto.invalid", "browser.page.extract args.format must be text|html");
     }
+    // Unscoped extract reads EVERY frame — same contract as the
+    // extension host: per-frame sections joined with
+    // `--- frame <index>: <url> ---` markers, merged text capped at
+    // maxChars. Explicit args.frameId stays single-frame.
+    if (args.frameId === undefined || args.frameId === null) {
+      const page = await this.#pageFor(taskId, args);
+      const frames = typeof page.frames === "function" ? page.frames() : [];
+      if (frames.length > 1) {
+        const sections: string[] = [];
+        let truncated = false;
+        let url = "";
+        let framesOk = 0;
+        for (let i = 0; i < frames.length; i++) {
+          const r = await this.#extractOne(frames[i] as unknown as PwTarget, selector, maxChars, format)
+            .catch(() => undefined);
+          if (!r) continue;
+          framesOk += 1;
+          if (!url) url = r.url;
+          truncated = truncated || r.truncated;
+          sections.push(`--- frame ${i}: ${r.url} ---\n${r.text}`);
+        }
+        if (framesOk > 0) {
+          let merged = sections.join("\n");
+          if (merged.length > maxChars) {
+            merged = merged.slice(0, maxChars);
+            truncated = true;
+          }
+          return { text: merged, truncated, url, frames: framesOk };
+        }
+      }
+    }
+    const target = await this.#frameTarget(taskId, args);
+    return await this.#extractOne(target, selector, maxChars, format);
+  }
+
+  async #extractOne(
+    target: PwTarget,
+    selector: string,
+    maxChars: number,
+    format: "text" | "html",
+  ): Promise<{ text: string; truncated: boolean; url: string }> {
     const locator = target.locator(selector).first();
     const raw =
       format === "html"
