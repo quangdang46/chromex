@@ -1,0 +1,33 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-09T04-51-48-080Z-4ae42d",
+  "status": "PASS",
+  "summary": "extension reload mid-turn → activeTurn restored via gateway hello → queue survived → flushed exactly once on turn.completed",
+  "durationMs": 76538,
+  "details": {
+    "newSw": true,
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-09T04:51:51.971Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T04:51:52.216Z] usage notice accept clicked=false",
+    "[2026-11-09T04:51:55.526Z] turn 1 active",
+    "[2026-11-09T04:51:56.528Z] gateway turn 1 established: task=01M6ZAC3EWR6TPZE7VB4HK8DDX activeTurn=01M6ZAC3F2ME2V0QVPKT9FJFVR",
+    "[2026-11-09T04:51:56.563Z] second message queued",
+    "[2026-11-09T04:51:56.564Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M6ZAC3EWR6TPZE7VB4HK8DDX\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794199916005}]}",
+    "[2026-11-09T04:51:56.707Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-09T04:51:57.214Z] new service worker=up",
+    "[2026-11-09T04:51:57.215Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794199917215,\"uptimeMs\":8971,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M6ZABVWHK7RD7SPZQJQ93K8K\"},\"startup\":null},\"endpoint\":{\"path\":\"un tasks={\"tasks\":[{\"taskId\":\"01M6ZAC3EWR6TPZE7VB4HK8DDX\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794199916005}]}",
+    "[2026-11-09T04:51:58.942Z] post-reload: stopSeen=true {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"57c55837-b63f-4bd6-a45e-23c1d21881ae\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794199916535-eayvd3\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\",\\\"threadId\\\":\\\"01M6ZAC3EWR6TPZE7VB4HK8DDX\\\"}]}}\",\"queuePresent\":false,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"57c55837-b63f-4bd6-a45e-23c1d21881ae\\\",\\\"threadId\\\":\\\"01M6ZAC3EWR6TPZE7VB4HK8DDX\\\",\\\"activeTurn\\\":{\\\"threadId\\\":\\\"01M6ZAC3EWR6TPZE7VB4HK8DDX\\\",\\\"turnId\\\":\\\"01M6ZAC3F2ME2V0QVPKT9FJFVR\\\"},\\\"initError\\\":null}\",\"gwTasks\":\"[{\\\"id\\\":\\\"01M6ZAC3EWR6TPZE7VB4HK8DDX\\\",\\\"status\\\":\\\"active\\\",\\\"activeTurnId\\\":\\\"01M6ZAC3F2ME2V0QVPKT9FJFVR\\\"}]\"}",
+    "[2026-11-09T04:51:58.945Z] queue strip present post-reload=true",
+    "[2026-11-09T04:51:58.945Z] task 01M6ZAC3EWR6TPZE7VB4HK8DDX",
+    "[2026-11-09T04:53:04.456Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-09T04:53:04.501Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  ]
+}

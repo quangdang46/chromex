@@ -1,0 +1,376 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 1,
+      "ts": 1794199807494,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+        "profileId": "codex",
+        "providerId": "codex",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "user"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 2,
+      "ts": 1794199807494,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 3,
+      "ts": 1794199807629,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8nt8-9zxvtn",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://auth.localhost:54157/"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 4,
+      "ts": 1794199807632,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "financial",
+        "needsApproval": true,
+        "reason": "payment/auth context requires approval",
+        "origin": "http://auth.localhost:54157",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 5,
+      "ts": 1794199807634,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw8s8ntd-p27gwc",
+          "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+          "kind": "browser_action",
+          "risk": "financial",
+          "summary": "browser.page.navigate requires approval (payment/auth context requires approval)",
+          "actionDigest": "c5d2251d4f62e9c916e66193607651babe141bbd3d51abe430c4a39b291b9bf1",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.navigate",
+            "argsPreview": {
+              "url": "http://auth.localhost:54157/"
+            },
+            "origin": "http://auth.localhost:54157"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 6,
+      "ts": 1794199807639,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw8s8ntd-p27gwc",
+        "decision": {
+          "kind": "deny"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 7,
+      "ts": 1794199807886,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8nt8-9zxvtn",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "failed",
+        "output": {
+          "error": {
+            "code": "browser.approval_denied",
+            "message": "approval denied"
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 8,
+      "ts": 1794199807888,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8o0g-h2b14r",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "input": {
+          "url": "http://auth.localhost:54157/"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 9,
+      "ts": 1794199807889,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.page.navigate",
+        "risk": "financial",
+        "needsApproval": true,
+        "reason": "payment/auth context requires approval",
+        "origin": "http://auth.localhost:54157",
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 10,
+      "ts": 1794199807889,
+      "type": "permission.requested",
+      "payload": {
+        "type": "permission.requested",
+        "request": {
+          "requestId": "appr-mw8s8o0h-10j8xp",
+          "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+          "kind": "browser_action",
+          "risk": "financial",
+          "summary": "browser.page.navigate requires approval (payment/auth context requires approval)",
+          "actionDigest": "c5d2251d4f62e9c916e66193607651babe141bbd3d51abe430c4a39b291b9bf1",
+          "options": [
+            {
+              "id": "allow_once",
+              "label": "Allow once",
+              "kind": "allow_once"
+            },
+            {
+              "id": "deny",
+              "label": "Deny",
+              "kind": "deny"
+            }
+          ],
+          "details": {
+            "tool": "browser.page.navigate",
+            "argsPreview": {
+              "url": "http://auth.localhost:54157/"
+            },
+            "origin": "http://auth.localhost:54157"
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 11,
+      "ts": 1794199808289,
+      "type": "permission.resolved",
+      "payload": {
+        "type": "permission.resolved",
+        "requestId": "appr-mw8s8o0h-10j8xp",
+        "decision": {
+          "kind": "allow_once"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 12,
+      "ts": 1794199808415,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8o0g-h2b14r",
+        "tool": "browser.page.navigate",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "ok": true,
+            "summary": "Requested browser action completed.",
+            "step": {
+              "step": {
+                "action": "navigate",
+                "url": "http://auth.localhost:54157/",
+                "reason": "gateway tool browser.page.navigate"
+              },
+              "ok": true,
+              "message": "Navigated the current page."
+            },
+            "resolvedTabId": 721687370
+          }
+        },
+        "verified": "unknown"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 13,
+      "ts": 1794199808919,
+      "type": "tool.started",
+      "payload": {
+        "type": "tool.started",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8ot3-m5iipm",
+        "tool": "browser.tabs.list",
+        "source": "browser",
+        "input": {}
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 14,
+      "ts": 1794199808920,
+      "type": "browser.tool.classified",
+      "payload": {
+        "type": "browser.tool.classified",
+        "action": "browser.tabs.list",
+        "risk": "read",
+        "needsApproval": false,
+        "reason": "read-only tool",
+        "origin": null,
+        "targetLabel": null,
+        "contextResolved": true
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M6ZA8SG4S3ZJNS8Q780S2REY",
+      "seq": 15,
+      "ts": 1794199808922,
+      "type": "tool.completed",
+      "payload": {
+        "type": "tool.completed",
+        "turnId": "",
+        "toolCallId": "rpc-mw8s8ot3-m5iipm",
+        "tool": "browser.tabs.list",
+        "source": "browser",
+        "outcome": "succeeded",
+        "output": {
+          "result": {
+            "tabs": [
+              {
+                "id": 721687370,
+                "title": "Fixture Home",
+                "url": "http://auth.localhost:54157/",
+                "origin": "http://auth.localhost:54157",
+                "active": true,
+                "windowId": 721687368,
+                "status": "complete",
+                "pinned": false,
+                "groupId": -1,
+                "index": 1,
+                "discarded": false,
+                "autoDiscardable": true,
+                "highlighted": true
+              }
+            ]
+          }
+        },
+        "verified": "unknown"
+      }
+    }
+  ],
+  "nextSeq": 15,
+  "hasMore": false
+}
