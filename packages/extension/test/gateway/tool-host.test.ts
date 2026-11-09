@@ -885,6 +885,46 @@ describe("tool host (P1-09)", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("tabs.wait closedTabId holds until that tab disappears", async () => {
+    let calls = 0;
+    const d = deps({
+      queryTabs: vi.fn(async () => {
+        calls += 1;
+        // tab 55 exists for the first two polls then closes
+        return calls <= 2
+          ? [
+              { id: 7, url: "https://x/", title: "X", active: true, windowId: 1 },
+              { id: 55, url: "https://x/popup", title: "P", active: false, windowId: 1 },
+            ]
+          : [{ id: 7, url: "https://x/", title: "X", active: true, windowId: 1 }];
+      }),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.tabs.wait", { closedTabId: 55, timeoutMs: 3000 }))) as {
+      matched: string; closedTabId: number;
+    };
+    expect(res.matched).toBe("closed");
+    expect(res.closedTabId).toBe(55);
+    // already-closed id → immediate match with honest flag
+    const res2 = (await h(req("browser.tabs.wait", { closedTabId: 999, timeoutMs: 100 }))) as {
+      matched: string; alreadyClosed?: boolean;
+    };
+    expect(res2.matched).toBe("closed");
+    expect(res2.alreadyClosed).toBe(true);
+    // still-open tab → browser.timeout
+    await expect(h(req("browser.tabs.wait", { closedTabId: 7, timeoutMs: 80 })))
+      .rejects.toMatchObject({ code: "browser.timeout" });
+    // combos + bad types refused
+    await expect(h(req("browser.tabs.wait", { closedTabId: 7, urlContains: "x" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.tabs.wait", { closedTabId: 7, disappear: true })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.tabs.wait", { closedTabId: "7" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.tabs.wait", { closedTabId: -1 })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+  });
+
   test("tabs.wait waitForLoad holds until the matched tab reaches status complete", async () => {
     let calls = 0;
     const d = deps({

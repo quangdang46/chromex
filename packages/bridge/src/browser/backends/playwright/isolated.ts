@@ -570,9 +570,39 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  present at call time never match. Same contract as the extension
    *  host's chrome.tabs poll. */
   async #tabsWait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    // closedTabId mode: wait until the page AT this index disappears.
+    // We hold the page object — indexes shift as siblings close, so
+    // identity (not position) is what we track. alreadyClosed marks
+    // the already-gone case so a mistyped id is still visible.
+    if (args.closedTabId !== undefined) {
+      const closedTabId = args.closedTabId;
+      if (typeof closedTabId !== "number" || !Number.isInteger(closedTabId) || closedTabId < 0) {
+        throw protocolError("proto.invalid", "browser.tabs.wait args.closedTabId must be a non-negative integer tabId");
+      }
+      if (args.urlContains !== undefined || args.disappear !== undefined || args.waitForLoad !== undefined) {
+        throw protocolError("proto.invalid", "browser.tabs.wait args.closedTabId cannot combine with urlContains/disappear/waitForLoad");
+      }
+      const closeTimeout = typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000;
+      const closeDeadline = Date.now() + Math.min(closeTimeout, 30_000);
+      const context = await this.#contextFor(taskId);
+      const pages = context.pages();
+      const target = pages[closedTabId];
+      if (!target) {
+        return { ok: true, matched: "closed", closedTabId, alreadyClosed: true };
+      }
+      for (;;) {
+        if (!context.pages().includes(target)) {
+          return { ok: true, matched: "closed", closedTabId };
+        }
+        if (Date.now() >= closeDeadline) {
+          throw protocolError("browser.timeout", `tab ${closedTabId} still open before timeout`);
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
     const urlContains = typeof args.urlContains === "string" ? args.urlContains : "";
     if (urlContains === "" || urlContains.length > 512) {
-      throw protocolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars)");
+      throw protocolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars) or args.closedTabId");
     }
     if (args.waitForLoad !== undefined && typeof args.waitForLoad !== "boolean") {
       throw protocolError("proto.invalid", "browser.tabs.wait args.waitForLoad must be a boolean");

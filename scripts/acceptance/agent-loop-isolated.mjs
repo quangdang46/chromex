@@ -312,6 +312,27 @@ try {
   );
   await call("browser.tab.close", { tabId: clTab }).catch(() => null);
 
+  // closedTabId mode — wait on a SPECIFIC tabId going away (popup
+  // self-close complement to disappear's URL match).
+  const cwCreated = await call("browser.tab.create", { url: fixture.url("/"), active: false });
+  const cwTab = cwCreated?.tabId ?? cwCreated?.id;
+  const [cwRes] = await Promise.all([
+    call("browser.tabs.wait", { closedTabId: cwTab, timeoutMs: 8000 }),
+    call("browser.tab.close", { tabId: cwTab }),
+  ]);
+  assert(cwRes?.matched === "closed" && cwRes?.closedTabId === cwTab,
+    `closedTabId wait observed close (got ${JSON.stringify(cwRes).slice(0, 120)})`);
+  // already-closed id → immediate matched with alreadyClosed evidence
+  const cwGone = await call("browser.tabs.wait", { closedTabId: cwTab, timeoutMs: 1000 });
+  assert(cwGone?.matched === "closed" && cwGone?.alreadyClosed === true,
+    "already-closed tabId returns alreadyClosed evidence");
+  await expectReject(
+    "browser.tabs.wait",
+    { closedTabId: cwTab, urlContains: "x" },
+    "cannot combine",
+    "closedTabId+urlContains combo refused",
+  );
+
   // browser.page.pierce is chrome-extension only — closed shadow roots
   // need the CDP DOM pierce tier playwright-isolated doesn't have.
   await expectReject(

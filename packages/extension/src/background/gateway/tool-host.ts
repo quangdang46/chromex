@@ -1348,9 +1348,47 @@ export function createToolHostHandler(deps: ToolHostDeps) {
         // Baseline-diff semantics: tabs present at call time never
         // match, so a pre-existing tab with the same URL can't
         // false-positive. Same visibility filter as tabs.list.
+        // closedTabId mode: wait until a SPECIFIC tab disappears —
+        // the "popup self-closes after OAuth callback" complement to
+        // disappear (which matches by URL). Mutually exclusive with
+        // the urlContains modes.
+        const closedTabId = args.closedTabId;
+        if (closedTabId !== undefined) {
+          if (typeof closedTabId !== "number" || !Number.isInteger(closedTabId) || closedTabId < 0) {
+            throw toolError("proto.invalid", "browser.tabs.wait args.closedTabId must be a non-negative integer tabId");
+          }
+          if (args.urlContains !== undefined || args.disappear !== undefined || args.waitForLoad !== undefined) {
+            throw toolError("proto.invalid", "browser.tabs.wait args.closedTabId cannot combine with urlContains/disappear/waitForLoad");
+          }
+          const closeTimeoutMs = Math.min(
+            Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
+            30_000,
+          );
+          const allTabs = await deps.queryTabs();
+          if (!allTabs.some((t) => t.id === closedTabId)) {
+            // Already gone (or never existed) — the condition is
+            // satisfied; alreadyClosed distinguishes a real close
+            // from a mistyped id in the evidence.
+            return { ok: true, matched: "closed", closedTabId, alreadyClosed: true };
+          }
+          const closeDeadline = Date.now() + closeTimeoutMs;
+          for (;;) {
+            const stillThere = (await deps.queryTabs()).some((t) => t.id === closedTabId);
+            if (!stillThere) {
+              return { ok: true, matched: "closed", closedTabId };
+            }
+            if (Date.now() >= closeDeadline) {
+              throw toolError(
+                "browser.timeout",
+                `tab ${closedTabId} still open after ${closeTimeoutMs}ms`,
+              );
+            }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+        }
         const urlContains = str(args.urlContains);
         if (urlContains === undefined || urlContains.length === 0 || urlContains.length > 512) {
-          throw toolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars)");
+          throw toolError("proto.invalid", "browser.tabs.wait requires args.urlContains (non-empty string ≤512 chars) or args.closedTabId");
         }
         const waitTimeoutMs = Math.min(
           Math.max(typeof args.timeoutMs === "number" ? args.timeoutMs : 10_000, 0),
