@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { extractSlashQuery, listSlashCommandOptions } from "../src/sidepanel/skills.js";
+import { extractSlashQuery, listSlashCommandOptions, slashGoalSeedFromDraft } from "../src/sidepanel/skills.js";
 
 describe("skills", () => {
   test("extracts a slash query from the composer", () => {
@@ -186,5 +186,27 @@ describe("skills", () => {
     ]);
     expect(results.some((option) => option.label === "Email Reply")).toBe(false);
     expect(results.at(-1)?.kind).toBe("create-profile");
+  });
+
+  test("lists Goal mode as a slash command option", () => {
+    const results = listSlashCommandOptions("", [], [], "en", "default");
+    const goal = results.find((option) => option.kind === "goal");
+    expect(goal).toMatchObject({ id: "goal", label: "Goal mode" });
+    expect(results.at(-1)?.kind).toBe("create-profile");
+  });
+
+  test("filters Goal mode by the slash query", () => {
+    const results = listSlashCommandOptions("goal", [], [], "en", "default");
+    expect(results.some((option) => option.kind === "goal")).toBe(true);
+    const none = listSlashCommandOptions("zzzz", [], [], "en", "default");
+    expect(none.some((option) => option.kind === "goal")).toBe(false);
+  });
+
+  test("seeds the goal objective from the slash draft", () => {
+    expect(slashGoalSeedFromDraft("/goal fix the bug")).toBe("fix the bug");
+    expect(slashGoalSeedFromDraft("/fix the bug")).toBe("fix the bug");
+    expect(slashGoalSeedFromDraft("please /fix the bug")).toBe("please fix the bug");
+    expect(slashGoalSeedFromDraft("/goal")).toBe("");
+    expect(slashGoalSeedFromDraft("/")).toBe("");
   });
 });

@@ -125,6 +125,7 @@ import {
   extractSlashQuery,
   listSlashCommandOptions,
   removeActiveSlashToken,
+  slashGoalSeedFromDraft,
   type SlashCommandOption,
 } from "./skills.js";
 import {
@@ -5684,10 +5685,10 @@ function renderSlashCommandPopover(
 }
 
 function renderSlashCommandIcon(option: SlashCommandOption): string {
-  if (option.kind === "create-profile") {
+  if (option.kind === "create-profile" || option.kind === "goal") {
     return `
       <span class="suggestion-icon ${option.kind}" aria-hidden="true">
-        ${renderUiIcon("plus")}
+        ${renderUiIcon(option.kind === "goal" ? "target" : "plus")}
       </span>
     `;
   }
@@ -13099,8 +13100,9 @@ function getSlashOptionsForState(): SlashCommandOption[] {
     state.selectedProfileId,
   );
   const createProfileOption = options.find((option) => option.kind === "create-profile");
-  const profileOptions = options.filter((option) => option.kind === "profile").slice(0, createProfileOption ? 11 : 12);
-  return createProfileOption ? [...profileOptions, createProfileOption] : profileOptions;
+  const commandOptions = options.filter((option) => option.kind !== "profile" && option.kind !== "create-profile");
+  const profileOptions = options.filter((option) => option.kind === "profile").slice(0, createProfileOption ? 11 - commandOptions.length : 12 - commandOptions.length);
+  return createProfileOption ? [...profileOptions, ...commandOptions, createProfileOption] : [...profileOptions, ...commandOptions];
 }
 
 function isComposerDropdownOpen(): boolean {
@@ -13115,9 +13117,19 @@ function isComposerDropdownOpen(): boolean {
 }
 
 async function applySlashOption(option: SlashCommandOption): Promise<void> {
+  const goalSeed = option.kind === "goal" ? slashGoalSeedFromDraft(state.composerDraft) : "";
   state.composerDraft = removeActiveSlashToken(state.composerDraft);
   state.slashQuery = null;
   state.slashActiveIndex = 0;
+  if (option.kind === "goal") {
+    // Seed the composer with the /goal command; whatever the user
+    // already typed after "/" becomes the objective. Sending then
+    // flows through parseGoalCommand → prompt.send useGoal.
+    state.composerDraft = goalSeed ? `/goal ${goalSeed}` : "/goal ";
+    restoreComposerFocus(true);
+    scheduleConversationPersist();
+    return;
+  }
   if (option.kind === "create-profile") {
     state.activeView = "workspace";
     openProfileEditor("create");

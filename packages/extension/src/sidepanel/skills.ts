@@ -25,6 +25,12 @@ export type SlashCommandOption =
     active?: boolean;
   }
   | {
+    id: "goal";
+    kind: "goal";
+    label: string;
+    description: string;
+  }
+  | {
     id: "create-profile";
     kind: "create-profile";
     label: string;
@@ -67,17 +73,38 @@ export function listSlashCommandOptions(
     }))
     .filter((option) => matchesSlashOption(option, normalized));
 
+  const strings = getUiStrings(locale);
+  const goalOption: SlashCommandOption = {
+    id: "goal",
+    kind: "goal",
+    label: strings.actions.goalMode,
+    description: strings.actions.goalModeDescription,
+  };
+
   const createProfileOption: SlashCommandOption = {
     id: "create-profile",
     kind: "create-profile",
-    label: getUiStrings(locale).actions.createProfileDirect,
+    label: strings.actions.createProfileDirect,
     description: "",
   };
 
   return [
     ...profileOptions.sort((left, right) => Number(Boolean(right.active)) - Number(Boolean(left.active))),
+    ...(matchesSlashOption(goalOption, normalized) ? [goalOption] : []),
     createProfileOption,
   ];
+}
+
+/**
+ * Objective seed for the "/goal" command: everything the user typed,
+ * minus the "/" token and a leading "goal" keyword. "/goal fix the
+ * bug" and "please /fix bug" both yield a usable objective.
+ */
+export function slashGoalSeedFromDraft(draft: string): string {
+  const match = SLASH_QUERY_PATTERN.exec(draft);
+  const after = (match?.[1] ?? "").trim().replace(/^goal\b[\s\-–—:]*/iu, "").trim();
+  const before = removeActiveSlashToken(draft).trim();
+  return [before, after].filter(Boolean).join(" ");
 }
 
 export function removeActiveSlashToken(currentValue: string): string {

@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  Target,
   Trash2,
   Video,
   X,
@@ -88,6 +89,7 @@ export type UiIconName =
   | "sparkles"
   | "stop"
   | "stop-filled"
+  | "target"
   | "trash"
   | "video"
   | "x"
@@ -134,6 +136,7 @@ const UI_ICON_NODES: Record<UiIconName, IconNode> = {
   sparkles: Sparkles,
   stop: Square,
   "stop-filled": Square,
+  target: Target,
   trash: Trash2,
   video: Video,
   x: X,
