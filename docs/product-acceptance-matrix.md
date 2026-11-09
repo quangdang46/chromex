@@ -122,7 +122,14 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   honestly; tab close deletes the key so a reused tabId can't inherit
   mocks; restore validates shape and skips malformed entries) —
   verified tool-host units (dispose→re-arm→fulfill, unroute-clears-
-  persisted); **page.dialog parity**: track-time
+  persisted); **network log persistence**: chrome-extension also tails the
+  webRequest buffer (100 entries/tab, already origin+path sanitized)
+  into chrome.storage.session on a 3s debounce — an MV3 restart no
+  longer empties page.network history or the responseUrl wait
+  lookback; restore validates entry shape, tab close persists
+  immediately so a reused tabId inherits nothing — verified
+  network-log.test.ts (debounced save, restart rehydrate, tab-reset
+  immediate persist, malformed-entry skip); **page.dialog parity**: track-time
   dialog listener holds JS dialogs open (real browser semantics —
   playwright auto-dismisses only with no listener), accept/dismiss +
   promptText + no_dialog honest result — confirm accept, alert

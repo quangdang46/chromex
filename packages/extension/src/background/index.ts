@@ -104,7 +104,7 @@ import {
   validateRuntimeMessage,
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge, setGatewayServerRequestHandler } from "./gateway/runtime.js";
-import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab } from "./network-log.js";
+import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab, setNetworkLogStore } from "./network-log.js";
 import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
@@ -229,6 +229,21 @@ const degradedReport = createDegradedReporter();
 // unconditionally — the runtime only exists when gatewayMode is on.
 // The runtime calls handler(method, payload); the tool host takes the
 // payload only, so dispatch on the method here.
+// Network log tails persist in session storage — an MV3 service-worker
+// restart no longer silently empties page.network history or the
+// responseUrl wait lookback. Dies with the browser session.
+setNetworkLogStore({
+  load: async () => {
+    const got = await chrome.storage.session.get("chromex.netlog");
+    const v = got?.["chromex.netlog"];
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, import("./network-log.js").NetworkLogEntry[]>)
+      : {};
+  },
+  save: async (snapshot) => {
+    await chrome.storage.session.set({ "chromex.netlog": snapshot });
+  },
+});
 installNetworkLog();
 
 // Headless Chromium cannot tear down a window at all — chrome.windows.remove

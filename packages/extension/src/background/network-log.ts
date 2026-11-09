@@ -8,10 +8,13 @@
  * not content.
  *
  * URLs are sanitized origin+path (same §6.1.1 rule as tabs.list —
- * query strings routinely carry tokens). The buffer is in-memory and
- * dies with the service worker; onCompleted ordering is not guaranteed
- * across SW restarts — callers must treat it as a recent-activity log,
- * not an authoritative transaction record.
+ * query strings routinely carry tokens). The buffer is in-memory but
+ * a bounded tail (100 entries/tab) persists to chrome.storage.session
+ * via setNetworkLogStore, so an MV3 service-worker restart restores
+ * recent history instead of silently emptying it; the store dies with
+ * the browser session. onCompleted ordering is not guaranteed —
+ * callers must treat it as a recent-activity log, not an authoritative
+ * transaction record.
  */
 
 export interface NetworkLogEntry {
@@ -36,6 +39,11 @@ export interface NetworkLogEntry {
 
 const MAX_ENTRIES_PER_TAB = 300;
 const MAX_TABS = 50;
+/** Persisted tail per tab — enough for responseUrl lookback and recent
+ *  page.network history across an MV3 service-worker restart without
+ *  writing the full 300-entry buffer on every flush. */
+const PERSIST_MAX_ENTRIES = 100;
+const PERSIST_DEBOUNCE_MS = 3_000;
 
 const buffers = new Map<number, NetworkLogEntry[]>();
 /** requestId sets per tab — drives the network-idle wait. Entries are
@@ -43,6 +51,81 @@ const buffers = new Map<number, NetworkLogEntry[]>();
  *  idle detection until the next event, never fakes it. */
 const inFlight = new Map<number, Set<string>>();
 let installed = false;
+
+/** Optional chrome.storage.session backing — survives an MV3
+ *  service-worker restart so page.network history and responseUrl
+ *  wait lookback don't silently reset to empty. Entries are already
+ *  origin+path sanitized at capture time, so persisting them leaks
+ *  nothing extra. Absent store → memory-only (tests). */
+export interface NetworkLogStore {
+  load(): Promise<Record<string, NetworkLogEntry[]>>;
+  save(snapshot: Record<string, NetworkLogEntry[]>): Promise<void>;
+}
+let logStore: NetworkLogStore | undefined;
+export function setNetworkLogStore(store: NetworkLogStore | undefined): void {
+  logStore = store;
+}
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+let persistDirty = false;
+
+function persistSnapshot(): Record<string, NetworkLogEntry[]> {
+  const out: Record<string, NetworkLogEntry[]> = {};
+  for (const [tabId, buf] of buffers) {
+    if (buf.length === 0) continue;
+    out[String(tabId)] = buf.slice(-PERSIST_MAX_ENTRIES);
+  }
+  return out;
+}
+
+function schedulePersist(): void {
+  if (!logStore) return;
+  persistDirty = true;
+  if (persistTimer !== undefined) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = undefined;
+    if (!persistDirty || !logStore) return;
+    persistDirty = false;
+    void logStore.save(persistSnapshot()).catch(() => {});
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+/** Immediate persist — used on tab close so a reused tabId cannot
+ *  inherit the closed tab's tail. */
+function persistNow(): void {
+  if (!logStore) return;
+  persistDirty = false;
+  if (persistTimer !== undefined) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  void logStore.save(persistSnapshot()).catch(() => {});
+}
+
+function isLogEntry(v: unknown): v is NetworkLogEntry {
+  return typeof v === "object" && v !== null &&
+    typeof (v as NetworkLogEntry).method === "string" &&
+    typeof (v as NetworkLogEntry).url === "string" &&
+    typeof (v as NetworkLogEntry).type === "string" &&
+    typeof (v as NetworkLogEntry).ts === "number";
+}
+
+/** Rehydrate buffers from the store after an SW restart. Runs once
+ *  per install; malformed entries are skipped rather than crashing
+ *  the log. */
+async function restoreNetworkLog(): Promise<void> {
+  if (!logStore) return;
+  try {
+    const saved = await logStore.load();
+    for (const [key, entries] of Object.entries(saved ?? {})) {
+      const tabId = Number(key);
+      if (!Number.isInteger(tabId) || tabId < 0 || !Array.isArray(entries)) continue;
+      const clean = entries.filter(isLogEntry).slice(-MAX_ENTRIES_PER_TAB);
+      if (clean.length > 0 && !buffers.has(tabId)) buffers.set(tabId, clean);
+    }
+  } catch {
+    // corrupt/absent store — start with an empty log, honestly
+  }
+}
 
 function safeUrl(raw: string): string {
   try {
@@ -66,6 +149,7 @@ function push(tabId: number, entry: NetworkLogEntry): void {
   }
   buf.push(entry);
   if (buf.length > MAX_ENTRIES_PER_TAB) buf.splice(0, buf.length - MAX_ENTRIES_PER_TAB);
+  schedulePersist();
 }
 
 /** Install the webRequest listeners once. No-op where the API or the
@@ -75,6 +159,7 @@ export function installNetworkLog(): void {
   if (installed || typeof chrome === "undefined" || !chrome.webRequest) return;
   try {
     installNetworkLogInner();
+    void restoreNetworkLog();
   } catch {
     // permission absent or API shape changed — the tool reports
     // proto.unsupported via the missing dep instead of faking data.
@@ -99,10 +184,12 @@ export function getNetworkInflightCount(tabId: number): number {
   return inFlight.get(tabId)?.size ?? 0;
 }
 
-/** Drop all state for a closed tab (called from tabs.onRemoved). */
+/** Drop all state for a closed tab (called from tabs.onRemoved) and
+ *  persist immediately so a reused tabId cannot inherit the tail. */
 export function resetNetworkTab(tabId: number): void {
   buffers.delete(tabId);
   inFlight.delete(tabId);
+  persistNow();
 }
 
 function installNetworkLogInner(): void {
@@ -184,7 +271,17 @@ export function listNetworkRequests(tabId: number, query: NetworkQuery): Network
   return out;
 }
 
-/** Test hook — drop all buffered state. */
+/** Test hook — drop all buffered state, pending persists, the install
+ *  latch, and the store so a test can simulate an SW restart by
+ *  re-calling installNetworkLog with a fresh store. */
 export function resetNetworkLogForTests(): void {
   buffers.clear();
+  inFlight.clear();
+  installed = false;
+  persistDirty = false;
+  if (persistTimer !== undefined) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  logStore = undefined;
 }
