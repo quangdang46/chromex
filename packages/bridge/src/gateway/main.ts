@@ -808,6 +808,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           browserToolCalls,
           appendTaskEventBroadcast,
           appServices,
+          releaseTaskBackend: (taskId) => playwrightBackend.releaseTask(taskId),
           spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
       } catch (err) {
@@ -1004,6 +1005,11 @@ async function handleGatewayRequest(
     browserToolCalls: Map<string, { taskId: string; turnId: string; tool: string }>;
     appendTaskEventBroadcast: (taskId: string, event: DurableTaskEvent) => void;
     appServices: AppServiceRegistry;
+    /** Release backend-held per-task resources (isolated playwright
+     *  contexts, pending choosers). chrome-extension needs nothing —
+     *  its state lives in the extension and is cleaned via the
+     *  gateway.task_purged tombstone. */
+    releaseTaskBackend?: (taskId: string) => Promise<void> | void;
     spawnBrowserMcp?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
   },
 ): Promise<unknown> {
@@ -1526,6 +1532,10 @@ async function handleGatewayRequest(
       ctx.toolServer.releaseTask(p.taskId);
       // chromex-p21: drop the task's reported dev-server registry too.
       ctx.appServices.clearTask(p.taskId);
+      // Backend-held per-task state (isolated playwright context,
+      // pending choosers, buffers) — without this a purged isolated
+      // task leaks a whole browser context until gateway shutdown.
+      await Promise.resolve(ctx.releaseTaskBackend?.(p.taskId)).catch(() => {});
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({

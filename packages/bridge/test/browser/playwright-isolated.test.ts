@@ -142,6 +142,42 @@ describe("PlaywrightIsolatedBackend capability honesty", () => {
     ).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("releaseTask closes only that task's context (task.purge path)", async () => {
+    const closed: string[] = [];
+    const mkContext = (tag: string) => ({
+      pages: () => [{ url: () => `https://${tag}.example/`, title: async () => tag }],
+      newPage: async () => ({
+        url: () => `https://${tag}.example/`,
+        title: async () => tag,
+        goto: async () => {},
+      }),
+      close: async () => { closed.push(tag); },
+    });
+    // newContext is called once per task — hand out t1's then t2's.
+    const queue = [mkContext("t1"), mkContext("t2")];
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () =>
+        ({
+          chromium: {
+            launch: async () => ({
+              isConnected: () => true,
+              newContext: async () => queue.shift() ?? mkContext("extra"),
+              close: async () => {},
+            }),
+          },
+        }) as never,
+    });
+    await backend.execute("t1", "browser.tab.create", { url: "https://t1.example/" });
+    await backend.execute("t2", "browser.tab.create", { url: "https://t2.example/" });
+    await backend.releaseTask("t1");
+    expect(closed).toEqual(["t1"]); // t2's context untouched
+    await backend.releaseTask("never-seen"); // unknown task: no crash, no close
+    expect(closed).toEqual(["t1"]);
+    // t1's next call lazily re-creates a fresh context (queue → "extra").
+    await backend.execute("t1", "browser.tab.create", { url: "https://t1.example/" });
+    await backend.close();
+  });
+
   test("tabs.wait baseline-diffs for a new page by urlContains", async () => {
     const p1 = { url: () => "https://a.example/", title: async () => "A" };
     const p2 = { url: () => "https://idp.example.com/oauth/callback?code=x", title: async () => "OAuth" };
