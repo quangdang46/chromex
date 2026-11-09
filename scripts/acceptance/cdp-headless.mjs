@@ -780,6 +780,22 @@ await runScenario(
         cout,
       };
 
+      // fileChooserId is single-use — a replayed feed must be refused
+      // honestly (proto.invalid), never double-inject files.
+      if (fcId) {
+        const fcReplay = await runner.browserToolCall(
+          taskId, "browser.page.setInputFiles",
+          { fileChooserId: fcId, files: [uploadPath] }, token, 60_000,
+        );
+        const replayCode = fcReplay?.error?.code ?? fcReplay?.result?.error?.code;
+        evidence.note(`fileChooser replay → status=${fcReplay?.status} code=${replayCode}`);
+        results.fileChooserReplay = {
+          ok: fcReplay?.status === "failed" && String(replayCode ?? "").startsWith("proto."),
+          status: fcReplay?.status ?? null,
+          code: replayCode ?? null,
+        };
+      }
+
       // --- cookies: CDP Network cookie storage incl. HttpOnly ---
       // set → server echo proves the cookie rides real requests; list
       // withholds values; httpOnly is invisible to document.cookie but
