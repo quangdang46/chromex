@@ -59,7 +59,12 @@ Evidence root: `artifacts/acceptance/<scenario>/<runId>/{result.json,events.json
   `oopifTapOk` PASS), webSocket frame capture, route/unroute
   fulfill+abort+modify+restore (per-OOPIF-target Fetch taps —
   `cdp-headless` `oopifRouteOk` PASS: abort rule kills a fetch fired
-  inside the cross-origin iframe); see
+  inside the cross-origin iframe; `routeFrameOk` PASS: rule
+  `frameId`-scoped to the OOPIF's webNavigation frameId aborts the
+  same URL inside that frame while the top frame's identical fetch
+  passes through — tab-session pauses resolve CDP frameId →
+  webNavigation frameId via a fresh Page.getFrameTree + URL/parent
+  match, unmapped frames pass honestly); see
   docs/adr/debugger-tier.md). Trusted paths now cover click, press,
   type, fill, hover and drag — including inside same-origin and
   cross-origin iframes via the content-script geometry chain.

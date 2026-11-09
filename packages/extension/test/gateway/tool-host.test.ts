@@ -5586,13 +5586,63 @@ describe("CDP tier tools (docs/adr/debugger-tier.md)", () => {
     expect(cont?.params?.headers).toEqual([{ name: "x-agent", value: "chromex" }]);
   });
 
+  test("page.route frameId scopes fulfillment to one frame", async () => {
+    const cdp = fakeCdp({
+      "Page.getFrameTree": () => ({
+        frameTree: {
+          frame: { id: "CDP-TOP", url: "https://x/" },
+          childFrames: [{ frame: { id: "CDP-SUB", url: "https://x/" } }],
+        },
+      }),
+    });
+    const h = createToolHostHandler(cdpDeps(524, cdp, {
+      listFrames: vi.fn(async () => [
+        { frameId: 1, url: "https://x/" },
+        { frameId: 2, url: "https://x/", parentFrameId: 1 },
+      ]),
+    }));
+    const res = (await h(req("browser.page.route", {
+      tabId: 524, match: "/api/data", frameId: 2, body: "sub-only",
+    }))) as { frameId?: number };
+    expect(res.frameId).toBe(2);
+    // request paused on the TOP frame's CDP id → scoped rule must not fire
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "top-1", frameId: "CDP-TOP",
+      request: { url: "http://x.test/api/data" },
+    });
+    // same URL paused on the SUB frame's CDP id → rule fires
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "sub-1", frameId: "CDP-SUB",
+      request: { url: "http://x.test/api/data" },
+    });
+    // request with no frameId → can't prove scope → passes through
+    cdp.fire("Fetch.requestPaused", {
+      requestId: "nof-1",
+      request: { url: "http://x.test/api/data" },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    const fulfills = cdp.sent.filter((s) => s.method === "Fetch.fulfillRequest");
+    expect(fulfills).toHaveLength(1);
+    expect(fulfills[0]?.params?.requestId).toBe("sub-1");
+    expect(cdp.sent.some((s) => s.method === "Fetch.continueRequest" && s.params?.requestId === "top-1")).toBe(true);
+    expect(cdp.sent.some((s) => s.method === "Fetch.continueRequest" && s.params?.requestId === "nof-1")).toBe(true);
+    // Page.getFrameTree was consulted for the scoped pauses
+    expect(cdp.sent.filter((s) => s.method === "Page.getFrameTree").length).toBeGreaterThanOrEqual(2);
+  });
+
   test("page.route validates args honestly", async () => {
     const cdp = fakeCdp();
     const h = createToolHostHandler(cdpDeps(522, cdp));
     await expect(h(req("browser.page.route", { tabId: 522 }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.route", { tabId: 522, match: "/x", action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.route", { tabId: 522, match: "/x", action: "modify" }))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", frameId: 3 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", frameId: "abc" }))).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h(req("browser.page.route", { tabId: 522, match: "/x", frameId: 1.5 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // unknown webNavigation frameId → honest not_found when frames are listable
+    const hFrames = createToolHostHandler(cdpDeps(522, cdp, {
+      listFrames: vi.fn(async () => [{ frameId: 1, url: "https://x/" }]),
+    }));
+    await expect(hFrames(req("browser.page.route", { tabId: 522, match: "/x", frameId: 99 }))).rejects.toMatchObject({ code: "browser.not_found" });
     const noCdp = createToolHostHandler(deps());
     await expect(noCdp(req("browser.page.route", { tabId: 1, match: "/x" }))).rejects.toMatchObject({ code: "proto.unsupported" });
     await expect(noCdp(req("browser.page.unroute", { tabId: 1 }))).rejects.toMatchObject({ code: "proto.unsupported" });

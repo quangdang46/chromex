@@ -1208,6 +1208,44 @@ await runScenario(
         await runner.browserToolCall(
           taskId, "browser.page.unroute", { tabId: cdpFrameTabId }, token, 60_000,
         ).catch(() => null);
+        // Frame-scoped route: abort rule bound to the OOPIF's
+        // webNavigation frameId must kill fetches inside that frame
+        // while the SAME url from the top frame passes through.
+        if (cdpCross?.frameId) {
+          await runner.browserToolCall(
+            taskId, "browser.page.route",
+            { tabId: cdpFrameTabId, match: "scoped-route-probe", action: "abort", frameId: cdpCross.frameId },
+            token, 60_000,
+          ).catch(() => null);
+          const topScoped = await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { tabId: cdpFrameTabId, expression: "fetch('/api/scoped-route-probe').then(()=>'reached').catch(()=>'blocked')" },
+            token, 60_000,
+          ).catch(() => null);
+          const pierceRef5 = await runner.browserToolCall(
+            taskId, "browser.page.pierce",
+            { tabId: cdpFrameTabId, frameId: cdpCross.frameId }, token, 60_000,
+          ).catch(() => null);
+          const cfb5 = (pierceRef5?.result ?? pierceRef5 ?? {}).elements ?? [];
+          const probeRef5 = cfb5.find((e) => e.id === "cfb")?.ref;
+          let oopifScoped = null;
+          if (probeRef5) {
+            const pev5 = await runner.browserToolCall(
+              taskId, "browser.page.evaluate",
+              { tabId: cdpFrameTabId, ref: probeRef5, expression: "fetch('/api/scoped-route-probe').then(()=>'reached').catch(()=>'blocked')" },
+              token, 60_000,
+            ).catch(() => null);
+            oopifScoped = String(pev5?.result?.value ?? pev5?.value ?? "");
+          }
+          cdp.routeFrameOk =
+            String(topScoped?.result?.value ?? topScoped?.value ?? "") === "reached" &&
+            oopifScoped === "blocked";
+          await runner.browserToolCall(
+            taskId, "browser.page.unroute", { tabId: cdpFrameTabId }, token, 60_000,
+          ).catch(() => null);
+        } else {
+          cdp.routeFrameOk = false;
+        }
         // AX aggregation: getFullAXTree on the tab target is browser-
         // side — it must include the OOPIF's open-DOM nodes (the
         // iframe-child <h1>Frame Child</h1> exists in BOTH frames).
@@ -1372,7 +1410,8 @@ await runScenario(
           cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
           cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true &&
           cdp.findOopifOk === true && cdp.waitOopifTextOk === true &&
-          cdp.storageFrameOk === true && cdp.extractOopifOk === true,
+          cdp.storageFrameOk === true && cdp.extractOopifOk === true &&
+          cdp.routeFrameOk === true,
         ...cdp,
       };
 

@@ -506,6 +506,9 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.indexedDB",
   "browser.page.caches",
   "browser.page.serviceWorker",
+  // frameId here is a RULE scope (which frame's requests the rule
+  // intercepts), validated inside addPageRoute — not a dispatch target.
+  "browser.page.route",
 ]);
 
 const SUPPORTED = new Set([
@@ -2628,9 +2631,8 @@ export function createToolHostHandler(deps: ToolHostDeps) {
       case "browser.page.route": {
         cdpRequired(deps);
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.route is tab-scoped; args.frameId is not supported");
-        }
+        // args.frameId is a RULE scope (which frame's requests the rule
+        // intercepts), not a dispatch target — addPageRoute validates it.
         return await addPageRoute(deps, tabId, args);
       }
       case "browser.page.unroute": {
@@ -8308,6 +8310,11 @@ interface RouteRule {
   status: number;
   headers: Record<string, string>;
   bodyBase64: string;
+  /** Optional webNavigation frameId scope — the rule only fires for
+   *  requests initiated inside that frame (OOPIF sessions match
+   *  directly; the tab session resolves the paused CDP frameId through
+   *  a fresh Page.getFrameTree ↔ webNavigation map). */
+  frameId?: number;
   /** modify action: continueRequest overrides */
   url?: string;
   requestHeaders?: Record<string, string>;
@@ -8318,6 +8325,9 @@ interface RouteFrameTap {
   session: CdpSession;
   unsubs: Array<() => void>;
   release: (() => Promise<void>) | undefined;
+  /** webNavigation frameId this target serves — frame-scoped rules
+   *  match against it directly. */
+  frameId: number | undefined;
 }
 
 interface RouteHold {
@@ -8347,60 +8357,158 @@ function utf8ToBase64(text: string): string {
   return btoa(bin);
 }
 
+/** Which frame scope a Fetch session serves: the tab session covers
+ *  the top document + same-process subframes (resolved per-request via
+ *  CDP frameId → webNavigation frameId); an OOPIF session serves
+ *  exactly one webNavigation frame. */
+type RouteScope = { type: "tab" } | { type: "frame"; frameId: number };
+
+interface CdpFrameNode {
+  id: string;
+  url: string | undefined;
+  parentId: string | undefined;
+}
+
+/** Flatten Page.getFrameTree's nested frameTree into a node list. */
+function flattenCdpFrameTree(node: {
+  frame?: { id?: string; url?: string };
+  childFrames?: unknown[];
+}): CdpFrameNode[] {
+  const out: CdpFrameNode[] = [];
+  const walk = (n: { frame?: { id?: string; url?: string }; childFrames?: unknown[] }, parentId?: string) => {
+    const id = n.frame?.id;
+    if (typeof id === "string") {
+      out.push({ id, url: n.frame?.url, parentId });
+    }
+    for (const c of Array.isArray(n.childFrames) ? n.childFrames : []) {
+      walk(c as typeof n, id);
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/** Map a paused request's CDP frameId to the webNavigation frameId —
+ *  the two id spaces differ. Matches frames by URL + parent URL
+ *  (unambiguous pairs only; duplicate-url siblings stay unmapped so a
+ *  frameId rule can never fire on the wrong frame). Returns undefined
+ *  when the mapping can't be proven — the rule then doesn't apply. */
+async function routeCdpToNavFrameId(
+  hold: RouteHold,
+  deps: ToolHostDeps,
+  tabId: number,
+  cdpFrameId: string,
+): Promise<number | undefined> {
+  if (!deps.listFrames || typeof cdpFrameId !== "string" || cdpFrameId === "") return undefined;
+  try {
+    const treeRes = (await hold.session.send("Page.getFrameTree")) as {
+      frameTree?: { frame?: { id?: string; url?: string }; childFrames?: unknown[] };
+    };
+    const cdpNodes = treeRes?.frameTree ? flattenCdpFrameTree(treeRes.frameTree) : [];
+    if (cdpNodes.length === 0) return undefined;
+    const navFrames = await deps.listFrames(tabId);
+    const cdpParentUrl = (n: CdpFrameNode): string | undefined =>
+      n.parentId ? cdpNodes.find((p) => p.id === n.parentId)?.url : undefined;
+    const navParentUrl = (f: { frameId?: number; parentFrameId?: number; url?: string }): string | undefined =>
+      f.parentFrameId === undefined
+        ? undefined
+        : navFrames.find((p) => p.frameId === f.parentFrameId)?.url;
+    // nav frameId → cdp frameId, then invert for the paused id.
+    for (const f of navFrames) {
+      if (typeof f.frameId !== "number" || !f.url) continue;
+      const pUrl = navParentUrl(f);
+      const candidates = cdpNodes.filter((n) => n.url === f.url && cdpParentUrl(n) === pUrl);
+      if (candidates.length !== 1) continue;
+      if (candidates[0]!.id === cdpFrameId) return f.frameId;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Wire Fetch.requestPaused/authRequired on ONE session — the tab
  *  session or an OOPIF frame target. Responses must go back through the
  *  same session that paused the request. */
-function wireRouteFetch(hold: RouteHold, sess: CdpSession): Array<() => void> {
+function wireRouteFetch(
+  hold: RouteHold,
+  deps: ToolHostDeps,
+  tabId: number,
+  sess: CdpSession,
+  scope: RouteScope,
+): Array<() => void> {
   const unsubs: Array<() => void> = [];
   unsubs.push(sess.on("Fetch.requestPaused", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
     const url = typeof (p.request as { url?: string } | undefined)?.url === "string"
       ? (p.request as { url: string }).url
       : "";
-    const rule = requestId
-      ? [...hold.rules.values()].find((r) => url.includes(r.match))
-      : undefined;
+    const urlRules = requestId
+      ? [...hold.rules.values()].filter((r) => url.includes(r.match))
+      : [];
     if (!requestId) return;
-    if (!rule) {
-      void sess.send("Fetch.continueRequest", { requestId }).catch(() => {});
-      return;
-    }
-    if (rule.action === "abort") {
-      void sess
-        .send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" })
-        .catch(() => {});
-      return;
-    }
-    if (rule.action === "modify") {
-      let rewritten: string | undefined;
-      if (rule.url) {
-        try {
-          rewritten = new URL(rule.url, url).href;
-        } catch {
-          rewritten = undefined;
-        }
+    const finish = (rule: RouteRule | undefined): void => {
+      if (!rule) {
+        void sess.send("Fetch.continueRequest", { requestId }).catch(() => {});
+        return;
       }
+      if (rule.action === "abort") {
+        void sess
+          .send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" })
+          .catch(() => {});
+        return;
+      }
+      if (rule.action === "modify") {
+        let rewritten: string | undefined;
+        if (rule.url) {
+          try {
+            rewritten = new URL(rule.url, url).href;
+          } catch {
+            rewritten = undefined;
+          }
+        }
+        void sess
+          .send("Fetch.continueRequest", {
+            requestId,
+            ...(rewritten ? { url: rewritten } : {}),
+            ...(rule.requestHeaders
+              ? { headers: Object.entries(rule.requestHeaders).map(([name, value]) => ({ name, value })) }
+              : {}),
+            ...(rule.requestBodyBase64 ? { postData: rule.requestBodyBase64 } : {}),
+          })
+          .catch(() => {});
+        return;
+      }
+      const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
       void sess
-        .send("Fetch.continueRequest", {
+        .send("Fetch.fulfillRequest", {
           requestId,
-          ...(rewritten ? { url: rewritten } : {}),
-          ...(rule.requestHeaders
-            ? { headers: Object.entries(rule.requestHeaders).map(([name, value]) => ({ name, value })) }
-            : {}),
-          ...(rule.requestBodyBase64 ? { postData: rule.requestBodyBase64 } : {}),
+          responseCode: rule.status,
+          responseHeaders,
+          body: rule.bodyBase64,
         })
         .catch(() => {});
+    };
+    // Frame-scoped rules need the paused request's frame resolved —
+    // OOPIF sessions know their frame directly; the tab session maps
+    // the CDP frameId through Page.getFrameTree (fresh per pause so
+    // navigations can't stale the map). Unscoped rules skip this.
+    const scoped = urlRules.filter((r) => r.frameId !== undefined);
+    if (scoped.length === 0) {
+      finish(urlRules[0]);
       return;
     }
-    const responseHeaders = Object.entries(rule.headers).map(([name, value]) => ({ name, value }));
-    void sess
-      .send("Fetch.fulfillRequest", {
-        requestId,
-        responseCode: rule.status,
-        responseHeaders,
-        body: rule.bodyBase64,
-      })
-      .catch(() => {});
+    void (async () => {
+      const cdpFid = typeof p.frameId === "string" ? p.frameId : "";
+      const resolved = cdpFid === ""
+        ? undefined
+        : scope.type === "frame"
+          ? scope.frameId
+          : await routeCdpToNavFrameId(hold, deps, tabId, cdpFid);
+      // First URL-matching rule whose frame scope admits this request —
+      // unscoped rules admit every frame, preserving insertion order.
+      finish(urlRules.find((r) => r.frameId === undefined || r.frameId === resolved));
+    })();
   }));
   unsubs.push(sess.on("Fetch.authRequired", (p) => {
     const requestId = typeof p.requestId === "string" ? p.requestId : "";
@@ -8430,7 +8538,7 @@ async function routeHold(deps: ToolHostDeps, tabId: number): Promise<RouteHold> 
   await session.send("Fetch.enable", {
     patterns: [{ urlPattern: "*", requestStage: "Request" }],
   });
-  hold.unsubs.push(...wireRouteFetch(hold, session));
+  hold.unsubs.push(...wireRouteFetch(hold, deps, tabId, session, { type: "tab" }));
   await syncOopifRouteTargets(deps, tabId, hold);
   return hold;
 }
@@ -8448,7 +8556,7 @@ async function syncOopifRouteTargets(
   const matches = await matchOopifFrameTargets(deps, tabId);
   if (!matches) return;
   const liveTargetIds = new Set<string>();
-  for (const { target } of matches) {
+  for (const { frame, target } of matches) {
     liveTargetIds.add(target.id);
     if (hold.frames.has(target.id)) continue;
     try {
@@ -8456,13 +8564,17 @@ async function syncOopifRouteTargets(
       await fs.send("Fetch.enable", {
         patterns: [{ urlPattern: "*", requestStage: "Request" }],
       });
-      const fUnsubs = wireRouteFetch(hold, fs);
+      const fUnsubs = wireRouteFetch(hold, deps, tabId, fs, {
+        type: "frame",
+        frameId: typeof frame.frameId === "number" ? frame.frameId : -1,
+      });
       hold.frames.set(target.id, {
         session: fs,
         unsubs: fUnsubs,
         release: deps.releaseCdpTarget
           ? () => deps.releaseCdpTarget!(target.id)
           : undefined,
+        frameId: typeof frame.frameId === "number" ? frame.frameId : undefined,
       });
     } catch {
       // frame target raced away — skip; next sync retries
@@ -8500,6 +8612,24 @@ async function addPageRoute(
   const match = strArg(args.match, "match", 512);
   if (match === undefined) {
     throw toolError("proto.invalid", "browser.page.route requires args.match (URL substring)");
+  }
+  // Optional frame scope — a webNavigation frameId (see page.get
+  // frames[]). Verified against the tab's live frames when the deps
+  // allow; unresolvable scopes refuse honestly instead of silently
+  // never firing.
+  let ruleFrameId: number | undefined;
+  if (args.frameId !== undefined) {
+    const fid = numArg(args.frameId, "frameId", 0, Number.MAX_SAFE_INTEGER);
+    if (fid === undefined || !Number.isInteger(fid)) {
+      throw toolError("proto.invalid", "args.frameId must be a non-negative integer (webNavigation frameId)");
+    }
+    if (deps.listFrames) {
+      const frames = await deps.listFrames(tabId).catch(() => null);
+      if (frames && !frames.some((f) => f.frameId === fid)) {
+        throw toolError("browser.not_found", `no webNavigation frame ${fid} on this tab`);
+      }
+    }
+    ruleFrameId = fid;
   }
   const action = args.action === undefined ? "fulfill" : str(args.action);
   if (action !== "fulfill" && action !== "abort" && action !== "modify") {
@@ -8566,11 +8696,15 @@ async function addPageRoute(
   const id = crypto.randomUUID();
   hold.rules.set(id, {
     id, match, action: action as "fulfill" | "abort" | "modify", status, headers, bodyBase64,
+    ...(ruleFrameId !== undefined ? { frameId: ruleFrameId } : {}),
     ...(modUrl !== undefined ? { url: modUrl } : {}),
     ...(Object.keys(modHeaders).length > 0 ? { requestHeaders: modHeaders } : {}),
     ...(modBodyBase64 !== undefined ? { requestBodyBase64: modBodyBase64 } : {}),
   });
-  return { routeId: id, match, action, status, rules: hold.rules.size, resolvedTabId: tabId };
+  return {
+    routeId: id, match, action, status, rules: hold.rules.size, resolvedTabId: tabId,
+    ...(ruleFrameId !== undefined ? { frameId: ruleFrameId } : {}),
+  };
 }
 
 async function removePageRoutes(

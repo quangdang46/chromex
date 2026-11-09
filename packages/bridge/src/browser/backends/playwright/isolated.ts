@@ -147,6 +147,8 @@ interface IsoRouteRule {
   status: number;
   headers: Record<string, string>;
   body: string;
+  /** Optional frame scope — page.frames() index (0 = main frame). */
+  frameId?: number;
   url?: string;
   requestHeaders?: Record<string, string>;
   requestBody?: string;
@@ -1539,7 +1541,11 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     this.#routeRules.set(page, rules);
     await page.route("**/*", async (route: PwRoute) => {
       const req = route.request();
-      const rule = rules.find((r) => req.url().includes(r.match));
+      const reqFrameIdx = page.frames().indexOf(req.frame());
+      const rule = rules.find((r) =>
+        req.url().includes(r.match)
+        && (r.frameId === undefined || r.frameId === reqFrameIdx),
+      );
       if (!rule) return route.fallback();
       try {
         if (rule.action === "abort") return await route.abort();
@@ -1575,6 +1581,14 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (!match || match.length > 512) {
       throw protocolError("proto.invalid", "browser.page.route requires args.match (URL substring ≤512)");
     }
+    let ruleFrameId: number | undefined;
+    if (args.frameId !== undefined) {
+      const fid = args.frameId;
+      if (typeof fid !== "number" || !Number.isInteger(fid) || fid < 0) {
+        throw protocolError("proto.invalid", "args.frameId must be a non-negative integer (frame index; 0 = main frame)");
+      }
+      ruleFrameId = fid;
+    }
     const action = args.action === undefined ? "fulfill" : args.action;
     if (action !== "fulfill" && action !== "abort" && action !== "modify") {
       throw protocolError("proto.invalid", "browser.page.route args.action must be fulfill|abort|modify");
@@ -1590,6 +1604,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       status: 200,
       headers: {},
       body: "",
+      ...(ruleFrameId !== undefined ? { frameId: ruleFrameId } : {}),
     };
     if (action === "fulfill") {
       if (args.status !== undefined) {
@@ -1659,7 +1674,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       }
     }
     rules.push(rule);
-    return { routeId: rule.id, match, action, status: rule.status, rules: rules.length };
+    return {
+      routeId: rule.id, match, action, status: rule.status, rules: rules.length,
+      ...(ruleFrameId !== undefined ? { frameId: ruleFrameId } : {}),
+    };
   }
 
   async #unroute(taskId: string, args: Record<string, unknown>): Promise<unknown> {
