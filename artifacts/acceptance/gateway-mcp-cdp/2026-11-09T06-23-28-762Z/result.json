@@ -1,0 +1,7 @@
+{
+  "scenario": "gateway-mcp-cdp",
+  "status": "PASS",
+  "asserts": 15,
+  "taskId": "01M6ZFKQZZS32A4HECY34NNC2A",
+  "cdpEndpoint": "http://127.0.0.1:19252"
+}
