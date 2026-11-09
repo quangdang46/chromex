@@ -1,0 +1,117 @@
+{
+  "scenario": "s13-risk-preflight",
+  "runId": "2026-11-09T06-32-02-027Z-42c61d",
+  "status": "PASS",
+  "summary": "destructive ref-click → approval (denied→not fired, approved→danger-fired); benign ref-click → no approval, fired; trusted approve-then-mutate → browser.target_changed, handler never fired, restored-label control click fires",
+  "durationMs": 13502,
+  "details": {
+    "denied": true,
+    "dangerNotFired": true,
+    "approved": true,
+    "dangerFired": true,
+    "benignOk": true,
+    "noNewApproval": true,
+    "benignFired": true,
+    "toctou": {
+      "attempted": true,
+      "refused": true,
+      "notFired": true,
+      "controlFired": true
+    },
+    "denyOutcome": {
+      "toolCallId": "rpc-mw8vvu8d-tvn88h",
+      "tool": "browser.page.click",
+      "status": "failed",
+      "error": {
+        "code": "browser.approval_denied",
+        "message": "approval denied"
+      }
+    },
+    "approveOutcome": {
+      "toolCallId": "rpc-mw8vvuuu-mcaouk",
+      "tool": "browser.page.click",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "reason": "gateway tool browser.page.click",
+            "targetRef": "dom-2",
+            "action": "click",
+            "expectedTarget": {
+              "label": "Delete account permanently",
+              "tagName": "button",
+              "controlType": "submit",
+              "pageOrigin": "http://127.0.0.1:55444",
+              "pageUrl": "http://127.0.0.1:55444/risky"
+            }
+          },
+          "ok": true,
+          "message": "Clicked Delete account permanently.",
+          "verified": "unknown"
+        },
+        "verified": "unknown",
+        "resolvedTabId": 194428406
+      },
+      "verified": "unknown"
+    },
+    "benignOutcome": {
+      "toolCallId": "rpc-mw8vvvyu-nryblj",
+      "tool": "browser.page.click",
+      "status": "completed",
+      "result": {
+        "ok": true,
+        "summary": "Requested browser action completed.",
+        "step": {
+          "step": {
+            "reason": "gateway tool browser.page.click",
+            "targetRef": "dom-1",
+            "action": "click",
+            "expectedTarget": {
+              "label": "Search",
+              "tagName": "button",
+              "controlType": "submit",
+              "pageOrigin": "http://127.0.0.1:55444",
+              "pageUrl": "http://127.0.0.1:55444/risky"
+            }
+          },
+          "ok": true,
+          "message": "Clicked Search.",
+          "verified": "unknown"
+        },
+        "verified": "unknown",
+        "resolvedTabId": 194428406
+      },
+      "verified": "unknown"
+    }
+  },
+  "notes": [
+    "[2026-11-09T06:32:06.166Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-09T06:32:06.174Z] task 01M6ZG3GRW2EKTRJAH25H18ZA7",
+    "[2026-11-09T06:32:06.176Z] browser.mcp scope acquired",
+    "[2026-11-09T06:32:06.478Z] tab.create → tabId=194428406",
+    "[2026-11-09T06:32:07.584Z] permission.respond appr-mw8vvtrm-87b52u → allow_egress_task (agent_egress)",
+    "[2026-11-09T06:32:07.884Z] snapshot elements=2 dangerRef=dom-2 benignRef=dom-1",
+    "[2026-11-09T06:32:08.187Z] permission.requested id=appr-mw8vvu8h-8oluhi kind=browser_action tool=browser.page.click targetLabel=Delete account permanently options=[\"allow_once\",\"deny\"]",
+    "[2026-11-09T06:32:08.188Z] permission.respond appr-mw8vvu8h-8oluhi → deny (browser_action)",
+    "[2026-11-09T06:32:08.391Z] deny outcome={\"toolCallId\":\"rpc-mw8vvu8d-tvn88h\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.approval_denied\",\"message\":\"approval denied\"}}",
+    "[2026-11-09T06:32:08.694Z] post-deny #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:55444/risky\",\"title\":\"\",\"resolvedTabId\":194428406}",
+    "[2026-11-09T06:32:08.996Z] approve-leg permission.requested id=appr-mw8vvuux-r3stqr kind=browser_action",
+    "[2026-11-09T06:32:08.997Z] permission.respond appr-mw8vvuux-r3stqr → allow_once (browser_action)",
+    "[2026-11-09T06:32:09.833Z] approve outcome={\"toolCallId\":\"rpc-mw8vvuuu-mcaouk\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"Requested browser action completed.\",\"step\":{\"step\":{\"reason\":\"gateway tool browser.page.click\",\"targetRef\":\"dom-2\",\"action\":\"click\",\"expectedTarget\":{\"label\":\"Delete account permanent",
+    "[2026-11-09T06:32:10.134Z] post-approve #out={\"text\":\"danger-fired\",\"truncated\":false,\"url\":\"http://127.0.0.1:55444/risky\",\"title\":\"\",\"resolvedTabId\":194428406}",
+    "[2026-11-09T06:32:11.539Z] benign click outcome=completed pending approvals 0→0",
+    "[2026-11-09T06:32:11.841Z] post-click #out={\"text\":\"benign-ok\",\"truncated\":false,\"url\":\"http://127.0.0.1:55444/risky\",\"title\":\"\",\"resolvedTabId\":194428406}",
+    "[2026-11-09T06:32:12.143Z] toctou tab.create → tabId=194428407",
+    "[2026-11-09T06:32:13.248Z] toctou snapshot elements=1 btnRef=dom-1",
+    "[2026-11-09T06:32:13.248Z] toctou pwPage=http://127.0.0.1:55444/toctou",
+    "[2026-11-09T06:32:13.550Z] toctou approval id=appr-mw8vvydi-hzp7zy kind=browser_action targetLabel=Delete account permanently",
+    "[2026-11-09T06:32:13.758Z] permission.respond appr-mw8vvydi-hzp7zy → allow_once (browser_action)",
+    "[2026-11-09T06:32:13.762Z] toctou outcome={\"toolCallId\":\"rpc-mw8vvydc-rj2qta\",\"tool\":\"browser.page.click\",\"status\":\"failed\",\"error\":{\"code\":\"browser.target_changed\",\"message\":\"browser.target_changed: target changed since the action was risk-checked — take a fresh browser.page.snapshot and retry\"}}",
+    "[2026-11-09T06:32:14.064Z] toctou post-refuse #out={\"text\":\"idle\",\"truncated\":false,\"url\":\"http://127.0.0.1:55444/toctou\",\"title\":\"\",\"resolvedTabId\":194428407}",
+    "[2026-11-09T06:32:14.369Z] permission.respond appr-mw8vvz05-dz1z2j → allow_once (browser_action)",
+    "[2026-11-09T06:32:15.199Z] toctou control outcome={\"toolCallId\":\"rpc-mw8vvz02-ps9k6w\",\"tool\":\"browser.page.click\",\"status\":\"completed\",\"result\":{\"ok\":true,\"summary\":\"trusted click at 99,90\",\"step\":{\"action\":\"click\",\"trusted\":true,\"x\":98.9921875,\"y\":90.375,\"ok\":true,\"frameId\":0},\"resolvedTabId\":194428407}}",
+    "[2026-11-09T06:32:15.500Z] toctou control #out={\"text\":\"clicked:Delete account permanently\",\"truncated\":false,\"url\":\"http://127.0.0.1:55444/toctou\",\"title\":\"\",\"resolvedTabId\":194428407}"
+  ]
+}
