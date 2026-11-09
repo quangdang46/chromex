@@ -783,10 +783,17 @@ export class BrowserToolServer {
       throw err;
     }
 
-    // 2. Duplicate-execution protection.
+    // 2. Duplicate-execution protection. The rejection is itself a
+    // failure — never inherit the prior outcome's status (a "completed"
+    // prior must not make the duplicate look successful).
     const prior = this.outcomes.get(req.toolCallId);
     if (prior) {
-      return { ...prior, error: { code: "browser.duplicate_tool_call", message: `toolCallId ${req.toolCallId} already has outcome ${prior.status}` } };
+      return {
+        toolCallId: req.toolCallId,
+        tool: req.tool,
+        status: "failed",
+        error: { code: "browser.duplicate_tool_call", message: `toolCallId ${req.toolCallId} already has outcome ${prior.status}` },
+      };
     }
 
     // 3. Hard block.
