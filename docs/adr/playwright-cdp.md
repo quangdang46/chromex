@@ -9,8 +9,10 @@ backend.close()). Spike evidence: scripts/spike/cdp-attach.mjs 10/10.
 Unit tests: packages/bridge/test/browser/playwright-cdp.test.ts.
 Gated: backend.playwright.enabledByUser + cdpEndpoint (config
 browser.playwright.cdpEndpoint or CHROMEX_CDP_ENDPOINT env) +
-allowedBackends must include it. End-to-end acceptance leg on a real
-attached Chrome is still pending.
+allowedBackends must include it. Acceptance: gateway-mcp-cdp scenario
+(15 asserts — real gateway + mcp-stdio + connectOverCDP browser:
+opt-in gate, form submit e2e, per-task context isolation, user-tab
+non-leak, purge survival).
 
 ## What the spike proved
 
