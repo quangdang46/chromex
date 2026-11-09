@@ -762,6 +762,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       { taskId: string; turnId: string; tool: string }
     >();
     const appendTaskEventBroadcast = (taskId: string, event: DurableTaskEvent): void => {
+      // task.purge can race an in-flight tool call — its late
+      // tool.completed targets a deleted task; the event is moot.
+      if (!store.getTask(taskId)) return;
       const env = (
         store as {
           appendTaskEvent?: (id: string, e: DurableTaskEvent) => { kind?: string } | null;
