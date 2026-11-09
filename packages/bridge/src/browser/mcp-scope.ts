@@ -66,6 +66,13 @@ export function mcpScopePath(dataDir: string, taskId: string): string {
   return path.join(mcpScopeDir(dataDir), `${safe}.json`);
 }
 
+/** task.purge: the scope file is inert once the task is gone (the RPC
+ *  layer rejects dead taskIds before token verify matters), but leaving
+ *  one 0600 credential file per purged task accumulates forever. */
+export async function removeMcpScopeFile(dataDir: string, taskId: string): Promise<void> {
+  await fs.unlink(mcpScopePath(dataDir, taskId)).catch(() => {});
+}
+
 export async function writeMcpScopeFile(
   dataDir: string,
   scope: Omit<McpScopeFile, "writtenAt">,

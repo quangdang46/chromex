@@ -99,6 +99,7 @@ import {
   writeMcpScopeFile,
   updateMcpScopeToken,
   mcpScopePath,
+  removeMcpScopeFile,
   supportedToolsForBackend,
 } from "../browser/mcp-scope.js";
 import { protocolError as perr } from "@codex-sidepanel/shared";
@@ -1501,6 +1502,9 @@ async function handleGatewayRequest(
         taskId: string;
       };
       ctx.toolRefresher.untrack(p.taskId);
+      // drop the scope file too — its token is untracked (no refresh),
+      // and a respawn rewrites it via writeMcpScopeFile.
+      await removeMcpScopeFile(ctx.dataDir, p.taskId);
       return { stopped: true, taskId: p.taskId };
     }
     case "task.sync": {
@@ -1536,6 +1540,9 @@ async function handleGatewayRequest(
       // pending choosers, buffers) — without this a purged isolated
       // task leaks a whole browser context until gateway shutdown.
       await Promise.resolve(ctx.releaseTaskBackend?.(p.taskId)).catch(() => {});
+      // MCP scope file — inert after purge (dead taskIds are rejected
+      // before dispatch) but would otherwise accumulate per task.
+      await removeMcpScopeFile(ctx.dataDir, p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({
