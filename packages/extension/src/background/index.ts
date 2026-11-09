@@ -1577,6 +1577,21 @@ const PLAYWRIGHT_RUNTIME_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 const SELECTED_PAGE_TEXT_CONTEXT_MAX_CHARS = 12_000;
 const throttleVisibleTabCapture = createVisibleTabCaptureThrottle();
 const cancelledPromptClientRequestIds = new Set<string>();
+/** Cancellation markers are consumed when the prompt response lands;
+ *  an orphaned marker (response never arrives) would otherwise sit in
+ *  the set forever. Cap the set — Set iterates in insertion order, so
+ *  trimming the oldest half is a cheap LRU. */
+const CANCELLED_PROMPT_IDS_MAX = 1024;
+function markPromptClientRequestCancelled(clientRequestId: string): void {
+  cancelledPromptClientRequestIds.add(clientRequestId);
+  if (cancelledPromptClientRequestIds.size > CANCELLED_PROMPT_IDS_MAX) {
+    let drop = cancelledPromptClientRequestIds.size - CANCELLED_PROMPT_IDS_MAX / 2;
+    for (const id of cancelledPromptClientRequestIds) {
+      if (drop-- <= 0) break;
+      cancelledPromptClientRequestIds.delete(id);
+    }
+  }
+}
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 const OFFSCREEN_IMAGE_CROP_MESSAGE_TYPE = "offscreen.image.crop";
 let offscreenDocumentPromise: Promise<void> | null = null;
@@ -3328,7 +3343,7 @@ async function handleTurnSteer(payload: PromptRequestPayload) {
 
 async function handlePromptCancel(clientRequestId?: unknown, threadId?: unknown, turnId?: unknown) {
   if (typeof clientRequestId === "string" && clientRequestId) {
-    cancelledPromptClientRequestIds.add(clientRequestId);
+    markPromptClientRequestCancelled(clientRequestId);
   }
 
   await stopCurrentAiControlIndicator(0);
