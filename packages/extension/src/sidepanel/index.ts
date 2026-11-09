@@ -4477,7 +4477,12 @@ function renderGatewayBackendBadge(threadId: string | undefined): string {
   if (!backendId || backendId === "chrome-extension") {
     return "";
   }
-  const label = backendId === "playwright-isolated" ? "Isolated" : backendId;
+  const label =
+    backendId === "playwright-isolated"
+      ? "Isolated"
+      : backendId === "playwright-cdp"
+        ? "CDP"
+        : backendId;
   return `<span class="recent-chat-backend" data-backend="${escapeAttribute(backendId)}" title="Browser backend: ${escapeAttribute(label)}" aria-label="Browser backend ${escapeAttribute(label)}">${escapeHtml(label)}</span>`;
 }
 
