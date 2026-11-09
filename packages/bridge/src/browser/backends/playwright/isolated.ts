@@ -96,6 +96,8 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.downloads.wait",
   "browser.downloads.save",
   "browser.downloads.cancel",
+  "browser.clipboard.get",
+  "browser.clipboard.set",
 ]);
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -541,6 +543,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#downloadsSave(taskId, args);
       case "browser.downloads.cancel":
         return this.#downloadsCancel(taskId, args);
+      case "browser.clipboard.get":
+        return this.#clipboardGet(taskId);
+      case "browser.clipboard.set":
+        return this.#clipboardSet(taskId, args);
       default:
         throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
     }
@@ -2983,6 +2989,84 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ...(sinceMs !== undefined && sinceMs > 0 ? { since: sinceMs } : {}),
       scope: "task",
     };
+  }
+
+  /** System clipboard — context-level like downloads. Playwright
+   *  grantPermissions covers clipboard-read/write on Chromium; the
+   *  actual API runs inside a page's navigator.clipboard (the task
+   *  context's own clipboard — there is no OS-level clipboard in an
+   *  isolated browser). Read returns arbitrary user data → egress
+   *  approval is attached upstream in tool-server. */
+  async #clipboardPage(taskId: string) {
+    const context = await this.#contextFor(taskId);
+    const page = context.pages()[0];
+    if (!page) {
+      throw protocolError("browser.tab_not_found", "no page in task context for clipboard access");
+    }
+    return { context, page };
+  }
+
+  async #clipboardGet(taskId: string): Promise<unknown> {
+    const { context, page } = await this.#clipboardPage(taskId);
+    await context
+      .grantPermissions(["clipboard-read" as const])
+      .catch((e: unknown) => {
+        throw protocolError(
+          "proto.unsupported",
+          `clipboard-read permission grant failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
+    const text = await page
+      .evaluate(() => navigator.clipboard.readText())
+      .catch((e: unknown) => {
+        throw protocolError(
+          "browser.action_failed",
+          `clipboard read failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
+    return { text: typeof text === "string" ? text : "" };
+  }
+
+  async #clipboardSet(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const text = args.text;
+    if (typeof text !== "string" || text.length === 0 || text.length > 256 * 1024) {
+      throw protocolError("proto.invalid", "browser.clipboard.set requires args.text (1-262144 chars)");
+    }
+    const { context, page } = await this.#clipboardPage(taskId);
+    await context
+      .grantPermissions(["clipboard-write" as const])
+      .catch((e: unknown) => {
+        throw protocolError(
+          "proto.unsupported",
+          `clipboard-write permission grant failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
+    await page
+      .evaluate(async (t) => {
+        try {
+          await navigator.clipboard.writeText(t);
+          return true;
+        } catch {
+          // Unfocused/headless page — execCommand fallback.
+          const ta = document.createElement("textarea");
+          ta.value = t;
+          ta.setAttribute("readonly", "");
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            return document.execCommand("copy");
+          } finally {
+            ta.remove();
+          }
+        }
+      }, text)
+      .catch((e: unknown) => {
+        throw protocolError(
+          "browser.action_failed",
+          `clipboard write failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
+    return { ok: true, chars: text.length };
   }
 
   /** browser.siteSettings — honest subset on isolated: only the

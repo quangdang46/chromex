@@ -371,6 +371,17 @@ export interface ToolHostDeps {
      *  when that task reaches a terminal status. */
     set(state: { text: string; color?: string; title?: string } | null, ownerTaskId?: string): Promise<void>;
   } | undefined;
+  /** System clipboard (browser.clipboard.get/set) — implemented via
+   *  the shared offscreen document; both ops require their optional
+   *  permission (clipboardRead/clipboardWrite) which the dep checks
+   *  before touching Chrome. Browser-global, not tab-scoped. */
+  clipboard?: {
+    /** null → permission/API unavailable → proto.unsupported */
+    get(): Promise<{ text: string } | null>;
+    /** false → permission/API unavailable → proto.unsupported;
+     *  throws on operational failure. */
+    set(text: string): Promise<boolean>;
+  } | undefined;
   /** gateway artifact.upload — returns {artifactRef, sha256, bytes} */
   uploadArtifact?(input: {
     taskId: string;
@@ -597,6 +608,8 @@ const SUPPORTED = new Set([
   "browser.runtime",
   "browser.permissions",
   "browser.action",
+  "browser.clipboard.get",
+  "browser.clipboard.set",
   "browser.downloads.list",
   "browser.downloads.wait",
   "browser.downloads.save",
@@ -4930,6 +4943,32 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             return { removed, permissions: perms };
           }
         }
+      }
+      case "browser.clipboard.get":
+      case "browser.clipboard.set": {
+        // System clipboard — browser-global, not tab-scoped. The dep
+        // enforces the optional permission (clipboardRead for get,
+        // clipboardWrite for set) and surfaces proto.unsupported with
+        // a browser.permissions hint when ungranted.
+        if (!deps.clipboard) {
+          throw toolError("proto.unsupported", "clipboard access is not available on this host");
+        }
+        if (tool === "browser.clipboard.get") {
+          const r = await deps.clipboard.get();
+          if (r === null) {
+            throw toolError("proto.unsupported", "clipboard read unavailable — grant the optional 'clipboardRead' permission via browser.permissions request first");
+          }
+          return { text: r.text };
+        }
+        const text = args.text;
+        if (typeof text !== "string" || text.length === 0 || text.length > 256 * 1024) {
+          throw toolError("proto.invalid", "browser.clipboard.set requires args.text (1-262144 chars)");
+        }
+        const wrote = await deps.clipboard.set(text);
+        if (!wrote) {
+          throw toolError("proto.unsupported", "clipboard write unavailable — grant the optional 'clipboardWrite' permission via browser.permissions request first");
+        }
+        return { ok: true, chars: text.length };
       }
       case "browser.action": {
         // chrome.action badge/title — the agent's always-visible status

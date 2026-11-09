@@ -5,10 +5,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target !== "offscreen") {
     return false;
   }
-  // Sender guard: only the background worker may request crops — a content
-  // script shares the extension id but always carries sender.tab.
+  // Sender guard: only the background worker may drive this document —
+  // a content script shares the extension id but always carries sender.tab.
   if (!offscreenMayHandleMessage(message, sender, chrome.runtime.id)) {
     sendResponse({ error: "message rejected" });
+    return true;
+  }
+  if (message.type === "offscreen.clipboard.read") {
+    void readClipboardText()
+      .then(sendResponse)
+      .catch((error) => {
+        sendResponse({ error: error instanceof Error ? error.message : "clipboard read failed" });
+      });
+    return true;
+  }
+  if (message.type === "offscreen.clipboard.write") {
+    void writeClipboardText(message.text)
+      .then(sendResponse)
+      .catch((error) => {
+        sendResponse({ error: error instanceof Error ? error.message : "clipboard write failed" });
+      });
     return true;
   }
   void cropVisibleTabDataUrlToImageCandidate(message.dataUrl, message.candidate)
@@ -20,6 +36,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   return true;
 });
+
+/** navigator.clipboard is the only clipboard API reachable from an
+ *  offscreen document (service workers have no clipboard, pages need
+ *  focus + permission). Requires the extension's clipboardRead /
+ *  clipboardWrite permission AND the document's CLIPBOARD reason —
+ *  both declared up front in ensureOffscreenDocument. */
+async function readClipboardText(): Promise<{ text: string } | { error: string }> {
+  try {
+    const text = await navigator.clipboard.readText();
+    return { text };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "clipboard read failed" };
+  }
+}
+
+async function writeClipboardText(text: unknown): Promise<{ ok: true } | { error: string }> {
+  if (typeof text !== "string" || text.length === 0 || text.length > 256 * 1024) {
+    return { error: "clipboard write requires a non-empty text string (≤256KiB)" };
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return { ok: true };
+  } catch {
+    // Offscreen documents are never focused — writeText can reject on
+    // transient-activation grounds even with clipboardWrite granted.
+    // execCommand("copy") is the documented fallback for this context.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } finally {
+      ta.remove();
+    }
+    return ok ? { ok: true } : { error: "clipboard write failed (writeText and execCommand both refused)" };
+  }
+}
 
 async function cropVisibleTabDataUrlToImageCandidate(
   dataUrl: unknown,

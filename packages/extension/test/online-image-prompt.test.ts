@@ -607,7 +607,7 @@ describe("online image prompt extraction", () => {
   test("falls back to an offscreen document crop path when worker canvas APIs are unavailable", () => {
     const cropInput = getFunctionSource(backgroundSource, "cropVisibleTabToImageCandidate");
     const cropDataUrl = getFunctionSource(backgroundSource, "cropVisibleTabDataUrlToImageCandidate");
-    const offscreenEnsure = getFunctionSource(backgroundSource, "ensureOffscreenDocumentForImageProcessing");
+    const offscreenEnsure = getFunctionSource(backgroundSource, "ensureOffscreenDocument");
     const offscreenCrop = getFunctionSource(backgroundSource, "cropVisibleTabDataUrlToImageCandidateViaOffscreenDocument");
     const offscreenSource = readFileSync(resolve(process.cwd(), "src/offscreen/index.ts"), "utf8");
 

@@ -3191,6 +3191,38 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.unsupported" });
   });
 
+  test("browser.clipboard get/set marshal + surface permission-unavailable honestly", async () => {
+    const clip = {
+      get: vi.fn(async () => ({ text: "clip-content" })),
+      set: vi.fn(async (_t: string) => true),
+    };
+    const h = createToolHostHandler(deps({ clipboard: clip }));
+    const g = (await h(req("browser.clipboard.get", {}))) as { text: string };
+    expect(g).toEqual({ text: "clip-content" });
+    const s = (await h(req("browser.clipboard.set", { text: "hello" }))) as { ok: boolean; chars: number };
+    expect(s).toEqual({ ok: true, chars: 5 });
+    expect(clip.set).toHaveBeenCalledWith("hello");
+    // get returning null → permission unavailable → proto.unsupported
+    const hNull = createToolHostHandler(deps({ clipboard: { get: async () => null, set: async () => false } }));
+    await expect(hNull(req("browser.clipboard.get", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("clipboardRead") });
+    await expect(hNull(req("browser.clipboard.set", { text: "x" })))
+      .rejects.toMatchObject({ code: "proto.unsupported", message: expect.stringContaining("clipboardWrite") });
+    // arg validation before dep call
+    const clip2 = { get: vi.fn(async () => ({ text: "" })), set: vi.fn(async () => true) };
+    const h2 = createToolHostHandler(deps({ clipboard: clip2 }));
+    await expect(h2(req("browser.clipboard.set", {})))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h2(req("browser.clipboard.set", { text: "" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(h2(req("browser.clipboard.set", { text: "x".repeat(256 * 1024 + 1) })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    expect(clip2.set).not.toHaveBeenCalled();
+    // missing dep → proto.unsupported
+    await expect(createToolHostHandler(deps())(req("browser.clipboard.get", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("browser.downloads.pause/resume/erase marshal manageDownload + validate id", async () => {
     const calls: Array<{ id: number; op: string }> = [];
     const manage = {

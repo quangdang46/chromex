@@ -177,6 +177,9 @@ const READ_TOOLS = new Set([
   // browsing history is personal data leaving the browser — same
   // egress gate as page text (approval for non-local destinations)
   "browser.history.search",
+  // clipboard text is user data leaving the browser — read class;
+  // agentEgress approval is attached per-call in tool-server.
+  "browser.clipboard.get",
 ]);
 
 const NAVIGATE_RISKY_HOST = /(^|\.)(paypal|stripe|checkout|billing|payments?|auth|login|signin|account|verify|confirm)\./i;
@@ -773,6 +776,18 @@ export function classifyActionRisk(ctx: ActionContext): RiskVerdict {
       return verdict("low", {
         allowTaskEligible: true,
         reason: "toolbar badge/title write",
+      });
+    }
+
+    case "browser.clipboard.set": {
+      // Overwrites whatever the user last copied — destroys clipboard
+      // state that may hold passwords/tokens, and the written text is
+      // arbitrary agent data. Approval per call, never task-eligible.
+      return verdict("external_mutation", {
+        needsApproval: true,
+        kind: "browser_action",
+        allowTaskEligible: false,
+        reason: "clipboard write overwrites user clipboard state",
       });
     }
 

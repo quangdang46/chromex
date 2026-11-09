@@ -566,6 +566,13 @@ try {
     "browser.timeout", "downloads.wait timeout",
   );
 
+  // ── Loop 9b: clipboard round-trip — grantPermissions + navigator.clipboard ──
+  const clipToken = `clip-${Date.now()}`;
+  const cs = await call("browser.clipboard.set", { text: clipToken });
+  assert(cs?.ok === true && cs?.chars === clipToken.length, `clipboard.set wrote ${clipToken.length} chars (${JSON.stringify(cs)})`);
+  const cg = await call("browser.clipboard.get", {});
+  assert(cg?.text === clipToken, `clipboard.get round-trips the written text (got ${JSON.stringify(cg?.text)})`);
+
   // ── Loop 10: page.network observes the page's own /api/ping fetch ──
   const fetchTab = await call("browser.tab.create", { url: fixture.url("/fetch"), active: false });
   const fTab = fetchTab?.tabId ?? fetchTab?.id;

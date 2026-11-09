@@ -297,6 +297,9 @@ const EGRESS_DATA_CLASS: Partial<Record<BrowserToolName, "page-text" | "screensh
   "browser.page.pdf": "screenshot",
   "browser.page.mhtml": "screenshot",
   "browser.page.screencast": "screenshot",
+  // clipboard text is arbitrary user data (tokens, passwords, copied
+  // page fragments) leaving the browser — same egress gate as page text.
+  "browser.clipboard.get": "page-text",
   // console entries are page-generated content — same egress class as
   // extracted text (may carry tokens/PII the page logged).
   "browser.page.console": "page-text",
@@ -367,6 +370,8 @@ const TAB_LESS_TOOLS: ReadonlySet<string> = new Set([
   "browser.runtime",
   "browser.permissions",
   "browser.action",
+  "browser.clipboard.get",
+  "browser.clipboard.set",
 ]);
 
 /** Credential-looking query params — plan §4.8 marks "URL chứa token"

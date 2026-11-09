@@ -47,7 +47,9 @@
     "system.cpu",
     "processes",
     "dns",
-    "power"
+    "power",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "background": {
     "service_worker": "background.js",

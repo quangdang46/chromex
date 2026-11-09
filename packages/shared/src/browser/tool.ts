@@ -84,6 +84,8 @@ export type BrowserToolName =
   | "browser.runtime"
   | "browser.permissions"
   | "browser.action"
+  | "browser.clipboard.get"
+  | "browser.clipboard.set"
   | "browser.windows.list"
   | "browser.windows.get"
   | "browser.windows.create"
@@ -169,6 +171,8 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.runtime",
   "browser.permissions",
   "browser.action",
+  "browser.clipboard.get",
+  "browser.clipboard.set",
   "browser.windows.list",
   "browser.windows.get",
   "browser.windows.create",

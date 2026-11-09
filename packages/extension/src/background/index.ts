@@ -1436,6 +1436,42 @@ const toolHostHandler = createToolHostHandler({
         setAgentBadge(state, ownerTaskId);
       },
     },
+    clipboard: {
+      // System clipboard via the shared offscreen document — the only
+      // MV3 context where navigator.clipboard works without a focused
+      // page. Optional permissions checked per call: ungranted → null/
+      // false → proto.unsupported with a browser.permissions hint.
+      get: async () => {
+        const granted = await chrome.permissions
+          .contains({ permissions: ["clipboardRead"] })
+          .catch(() => false);
+        if (!granted) return null;
+        const ensured = await ensureOffscreenDocument().catch(() => false);
+        if (!ensured) return null;
+        const res = await chrome.runtime
+          .sendMessage({ target: "offscreen", type: "offscreen.clipboard.read" })
+          .catch(() => null);
+        if (!res || typeof res !== "object") return null;
+        const r = res as Record<string, unknown>;
+        if (typeof r.error === "string") throw new Error(r.error);
+        return { text: typeof r.text === "string" ? r.text : "" };
+      },
+      set: async (text: string) => {
+        const granted = await chrome.permissions
+          .contains({ permissions: ["clipboardWrite"] })
+          .catch(() => false);
+        if (!granted) return false;
+        const ensured = await ensureOffscreenDocument().catch(() => false);
+        if (!ensured) return false;
+        const res = await chrome.runtime
+          .sendMessage({ target: "offscreen", type: "offscreen.clipboard.write", text })
+          .catch(() => null);
+        if (!res || typeof res !== "object") return false;
+        const r = res as Record<string, unknown>;
+        if (r.ok === true) return true;
+        throw new Error(typeof r.error === "string" ? r.error : "clipboard write failed");
+      },
+    },
     activeTabId: async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return typeof tab?.id === "number" ? tab.id : null;
@@ -5716,7 +5752,7 @@ async function cropVisibleTabDataUrlToImageCandidateViaOffscreenDocument(
   dataUrl: string,
   candidate: EditablePageImageCandidate,
 ): Promise<{ base64: string; mimeType: string; filename: string } | null> {
-  const ensured = await ensureOffscreenDocumentForImageProcessing();
+  const ensured = await ensureOffscreenDocument();
   if (!ensured) {
     return null;
   }
@@ -5743,7 +5779,7 @@ async function cropVisibleTabDataUrlToImageCandidateViaOffscreenDocument(
   };
 }
 
-async function ensureOffscreenDocumentForImageProcessing(): Promise<boolean> {
+async function ensureOffscreenDocument(): Promise<boolean> {
   if (!chrome.offscreen?.createDocument) {
     return false;
   }
@@ -5772,8 +5808,12 @@ async function ensureOffscreenDocumentForImageProcessing(): Promise<boolean> {
   offscreenDocumentPromise = chrome.offscreen
     .createDocument({
       url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: [chrome.offscreen.Reason.BLOBS],
-      justification: "Crop captured tab images for prompt extraction compatibility.",
+      // Single offscreen document per extension — whichever feature
+      // needs it first creates it, so BOTH reasons must be declared
+      // up front: BLOBS for image crops, CLIPBOARD for the clipboard
+      // tools (navigator.clipboard is gated on the CLIPBOARD reason).
+      reasons: [chrome.offscreen.Reason.BLOBS, chrome.offscreen.Reason.CLIPBOARD],
+      justification: "Crop captured tab images for prompt extraction and read/write the system clipboard for browser.clipboard tools.",
     })
     .catch((error) => {
       if (!isOffscreenDocumentAlreadyExistsError(error)) {

@@ -2669,6 +2669,29 @@ await runScenario(
         ...px,
       };
 
+      // --- clipboard: optional clipboardRead/clipboardWrite — ungranted → honest unsupported ---
+      // get is a read (egress-classified but local destination → no
+      // approval); set is a mutation (approval auto-allowed by the
+      // runner) then hits the permission gate → proto.unsupported.
+      let clp = {};
+      const clpGet = await runner.browserToolCall(
+        taskId, "browser.clipboard.get", {}, token, 60_000,
+      );
+      const clpGetErr = clpGet?.error ?? {};
+      clp.getUnsupportedOk = clpGet?.status === "failed" && clpGetErr.code === "proto.unsupported";
+      clp.getMsg = String(clpGetErr.message ?? "").slice(0, 160);
+      const clpSet = await runner.browserToolCall(
+        taskId, "browser.clipboard.set", { text: "chromex-clip" }, token, 60_000,
+      );
+      const clpSetErr = clpSet?.error ?? {};
+      clp.setUnsupportedOk = clpSet?.status === "failed" && clpSetErr.code === "proto.unsupported";
+      clp.setMsg = String(clpSetErr.message ?? "").slice(0, 160);
+      evidence.note(`clipboard → ${JSON.stringify(clp).slice(0, 300)}`);
+      results.clipboard = {
+        ok: clp.getUnsupportedOk === true && clp.setUnsupportedOk === true,
+        ...clp,
+      };
+
       // --- privacy: optional "privacy" permission — ungranted → honest unsupported ---
       let pv = {};
       const pvRes = await runner.browserToolCall(

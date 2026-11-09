@@ -1184,6 +1184,21 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       title: { type: "string", description: "set: tooltip title (≤128 chars)." },
     }),
   },
+  "browser.clipboard.get": {
+    description:
+      "Read the system clipboard's plain text (navigator.clipboard via a dedicated offscreen document — chrome-extension) or the task browser context's clipboard (playwright-isolated). The clipboard is arbitrary user data — passwords, 2FA codes, copied tokens, page fragments — so the result is treated as sensitive egress and requires approval for non-local destinations. Returns {text} (may be empty when the clipboard holds non-text content — honest, not an error). Requires the optional clipboardRead permission — ungranted → proto.unsupported with a hint to run browser.permissions request {permissions:['clipboardRead']} first (Chrome shows its own consent dialog).",
+    inputSchema: objectSchema({}),
+  },
+  "browser.clipboard.set": {
+    description:
+      "Write plain text to the system clipboard — args.text required (≤256KiB; clipboard is plain-text only, no HTML/files). chrome-extension writes via an offscreen document (navigator.clipboard.writeText with execCommand fallback for unfocused docs); playwright-isolated via context grantPermissions + page.evaluate. Overwrites whatever the user had copied — approval-gated mutation, never task-eligible. Requires the optional clipboardWrite permission — ungranted → proto.unsupported (request via browser.permissions first).",
+    inputSchema: objectSchema(
+      {
+        text: { type: "string", description: "Text to place on the clipboard (required, ≤256KiB)." },
+      },
+      ["text"],
+    ),
+  },
   "browser.windows.list": {
     description:
       "List the browser's windows (normal + popup + app types) — id, focused, state, bounds, incognito, tabCount. Popup windows (window.open features, agent pop-outs) are included so the agent can see and manage every browsing surface. Use windowId values here for browser.tab.create windowId and browser.windows.update. Not tab-scoped. Read-only.",
