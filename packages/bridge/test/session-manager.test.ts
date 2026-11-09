@@ -663,6 +663,43 @@ describe("SessionManager", () => {
     const turn = { status: "completed" } as never;
     expect(() => transitionTurn(turn, "running")).toThrow(StateTransitionError);
   });
+
+  test("releaseTask closes the provider session (task.purge path)", async () => {
+    const closed: string[] = [];
+    const { sm, sessions } = await makeManager({
+      presetSession: (s) => {
+        s.close = async () => { closed.push("closed"); };
+      },
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    expect(sessions).toHaveLength(1);
+    await sm.releaseTask(task.taskId);
+    expect(closed).toEqual(["closed"]);
+    // idempotent — second call is a no-op
+    await sm.releaseTask(task.taskId);
+    expect(closed).toEqual(["closed"]);
+  });
+
+  test("releaseTask keeps a session shared with another live task", async () => {
+    const closed: string[] = [];
+    const { sm, store, sessions } = await makeManager({
+      presetSession: (s) => {
+        s.close = async () => { closed.push("closed"); };
+      },
+    });
+    const t1 = sm.createTask({ ...taskParams(), conversationKey: "shared" });
+    const t2 = sm.createTask({ ...taskParams(), conversationKey: "shared" });
+    await sm.sendMessage(t1.taskId, INPUT);
+    expect(sessions).toHaveLength(1);
+    // t1 purge while t2 still references the conversation → keep alive
+    await sm.releaseTask(t1.taskId);
+    expect(closed).toEqual([]);
+    // t1 row gone (purgeTask ran) → t2's release now owns the session
+    (store as unknown as { purgeTask(id: string): void }).purgeTask(t1.taskId);
+    await sm.releaseTask(t2.taskId);
+    expect(closed).toEqual(["closed"]);
+  });
 });
 
 describe("deriveAttention (§4.7)", () => {

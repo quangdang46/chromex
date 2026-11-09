@@ -1527,6 +1527,11 @@ async function handleGatewayRequest(
       if (!ctx.store.getTask(p.taskId)) {
         throw perr("task.not_found", `task ${p.taskId} not found`);
       }
+      // Stop the provider session FIRST (while the task row still
+      // exists): closes the agent process + its MCP children so a
+      // purged task can't keep running detached. No-op when the
+      // conversation is shared with another live task.
+      await ctx.sessionManager.releaseTask(p.taskId).catch(() => {});
       ctx.store.purgeTask(p.taskId);
       ctx.toolRefresher.untrack(p.taskId);
       // In-flight browser calls of a purged task get the same

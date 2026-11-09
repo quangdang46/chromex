@@ -522,6 +522,31 @@ export class SessionManager {
     }
   }
 
+  /**
+   * task.purge: tear down the task's live provider session so a deleted
+   * task can't keep a Codex/Claude process + MCP children running
+   * detached. conversationKey is shared across tasks — only close the
+   * session when no other task still references it.
+   */
+  async releaseTask(taskId: string): Promise<void> {
+    const task = this.opts.store.getTask(taskId);
+    if (!task) return;
+    const key = task.conversationKey;
+    const shared = (this.opts.store.listTasks?.() ?? []).some(
+      (t) => t.taskId !== taskId && t.conversationKey === key,
+    );
+    if (shared) return;
+    const live = this.conversations.get(key);
+    if (!live) return;
+    this.conversations.delete(key);
+    const unsub = this.unsubscribers.get(key);
+    if (unsub) {
+      unsub();
+      this.unsubscribers.delete(key);
+    }
+    await live.session.close().catch(() => {});
+  }
+
   /** task.pause (user): no new turns, no interrupt (§5.2.1). */
   pauseTask(taskId: string, reason: PauseReason = "user_requested"): void {
     const task = this.#requireTask(taskId);
@@ -704,6 +729,9 @@ export class SessionManager {
       this.#publish(taskId, event, true);
       return;
     }
+    // task.purge deletes the row while a provider session may still
+    // emit — persisting would throw inside the subscribe callback.
+    if (!this.opts.store.getTask(taskId)) return;
     // adapter-emitted turn.started is a duplicate of the Gateway's 1b
     // persist — skip when the turn row already started.
     if (event.type === "turn.started") {
