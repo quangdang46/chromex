@@ -1207,6 +1207,12 @@ async function captureElementScreenshot(
  *  detach on tab close regardless. */
 export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
   await releaseEmulationHold(tabId).catch(() => {});
+  // pz refs hold session-scoped backendNodeIds — dead with the tab;
+  // drop them so a stale ref fails element_not_found instead of
+  // resolving a dead node id (or leaking map entries forever).
+  for (const [k, hit] of [...pierceRefs.entries()]) {
+    if (hit.tabId === tabId) pierceRefs.delete(k);
+  }
   // Armed file choosers die with their tab — release the held CDP
   // session so the debugger refcount doesn't leak on a dead target.
   for (const [id, p] of pendingFileChoosers) {
