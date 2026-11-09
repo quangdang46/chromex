@@ -158,6 +158,7 @@ const READ_TOOLS = new Set([
   "browser.page.find",
   "browser.page.pierce",
   "browser.downloads.list",
+  "browser.downloads.wait",
   "browser.page.network",
   // CDP tier (docs/adr/debugger-tier.md): response bodies are page
   // content — same read+egress class as extract/find.

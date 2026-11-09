@@ -464,6 +464,8 @@ const toolHostHandler = createToolHostHandler({
         bytesReceived: d.bytesReceived,
         totalBytes: d.totalBytes,
         ...(d.mime ? { mime: d.mime } : {}),
+        // internal match input for downloads.wait — never echoed raw
+        url: d.url,
         // exists tells the agent the bytes are actually on disk —
         // filename alone can point at a file the user moved/deleted.
         ...(typeof d.exists === "boolean" ? { fileExists: d.exists } : {}),

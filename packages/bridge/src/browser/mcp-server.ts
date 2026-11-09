@@ -917,6 +917,16 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
       since: { description: "Only downloads started after this — epoch ms or ISO date string.", anyOf: [{ type: "number" }, { type: "string" }] },
     }),
   },
+  "browser.downloads.wait": {
+    description:
+      "Wait for a NEW download to appear — the 'click export → wait for the file' primitive. Baseline-diff: only downloads started at/after this call match, so pre-existing profile downloads never false-positive. Optional urlContains/filenameContains narrow the match (both may be omitted to match any new download); untilState holds until the download reaches interrupted|complete ('in_progress' = first sighting, the default). Returns the matched download {id,state,filename,suggestedFilename?,bytesReceived,totalBytes,error,startTime,fileExists,url} — url is sanitized origin+path, never the query. Not tab-scoped; low-risk read tool; browser.timeout on no match. On playwright-isolated only task-context downloads (page-initiated events + downloads.save) are visible, and page-initiated entries stay in_progress until saveAs persists them.",
+    inputSchema: objectSchema({
+      urlContains: { type: "string", description: "Substring match against the download URL (≤512 chars)." },
+      filenameContains: { type: "string", description: "Substring match against filename/suggestedFilename (≤512 chars)." },
+      untilState: { type: "string", enum: ["in_progress", "interrupted", "complete"], description: "Hold until this state; default/\"in_progress\" returns at first sighting." },
+      timeoutMs: { type: "number", description: "Max wait ms (default 20000, cap 60000)." },
+    }),
+  },
   "browser.downloads.save": {
     description:
       "Start a download of an http(s) URL into the profile's download directory — use it to pull artifacts, exports, or files the page exposes so coding tools can read them from disk. Optional filename is a relative path inside the download dir (no traversal). waitForCompletion polls until the download reaches complete|interrupted and returns the final filename (absolute path) + fileExists. Not tab-scoped. Always requires approval. On playwright-isolated the file is saved synchronously via saveAs — the returned state is already terminal.",

@@ -2863,6 +2863,48 @@ await runScenario(
         ...dmq,
       };
 
+      // --- downloads.wait: race a wait against downloads.save on real
+      // chrome.downloads — baseline-diff must match the NEW download,
+      // untilState:"complete" holds for terminal, url echo sanitized ---
+      let dwq = {};
+      try {
+        // headless Chrome saves downloads under a temp GUID name (no
+        // Content-Disposition filename, no url field) — match ANY new
+        // download; baseline-diff is still proven (id:1 is the only
+        // download this browser session has ever seen).
+        const [dwRes, dsvRes] = await Promise.all([
+          runner.browserToolCall(taskId, "browser.downloads.wait", {
+            untilState: "complete", timeoutMs: 12_000,
+          }, token, 60_000),
+          runner.browserToolCall(taskId, "browser.downloads.save", {
+            url: fixture.url("/dl"),
+          }, token, 60_000),
+        ]);
+        const dw = dwRes?.result ?? dwRes ?? {};
+        const dsv = dsvRes?.result ?? dsvRes ?? {};
+        dwq.matchedOk = dw.matched === true && dw.download?.state === "complete";
+        dwq.state = dw.download?.state;
+        dwq.filenameOk = typeof dw.download?.filename === "string" && dw.download.filename.length > 0;
+        dwq.fileExistsOk = dw.download?.fileExists === true;
+        dwq.saveState = dsv.state;
+        // url echo is optional (headless omits it) — when present it
+        // must be sanitized origin+path, never the raw query.
+        dwq.sanitizedUrlOk = dw.download?.url === undefined ||
+          (typeof dw.download.url === "string" && dw.download.url.startsWith("http") && !dw.download.url.includes("?"));
+        const dwBad = await runner.browserToolCall(taskId, "browser.downloads.wait", {
+          filenameContains: "/never-served-by-fixture", timeoutMs: 1200,
+        }, token, 60_000);
+        dwq.timeoutOk = dwBad?.status === "failed" && dwBad?.error?.code === "browser.timeout";
+      } catch (e) {
+        dwq.error = String(e?.message ?? e).slice(0, 200);
+      }
+      evidence.note(`downloads.wait → ${JSON.stringify(dwq).slice(0, 400)}`);
+      results.downloadsWait = {
+        ok: dwq.matchedOk === true && dwq.filenameOk === true &&
+          dwq.fileExistsOk === true && dwq.sanitizedUrlOk === true && dwq.timeoutOk === true,
+        ...dwq,
+      };
+
       // --- windows.get: real chrome.windows.get / getLastFocused ---
       let wg = {};
       const wlRes = await runner.browserToolCall(taskId, "browser.windows.list", {}, token, 60_000);

@@ -61,6 +61,7 @@ export type BrowserToolName =
   | "browser.bookmarks"
   | "browser.browsingData.clear"
   | "browser.downloads.list"
+  | "browser.downloads.wait"
   | "browser.downloads.save"
   | "browser.downloads.cancel"
   | "browser.downloads.open"
@@ -145,6 +146,7 @@ export const BROWSER_TOOL_NAMES: readonly BrowserToolName[] = [
   "browser.bookmarks",
   "browser.browsingData.clear",
   "browser.downloads.list",
+  "browser.downloads.wait",
   "browser.downloads.save",
   "browser.downloads.cancel",
   "browser.downloads.open",

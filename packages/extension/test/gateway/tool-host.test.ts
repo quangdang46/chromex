@@ -1156,6 +1156,38 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("downloads.wait baseline-diffs new downloads and echoes sanitized url", async () => {
+    const fresh = new Date().toISOString();
+    const stale = new Date(Date.now() - 60_000).toISOString();
+    const d = deps({
+      listDownloads: vi.fn(async () => [
+        // stale profile download — must NOT match
+        { id: 1, state: "complete", filename: "/dl/old.csv", url: "https://x.test/old.csv?token=abc", startTime: stale },
+        // fresh match
+        { id: 2, state: "in_progress", filename: "/dl/report.csv", url: "https://x.test/export/report.csv?sig=SECRET", startTime: fresh },
+      ]),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.downloads.wait", {
+      urlContains: "export/report", timeoutMs: 5_000,
+    }))) as { matched: boolean; download: { id?: number; url?: string; state: string } };
+    expect(res.matched).toBe(true);
+    expect(res.download.id).toBe(2);
+    expect(res.download.state).toBe("in_progress");
+    // sanitized echo — query token never leaves the browser
+    expect(res.download.url).toBe("https://x.test/export/report.csv");
+    // no match → honest timeout
+    const d2 = deps({ listDownloads: vi.fn(async () => []) });
+    const h2 = createToolHostHandler(d2);
+    await expect(h2(req("browser.downloads.wait", { filenameContains: "nope", timeoutMs: 1 })))
+      .rejects.toMatchObject({ code: "browser.timeout" });
+    await expect(h2(req("browser.downloads.wait", { untilState: "bogus" })))
+      .rejects.toMatchObject({ code: "proto.invalid" });
+    const noDep = createToolHostHandler(deps());
+    await expect(noDep(req("browser.downloads.wait", {})))
+      .rejects.toMatchObject({ code: "proto.unsupported" });
+  });
+
   test("downloads.save validates url/filename and maps the download id", async () => {
     const calls: Array<{ url: string; filename?: string }> = [];
     const d = deps({

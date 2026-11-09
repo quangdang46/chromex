@@ -369,6 +369,7 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   "browser.action": { action: "set", text: "working", color: "#5f6368" },
   "browser.page.screencast": { action: "start", maxFrames: 30 },
   "browser.downloads.list": { state: "complete", limit: 20 },
+  "browser.downloads.wait": { urlContains: "report.csv", untilState: "complete", timeoutMs: 5000 },
   "browser.downloads.save": { url: "https://example.com/report.csv", filename: "report.csv" },
   "browser.downloads.cancel": { downloadId: 42 },
   "browser.downloads.open": { downloadId: 42 },

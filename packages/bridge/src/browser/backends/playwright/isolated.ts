@@ -93,6 +93,7 @@ export const PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS: ReadonlySet<BrowserToolName> =
   "browser.page.route",
   "browser.page.unroute",
   "browser.downloads.list",
+  "browser.downloads.wait",
   "browser.downloads.save",
   "browser.downloads.cancel",
 ]);
@@ -534,6 +535,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
         return this.#sessions(taskId, args);
       case "browser.downloads.list":
         return this.#downloadsList(taskId, args);
+      case "browser.downloads.wait":
+        return this.#downloadsWait(taskId, args);
       case "browser.downloads.save":
         return this.#downloadsSave(taskId, args);
       case "browser.downloads.cancel":
@@ -4087,9 +4090,72 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           ...(e.error !== null ? { error: e.error } : {}),
           startTime: new Date(e.startTime).toISOString(),
           fileExists: e.path !== null && existsSync(e.path),
+          url: e.url,
+          suggestedFilename: e.suggestedFilename,
         };
       }),
     };
+  }
+
+  /** browser.downloads.wait — same baseline-diff contract as the
+   *  extension: only downloads observed after this call match.
+   *  Polls the task's download log; page-initiated entries stay
+   *  in_progress until saveAs persists them (untilState:"complete"
+   *  therefore only resolves for saved downloads — honest). */
+  async #downloadsWait(taskId: string, args: Record<string, unknown>): Promise<unknown> {
+    const urlContains = typeof args.urlContains === "string" ? args.urlContains : undefined;
+    const filenameContains = typeof args.filenameContains === "string" ? args.filenameContains : undefined;
+    if (urlContains !== undefined && urlContains.length > 512) {
+      throw protocolError("proto.invalid", "browser.downloads.wait args.urlContains must be ≤512 chars");
+    }
+    if (filenameContains !== undefined && filenameContains.length > 512) {
+      throw protocolError("proto.invalid", "browser.downloads.wait args.filenameContains must be ≤512 chars");
+    }
+    const untilState = typeof args.untilState === "string" ? args.untilState : undefined;
+    if (untilState !== undefined && !["in_progress", "interrupted", "complete"].includes(untilState)) {
+      throw protocolError("proto.invalid", "browser.downloads.wait args.untilState must be in_progress|interrupted|complete");
+    }
+    const rawTimeout = typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs) ? args.timeoutMs : 20_000;
+    const timeoutMs = Math.min(Math.max(rawTimeout, 1_000), 60_000);
+    const since = Date.now();
+    const log = await this.#ensureDownloadLog(taskId);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      // newest-first scan; startTime is epoch ms here (no parse needed)
+      const hit = [...log].reverse().find((e) => {
+        if (e.startTime < since - 1_000) return false;
+        if (urlContains !== undefined && !e.url.includes(urlContains)) return false;
+        if (filenameContains !== undefined) {
+          const name = e.path ?? e.suggestedFilename;
+          if (!name.includes(filenameContains)) return false;
+        }
+        if (untilState !== undefined && untilState !== "in_progress" && e.state !== untilState) return false;
+        return true;
+      });
+      if (hit) {
+        const bytes = hit.path !== null ? (() => { try { return statSync(hit.path).size; } catch { return 0; } })() : 0;
+        return {
+          matched: true,
+          waitedMs: Date.now() - since,
+          download: {
+            id: hit.id,
+            state: hit.state,
+            filename: hit.path ?? "",
+            ...(hit.path === null ? { suggestedFilename: hit.suggestedFilename } : {}),
+            bytesReceived: bytes,
+            totalBytes: hit.path !== null ? bytes : -1,
+            ...(hit.error !== null ? { error: hit.error } : {}),
+            startTime: new Date(hit.startTime).toISOString(),
+            fileExists: hit.path !== null && existsSync(hit.path),
+            url: hit.url,
+          },
+        };
+      }
+      if (Date.now() >= deadline) {
+        throw protocolError("browser.timeout", `no new download matched within ${timeoutMs}ms`);
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
   }
 
   /** browser.downloads.save — navigate a scratch page to the URL; a

@@ -523,6 +523,27 @@ try {
   // cancel on a finished download reports its real state — no fake cancel.
   const dlCancel = await call("browser.downloads.cancel", { downloadId: listed.id });
   assert(dlCancel?.cancelled === false && dlCancel?.state === "complete", "downloads.cancel on finished download is an honest no-op");
+  // downloads.wait: race a wait against a fresh save — baseline-diff
+  // must match the NEW download, untilState:"complete" holds for the
+  // terminal state, and the pre-existing e2e-download.txt is ignored.
+  const [dw, dl2] = await Promise.all([
+    call("browser.downloads.wait", {
+      urlContains: "/dl", filenameContains: "wait-target.txt",
+      untilState: "complete", timeoutMs: 15000,
+    }),
+    call("browser.downloads.save", {
+      url: fixture.url("/dl"), filename: "wait-target.txt",
+    }),
+  ]);
+  assert(dl2?.state === "complete", "second download saved");
+  assert(dw?.matched === true && dw?.download?.state === "complete", `downloads.wait matched (state=${dw?.download?.state})`);
+  assert(String(dw?.download?.filename ?? "").endsWith("wait-target.txt"), "wait matched the right filename");
+  // no-match → honest browser.timeout
+  await expectReject(
+    "browser.downloads.wait",
+    { urlContains: "/never-downloaded", timeoutMs: 1200 },
+    "browser.timeout", "downloads.wait timeout",
+  );
 
   // ── Loop 10: page.network observes the page's own /api/ping fetch ──
   const fetchTab = await call("browser.tab.create", { url: fixture.url("/fetch"), active: false });

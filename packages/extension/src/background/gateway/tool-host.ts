@@ -110,6 +110,10 @@ export interface ToolHostDeps {
       startTime?: string;
       mime?: string;
       fileExists?: boolean;
+      /** Full download URL — internal match input only; wait echoes a
+       *  sanitized origin+path, never the query (signed-URL tokens). */
+      url?: string;
+      suggestedFilename?: string;
     }>
   >;
   /** chrome.webRequest metadata log (browser.page.network) — absent dep
@@ -594,6 +598,7 @@ const SUPPORTED = new Set([
   "browser.permissions",
   "browser.action",
   "browser.downloads.list",
+  "browser.downloads.wait",
   "browser.downloads.save",
   "browser.downloads.cancel",
   "browser.downloads.open",
@@ -3451,6 +3456,80 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             ...(typeof d.fileExists === "boolean" ? { fileExists: d.fileExists } : {}),
           })),
         };
+      }
+      case "browser.downloads.wait": {
+        // Profile-wide wait for a NEW download — the "click export →
+        // wait for the file" primitive. Baseline-diff like tabs.wait:
+        // only downloads whose startTime is at/after this call match,
+        // so pre-existing profile downloads never false-positive.
+        // Not tab-scoped.
+        if (!deps.listDownloads) {
+          throw toolError("proto.unsupported", "download wait requires the downloads permission");
+        }
+        const urlContains = str(args.urlContains);
+        const filenameContains = str(args.filenameContains);
+        if (urlContains !== undefined && urlContains.length > 512) {
+          throw toolError("proto.invalid", "browser.downloads.wait args.urlContains must be ≤512 chars");
+        }
+        if (filenameContains !== undefined && filenameContains.length > 512) {
+          throw toolError("proto.invalid", "browser.downloads.wait args.filenameContains must be ≤512 chars");
+        }
+        const untilState = str(args.untilState);
+        if (untilState !== undefined && !["in_progress", "interrupted", "complete"].includes(untilState)) {
+          throw toolError("proto.invalid", "browser.downloads.wait args.untilState must be in_progress|interrupted|complete");
+        }
+        const timeoutMs = clampMs(args.timeoutMs, 20_000, 60_000);
+        const since = Date.now();
+        // Baseline-diff is client-side: query unfiltered and match on
+        // parsed startTime — chrome.downloads startedAfter granularity
+        // is not trustworthy enough to gate the match on.
+        const matchDownload = (d: {
+          state?: string; filename?: string; suggestedFilename?: string;
+          url?: string; startTime?: string;
+        }): boolean => {
+          const started = d.startTime ? Date.parse(d.startTime) : NaN;
+          if (!Number.isFinite(started) || started < since - 1_000) return false;
+          if (urlContains !== undefined && !(d.url ?? "").includes(urlContains)) return false;
+          if (filenameContains !== undefined) {
+            const name = d.filename || d.suggestedFilename || "";
+            if (!name.includes(filenameContains)) return false;
+          }
+          // "in_progress" is satisfied by any observed state — seeing
+          // the download at all proves it passed through in_progress.
+          if (untilState !== undefined && untilState !== "in_progress" && d.state !== untilState) {
+            return false;
+          }
+          return true;
+        };
+        const deadline = Date.now() + timeoutMs;
+        let matched: Record<string, unknown> | undefined;
+        while (Date.now() < deadline) {
+          const items = await deps.listDownloads({ limit: 50 });
+          const hit = (Array.isArray(items) ? items : []).find(matchDownload);
+          if (hit) {
+            matched = {
+              id: hit.id, state: hit.state ?? "unknown",
+              filename: hit.filename ?? "",
+              ...(hit.suggestedFilename ? { suggestedFilename: hit.suggestedFilename } : {}),
+              bytesReceived: hit.bytesReceived ?? 0,
+              totalBytes: hit.totalBytes ?? -1,
+              ...(hit.error ? { error: hit.error } : {}),
+              startTime: hit.startTime ?? "",
+              ...(typeof hit.fileExists === "boolean" ? { fileExists: hit.fileExists } : {}),
+              // sanitized echo — full URL stays internal (signed tokens)
+              ...(hit.url ? { url: urlOriginPath(hit.url) } : {}),
+            };
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        if (!matched) {
+          throw toolError(
+            "browser.timeout",
+            `no new download matched within ${timeoutMs}ms`,
+          );
+        }
+        return { matched: true, download: matched, waitedMs: Date.now() - since };
       }
       case "browser.downloads.save": {
         // Not tab-scoped: starts a download into the profile's download
