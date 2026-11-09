@@ -535,6 +535,16 @@ export class SessionManager {
     const shared = (this.opts.store.listTasks?.() ?? []).some(
       (t) => t.taskId !== taskId && t.conversationKey === key,
     );
+    // Per-task runtime bookkeeping dies with the task regardless of
+    // whether the conversation is shared — a purged task's active-turn
+    // binding, attention diff, cancel guard and turn-budget timers
+    // must not outlive it (late events are already dropped).
+    this.activeTurns.delete(taskId);
+    this.lastAttention.delete(taskId);
+    this.cancelling.delete(taskId);
+    for (const t of this.opts.store.listTurns(taskId)) {
+      this.#clearTurnTimeout(t.turnId);
+    }
     if (shared) return;
     const live = this.conversations.get(key);
     if (!live) return;
