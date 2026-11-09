@@ -667,6 +667,13 @@ function hostResultVerified(result: unknown): boolean | "unknown" | undefined {
   return v === true || v === false || v === "unknown" ? v : undefined;
 }
 
+/** Dedup window for toolCallId → outcome. Entries older than this are
+ *  evicted — duplicate protection only needs to cover retries within a
+ *  live session; durable tool.* events remain the post-restart source
+ *  of truth (seedDurableOutcome). Uncapped, every browser tool call
+ *  would grow this map for the gateway's lifetime. */
+const MAX_TRACKED_OUTCOMES = 8192;
+
 export class BrowserToolServer {
   /** toolCallId → outcome — duplicate-execution protection (§9.1). */
   private readonly outcomes = new Map<string, ToolCallOutcome>();
@@ -678,6 +685,18 @@ export class BrowserToolServer {
 
   constructor(deps: ToolServerDeps) {
     this.deps = deps;
+  }
+
+  /** Insert with LRU eviction — Map iteration order is insertion
+   *  order, so the first key is the oldest outcome. */
+  #recordOutcome(outcome: ToolCallOutcome): void {
+    if (this.outcomes.has(outcome.toolCallId)) this.outcomes.delete(outcome.toolCallId);
+    this.outcomes.set(outcome.toolCallId, outcome);
+    while (this.outcomes.size > MAX_TRACKED_OUTCOMES) {
+      const oldest = this.outcomes.keys().next().value;
+      if (oldest === undefined) break;
+      this.outcomes.delete(oldest);
+    }
   }
 
   /** Seed a durable outcome at startup (S5/§9.1): the dedup map is
@@ -695,7 +714,7 @@ export class BrowserToolServer {
   ): void {
     if (this.outcomes.has(toolCallId)) return;
     const interrupted = last === "started" || last === "unknown";
-    this.outcomes.set(toolCallId, {
+    this.#recordOutcome({
       toolCallId,
       tool,
       status: interrupted ? "failed" : last,
@@ -1193,7 +1212,7 @@ export class BrowserToolServer {
   }
 
   private finish(outcome: ToolCallOutcome): ToolCallOutcome {
-    this.outcomes.set(outcome.toolCallId, outcome);
+    this.#recordOutcome(outcome);
     this.deps.onOutcome?.(outcome);
     return outcome;
   }
