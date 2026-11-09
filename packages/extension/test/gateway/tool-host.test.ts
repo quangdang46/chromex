@@ -477,6 +477,35 @@ describe("tool host (P1-09)", () => {
     void t1;
   });
 
+  test("reconcile outcome buffer records, bounds payload, and looks up by id", async () => {
+    const {
+      recordBrowserToolOutcome,
+      lookupBrowserToolOutcomes,
+    } = await import("../../src/background/gateway/tool-host.js");
+    recordBrowserToolOutcome("rc-1", { status: "completed", result: { ok: true } });
+    recordBrowserToolOutcome("rc-2", {
+      status: "failed",
+      error: { code: "proto.invalid", message: "bad" },
+    });
+    // Oversized result payloads keep the verdict but drop the body.
+    recordBrowserToolOutcome("rc-3", {
+      status: "completed",
+      result: { blob: "x".repeat(70 * 1024) },
+    });
+    const out = lookupBrowserToolOutcomes(["rc-1", "rc-2", "rc-3", "rc-missing"]);
+    expect(out["rc-1"]).toEqual({ status: "completed", result: { ok: true } });
+    expect(out["rc-2"]).toEqual({
+      status: "failed",
+      error: { code: "proto.invalid", message: "bad" },
+    });
+    expect((out["rc-3"] as { status: string; result: { omitted: boolean } }).status).toBe("completed");
+    expect((out["rc-3"] as { result: { omitted: boolean } }).result.omitted).toBe(true);
+    expect(out["rc-missing"]).toBeUndefined();
+    // Re-recording refreshes the entry instead of duplicating.
+    recordBrowserToolOutcome("rc-1", { status: "failed", error: { code: "x", message: "y" } });
+    expect((lookupBrowserToolOutcomes(["rc-1"])["rc-1"] as { status: string }).status).toBe("failed");
+  });
+
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

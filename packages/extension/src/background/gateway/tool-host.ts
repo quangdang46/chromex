@@ -6223,6 +6223,61 @@ interface PendingFileChooser {
 const pendingFileChoosers = new Map<string, PendingFileChooser>();
 let fileChooserSeq = 0;
 
+/** result_lost reconcile foundation (§4.2/P1.6): when the IPC channel
+ *  drops after the host executed a call but before the result reached
+ *  the gateway, the gateway resolves `unknown` — honest but lossy. This
+ *  bounded buffer keeps the last outcomes so a later
+ *  `browser.tool.reconcile` (same SW lifetime — a restart loses both
+ *  sides equally) can report what actually happened. LRU-capped; the
+ *  gateway's durable tool.* events remain the audit source of truth. */
+const MAX_RECONCILE_OUTCOMES = 512;
+/** Per-outcome payload bound — tool results can be large snapshots;
+ *  reconcile needs the verdict + bounded evidence, not the full body. */
+const MAX_RECONCILE_RESULT_BYTES = 64 * 1024;
+const recentToolOutcomes = new Map<string, unknown>();
+
+function boundReconcilePayload(value: unknown): unknown {
+  try {
+    const json = JSON.stringify(value);
+    if (json === undefined || json.length <= MAX_RECONCILE_RESULT_BYTES) return value;
+    return { omitted: true, bytes: json.length };
+  } catch {
+    return { omitted: true };
+  }
+}
+
+/** outcome shape: {status, result?|error?} — the verdict fields are
+ *  always kept; only the bulky result payload is bounded. */
+export function recordBrowserToolOutcome(
+  toolCallId: string,
+  outcome: { status: string; result?: unknown; error?: unknown },
+): void {
+  if (!toolCallId) return;
+  recentToolOutcomes.delete(toolCallId);
+  recentToolOutcomes.set(toolCallId, {
+    status: outcome.status,
+    ...(outcome.result !== undefined ? { result: boundReconcilePayload(outcome.result) } : {}),
+    ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+  });
+  while (recentToolOutcomes.size > MAX_RECONCILE_OUTCOMES) {
+    const oldest = recentToolOutcomes.keys().next().value;
+    if (oldest === undefined) break;
+    recentToolOutcomes.delete(oldest);
+  }
+}
+
+/** toolCallId → recorded outcome, or null for unknown ids. */
+export function lookupBrowserToolOutcomes(
+  toolCallIds: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const id of toolCallIds) {
+    const o = recentToolOutcomes.get(id);
+    if (o !== undefined) out[id] = o;
+  }
+  return out;
+}
+
 interface PierceDomNode {
   nodeId?: number;
   backendNodeId?: number;

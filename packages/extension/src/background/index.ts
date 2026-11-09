@@ -105,7 +105,7 @@ import {
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab, setNetworkLogStore } from "./network-log.js";
-import { createToolHostHandler, disposeBrowserToolTabState, disposeBrowserToolTaskState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
+import { createToolHostHandler, disposeBrowserToolTabState, disposeBrowserToolTaskState, lookupBrowserToolOutcomes, recordBrowserToolOutcome, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets, withCdp } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { clearTaskReasoning, gatewayEventToLegacy } from "./gateway/legacy-events.js";
@@ -1508,12 +1508,42 @@ const toolHostHandler = createToolHostHandler({
   });
 
 setGatewayServerRequestHandler(async (method, payload) => {
+  // result_lost reconcile (§4.2/P1.6): the gateway asks what happened to
+  // calls whose results were lost to a channel drop. Read-only lookup
+  // in the bounded recent-outcomes buffer — unknown ids are simply
+  // absent from the response, which the gateway treats as "still
+  // unknown", never as success.
+  if (method === "browser.tool.reconcile") {
+    const p = (payload ?? {}) as { toolCallIds?: unknown };
+    const ids = Array.isArray(p.toolCallIds)
+      ? p.toolCallIds.filter((x): x is string => typeof x === "string").slice(0, 512)
+      : [];
+    return { outcomes: lookupBrowserToolOutcomes(ids) };
+  }
   if (method !== "browser.tool.request") {
     const e = new Error(`no handler for ${method}`) as Error & { code?: string };
     e.code = "proto.unsupported";
     throw e;
   }
-  return toolHostHandler(payload);
+  const req = (payload ?? {}) as { toolCallId?: string };
+  try {
+    const result = await toolHostHandler(payload);
+    // Buffer the outcome BEFORE responding — if the response is lost to
+    // a channel drop, reconcile can still report what the host did.
+    if (typeof req.toolCallId === "string") {
+      recordBrowserToolOutcome(req.toolCallId, { status: "completed", result });
+    }
+    return result;
+  } catch (err) {
+    if (typeof req.toolCallId === "string") {
+      const e = err as { code?: string; message?: string };
+      recordBrowserToolOutcome(req.toolCallId, {
+        status: "failed",
+        error: { code: e.code ?? "internal", message: e.message ?? String(err) },
+      });
+    }
+    throw err;
+  }
 });
 
 // P1-08: when gatewayMode is on, route agent-domain bridge.request calls
