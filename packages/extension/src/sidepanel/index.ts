@@ -3067,6 +3067,25 @@ function applyBufferedConversationBridgeEvent(conversationId: string, event: Sid
       }
       break;
     }
+    case "goal.updated": {
+      // goal.set fires during prompt setup, before turn.started maps
+      // the thread — without this case the buffered event drops and
+      // the goal badge never appears.
+      if (event.goal) {
+        goalsByConversationId.set(conversationId, event.goal);
+        if (conversationId === state.currentConversationId) {
+          state.activeGoal = event.goal;
+        }
+      }
+      break;
+    }
+    case "goal.cleared": {
+      goalsByConversationId.delete(conversationId);
+      if (conversationId === state.currentConversationId) {
+        state.activeGoal = null;
+      }
+      break;
+    }
     default:
       break;
   }
