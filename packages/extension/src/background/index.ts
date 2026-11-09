@@ -1515,10 +1515,18 @@ setGatewayServerRequestHandler(async (method, payload) => {
   // unknown", never as success.
   if (method === "browser.tool.reconcile") {
     const p = (payload ?? {}) as { toolCallIds?: unknown };
-    const ids = Array.isArray(p.toolCallIds)
-      ? p.toolCallIds.filter((x): x is string => typeof x === "string").slice(0, 512)
-      : [];
-    return { outcomes: lookupBrowserToolOutcomes(ids) };
+    // Strict schema: a malformed reconcile request is a protocol bug —
+    // fail honestly rather than silently answering "nothing found".
+    if (
+      !Array.isArray(p.toolCallIds) ||
+      p.toolCallIds.length > 512 ||
+      p.toolCallIds.some((x) => typeof x !== "string" || x.length === 0)
+    ) {
+      const e = new Error("browser.tool.reconcile requires toolCallIds: string[] (≤512)") as Error & { code?: string };
+      e.code = "proto.invalid";
+      throw e;
+    }
+    return { outcomes: lookupBrowserToolOutcomes(p.toolCallIds) };
   }
   if (method !== "browser.tool.request") {
     const e = new Error(`no handler for ${method}`) as Error & { code?: string };
