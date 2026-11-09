@@ -2437,14 +2437,49 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           typeof args.limit === "number" && Number.isFinite(args.limit)
             ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
             : 50;
-        const res = (await deps.sendToTab(tabId, {
+        const findMsg = {
           type: "page.dom.find",
           ...(text ? { text } : {}),
           ...(regex ? { regex } : {}),
           ...(args.caseSensitive === true ? { caseSensitive: true } : {}),
           limit,
           ...(str(args.scopeSelector) ? { scopeSelector: str(args.scopeSelector) } : {}),
-        }, { frameId: frameIdArg(args) })) as { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean };
+        };
+        // Unscoped find searches EVERY frame — DOM matches inside
+        // same-process and cross-origin subframes are just as much
+        // "the page" as top-frame text (each match tagged with its
+        // frameId so refs/selectors stay frame-scoped). Explicit
+        // frameId keeps the single-frame search.
+        if (args.frameId === undefined || args.frameId === null) {
+          const fids = await consoleFrameIds(deps, tabId);
+          if (fids !== undefined && fids.length > 1) {
+            const merged: Array<Record<string, unknown>> = [];
+            let scanned = 0;
+            let truncated = false;
+            for (const fid of fids.slice(0, CONSOLE_MERGE_FRAME_CAP)) {
+              const fres = (await deps.sendToTab(tabId, findMsg, { frameId: fid }).catch(() => undefined)) as
+                | { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean }
+                | undefined;
+              if (fres?.ok !== true) continue;
+              scanned += fres.scanned ?? 0;
+              truncated = truncated || fres.truncated === true;
+              for (const m of Array.isArray(fres.matches) ? fres.matches : []) {
+                if (m !== null && typeof m === "object") {
+                  merged.push({ ...(m as Record<string, unknown>), frameId: fid });
+                }
+              }
+            }
+            return {
+              ok: true,
+              matches: merged.slice(0, limit),
+              scanned,
+              truncated,
+              frames: fids.length,
+              resolvedTabId: tabId,
+            };
+          }
+        }
+        const res = (await deps.sendToTab(tabId, findMsg, { frameId: frameIdArg(args) })) as { ok?: boolean; matches?: unknown[]; scanned?: number; truncated?: boolean };
         if (res?.ok !== true) {
           throw toolError("proto.invalid", "browser.page.find requires args.text or args.regex");
         }

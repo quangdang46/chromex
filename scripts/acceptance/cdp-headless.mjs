@@ -1302,6 +1302,17 @@ await runScenario(
           cdp.consoleOopifOk = false;
           cdp.consoleWaitOopifOk = false;
         }
+        // Unscoped page.find must surface text living inside the OOPIF —
+        // match tagged with the OOPIF's webNavigation frameId.
+        cdp.findOopifOk = false;
+        if (cdpCross?.frameId) {
+          const findRes = await runner.browserToolCall(
+            taskId, "browser.page.find",
+            { tabId: cdpFrameTabId, text: "Frame Child", limit: 20 }, token, 60_000,
+          ).catch(() => null);
+          const findMatches = (findRes?.result ?? findRes ?? {}).matches ?? [];
+          cdp.findOopifOk = findMatches.some((m) => m.frameId === cdpCross.frameId);
+        }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
         );
@@ -1315,7 +1326,8 @@ await runScenario(
           cdp.pierceIframeClickOk === true && cdp.pierceIframeEvalOk === true &&
           cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
           cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
-          cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true,
+          cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true &&
+          cdp.findOopifOk === true,
         ...cdp,
       };
 

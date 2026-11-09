@@ -4023,7 +4023,6 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  map exists on this backend, so matches carry selectors + text only
    *  (the "bounded text matches with selectors" fallback). */
   async #find(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const target = await this.#frameTarget(taskId, args);
     const text = typeof args.text === "string" ? args.text : null;
     const regex = typeof args.regex === "string" ? args.regex : null;
     if (!text && !regex) {
@@ -4040,8 +4039,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       ? Math.min(Math.max(Math.floor(args.limit), 1), 200)
       : 50;
     const scopeSelector = typeof args.scopeSelector === "string" ? args.scopeSelector : null;
-    const matches = (await target.evaluate(
-      ({ text, regex, caseSensitive, limit, scopeSelector }) => {
+    const findFn = ({ text, regex, caseSensitive, limit, scopeSelector }: {
+      text: string | null; regex: string | null; caseSensitive: boolean;
+      limit: number; scopeSelector: string | null;
+    }) => {
         const flags = caseSensitive ? "" : "i";
         let matcher: (haystack: string) => boolean;
         if (regex) {
@@ -4096,9 +4097,45 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
           });
         }
         return { matches: out, scanned, truncated: candidates.length > scanned };
-      },
-      { text, regex, caseSensitive: args.caseSensitive === true, limit, scopeSelector },
-    )) as { matches?: unknown[]; scanned?: number; truncated?: boolean } | undefined;
+    };
+    const findParams = {
+      text, regex, caseSensitive: args.caseSensitive === true, limit, scopeSelector,
+    };
+    type FindRes = { matches?: unknown[]; scanned?: number; truncated?: boolean } | undefined;
+    const runFind = (t: { evaluate: (fn: unknown, arg: unknown) => Promise<unknown> }) =>
+      t.evaluate(findFn, findParams) as Promise<FindRes>;
+    // Unscoped find covers every frame — Playwright auto-attaches OOPIFs
+    // so page.frames() reaches cross-origin subframes too; matches are
+    // tagged with their frame index (the isolated frameId space).
+    if (args.frameId === undefined || args.frameId === null) {
+      const page = await this.#pageFor(taskId, args);
+      const frames = typeof page.frames === "function" ? page.frames() : [];
+      if (frames.length > 1) {
+        const merged: Array<Record<string, unknown>> = [];
+        let scanned = 0;
+        let truncated = false;
+        for (let i = 0; i < frames.length && merged.length < limit; i++) {
+          const res = await runFind(frames[i] as never).catch(() => undefined);
+          if (!res) continue;
+          scanned += res.scanned ?? 0;
+          truncated = truncated || res.truncated === true;
+          for (const m of Array.isArray(res.matches) ? res.matches : []) {
+            if (m !== null && typeof m === "object") {
+              merged.push({ ...(m as Record<string, unknown>), frameId: i });
+            }
+          }
+        }
+        return {
+          ok: true,
+          matches: merged.slice(0, limit),
+          scanned,
+          truncated,
+          frames: frames.length,
+        };
+      }
+    }
+    const target = await this.#frameTarget(taskId, args);
+    const matches = await runFind(target as never);
     return {
       ok: true,
       matches: Array.isArray(matches?.matches) ? matches.matches : [],

@@ -911,6 +911,55 @@ describe("tool host (P1-09)", () => {
     });
   });
 
+  test("page.find unscoped merges matches across all frames with frameId tags", async () => {
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab: vi.fn(async (_t: number, _m: unknown, opts?: { frameId?: number }) => ({
+        ok: true,
+        scanned: 4,
+        truncated: false,
+        matches: [
+          { ref: `m-${opts?.frameId}`, selector: "p", tagName: "p", role: "", text: "needle" },
+        ],
+      })),
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.find", { text: "needle" }))) as {
+      matches: Array<{ frameId?: number; ref?: string }>;
+      frames?: number;
+      scanned: number;
+    };
+    expect(res.matches).toHaveLength(2);
+    expect(res.matches.map((m) => m.frameId).sort()).toEqual([10, 20]);
+    expect(res.frames).toBe(2);
+    expect(res.scanned).toBe(8);
+  });
+
+  test("page.find explicit frameId stays single-frame", async () => {
+    const sendToTab = vi.fn(async () => ({
+      ok: true,
+      scanned: 3,
+      truncated: false,
+      matches: [{ ref: "m1", selector: "p", tagName: "p", role: "", text: "x" }],
+    }));
+    const d = deps({
+      listFrames: vi.fn(async () => [
+        { frameId: 10, url: "https://x.test/" },
+        { frameId: 20, url: "https://widget.test/" },
+      ]),
+      sendToTab,
+    });
+    const h = createToolHostHandler(d);
+    const res = (await h(req("browser.page.find", { text: "x", frameId: 20 }))) as {
+      matches: Array<{ frameId?: number }>;
+    };
+    expect(sendToTab).toHaveBeenCalledTimes(1);
+    expect(res.matches[0]?.frameId).toBeUndefined();
+  });
+
   test("page.find without text/regex or with bad regex → proto.invalid", async () => {
     const d = deps();
     const h = createToolHostHandler(d);
