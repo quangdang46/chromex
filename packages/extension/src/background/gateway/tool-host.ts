@@ -1251,6 +1251,21 @@ export async function disposeBrowserToolTabState(tabId: number): Promise<void> {
   }
 }
 
+/** Task purged/released: drop task-scoped held state so a dead task's
+ *  pending file chooser can't pin a CDP session (and block the page's
+ *  chooser flow) until its tab happens to close. Tab-scoped resources
+ *  (routes, taps, emulation, CDP holds) are NOT touched — they belong
+ *  to the tab, which outlives any single task. */
+export async function disposeBrowserToolTaskState(taskId: string): Promise<void> {
+  if (!taskId) return;
+  for (const [id, p] of pendingFileChoosers) {
+    if (p.taskId === taskId) {
+      pendingFileChoosers.delete(id);
+      await p.release().catch(() => {});
+    }
+  }
+}
+
 /** Tool-request handler plus tab-scoped cleanup for closure-held CDP
  *  sessions (coverage/metrics/screencast) — index.ts calls disposeTab
  *  from chrome.tabs.onRemoved alongside disposeBrowserToolTabState. */

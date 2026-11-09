@@ -436,6 +436,47 @@ describe("tool host (P1-09)", () => {
     }))).rejects.toMatchObject({ code: "proto.invalid" });
   });
 
+  test("disposeBrowserToolTaskState releases only that task's file choosers", async () => {
+    const { disposeBrowserToolTaskState } = await import("../../src/background/gateway/tool-host.js");
+    const handlers: Array<(p: Record<string, unknown>) => void> = [];
+    const released: string[] = [];
+    const d = deps({
+      acquireCdp: vi.fn(async () => ({
+        send: vi.fn(async () => ({})),
+        on: vi.fn((_e: string, cb: (p: Record<string, unknown>) => void) => {
+          handlers.push(cb);
+          return () => {};
+        }),
+      }) as never),
+      releaseCdp: vi.fn(async (tabId: number) => { released.push(`tab:${tabId}`); }),
+    });
+    const h = createToolHostHandler(d);
+    const arm = async (taskId: string) => {
+      const waitP = h({ ...req("browser.page.wait", { fileChooser: true, timeoutMs: 5000 }), taskId }) as Promise<{
+        fileChooserId: string;
+      }>;
+      await new Promise((r) => setTimeout(r, 30));
+      handlers[handlers.length - 1]?.({ backendNodeId: 9, mode: "selectSingle" });
+      return waitP;
+    };
+    const t1 = await arm("t1");
+    const t2 = await arm("t2");
+    expect(released).toHaveLength(0);
+    // A different task's purge must not touch t1's chooser.
+    await disposeBrowserToolTaskState("other");
+    expect(released).toHaveLength(0);
+    await disposeBrowserToolTaskState("t1");
+    expect(released).toHaveLength(1);
+    // t2's chooser survives — feed still resolves its id.
+    await h({
+      ...req("browser.page.setInputFiles", { fileChooserId: (await t2).fileChooserId, files: ["/tmp/a.png"] }),
+      taskId: "t2",
+    });
+    await disposeBrowserToolTaskState("t2");
+    expect(released).toHaveLength(2);
+    void t1;
+  });
+
   test("page.hover coordinate args map to x/y step; mixing rejected", async () => {
     const d = deps();
     const h = createToolHostHandler(d);

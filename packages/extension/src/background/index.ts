@@ -105,7 +105,7 @@ import {
 } from "./message-guard.js";
 import { getGatewayRuntime, resetGatewayRuntime, setAgentBadge, setGatewayServerRequestHandler } from "./gateway/runtime.js";
 import { getNetworkInflightCount, installNetworkLog, listNetworkRequests, resetNetworkTab, setNetworkLogStore } from "./network-log.js";
-import { createToolHostHandler, disposeBrowserToolTabState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
+import { createToolHostHandler, disposeBrowserToolTabState, disposeBrowserToolTaskState, toolHostSnapshotRegistry } from "./gateway/tool-host.js";
 import { acquireCdp, releaseCdp, acquireCdpTarget, releaseCdpTarget, detachOrphanedDebuggerTargets, withCdp } from "./cdp.js";
 import { getFingerprintContext } from "./fingerprint-salt.js";
 import { gatewayEventToLegacy } from "./gateway/legacy-events.js";
@@ -1557,6 +1557,14 @@ void getGatewayRuntime().then((rt) => {
     const e = env as { kind?: string; stream?: string; taskId?: string; seq?: number };
     if (e.kind === "event" && e.stream === "task" && typeof e.seq === "number" && e.taskId) {
       rt?.tasks.markRendered(e.taskId, e.seq);
+    }
+    // Task purge → drop the task's held tool state (pending file
+    // choosers pin CDP sessions + block the page's chooser flow).
+    // Tab-scoped holds stay — the tab outlives the task.
+    const ge = env as { stream?: string; type?: string; payload?: { taskId?: string } };
+    if (ge.stream === "gateway" && ge.type === "gateway.task_purged") {
+      const purgedTaskId = typeof ge.payload?.taskId === "string" ? ge.payload.taskId : "";
+      if (purgedTaskId) void disposeBrowserToolTaskState(purgedTaskId);
     }
   });
 });
