@@ -72,7 +72,10 @@ const FRAME_HEADER = 4;
 class GatewayIpc {
   #socket: net.Socket | null = null;
   #buf = Buffer.alloc(0);
-  #pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  #pending = new Map<
+    string,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void; timer?: NodeJS.Timeout }
+  >();
   // hello is per-CONNECTION: the gateway allows exactly one hello per
   // socket and demands it first. A cached promise is not enough — the
   // socket can die and reconnect underneath us (gateway restart), and
@@ -115,7 +118,10 @@ class GatewayIpc {
   }
 
   #failAll(err: Error): void {
-    for (const p of this.#pending.values()) p.reject(err);
+    for (const p of this.#pending.values()) {
+      if (p.timer) clearTimeout(p.timer);
+      p.reject(err);
+    }
     this.#pending.clear();
     this.#socket = null;
     this.#helloedSocket = null;
@@ -139,6 +145,7 @@ class GatewayIpc {
         const p = this.#pending.get(env.id);
         if (!p) continue;
         this.#pending.delete(env.id);
+        if (p.timer) clearTimeout(p.timer);
         if (env.error) {
           p.reject(new Error(`${env.error.code ?? "error"}: ${env.error.message ?? ""}`));
         } else {
@@ -206,12 +213,25 @@ class GatewayIpc {
     }
   }
 
-  async request(method: string, payload: unknown): Promise<unknown> {
+  async request(method: string, payload: unknown, timeoutMs = 120_000): Promise<unknown> {
     await this.#ensureHello();
     const sock = await this.#connect();
     const id = `req-${randomUUID()}`;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
+      const entry: { resolve: (v: unknown) => void; reject: (e: Error) => void; timer?: NodeJS.Timeout } = {
+        resolve,
+        reject,
+      };
+      // Gateway-side calls have their own timeouts, but a wedged gateway
+      // must not hang the MCP child forever — bound the wait and free
+      // the pending slot.
+      entry.timer = setTimeout(() => {
+        if (this.#pending.delete(id)) {
+          reject(new Error(`ipc request ${method} timed out after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+      entry.timer.unref?.();
+      this.#pending.set(id, entry);
       this.#send(sock, { v: 1, kind: "request", id, method, payload });
     });
   }
