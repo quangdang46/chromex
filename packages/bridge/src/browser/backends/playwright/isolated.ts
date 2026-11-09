@@ -2960,7 +2960,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  in-page function, agent supplies names/URLs/put-specs never code.
    *  Read ops never create caches. */
   async #caches(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const action = typeof args.action === "string" ? args.action : "listCaches";
     const VALID = ["listCaches", "listKeys", "match", "put", "delete", "clear"];
     if (!VALID.includes(action)) {
@@ -3112,7 +3112,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  in-page function; list reads registration metadata, unregister
    *  removes by exact scope. */
   async #serviceWorker(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const action = typeof args.action === "string" ? args.action : "list";
     if (!["list", "unregister", "update"].includes(action)) {
       throw protocolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister|update");
@@ -3725,7 +3725,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  are bounded per-entry and the whole result drops to keys-only
    *  past the size cap (truncated flag stays honest). */
   async #storage(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const action = typeof args.action === "string" ? args.action : "list";
     if (!["list", "get", "set", "remove", "clear"].includes(action)) {
       throw protocolError("proto.invalid", "browser.page.localStorage args.action must be list|get|set|remove|clear");
@@ -3795,7 +3795,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
    *  in-page function, agent supplies names/keys/values never code.
    *  Read ops never create a missing database. */
   async #idb(taskId: string, args: Record<string, unknown>): Promise<unknown> {
-    const page = await this.#pageFor(taskId, args);
+    const page = await this.#frameTarget(taskId, args);
     const action = typeof args.action === "string" ? args.action : "listDbs";
     const VALID = ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"];
     if (!VALID.includes(action)) {
@@ -4471,6 +4471,13 @@ const FRAME_CAPABLE_TOOLS: ReadonlySet<BrowserToolName> = new Set([
   "browser.page.drag",
   "browser.page.upload",
   "browser.page.setInputFiles",
+  // Per-origin page-context APIs — frameId picks that frame's origin
+  // store (an OOPIF's localStorage/IDB/caches/SW registrations are a
+  // distinct origin context, reachable via page.frames()).
+  "browser.page.localStorage",
+  "browser.page.indexedDB",
+  "browser.page.caches",
+  "browser.page.serviceWorker",
 ]);
 
 /** Parse args.expect (chromex-0fza). null when absent/empty; throws

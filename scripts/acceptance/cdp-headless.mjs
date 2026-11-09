@@ -1324,6 +1324,28 @@ await runScenario(
           // a SUBFRAME (not top) and reported which one.
           cdp.waitOopifTextOk = waitBody.ok === true &&
             [cdpCross?.frameId, cdpSame?.frameId].includes(waitBody.frameId);
+          // Per-origin storage: the OOPIF's localStorage is a distinct
+          // store — set a key inside the frame, read it back scoped,
+          // and prove the top frame does NOT see it.
+          await runner.browserToolCall(
+            taskId, "browser.page.evaluate",
+            { tabId: cdpFrameTabId, frameId: cdpCross.frameId, expression: "(localStorage.setItem('cdp-oopif-k','v'), 'set')" },
+            token, 60_000,
+          ).catch(() => null);
+          const lsFr = await runner.browserToolCall(
+            taskId, "browser.page.localStorage",
+            { tabId: cdpFrameTabId, frameId: cdpCross.frameId, action: "get", key: "cdp-oopif-k", includeValues: true },
+            token, 60_000,
+          ).catch(() => null);
+          const lsTop = await runner.browserToolCall(
+            taskId, "browser.page.localStorage",
+            { tabId: cdpFrameTabId, action: "get", key: "cdp-oopif-k" },
+            token, 60_000,
+          ).catch(() => null);
+          const lsFrBody = lsFr?.result ?? lsFr ?? {};
+          const lsTopBody = lsTop?.result ?? lsTop ?? {};
+          cdp.storageFrameOk = JSON.stringify(lsFrBody).includes('"v"') &&
+            !JSON.stringify(lsTopBody).includes('"v"');
         }
         await runner.browserToolCall(
           taskId, "browser.tab.close", { tabId: cdpFrameTabId }, token, 60_000,
@@ -1339,7 +1361,8 @@ await runScenario(
           cdp.oopifNetOk === true && cdp.oopifTapOk === true && cdp.oopifRouteOk === true &&
           cdp.ariaOopifOk === true && cdp.waitFrameOk === true &&
           cdp.consoleOopifOk === true && cdp.consoleWaitOopifOk === true &&
-          cdp.findOopifOk === true && cdp.waitOopifTextOk === true,
+          cdp.findOopifOk === true && cdp.waitOopifTextOk === true &&
+          cdp.storageFrameOk === true,
         ...cdp,
       };
 

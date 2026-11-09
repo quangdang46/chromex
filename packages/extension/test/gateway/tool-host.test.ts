@@ -1712,18 +1712,20 @@ describe("tool host (P1-09)", () => {
       tabId: 42, area: "session", action: "set", key: "k", value: "v",
     }));
     expect(calls[1]?.args).toEqual(["session", "set", "k", "v", false]);
-    // validation: missing key/value, bad action, frameId all refuse
+    // validation: missing key/value, bad action refuse
     await expect(h(req("browser.page.localStorage", { tabId: 42, action: "get" }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.localStorage", { tabId: 42, action: "set", key: "k" }))).rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.localStorage", { tabId: 42, action: "bogus" }))).rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.localStorage", { tabId: 42, frameId: 2 }))).rejects.toMatchObject({ code: "proto.invalid" });
+    // frameId scopes to that frame's origin storage (OOPIF included)
+    await h(req("browser.page.localStorage", { tabId: 42, frameId: 7, action: "list" }));
+    expect(calls.at(-1)?.frameIds).toEqual([7]);
   });
 
   test("page.indexedDB marshals args into chromexIdbOp + validates", async () => {
-    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const calls: Array<{ funcName: string; args: unknown[] | undefined; frameIds?: unknown }> = [];
     const d = deps({
-      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
-        calls.push({ funcName: func.name, args });
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[], frameIds?: number[]) => {
+        calls.push({ funcName: func.name, args, frameIds });
         return { ok: true, result: { databases: [{ name: "app", version: 1 }] } };
       }),
     });
@@ -1746,15 +1748,15 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.indexedDB", { tabId: 42, action: "bogus" })))
       .rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.indexedDB", { tabId: 42, frameId: 1 })))
-      .rejects.toMatchObject({ code: "proto.invalid" });
+    await h(req("browser.page.indexedDB", { tabId: 42, frameId: 9 }));
+    expect(calls.at(-1)?.frameIds).toEqual([9]);
   });
 
   test("page.caches marshals args into chromexCacheOp + validates", async () => {
-    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const calls: Array<{ funcName: string; args: unknown[] | undefined; frameIds?: unknown }> = [];
     const d = deps({
-      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
-        calls.push({ funcName: func.name, args });
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[], frameIds?: number[]) => {
+        calls.push({ funcName: func.name, args, frameIds });
         return { ok: true, result: { caches: ["v1"] } };
       }),
     });
@@ -1777,15 +1779,15 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.caches", { tabId: 42, action: "bogus" })))
       .rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.caches", { tabId: 42, frameId: 1 })))
-      .rejects.toMatchObject({ code: "proto.invalid" });
+    await h(req("browser.page.caches", { tabId: 42, frameId: 4 }));
+    expect(calls.at(-1)?.frameIds).toEqual([4]);
   });
 
   test("page.serviceWorker marshals into chromexSwOp + validates", async () => {
-    const calls: Array<{ funcName: string; args: unknown[] | undefined }> = [];
+    const calls: Array<{ funcName: string; args: unknown[] | undefined; frameIds?: unknown }> = [];
     const d = deps({
-      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[]) => {
-        calls.push({ funcName: func.name, args });
+      runInMainWorld: vi.fn(async (_t: number, func: (...a: unknown[]) => unknown, args?: unknown[], frameIds?: number[]) => {
+        calls.push({ funcName: func.name, args, frameIds });
         return { ok: true, result: { registrations: [], count: 0, controlled: false } };
       }),
     });
@@ -1805,8 +1807,8 @@ describe("tool host (P1-09)", () => {
       .rejects.toMatchObject({ code: "proto.invalid" });
     await expect(h(req("browser.page.serviceWorker", { tabId: 42, action: "bogus" })))
       .rejects.toMatchObject({ code: "proto.invalid" });
-    await expect(h(req("browser.page.serviceWorker", { tabId: 42, frameId: 1 })))
-      .rejects.toMatchObject({ code: "proto.invalid" });
+    await h(req("browser.page.serviceWorker", { tabId: 42, frameId: 6 }));
+    expect(calls.at(-1)?.frameIds).toEqual([6]);
   });
 
   test("browser.bookmarks marshals ops and validates", async () => {

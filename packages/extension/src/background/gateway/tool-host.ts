@@ -499,6 +499,13 @@ const FRAME_SCOPED_TOOLS = new Set([
   "browser.page.screenshot",
   "browser.page.cdp",
   "browser.page.pierce",
+  // Per-origin page-context APIs — frameId selects that frame's origin
+  // store (an OOPIF's localStorage/IDB/caches/SW registrations are a
+  // distinct origin context).
+  "browser.page.localStorage",
+  "browser.page.indexedDB",
+  "browser.page.caches",
+  "browser.page.serviceWorker",
 ]);
 
 const SUPPORTED = new Set([
@@ -2668,9 +2675,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "web storage access requires the scripting permission");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.localStorage is tab-scoped; args.frameId is not supported");
-        }
+
         const action = str(args.action) ?? "list";
         if (!["list", "get", "set", "remove", "clear"].includes(action)) {
           throw toolError("proto.invalid", "browser.page.localStorage args.action must be list|get|set|remove|clear");
@@ -2687,7 +2692,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           tabId,
           chromexStorageOp as (...fnArgs: unknown[]) => unknown,
           [area, action, key ?? "", typeof args.value === "string" ? args.value : "", args.includeValues === true],
-          [0],
+          [frameIdArg(args)],
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `storage op failed: ${res?.error ?? "no result"}`);
@@ -2702,9 +2707,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "indexedDB access requires the scripting permission");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.indexedDB is tab-scoped; args.frameId is not supported");
-        }
+
         const action = str(args.action) ?? "listDbs";
         const VALID = ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"];
         if (!VALID.includes(action)) {
@@ -2740,7 +2743,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
             str(args.keyPath) ?? "",
             limit,
           ],
-          [0],
+          [frameIdArg(args)],
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `indexedDB op failed: ${res?.error ?? "no result"}`);
@@ -2754,9 +2757,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "cache access requires the scripting permission");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.caches is tab-scoped; args.frameId is not supported");
-        }
+
         const action = str(args.action) ?? "listCaches";
         const VALID = ["listCaches", "listKeys", "match", "put", "delete", "clear"];
         if (!VALID.includes(action)) {
@@ -2791,7 +2792,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           // chrome.scripting args must be JSON-serializable — undefined
           // elements are rejected, so absent values go as ""/null.
           [action, cache ?? "", cUrl ?? "", putSpec ?? null, args.ignoreSearch === true, limit],
-          [0],
+          [frameIdArg(args)],
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `cache op failed: ${res?.error ?? "no result"}`);
@@ -2805,9 +2806,6 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           throw toolError("proto.unsupported", "serviceWorker access requires the scripting permission");
         }
         const tabId = await resolveScopedTabId(deps, args, tabScope);
-        if (frameIdArg(args) !== 0) {
-          throw toolError("proto.invalid", "browser.page.serviceWorker is tab-scoped; args.frameId is not supported");
-        }
         const action = str(args.action) ?? "list";
         if (!["list", "unregister", "update"].includes(action)) {
           throw toolError("proto.invalid", "browser.page.serviceWorker args.action must be list|unregister|update");
@@ -2820,7 +2818,7 @@ export function createToolHostHandler(deps: ToolHostDeps) {
           tabId,
           chromexSwOp as (...fnArgs: unknown[]) => unknown,
           [action, scope ?? ""],
-          [0],
+          [frameIdArg(args)],
         )) as { ok?: boolean; result?: unknown; error?: string } | undefined;
         if (!res || res.ok !== true) {
           throw toolError("browser.action_failed", `serviceWorker op failed: ${res?.error ?? "no result"}`);

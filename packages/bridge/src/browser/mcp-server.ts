@@ -748,6 +748,7 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
+        frameId: FRAME_ID,
         area: { type: "string", enum: ["local", "session"], description: "localStorage (default) or sessionStorage." },
         action: { type: "string", enum: ["list", "get", "set", "remove", "clear"], description: "Storage operation (default list)." },
         key: { type: "string", description: "Storage key — required for get/set/remove." },
@@ -758,10 +759,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.indexedDB": {
     description:
-      "Read and manage the page's IndexedDB — the storage modern SPAs/PWAs use that Web Storage tools cannot see. args.database names the DB (required except listDbs); args.store names the object store (required except listDbs/listStores/createStore needs store too). action=listDbs (default) lists databases {name,version}; listStores lists object stores in the DB; keys returns up to limit store keys; get returns one key's value (args.key required); put writes args.value (JSON-serializable, args.key required for out-of-line-key stores); delete removes a key; clear empties the store; createStore creates args.store (args.keyPath optional — omit for out-of-line keys). Read ops never create a missing database. Values are page data — get and includeValues-style reads always require approval; put/delete/clear/createStore are approval-gated mutations. Both backends support it (chrome-extension via chrome.scripting MAIN world, playwright-isolated via page.evaluate).",
+      "Read and manage the page's IndexedDB — the storage modern SPAs/PWAs use that Web Storage tools cannot see. args.database names the DB (required except listDbs); args.store names the object store (required except listDbs/listStores/createStore needs store too). action=listDbs (default) lists databases {name,version}; listStores lists object stores in the DB; keys returns up to limit store keys; get returns one key's value (args.key required); put writes args.value (JSON-serializable, args.key required for out-of-line-key stores); delete removes a key; clear empties the store; createStore creates args.store (args.keyPath optional — omit for out-of-line keys). Read ops never create a missing database. Values are page data — get and includeValues-style reads always require approval; put/delete/clear/createStore are approval-gated mutations. args.frameId scopes to that frame — IndexedDB is per-origin, so an OOPIF's databases are distinct. Both backends support it (chrome-extension via chrome.scripting MAIN world, playwright-isolated via page.evaluate).",
     inputSchema: objectSchema(
       {
         ...TAB_TARGET_PROPS,
+        frameId: FRAME_ID,
         database: { type: "string", description: "IndexedDB database name (required for all actions except listDbs)." },
         store: { type: "string", description: "Object store name (required except listDbs/listStores)." },
         action: { type: "string", enum: ["listDbs", "listStores", "keys", "get", "put", "delete", "clear", "createStore"], description: "IDB operation (default listDbs)." },
@@ -774,10 +776,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.caches": {
     description:
-      "Inspect and manage the page's Cache Storage (Cache API) — the store service workers and PWAs use for offline assets. actions: 'listCaches' (all cache names, no args), 'listKeys' (request URLs+methods inside args.cache), 'match' (args.cache + args.url → status/headers/bodyBase64; optional ignoreSearch matches ignoring the query string), 'put' (args.cache + args.url + args.body — seeds a cached response the SW/page will then serve; args.status default 200, args.headers, args.bodyBase64 or args.bodyText), 'delete' (args.cache + args.url removes one entry), 'clear' (args.cache deletes the whole cache). Requires args.cache for every action except listCaches; frameId is rejected (top-frame scope). listCaches/listKeys are metadata reads; match returns response bodies (page-data egress approval); put/delete/clear always require approval. Available on both backends — the Cache API is page-context, works in secure contexts (https/localhost).",
+      "Inspect and manage the page's Cache Storage (Cache API) — the store service workers and PWAs use for offline assets. actions: 'listCaches' (all cache names, no args), 'listKeys' (request URLs+methods inside args.cache), 'match' (args.cache + args.url → status/headers/bodyBase64; optional ignoreSearch matches ignoring the query string), 'put' (args.cache + args.url + args.body — seeds a cached response the SW/page will then serve; args.status default 200, args.headers, args.bodyBase64 or args.bodyText), 'delete' (args.cache + args.url removes one entry), 'clear' (args.cache deletes the whole cache). Requires args.cache for every action except listCaches; args.frameId scopes to that frame — Cache Storage is per-origin, so an OOPIF's caches are a distinct store from the top frame's. listCaches/listKeys are metadata reads; match returns response bodies (page-data egress approval); put/delete/clear always require approval. Available on both backends — the Cache API is page-context, works in secure contexts (https/localhost).",
     inputSchema: objectSchema(
       {
         action: { type: "string", enum: ["listCaches", "listKeys", "match", "put", "delete", "clear"], description: "Default 'listCaches'." },
+        frameId: FRAME_ID,
         cache: { type: "string", description: "Cache name — required for every action except listCaches." },
         url: { type: "string", description: "Request URL — required for match/put/delete." },
         ignoreSearch: { type: "boolean", description: "match: ignore the URL query string when comparing." },
@@ -791,10 +794,11 @@ const TOOL_SPECS: Record<BrowserToolName, ToolSpec> = {
   },
   "browser.page.serviceWorker": {
     description:
-      "Inspect and manage the page origin's Service Worker registrations — the workers that intercept fetch and decide whether Cache Storage entries are ever consulted. actions: 'list' (default — every registration with scope, scriptURL, installing/waiting/active state + activeState, plus whether this page is controlled and by which script), 'unregister' (args.scope exact-match required — removes the registration; the worker stops controlling the origin on next navigation), 'update' (re-checks each registration's script URL for a newer worker — args.scope optional filters to one registration; resolves when the CHECK completes, not when a new worker installs). Registration metadata is a read; unregister and update always require approval. On chrome-extension each registration also carries targetId when its worker is a live debugger target — pass it to browser.page.cdp {targetId} to run CDP inside the service worker (Runtime.evaluate, Network.*, CacheStorage inspection); targetId is omitted when the worker isn't attachable. Requires a secure context (https/localhost) — on insecure pages navigator.serviceWorker is absent and the call fails honestly. Available on both backends (page-context API). frameId is rejected (top-frame scope).",
+      "Inspect and manage the page origin's Service Worker registrations — the workers that intercept fetch and decide whether Cache Storage entries are ever consulted. actions: 'list' (default — every registration with scope, scriptURL, installing/waiting/active state + activeState, plus whether this page is controlled and by which script), 'unregister' (args.scope exact-match required — removes the registration; the worker stops controlling the origin on next navigation), 'update' (re-checks each registration's script URL for a newer worker — args.scope optional filters to one registration; resolves when the CHECK completes, not when a new worker installs). Registration metadata is a read; unregister and update always require approval. On chrome-extension each registration also carries targetId when its worker is a live debugger target — pass it to browser.page.cdp {targetId} to run CDP inside the service worker (Runtime.evaluate, Network.*, CacheStorage inspection); targetId is omitted when the worker isn't attachable. Requires a secure context (https/localhost) — on insecure pages navigator.serviceWorker is absent and the call fails honestly. Available on both backends (page-context API). args.frameId scopes to that frame — navigator.serviceWorker resolves the calling frame's origin, so an OOPIF reports ITS origin's registrations (embedded-app workers included).",
     inputSchema: objectSchema(
       {
         action: { type: "string", enum: ["list", "unregister", "update"], description: "Default 'list'." },
+        frameId: FRAME_ID,
         scope: { type: "string", description: "unregister: exact registration scope URL to remove (required). update: optional scope filter." },
       },
     ),
