@@ -42,6 +42,7 @@ export const PROTECTED_TASK_EVENT_TYPES: ReadonlySet<string> = new Set([
   "reasoning.summary",
   "tool.started",
   "tool.completed",
+  "tool.reconciled",
   "permission.requested",
   "permission.resolved",
   "permission.expired",

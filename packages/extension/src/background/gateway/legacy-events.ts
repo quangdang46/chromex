@@ -242,13 +242,15 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
       };
     }
     case "tool.started":
-    case "tool.completed": {
+    case "tool.completed":
+    case "tool.reconciled": {
       // sidepanel renders agent activity via legacy `turn.activity`
       // trace items — translate provider tool events into that shape so
       // users see what the coding agent is doing, Paseo-style.
       const toolCallId = typeof payload.toolCallId === "string" ? payload.toolCallId : "";
       const started = payload.type === "tool.started";
       const failed = !started && (payload.outcome === "failed" || payload.outcome === "cancelled");
+      const unconfirmed = !started && payload.outcome === "unknown";
       const status = started ? "running" : failed ? "failed" : "completed";
       if (started && toolCallId) {
         rememberToolContext(toolCallId, {
@@ -268,7 +270,11 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         itemId: toolCallId || `tool-${Date.now()}`,
         kind: activity.kind,
         title: activity.title,
-        detail: activity.detail,
+        detail: unconfirmed
+          ? activity.detail
+            ? `${activity.detail} — result unconfirmed`
+            : "Result unconfirmed — outcome unknown"
+          : activity.detail,
         status,
         timestampMs: Date.now(),
         tool: ctx.tool || undefined,

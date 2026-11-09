@@ -187,7 +187,7 @@ export function buildSnapshotFromSource(src: SnapshotSource): InlineTaskSnapshot
           p.outcome === "succeeded" || p.outcome === "failed" || p.outcome === "cancelled"
             ? p.outcome
             : null;
-        if (!existing || outcome === null) break;
+        if (!existing || outcome === null || existing.outcome !== "unknown") break;
         existing.outcome = outcome;
         if (p.output !== undefined) existing.outputSummary = boundOutputSummary(p.output);
         if (p.verified)
