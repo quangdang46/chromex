@@ -477,6 +477,42 @@ describe("PlaywrightIsolatedBackend screenshot (chromex-22wi)", () => {
     });
     expect(qualities).toEqual([70, 45, 25]);
   });
+
+  test("element-targeted screenshot clips via locator.screenshot (selector + ref)", async () => {
+    const shots: Array<{ sel: string; opts: unknown }> = [];
+    const page = {
+      url: () => "https://x.example/",
+      title: async () => "X",
+      locator: (sel: string) => ({
+        first: () => ({
+          screenshot: async (opts: unknown) => {
+            shots.push({ sel, opts });
+            return Buffer.alloc(1024, 7);
+          },
+        }),
+      }),
+    };
+    const backend = new PlaywrightIsolatedBackend({
+      loadPlaywright: async () => stubPlaywright([page]) as never,
+    });
+    const res = (await backend.execute("t1", "browser.page.screenshot", { selector: ".card" })) as {
+      dataBase64: string;
+      mimeType: string;
+      bytes: number;
+    };
+    expect(res.mimeType).toBe("image/jpeg");
+    expect(res.bytes).toBe(1024);
+    expect(shots).toHaveLength(1);
+    expect(shots[0]!.sel).toBe(".card");
+    expect(shots[0]!.opts).toMatchObject({ type: "jpeg", quality: 70 });
+    // label-only and fullPage+element refuse honestly
+    await expect(
+      backend.execute("t1", "browser.page.screenshot", { label: "Save", fullPage: true }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+    await expect(
+      backend.execute("t1", "browser.page.screenshot", { label: "Save" }),
+    ).rejects.toMatchObject({ code: "proto.invalid" });
+  });
 });
 
 /** Minimal playwright-core stub — only what the isolated backend touches. */
