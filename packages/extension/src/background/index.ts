@@ -2407,6 +2407,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // provider session and emits permission.resolved durably.
           sendResponse(await bridge.request("permission.respond", message.payload ?? {}));
           return;
+        case "goal.clear":
+          sendResponse(await bridge.request("goal.clear", message.payload ?? {}));
+          return;
         case "turn.interrupt":
           sendResponse(await handleTurnInterrupt(message.threadId, message.turnId));
           return;

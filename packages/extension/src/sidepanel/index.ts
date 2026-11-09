@@ -501,8 +501,19 @@ type OnlineImagePromptExtraction = {
   attachment?: UserFileAttachment;
 };
 
+interface SidepanelThreadGoal {
+  threadId?: string;
+  objective?: string;
+  status?: string;
+  tokenBudget?: number | null;
+  tokensUsed?: number | null;
+  timeUsedSeconds?: number | null;
+  budgetLimited?: boolean | null;
+}
+
 type SidepanelBridgeEvent = {
   type: string;
+  goal?: SidepanelThreadGoal;
   itemId?: string;
   delta?: string;
   text?: string;
@@ -796,6 +807,7 @@ const conferenceModesByConversationId = new Map<string, ConversationConferenceMo
 const promptActivitiesByConversationId = new Map<string, PromptActivityState>();
 const activePromptUserMessageIdsByConversationId = new Map<string, string>();
 const activeTurnsByConversationId = new Map<string, CodexActiveTurn>();
+const goalsByConversationId = new Map<string, SidepanelThreadGoal>();
 const queuedComposerFlushInFlight = new Set<string>();
 // Conversations whose prompt.send was accepted but whose turn.started
 // has not arrived yet — the event can lag seconds on a cold SW, and
@@ -1030,6 +1042,7 @@ const state = {
   latestPlan: null as CodexTurnPlan | null,
   latestDiff: null as CodexTurnDiff | null,
   latestReroute: null as CodexModelReroute | null,
+  activeGoal: null as SidepanelThreadGoal | null,
   voiceOptions: listCodexRealtimeVoiceOptions(),
   initError: "",
   actionStatus: "",
@@ -2022,6 +2035,35 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     upsertTurnDiffTrace(event.diff);
     shouldRender = state.activeView === "workspace" || state.activeView === "chat";
   }
+  if (event.type === "goal.updated" && event.goal) {
+    const goalConversationId = eventConversationId ?? (isCurrentConversationEvent ? state.currentConversationId : null);
+    if (goalConversationId) {
+      goalsByConversationId.set(goalConversationId, event.goal);
+      rememberConversationThreadId(goalConversationId, event.threadId ?? event.goal.threadId);
+    }
+    if (!isCurrentConversationEvent) {
+      if (eventConversationId) {
+        renderConversationListIfVisible();
+      }
+      return;
+    }
+    state.activeGoal = event.goal;
+    shouldRender = state.activeView === "chat";
+  }
+  if (event.type === "goal.cleared") {
+    const goalConversationId = eventConversationId ?? (isCurrentConversationEvent ? state.currentConversationId : null);
+    if (goalConversationId) {
+      goalsByConversationId.delete(goalConversationId);
+    }
+    if (!isCurrentConversationEvent) {
+      if (eventConversationId) {
+        renderConversationListIfVisible();
+      }
+      return;
+    }
+    state.activeGoal = null;
+    shouldRender = state.activeView === "chat";
+  }
   if (event.type === "account.rate_limits.updated") {
     state.rateLimits = event.rateLimits ?? null;
     shouldRender = state.activeView === "workspace";
@@ -2811,6 +2853,7 @@ function hydrateConversation(conversation: SavedConversation | null): void {
   rememberConversationMetadata(normalized);
   state.promptActivity = promptActivitiesByConversationId.get(normalized.id) ?? null;
   state.activeTurn = activeTurnsByConversationId.get(normalized.id) ?? null;
+  state.activeGoal = goalsByConversationId.get(normalized.id) ?? null;
   state.streamingAssistantMessageIds = new Set(streamingAssistantMessageIdsByConversationId.get(normalized.id) ?? []);
   restoreConferenceModeFromConversation(normalized);
   if (resolveMainViewForConversation(normalized) === "conference") {
@@ -2853,6 +2896,11 @@ function rememberCurrentConversationSnapshot(): void {
     activeTurnsByConversationId.set(state.currentConversationId, state.activeTurn);
   } else {
     activeTurnsByConversationId.delete(state.currentConversationId);
+  }
+  if (state.activeGoal) {
+    goalsByConversationId.set(state.currentConversationId, state.activeGoal);
+  } else {
+    goalsByConversationId.delete(state.currentConversationId);
   }
   if (state.streamingAssistantMessageIds.size) {
     streamingAssistantMessageIdsByConversationId.set(
@@ -3656,6 +3704,7 @@ function renderNow(): void {
                       aria-label="${escapeAttribute(strings.actions.attachFiles)}"
                     >${renderUiIcon("plus")}</button>
                     ${state.settings.planModeEnabled ? renderComposerPlanModeBadge() : ""}
+                    ${state.activeGoal ? renderComposerGoalBadge() : ""}
                     ${renderComposerBrowserActionPermissionControl(strings)}
                   </div>
                   <div class="composer-submit">
@@ -5860,6 +5909,52 @@ function renderComposerPlanModeBadge(): string {
       </button>
     </span>
   `;
+}
+
+function renderComposerGoalBadge(): string {
+  const goal = state.activeGoal;
+  if (!goal?.objective) {
+    return "";
+  }
+  const isKo = state.uiLocale === "ko";
+  const label = isKo ? "골" : "Goal";
+  const dismissLabel = isKo ? "골 모드 해제" : "Clear goal";
+  const objective = goal.objective.length > 80 ? `${goal.objective.slice(0, 77)}…` : goal.objective;
+  const status = typeof goal.status === "string" && goal.status ? goal.status : "";
+  const title = `${label}: ${goal.objective}${status ? ` (${status})` : ""}`;
+  return `
+    <span class="composer-plan-mode-badge composer-goal-badge" title="${escapeAttribute(title)}" aria-label="${escapeAttribute(title)}">
+      <span class="composer-plan-mode-badge-copy">
+        ${renderUiIcon("target")}
+        <span class="composer-goal-badge-objective">${escapeHtml(objective)}</span>
+      </span>
+      <button
+        type="button"
+        class="composer-plan-mode-dismiss"
+        data-goal-dismiss
+        aria-label="${escapeAttribute(dismissLabel)}"
+        title="${escapeAttribute(dismissLabel)}"
+      >
+        ${renderUiIcon("x")}
+      </button>
+    </span>
+  `;
+}
+
+async function clearActiveGoal(): Promise<void> {
+  const goal = state.activeGoal;
+  if (!goal) {
+    return;
+  }
+  const threadId = goal.threadId || state.threadId || "";
+  state.activeGoal = null;
+  if (state.currentConversationId) {
+    goalsByConversationId.delete(state.currentConversationId);
+  }
+  render();
+  if (threadId) {
+    await sendRuntimeMessage({ type: "goal.clear", payload: { threadId } }).catch(() => undefined);
+  }
 }
 
 async function setPlanModeEnabled(nextEnabled: boolean, options: { focusComposer?: boolean; silent?: boolean } = {}): Promise<void> {
@@ -13952,6 +14047,10 @@ function bindEvents(): void {
     void setPlanModeEnabled(false, { focusComposer: true });
   });
 
+  root.querySelector<HTMLButtonElement>("[data-goal-dismiss]")?.addEventListener("click", () => {
+    void clearActiveGoal();
+  });
+
   root.querySelector<HTMLButtonElement>("#create-profile")?.addEventListener("click", () => {
     openProfileEditor("create");
   });
@@ -16900,6 +16999,7 @@ async function deleteConversationFromUi(conversationId: string): Promise<void> {
     conversationId,
   });
   state.recentChats = result.recentChats;
+  goalsByConversationId.delete(conversationId);
   if (deletingCurrentConversation) {
     hydrateConversation(result.currentConversation);
     state.activeView = "chat";
@@ -23313,6 +23413,7 @@ async function startNewChat(): Promise<void> {
   state.latestPlan = null;
   state.latestDiff = null;
   state.latestReroute = null;
+  state.activeGoal = null;
   state.pendingProfileQuestion = null;
   state.realtimeInterpreter = createRealtimeInterpreterState();
   profileQuestionStreamBuffers.clear();
@@ -23368,6 +23469,7 @@ async function startNewConferencePage(): Promise<void> {
   state.latestPlan = null;
   state.latestDiff = null;
   state.latestReroute = null;
+  state.activeGoal = null;
   state.pendingProfileQuestion = null;
   state.conferenceMode = {
     ...createConferenceModeState(),

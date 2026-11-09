@@ -7117,6 +7117,12 @@ button.primary,
   height: 16px;
 }
 
+.composer-goal-badge-objective {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .composer-plan-mode-dismiss {
   width: 24px;
   height: 24px;
