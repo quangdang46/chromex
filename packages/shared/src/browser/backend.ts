@@ -122,10 +122,9 @@ export interface BrowserBackendCapabilities {
  * verified args.trusted CDP path; select/submit/scroll/focus/
  * navigate/wait/find and in-memory upload are programmatic, not
  * gestures. filePicker stays false — setInputFiles ≠ the native picker.
- * playwright-isolated: isolated profile, no user session/tabs; iframe "all"
- * stays PROVISIONAL until spike-B4 frame tests pass — default reported
- * conservatively as "none" until then? NO: plan marks it PROVISIONAL(spike-B4),
- * so we report the CLAIMED level but callers must treat it as unproven.
+ * playwright-isolated: isolated profile, no user session/tabs; iframe
+ * "all" via args.frameId = page.frames() index (FRAME_CAPABLE_TOOLS,
+ * OOPIFs included — agent-loop-isolated verified).
  * filePicker ≠ setInputFiles: playwright can setInputFiles by path but
  * cannot open the user's native picker — reflected in `filePicker`.
  */
@@ -183,11 +182,15 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     screenshot: true,
     screenshotImagePayload: true,
     upload: true,
-    // page.locator does not pierce frame boundaries — DOM actions and
-    // frame-scoped args.frameId are refused proto.unsupported until
-    // frameLocator support lands. ariaSnapshot may still surface iframe
-    // content for observation, but the proven action level is "none".
-    iframe: "none",
+    // args.frameId = index into page.frames() (0 = main) across
+    // FRAME_CAPABLE_TOOLS — evaluate/snapshot/extract/find/wait/
+    // click/focus/type/fill/select/submit/scroll/hover/press/drag/
+    // upload/setInputFiles/localStorage/indexedDB/caches/serviceWorker.
+    // Playwright auto-attaches OOPIFs, so cross-origin children are
+    // reachable — verified by agent-loop-isolated frame legs (evaluate+
+    // fill inside a cross-origin iframe child). Page-level tools
+    // (screenshot/pdf/mhtml/navigate…) still refuse frameId honestly.
+    iframe: "all",
     nativeDialogs: false,
     filePicker: false, // setInputFiles works; native picker does not
     trustedGesture: false,

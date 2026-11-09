@@ -40,9 +40,9 @@ describe("backend capabilities", () => {
     // runtime iframe claims are ignored entirely — the advertised level
     // is the verified default, never a runtime assertion.
     const iframeAttempt = effectiveBackendCapabilities("playwright-isolated", {
-      iframe: "all", // ignored: cannot widen
+      iframe: "none", // ignored: cannot narrow either — default is verified "all"
     });
-    expect(iframeAttempt.iframe).toBe("none");
+    expect(iframeAttempt.iframe).toBe("all");
     const widened = effectiveBackendCapabilities("playwright-isolated", {
       accessibility: false,
     });
