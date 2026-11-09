@@ -97,7 +97,11 @@ describe("supportedToolsForBackend (chromex-51ua)", () => {
     for (const tool of tools) expect(BROWSER_TOOL_NAMES).toContain(tool);
   });
 
-  test("playwright-cdp has no executor — advertises nothing", () => {
-    expect(supportedToolsForBackend("playwright-cdp")).toEqual([]);
+  test("playwright-cdp shares the isolated executor surface", () => {
+    // cdp.ts reuses PlaywrightIsolatedBackend's execute() over
+    // connectOverCDP — identical honest tool set.
+    expect(supportedToolsForBackend("playwright-cdp")).toEqual(
+      supportedToolsForBackend("playwright-isolated"),
+    );
   });
 });

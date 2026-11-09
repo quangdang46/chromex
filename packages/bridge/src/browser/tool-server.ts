@@ -901,7 +901,9 @@ export class BrowserToolServer {
     // Skipped entirely when the call is already terminal (out of
     // scope) or ambiguous — no point spending a host round-trip.
     const preflightBackend =
-      backendId === "chrome-extension" || backendId === "playwright-isolated";
+      backendId === "chrome-extension" ||
+      backendId === "playwright-isolated" ||
+      backendId === "playwright-cdp";
     const preflightRelevant =
       preflightBackend &&
       withinTabScope &&

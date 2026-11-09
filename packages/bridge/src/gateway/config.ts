@@ -55,7 +55,7 @@ export interface GatewayConfig {
     /** "auto" resolves via §6.6 intent-source ordering */
     defaultBackend: "auto" | "chrome-extension" | "playwright-isolated" | "playwright-cdp";
     allowedBackends: Array<"chrome-extension" | "playwright-isolated" | "playwright-cdp">;
-    playwright: { enabledByUser: boolean };
+    playwright: { enabledByUser: boolean; cdpEndpoint: string | null };
     defaultTabScope: "active" | "selected" | "all";
     snapshot: { maxElements: number; maxTextChars: number };
     /** §4.8 agentEgress.destination stamped on page-content tool calls —
@@ -129,7 +129,7 @@ export const DEFAULT_GATEWAY_CONFIG: GatewayConfig = {
   browser: {
     defaultBackend: "auto",
     allowedBackends: ["chrome-extension", "playwright-isolated"],
-    playwright: { enabledByUser: false },
+    playwright: { enabledByUser: false, cdpEndpoint: null },
     defaultTabScope: "active",
     snapshot: { maxElements: 80, maxTextChars: 12_000 },
     agentEgressDestination: "cloud-provider",
@@ -227,6 +227,17 @@ function providerConfig(raw: unknown, dflt: GatewayProviderConfig): GatewayProvi
 
 /** Deep-merge user config over §5.8 defaults, validating ranges. */
 export function resolveGatewayConfig(raw: unknown): GatewayConfig {
+  const resolved = resolveGatewayConfigStrict(raw);
+  // CHROMEX_CDP_ENDPOINT env is an alternative to the config file key —
+  // resolved here so selection, hello and execute all see one source.
+  if (!resolved.browser.playwright.cdpEndpoint) {
+    const env = process.env.CHROMEX_CDP_ENDPOINT?.trim();
+    if (env) resolved.browser.playwright.cdpEndpoint = env;
+  }
+  return resolved;
+}
+
+function resolveGatewayConfigStrict(raw: unknown): GatewayConfig {
   const base = structuredClone(DEFAULT_GATEWAY_CONFIG);
   if (!isRecord(raw)) return base;
   for (const key of Object.keys(raw)) {
@@ -292,7 +303,13 @@ export function resolveGatewayConfig(raw: unknown): GatewayConfig {
     browser: {
       defaultBackend,
       allowedBackends: allowedBackends.length ? allowedBackends : base.browser.allowedBackends,
-      playwright: { enabledByUser: bool(pw.enabledByUser, false) },
+      playwright: {
+        enabledByUser: bool(pw.enabledByUser, false),
+        cdpEndpoint:
+          typeof pw.cdpEndpoint === "string" && pw.cdpEndpoint.trim()
+            ? pw.cdpEndpoint.trim()
+            : null,
+      },
       defaultTabScope:
         typeof b.defaultTabScope === "string" &&
         (["active", "selected", "all"] as const).includes(b.defaultTabScope as never)

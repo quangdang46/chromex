@@ -29,6 +29,10 @@ export interface BackendSelectionInput {
   playwrightEnabledByUser: boolean;
   /** runtime check: playwright-core + chromium actually installed */
   playwrightRuntimeAvailable: boolean;
+  /** configured CDP endpoint for playwright-cdp (config
+   *  browser.playwright.cdpEndpoint or CHROMEX_CDP_ENDPOINT env).
+   *  Null → playwright-cdp unavailable. */
+  playwrightCdpEndpoint?: string | null;
 }
 
 export interface BackendSelection {
@@ -51,7 +55,17 @@ function isAvailable(id: BrowserBackendId, input: BackendSelectionInput): boolea
   if (id === "playwright-isolated") {
     return input.playwrightEnabledByUser && input.playwrightRuntimeAvailable;
   }
-  // playwright-cdp: research backlog — never selectable in MVP
+  if (id === "playwright-cdp") {
+    // Executor exists (shares the isolated page-ops over connectOverCDP)
+    // but needs user opt-in + a configured CDP endpoint — the target
+    // Chrome must be launched with --remote-debugging-port. Reachability
+    // is verified at execute time, not here.
+    return (
+      input.playwrightEnabledByUser &&
+      typeof input.playwrightCdpEndpoint === "string" &&
+      input.playwrightCdpEndpoint.length > 0
+    );
+  }
   return false;
 }
 
@@ -98,7 +112,9 @@ export function backendMismatchFor(
   pinned: BrowserBackendId,
   needsRealUserTab: boolean,
 ): "browser.backend_mismatch" | null {
-  if (needsRealUserTab && pinned === "playwright-isolated") {
+  // Both playwright backends run tasks in fresh isolated contexts —
+  // neither can serve tab-bound work that needs the user's real tabs.
+  if (needsRealUserTab && pinned !== "chrome-extension") {
     return "browser.backend_mismatch";
   }
   return null;

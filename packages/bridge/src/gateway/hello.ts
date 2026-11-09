@@ -125,7 +125,15 @@ export function buildHelloResponse(
       id,
       available:
         id === "chrome-extension" ||
-        (id !== "playwright-cdp" && deps.config.browser.playwright.enabledByUser),
+        (id === "playwright-isolated" && deps.config.browser.playwright.enabledByUser) ||
+        // playwright-cdp: executor exists (shared isolated page-ops over
+        // connectOverCDP) — available when the user opted in AND a CDP
+        // endpoint is configured (config or CHROMEX_CDP_ENDPOINT env,
+        // normalized into config at resolve time).
+        (id === "playwright-cdp" &&
+          deps.config.browser.playwright.enabledByUser &&
+          typeof deps.config.browser.playwright.cdpEndpoint === "string" &&
+          deps.config.browser.playwright.cdpEndpoint.length > 0),
       capabilities: DEFAULT_BACKEND_CAPABILITIES[id],
     }));
 

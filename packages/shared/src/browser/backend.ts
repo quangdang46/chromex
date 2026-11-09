@@ -232,6 +232,13 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     networkInspection: true,
   },
   "playwright-cdp": {
+    // Same executor as playwright-isolated over a CDP-attached browser
+    // (docs/adr/playwright-cdp.md): per-task browser.newContext() gives
+    // a fresh storage partition, so isolation/dialog/fileChooser/
+    // trusted-input claims match isolated exactly. The attached
+    // browser's own default context (user tabs/session) is never
+    // surfaced to tools — hence existingUser* stay false. Requires the
+    // target Chrome launched with --remote-debugging-port.
     existingUserTabs: false,
     existingUserSession: false,
     isolatedProfile: true,
@@ -239,13 +246,23 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     dom: true,
     accessibility: true,
     screenshot: true,
+    screenshotImagePayload: true,
     upload: true,
     iframe: "all",
-    nativeDialogs: false,
-    filePicker: false,
-    trustedGesture: false,
+    nativeDialogs: true,
+    filePicker: true,
+    trustedGesture: true,
     browserChrome: false,
     attachToRunningChrome: true,
+    tabCreate: true,
+    consoleCapture: true,
+    pageHover: true,
+    pagePress: true,
+    pageFind: true,
+    pageHistory: true,
+    downloadsList: true,
+    downloadsSave: true,
+    networkInspection: true,
   },
 };
 

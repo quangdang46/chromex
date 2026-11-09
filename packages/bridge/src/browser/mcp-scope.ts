@@ -42,17 +42,16 @@ export interface McpScopeFile {
  *  - chrome-extension: tool-host implements every BrowserToolName.
  *  - playwright-isolated: PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS — the
  *    same set execute() enforces.
- *  - playwright-cdp: research backlog, no executor in the bridge —
- *    advertises nothing rather than tools that cannot run.
+ *  - playwright-cdp: same executor as playwright-isolated over a
+ *    CDP-attached browser — identical honest tool surface.
  */
 export function supportedToolsForBackend(backendId: BrowserBackendId): BrowserToolName[] {
   switch (backendId) {
     case "chrome-extension":
       return [...BROWSER_TOOL_NAMES];
     case "playwright-isolated":
-      return [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS];
     case "playwright-cdp":
-      return [];
+      return [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS];
   }
 }
 

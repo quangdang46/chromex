@@ -1291,7 +1291,9 @@ export function toolListEntry(
 } {
   const spec = TOOL_SPECS[internal];
   let description = spec.description;
-  if (backendId === "playwright-isolated") {
+  // playwright-cdp runs the identical executor over a CDP-attached
+  // browser — same description adjustments apply.
+  if (backendId === "playwright-isolated" || backendId === "playwright-cdp") {
     description = description
       .replace(SNAPSHOT_FIRST, PLAYWRIGHT_SNAPSHOT_NOTE)
       .replace(

@@ -26,6 +26,7 @@ import {
   summarizeMetrics,
   type BrowserBackend,
   type BrowserBackendCapabilities,
+  type BrowserBackendId,
   type BrowserExpectCondition,
   type BrowserToolName,
 } from "@codex-sidepanel/shared";
@@ -182,13 +183,27 @@ export interface IsolatedBackendOptions {
   executablePath?: () => Promise<string | null>;
   /** launch args for tests (e.g. headless) */
   launchOptions?: Record<string, unknown>;
+  /** playwright-cdp: acquire the browser via an existing CDP endpoint
+   *  (connectOverCDP) instead of chromium.launch. The returned Browser
+   *  must support newContext() — verified: connectOverCDP does, and
+   *  each context is a fresh storage partition, so the per-task
+   *  isolation model below is unchanged. Throw
+   *  browser.backend_unavailable when no endpoint is configured —
+   *  never silently fall back to launching. */
+  acquireBrowser?: (pw: PwModule) => Promise<PwBrowser>;
+  /** Backend identity — defaults to "playwright-isolated"; the
+   *  playwright-cdp wrapper passes its own id so errors, scope files
+   *  and diagnostics name the real backend. */
+  backendId?: BrowserBackendId;
+  capabilities?: BrowserBackendCapabilities;
+  supportedTools?: readonly BrowserToolName[];
 }
 
 export class PlaywrightIsolatedBackend implements BrowserBackend {
-  readonly id = "playwright-isolated" as const;
-  readonly capabilities: BrowserBackendCapabilities =
-    DEFAULT_BACKEND_CAPABILITIES["playwright-isolated"];
-  readonly supportedTools = [...PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS];
+  readonly id: BrowserBackendId;
+  readonly capabilities: BrowserBackendCapabilities;
+  readonly supportedTools: readonly BrowserToolName[];
+  readonly #toolSet: ReadonlySet<BrowserToolName>;
 
   readonly #opts: IsolatedBackendOptions;
   #pw: PwModule | null = null;
@@ -294,6 +309,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   constructor(opts: IsolatedBackendOptions = {}) {
     this.#opts = opts;
+    this.id = opts.backendId ?? "playwright-isolated";
+    this.capabilities = opts.capabilities ?? DEFAULT_BACKEND_CAPABILITIES["playwright-isolated"];
+    this.#toolSet = new Set(opts.supportedTools ?? PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS);
+    this.supportedTools = [...this.#toolSet];
   }
 
   /** Lazy-load playwright-core; absent dep → browser.backend_unavailable. */
@@ -318,6 +337,10 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
     if (this.#browser?.isConnected()) return this.#browser;
     const pw = await this.#playwright();
+    if (this.#opts.acquireBrowser) {
+      this.#browser = await this.#opts.acquireBrowser(pw);
+      return this.#browser;
+    }
     const executablePath = await this.#opts.executablePath?.().catch(() => null);
     this.#browser = await pw.chromium.launch({
       ...(executablePath ? { executablePath } : {}),
@@ -410,8 +433,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if ((tool as string) === "browser.internal.describeTarget") {
       return this.#describeTarget(taskId, args);
     }
-    if (!PLAYWRIGHT_ISOLATED_SUPPORTED_TOOLS.has(tool)) {
-      throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
+    if (!this.#toolSet.has(tool)) {
+      throw protocolError("proto.unsupported", `${this.id} does not support ${tool}`);
     }
     // chromex-0fza: a malformed args.expect must fail BEFORE the action
     // dispatches — #withExpect re-parses after the fact for the poll.
@@ -429,7 +452,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     ) {
       throw protocolError(
         "proto.unsupported",
-        "args.frameId is not supported on playwright-isolated for this tool",
+        `${this.id} does not support args.frameId for this tool`,
       );
     }
     // CDP-tier args (docs/adr/debugger-tier.md): playwright has no
@@ -444,7 +467,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (tool === "browser.page.snapshot" && args.mode === "dom") {
       throw protocolError(
         "proto.unsupported",
-        "snapshot mode 'dom' is not supported on playwright-isolated (aria snapshot only)",
+        `snapshot mode 'dom' is not supported on ${this.id} (aria snapshot only)`,
       );
     }
     switch (tool) {
@@ -559,7 +582,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       case "browser.clipboard.set":
         return this.#clipboardSet(taskId, args);
       default:
-        throw protocolError("proto.unsupported", `playwright-isolated does not support ${tool}`);
+        throw protocolError("proto.unsupported", `${this.id} does not support ${tool}`);
     }
   }
 
@@ -738,12 +761,12 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     }
     // isolated context has no windows — refuse rather than silently drop
     if (args.windowId !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated has no windows; args.windowId is chrome-extension only");
+      throw protocolError("proto.unsupported", `${this.id} has no windows; args.windowId is chrome-extension only`);
     }
     // pin/mute are chrome tab-strip state with no playwright equivalent —
     // silently dropping them would lie about the created tab's state.
     if (args.pinned !== undefined || args.muted !== undefined || args.autoDiscardable !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, or set autoDiscardable; args.pinned/args.muted/args.autoDiscardable are chrome-extension only");
+      throw protocolError("proto.unsupported", `${this.id} cannot pin, mute, or set autoDiscardable; args.pinned/args.muted/args.autoDiscardable are chrome-extension only`);
     }
     const page = this.#trackPage(await context.newPage());
     this.#activePages.set(taskId, page);
@@ -791,7 +814,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
   async #tabUpdate(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     const page = await this.#pageFor(taskId, args);
     if (args.pinned !== undefined || args.muted !== undefined || args.index !== undefined || args.autoDiscardable !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot pin, mute, reorder, or set autoDiscardable; args.pinned/args.muted/args.index/args.autoDiscardable are chrome-extension only");
+      throw protocolError("proto.unsupported", `${this.id} cannot pin, mute, reorder, or set autoDiscardable; args.pinned/args.muted/args.index/args.autoDiscardable are chrome-extension only`);
     }
     const frozen = typeof args.frozen === "boolean" ? args.frozen : undefined;
     const zoomFactor =
@@ -3012,7 +3035,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
       throw protocolError("proto.invalid", `browser.browsingData.clear args.dataTypes must be one of ${[...VALID].join("|")}`);
     }
     if (args.origins !== undefined) {
-      throw protocolError("proto.unsupported", "playwright-isolated cannot scope browsingData.clear by origins — no per-origin clear API");
+      throw protocolError("proto.unsupported", `${this.id} cannot scope browsingData.clear by origins — no per-origin clear API`);
     }
     const parseTime = (v: unknown): number | undefined => {
       if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -3203,7 +3226,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (action === "get") {
       throw protocolError(
         "proto.unsupported",
-        "playwright-isolated cannot read effective content settings — use page.evaluate navigator.permissions.query instead",
+        `${this.id} cannot read effective content settings — use page.evaluate navigator.permissions.query instead`,
       );
     }
     if (action === "clear") {
@@ -3221,13 +3244,13 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (!mapped) {
       throw protocolError(
         "proto.unsupported",
-        `playwright-isolated has no grantPermissions mapping for content type '${contentType}'`,
+        `${this.id} has no grantPermissions mapping for content type '${contentType}'`,
       );
     }
     if (setting !== "allow") {
       throw protocolError(
         "proto.unsupported",
-        `playwright-isolated can only grant permissions (setting 'allow'); '${setting}' has no deny/ask equivalent`,
+        `${this.id} can only grant permissions (setting 'allow'); '${setting}' has no deny/ask equivalent`,
       );
     }
     await context.grantPermissions(mapped, { origin });
@@ -3488,7 +3511,7 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
     if (args.targetId !== undefined && args.targetId !== null) {
       throw protocolError(
         "proto.unsupported",
-        "args.targetId is chrome-extension only — playwright-isolated has no worker debugger targets",
+        `args.targetId is chrome-extension only — ${this.id} has no worker debugger targets`,
       );
     }
     const page = await this.#pageFor(taskId, args);

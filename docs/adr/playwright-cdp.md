@@ -1,8 +1,16 @@
 # ADR: playwright-cdp backend (attach to running Chrome via CDP)
 
-Status: SPIKE PROVEN (`scripts/spike/cdp-attach.mjs`, 10/10 checks,
-darwin arm64, playwright-core 1.59.1, headless Chromium). Executor NOT
-implemented — research backlog per plan §backend matrix.
+Status: IMPLEMENTED (executor shares the full playwright-isolated
+page-ops over connectOverCDP — acquisition is the only difference;
+per-task browser.newContext() over CDP gives fresh storage partitions,
+verified end-to-end on real Chromium: navigate/evaluate/click/tabs.list,
+per-task isolation, user tab not surfaced, attached browser survives
+backend.close()). Spike evidence: scripts/spike/cdp-attach.mjs 10/10.
+Unit tests: packages/bridge/test/browser/playwright-cdp.test.ts.
+Gated: backend.playwright.enabledByUser + cdpEndpoint (config
+browser.playwright.cdpEndpoint or CHROMEX_CDP_ENDPOINT env) +
+allowedBackends must include it. End-to-end acceptance leg on a real
+attached Chrome is still pending.
 
 ## What the spike proved
 
@@ -39,13 +47,14 @@ not blocked on Playwright capability.
    profile. The extension backend remains the only path to the real
    default-profile session.
 
-3. **No task isolation primitive.** `playwright-isolated` gets isolation
-   from `browser.newContext()`; a CDP-attached browser exposes the
-   user's real contexts/pages. Tab scope must be enforced purely by
-   `TaskTabScope` bookkeeping — and "which tabs are the agent's" is
-   ambiguous when the user also drives the browser. Needs an ownership
-   convention (e.g. agent-created pages tagged/named, or per-task
-   target filter) before `execute()` can honestly claim scope.
+3. **Isolation RESOLVED at implementation time.** The spike-era
+   assumption that CDP attach has no isolation primitive was wrong:
+   `connectOverCDP` supports `browser.newContext()` (Playwright creates
+   a real browser context target — fresh storage partition, verified
+   end-to-end: taskB sees zero of taskA's tabs). The executor therefore
+   reuses the isolated backend's per-task `#contextFor` unchanged —
+   one isolated context per task. The attached browser's own default
+   context is never surfaced to tools.
 
 4. **Overlap with chrome-extension backend.** Both can drive a real
    browser. playwright-cdp's unique value is *no extension required* —

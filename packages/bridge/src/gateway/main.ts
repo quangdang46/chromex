@@ -93,6 +93,7 @@ import {
 import { boundJsonPreview } from "../store/event-payload.js";
 import { BrowserHostRegistry } from "../browser/host-registry.js";
 import { PlaywrightIsolatedBackend } from "../browser/backends/playwright/isolated.js";
+import { PlaywrightCdpBackend } from "../browser/backends/playwright/cdp.js";
 import { resolveBackendSelection, backendMismatchFor } from "../browser/backend-selection.js";
 import { ToolTokenRefresher } from "../browser/tool-refresh.js";
 import {
@@ -426,6 +427,16 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
     const playwrightBackend = new PlaywrightIsolatedBackend({
       executablePath: async () => (await playwrightRuntime.readStatus()).browserExecutablePath || null,
     });
+    // playwright-cdp: same executor over connectOverCDP — endpoint from
+    // config browser.playwright.cdpEndpoint or CHROMEX_CDP_ENDPOINT env.
+    // Selection only offers it when an endpoint is configured, so a null
+    // resolve here means config changed post-start; execute() then
+    // fails browser.backend_unavailable honestly.
+    const playwrightCdpBackend = new PlaywrightCdpBackend({
+      // liveConfig is declared below but only read when a tool call
+      // actually executes — by then it is initialized.
+      endpoint: async () => liveConfig.browser.playwright.cdpEndpoint,
+    });
     const toolServer = new BrowserToolServer({
       tokens: toolTokens,
       agentEgressDestination: config.browser.agentEgressDestination,
@@ -459,6 +470,25 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
                 expectedTarget?: Record<string, string>;
               };
               return playwrightBackend.execute(taskId, p.tool as never, p.args ?? {}, {
+                ...(p.expectedTarget ? { expectedTarget: p.expectedTarget } : {}),
+              });
+            },
+            onDisconnect: () => {},
+          };
+        }
+        // playwright-cdp: same executor over a CDP-attached browser —
+        // tasks still get per-task isolated contexts (newContext over
+        // CDP), the attached browser's own tabs are never surfaced.
+        if (task?.backend.backendId === "playwright-cdp") {
+          return {
+            hostInstanceId: "playwright-cdp",
+            send: async (_method, payload) => {
+              const p = payload as {
+                tool?: string;
+                args?: Record<string, unknown>;
+                expectedTarget?: Record<string, string>;
+              };
+              return playwrightCdpBackend.execute(taskId, p.tool as never, p.args ?? {}, {
                 ...(p.expectedTarget ? { expectedTarget: p.expectedTarget } : {}),
               });
             },
@@ -837,7 +867,10 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           browserToolCalls,
           appendTaskEventBroadcast,
           appServices,
-          releaseTaskBackend: (taskId) => playwrightBackend.releaseTask(taskId),
+          releaseTaskBackend: async (taskId) => {
+            await playwrightBackend.releaseTask(taskId).catch(() => {});
+            await playwrightCdpBackend.releaseTask(taskId).catch(() => {});
+          },
           flushTaskDeltas: (taskId) => deltaCoalescer.flushTask(taskId),
           spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
@@ -944,8 +977,11 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       clearInterval(retentionTimer);
       db?.close();
       // playwright-isolated owns a real Chromium child — without this the
-      // browser + its pipes leak past gateway shutdown.
+      // browser + its pipes leak past gateway shutdown. playwright-cdp's
+      // close() closes task-created contexts and disconnects — it does
+      // NOT kill the attached (user-owned) browser.
       await playwrightBackend.close().catch(() => {});
+      await playwrightCdpBackend.close().catch(() => {});
       await ipc?.close().catch(() => {});
       await lifetimeLock?.release().catch(() => {});
       await startupLock.release().catch(() => {});
@@ -1134,6 +1170,7 @@ async function handleGatewayRequest(
           allowedBackends: cfg.browser.allowedBackends,
           playwrightEnabledByUser: cfg.browser.playwright.enabledByUser,
           playwrightRuntimeAvailable: (await ctx.playwrightRuntime.readStatus()).available,
+          playwrightCdpEndpoint: cfg.browser.playwright.cdpEndpoint,
         }).backend,
         tabIntent: (p.tabIntent as never) ?? { scope: "untitled" },
         originBrowserInstanceId: p.browserInstanceId ?? null,
@@ -1244,6 +1281,7 @@ async function handleGatewayRequest(
         allowedBackends: cfg.browser.allowedBackends,
         playwrightEnabledByUser: cfg.browser.playwright.enabledByUser,
         playwrightRuntimeAvailable: (await ctx.playwrightRuntime.readStatus()).available,
+        playwrightCdpEndpoint: cfg.browser.playwright.cdpEndpoint,
       }).backend;
       const task = ctx.sessionManager.setBackend(p.taskId, validated);
       return { taskId: task.taskId, backend: task.backend };
