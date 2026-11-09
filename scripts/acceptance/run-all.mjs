@@ -38,6 +38,7 @@ const TOKENLESS = new Set([
   "s12-sw-turn-recovery",
   "s13-risk-preflight",
   "tab-close-last",
+  "task-purge",
 ]);
 const ALL = [
   "agent-loop-isolated",
@@ -65,6 +66,7 @@ const ALL = [
   "s13-risk-preflight",
   "s14-windows",
   "tab-close-last",
+  "task-purge",
 ];
 const LIVE = new Set(["s1-build-feature", "s2-debug-live"]);
 
