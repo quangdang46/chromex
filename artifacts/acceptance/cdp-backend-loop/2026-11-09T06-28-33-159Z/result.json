@@ -1,0 +1,6 @@
+{
+  "scenario": "cdp-backend-loop",
+  "status": "PASS",
+  "asserts": 7,
+  "cdpEndpoint": "http://127.0.0.1:19343"
+}
