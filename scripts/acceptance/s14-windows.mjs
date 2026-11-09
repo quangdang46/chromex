@@ -149,6 +149,7 @@ await runScenario(
             .catch(() => {});
         }
       }
+      await fixture.close().catch(() => {});
     }
   },
   {},
