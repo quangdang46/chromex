@@ -216,7 +216,9 @@ export class GatewayIpcServer {
       this.connections.delete(state);
       for (const [, p] of state.pending) {
         clearTimeout(p.timer);
-        p.reject(new Error("connection closed"));
+        // coded so callers can distinguish transport loss (action may
+        // have run host-side → unknown) from a tool-level failure
+        p.reject(Object.assign(new Error("connection closed"), { code: "ipc.disconnected" }));
       }
       state.pending.clear();
     });
@@ -288,7 +290,9 @@ export class GatewayIpcServer {
     payload: unknown,
     timeoutMs = 30_000,
   ): Promise<unknown> {
-    if (state.socket.destroyed) return Promise.reject(new Error("connection closed"));
+    if (state.socket.destroyed) {
+      return Promise.reject(Object.assign(new Error("connection closed"), { code: "ipc.disconnected" }));
+    }
     const id = `srv-${randomBytes(8).toString("hex")}`;
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {

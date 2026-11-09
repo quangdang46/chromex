@@ -1052,6 +1052,23 @@ export class BrowserToolServer {
             err && typeof err === "object" && typeof (err as { code?: unknown }).code === "string"
               ? (err as { code: string }).code
               : "browser.host_error";
+          // P1.6: transport loss AFTER dispatch means the action may
+          // have run host-side — the outcome is unknown, never a
+          // guessed failure (a "failed" click could be retried into a
+          // double-submit). host_lost_after_dispatch tells the agent
+          // to re-observe before retrying.
+          if (coded === "ipc.disconnected") {
+            this.pending.get(req.toolCallId)?.resolve({
+              toolCallId: req.toolCallId,
+              tool: req.tool,
+              status: "unknown",
+              error: {
+                code: "browser.host_lost_after_dispatch",
+                message: `host ${host.hostInstanceId} disconnected before the result arrived`,
+              },
+            });
+            return;
+          }
           this.pending.get(req.toolCallId)?.resolve({
             toolCallId: req.toolCallId,
             tool: req.tool,
@@ -1119,14 +1136,6 @@ export class BrowserToolServer {
             },
           },
     );
-  }
-
-  hostDisconnected(hostInstanceId: string): void {
-    for (const [id, p] of this.pending) {
-      // pending entries don't track host; mark all as unknown on disconnect
-      // of the serving host — minimal registry keeps it simple
-      p.resolve({ toolCallId: id, tool: "", status: "unknown", error: { code: "browser.host_lost_after_dispatch", message: `host ${hostInstanceId} disconnected` } });
-    }
   }
 
   /** Explicit per-call cancel (browser.tool.cancel RPC): the caller
