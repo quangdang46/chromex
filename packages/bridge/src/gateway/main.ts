@@ -819,6 +819,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
           appendTaskEventBroadcast,
           appServices,
           releaseTaskBackend: (taskId) => playwrightBackend.releaseTask(taskId),
+          flushTaskDeltas: (taskId) => deltaCoalescer.flushTask(taskId),
           spawnBrowserMcp: (task) => spawnBrowserMcpForTask?.(task) ?? Promise.resolve(null),
         });
       } catch (err) {
@@ -1048,6 +1049,8 @@ async function handleGatewayRequest(
      *  its state lives in the extension and is cleaned via the
      *  gateway.task_purged tombstone. */
     releaseTaskBackend?: (taskId: string) => Promise<void> | void;
+    /** Flush/drop buffered ephemeral deltas for a task (purge path). */
+    flushTaskDeltas?: (taskId: string) => void;
     spawnBrowserMcp?: (task: TaskRecord) => Promise<Record<string, unknown> | null>;
   },
 ): Promise<unknown> {
@@ -1589,6 +1592,9 @@ async function handleGatewayRequest(
       // drop them so a purged task's event data can't be re-fetched
       // by (taskId, snapshotRef) until LRU eviction.
       ctx.snapshotChunks.drop(p.taskId);
+      // Flush + drop any buffered deltas/backpressure marks for the
+      // dead task — flushTask also clears its droppedTurns entry.
+      ctx.flushTaskDeltas?.(p.taskId);
       // §4.4/§7.2: durable tombstone on the GATEWAY stream — replayable,
       // own retention; NOT a task-stream event.
       ctx.store.appendGatewayEvent({
