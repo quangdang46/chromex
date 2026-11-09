@@ -288,9 +288,12 @@ const CHECKS = [
   {
     id: "playwright.iframeProvisional",
     run(md) {
-      return /iframe: "all"`? \*\*PROVISIONAL\(spike-B4\)\*\*|PROVISIONAL\(spike-B4\)[\s\S]{0,80}iframe/.test(md)
+      // spike-B4 resolved (docs/adr/playwright-snapshot.md): iframe:"all"
+      // is proven — the plan must carry the evidence marker, not a bare
+      // or stale provisional claim.
+      return /iframe: "all"`? \*\*(PROVISIONAL\(spike-B4\)|ĐÃ CHỨNG MINH)/.test(md)
         ? null
-        : "Playwright iframe capability not marked provisional";
+        : "Playwright iframe capability missing spike-B4 evidence marker";
     },
   },
   {

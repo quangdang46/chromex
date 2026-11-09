@@ -45,7 +45,12 @@ export interface BrowserBackendCapabilities {
    *  playwright-isolated: page.on('dialog') capture + same tool
    *  (agent-loop-isolated Loop 10c). */
   nativeDialogs: boolean;
-  /** extension: only via real user gesture; playwright: setInputFiles path */
+  /** Native file-chooser dialogs are drivable end-to-end: arm via
+   *  browser.page.wait {fileChooser:true}, feed via
+   *  browser.page.setInputFiles {fileChooserId}. The OS picker itself is
+   *  intercepted (CDP Page.setInterceptFileChooserDialog /
+   *  page.waitForEvent('filechooser')), never shown — "true" means the
+   *  chooser flow is agent-handleable, not that a native dialog UI opens. */
   filePicker: boolean;
   /** Gestures produce trusted (isTrusted=true) input events.
    *  chrome-extension: only via args.trusted CDP dispatch — default DOM
@@ -126,12 +131,14 @@ export interface BrowserBackendCapabilities {
  * gesture-bearing tool (click/press/type/fill/hover/drag) has a
  * verified args.trusted CDP path; select/submit/scroll/focus/
  * navigate/wait/find and in-memory upload are programmatic, not
- * gestures. filePicker stays false — setInputFiles ≠ the native picker.
+ * gestures. filePicker is true — browser.page.wait{fileChooser} +
+ * setInputFiles{fileChooserId} drive the chooser lifecycle (CDP
+ * Page.setInterceptFileChooserDialog, verified cdp-headless).
  * playwright-isolated: isolated profile, no user session/tabs; iframe
  * "all" via args.frameId = page.frames() index (FRAME_CAPABLE_TOOLS,
  * OOPIFs included — agent-loop-isolated verified).
- * filePicker ≠ setInputFiles: playwright can setInputFiles by path but
- * cannot open the user's native picker — reflected in `filePicker`.
+ * filePicker on isolated: page.waitForEvent('filechooser') +
+ * FileChooser.setFiles (agent-loop-isolated verified).
  */
 export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBackendCapabilities> = {
   "chrome-extension": {
@@ -146,12 +153,14 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     screenshot: true,
     screenshotImagePayload: true,
     // DataTransfer bytes path (browser.page.upload) — synthetic, not a
-    // trusted gesture; filePicker stays false for the native picker.
+    // trusted gesture.
     upload: true,
     iframe: "all",
     // CDP Page.javascriptDialogOpening/handleJavaScriptDialog.
     nativeDialogs: true,
-    filePicker: false,
+    // Page.setInterceptFileChooserDialog + fileChooserOpened →
+    // DOM.setFileInputFiles on the held session (cdp-headless verified).
+    filePicker: true,
     // Every gesture-bearing tool has a verified CDP trusted path
     // (click/press/type/fill/hover/drag args.trusted). What stays
     // synthetic is non-gesture by nature: select/submit/scroll/focus/
@@ -200,7 +209,9 @@ export const DEFAULT_BACKEND_CAPABILITIES: Record<BrowserBackendId, BrowserBacke
     // browser.page.dialog resolves them — accept/dismiss/promptText +
     // honest no_dialog, verified agent-loop-isolated Loop 10c.
     nativeDialogs: true,
-    filePicker: false, // setInputFiles works; native picker does not
+    // waitForEvent('filechooser') + FileChooser.setFiles — the chooser
+    // is intercepted programmatically, the OS picker never opens.
+    filePicker: true,
     // Every gesture goes through Playwright's real input pipeline
     // (page.mouse/keyboard, locator.click) — isTrusted=true by
     // construction; there is no synthetic-DOM path to opt out of.

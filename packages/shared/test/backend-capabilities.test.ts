@@ -12,15 +12,15 @@ describe("backend capabilities", () => {
     expect(caps.iframe).toBe("all");
     // CDP tier (docs/adr/debugger-tier.md, cdp-headless verified):
     // real AX tree + JS dialog handling + trusted paths on every
-    // gesture tool. filePicker stays false — the native picker is
-    // still unreachable.
+    // gesture tool. filePicker true — chooser wait+feed via
+    // Page.setInterceptFileChooserDialog (cdp-headless verified).
     expect(caps.nativeDialogs).toBe(true);
     expect(caps.accessibility).toBe(true);
     expect(caps.networkBodies).toBe(true);
     // Every gesture-bearing tool has a verified args.trusted CDP path;
     // select/submit/scroll/etc. are programmatic, not gestures.
     expect(caps.trustedGesture).toBe(true);
-    expect(caps.filePicker).toBe(false);
+    expect(caps.filePicker).toBe(true);
     expect(caps.existingUserTabs).toBe(true);
   });
 
@@ -29,7 +29,7 @@ describe("backend capabilities", () => {
     expect(caps.isolatedProfile).toBe(true);
     expect(caps.existingUserSession).toBe(false);
     expect(caps.existingUserTabs).toBe(false);
-    expect(caps.filePicker).toBe(false); // setInputFiles ≠ native picker
+    expect(caps.filePicker).toBe(true); // waitForEvent('filechooser') + setFiles
   });
 
   test("runtime may narrow but never widen capabilities", () => {

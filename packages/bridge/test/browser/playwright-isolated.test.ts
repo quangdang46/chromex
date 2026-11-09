@@ -51,7 +51,7 @@ describe("PlaywrightIsolatedBackend", () => {
     expect(backend.capabilities.isolatedProfile).toBe(true);
     expect(backend.capabilities.existingUserSession).toBe(false);
     expect(backend.capabilities.existingUserTabs).toBe(false);
-    expect(backend.capabilities.filePicker).toBe(false); // setInputFiles ≠ native picker
+    expect(backend.capabilities.filePicker).toBe(true); // waitForEvent('filechooser') + setFiles
     expect(backend.capabilities.nativeDialogs).toBe(true); // page.on('dialog') + page.dialog tool
     expect(backend.capabilities.trustedGesture).toBe(true); // real input pipeline
     expect(backend.capabilities.browserChrome).toBe(false);

@@ -1806,8 +1806,8 @@ Giữ nguyên đường cũ (`browser.action.plan`) trong compat mode.
 - **Không** chuyển `playwright-core` sang devDependencies (v2 sai ở điểm này) trừ khi quyết định bỏ backend isolated.
 - Backend isolated có thể **lazy-load** `playwright-core` chỉ khi bật → nếu không cài, `browser.backend_unavailable`.
 - **Spike trước khi chốt API:** xác minh `page.accessibility.snapshot()` tồn tại/ổn định theo version pin (`^1.59.1`), hoặc dùng DOM walker fallback. Ghi ADR kết quả.
-- Capabilities: `existingUserTabs:false, existingUserSession:false, isolatedProfile:true`, `iframe: "all"` **PROVISIONAL(spike-B4)** — chỉ tuyên bố sau khi có test frame thật (same-origin + cross-origin).
-- `filePicker` ≠ `setInputFiles`: backend Playwright **có thể** `setInputFiles` (upload theo path) nhưng **không** mở được native file picker của user. Capability phải phản ánh đúng từng cái.
+- Capabilities: `existingUserTabs:false, existingUserSession:false, isolatedProfile:true`, `iframe: "all"` **ĐÃ CHỨNG MINH (spike-B4 → `docs/adr/playwright-snapshot.md` + OOPIF acceptance legs)** — `filePicker: true` (waitForEvent('filechooser') + setFiles, agent-loop-isolated verified).
+- `filePicker` ≠ `setInputFiles`: backend Playwright **có thể** `setInputFiles` (upload theo path) **và** drive native chooser flows qua `page.wait {fileChooser:true}` + `setInputFiles {fileChooserId}` — capability `filePicker:true` trên cả chrome-extension lẫn playwright-isolated (OS picker bị intercept, không mở native dialog).
 - Không dùng backend này để “mượn” session user. `playwright-cdp` = research backlog, ADR riêng, `attachToRunningChrome=true` chỉ khi chứng minh được.
 
 ### 6.6 Backend selection — intent sources (M6)

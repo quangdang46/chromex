@@ -4620,8 +4620,8 @@ export class PlaywrightIsolatedBackend implements BrowserBackend {
 
   async #upload(taskId: string, args: Record<string, unknown>): Promise<unknown> {
     // playwright path = setInputFiles — file bytes via {name,mimeType,
-    // buffer} or local paths. NOT the user's native picker (capability
-    // filePicker:false already reflects this).
+    // buffer} or local paths; chooser-armed feeds go through
+    // fileChooserId → FileChooser.setFiles (#setInputFiles).
     const target = await this.#frameTarget(taskId, args);
     const selector = await this.#requireSelector(args);
     const raw = Array.isArray(args.files) ? args.files : [];
