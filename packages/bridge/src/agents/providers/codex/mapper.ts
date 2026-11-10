@@ -261,7 +261,10 @@ export class CodexEventMapper {
         // that consumes it, so emit directly without withTurn.
         const goal = asRecord(p.goal);
         if (!goal) return;
-        this.emitDurable({ type: "goal.updated", goal: mapAgentGoal(goal) });
+        this.emitDurable({
+          type: "goal.updated",
+          goal: mapAgentGoal(goal, str(p.threadId) ?? undefined),
+        });
         return;
       }
       case "thread/goal/cleared": {
@@ -420,12 +423,13 @@ function permissionOptions(p: Record<string, unknown>): Array<{
     .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
-function mapAgentGoal(goal: Record<string, unknown>): AgentGoalState {
+function mapAgentGoal(goal: Record<string, unknown>, providerThreadId?: string): AgentGoalState {
   const num = (v: unknown): number | null | undefined =>
     typeof v === "number" && Number.isFinite(v) ? v : v === null ? null : undefined;
   const out: AgentGoalState = {
     objective: str(goal.objective) ?? "",
     status: str(goal.status) ?? "",
+    ...(providerThreadId ? { providerThreadId } : {}),
   };
   const tokenBudget = num(goal.tokenBudget);
   if (tokenBudget !== undefined) out.tokenBudget = tokenBudget;

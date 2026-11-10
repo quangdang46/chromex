@@ -90,6 +90,9 @@ export type AgentEvent =
 export interface AgentGoalState {
   objective: string;
   status: string;
+  /** provider-side thread id — goal.* feature RPCs are thread-scoped
+   *  and need THIS, not the gateway taskId the events are attributed to */
+  providerThreadId?: string;
   tokenBudget?: number | null;
   tokensUsed?: number | null;
   timeUsedSeconds?: number | null;

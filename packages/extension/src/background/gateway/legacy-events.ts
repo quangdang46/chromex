@@ -170,6 +170,11 @@ export function gatewayEventToLegacy(env: Envelope): Record<string, unknown> | n
         ...base,
         goal: {
           threadId: taskId,
+          // provider-side thread id — goal.clear/get RPCs are thread-scoped
+          // on the app-server and need THIS, not the gateway taskId.
+          ...(typeof g.providerThreadId === "string" && g.providerThreadId
+            ? { providerThreadId: g.providerThreadId }
+            : {}),
           objective: typeof g.objective === "string" ? g.objective : "",
           status: typeof g.status === "string" ? g.status : "",
           ...(typeof g.tokenBudget === "number" || g.tokenBudget === null ? { tokenBudget: g.tokenBudget as number | null } : {}),

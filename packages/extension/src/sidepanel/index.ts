@@ -503,6 +503,9 @@ type OnlineImagePromptExtraction = {
 
 interface SidepanelThreadGoal {
   threadId?: string;
+  /** provider-side thread id — required by goal.* RPCs in gateway mode
+   *  (goal.threadId is the gateway taskId there, not the app-server id) */
+  providerThreadId?: string;
   objective?: string;
   status?: string;
   tokenBudget?: number | null;
@@ -5973,7 +5976,11 @@ async function clearActiveGoal(): Promise<void> {
   if (!goal) {
     return;
   }
-  const threadId = goal.threadId || state.threadId || "";
+  // goal.* RPCs are thread-scoped on the provider — in gateway mode
+  // goal.threadId is the taskId, so prefer the provider thread id that
+  // rode along on goal.updated. Legacy sidecar mode has no
+  // providerThreadId and its threadId already IS the provider id.
+  const threadId = goal.providerThreadId || goal.threadId || state.threadId || "";
   state.activeGoal = null;
   if (state.currentConversationId) {
     goalsByConversationId.delete(state.currentConversationId);
