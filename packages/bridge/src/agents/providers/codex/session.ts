@@ -89,6 +89,9 @@ export class CodexAgentSession implements AgentSession {
    *  our turns from provider-initiated ones (goal-loop continuations). */
   private startTurnInFlight = false;
   private readonly providerTurnsNotified = new Set<string>();
+  /** Gateway hook: mints a gateway turnId for provider-initiated turns
+   *  (goal-loop continuations) so their events flow as real turns. */
+  private providerTurnHandler: ((providerTurnId: string) => string | null) | null = null;
 
   constructor(
     client: CodexAppServerClient,
@@ -136,13 +139,21 @@ export class CodexAgentSession implements AgentSession {
         if (providerTurnId && !this.providerTurnsNotified.has(providerTurnId)) {
           if (this.providerTurnsNotified.size >= 32) this.providerTurnsNotified.clear();
           this.providerTurnsNotified.add(providerTurnId);
-          for (const l of this.listeners) {
-            l({
-              type: "provider.notice",
-              level: "info",
-              message:
-                "Provider-initiated turn started (goal continuation) — per-turn detail is not itemized for provider-managed turns.",
-            });
+          // Adopt the turn when the gateway can mint an identity — its
+          // events then flow as a normal turn. Otherwise emit one honest
+          // notice so the UI isn't silently blind.
+          const gatewayTurnId = this.providerTurnHandler?.(providerTurnId) ?? null;
+          if (gatewayTurnId) {
+            this.mapper.bindTurn(providerTurnId, gatewayTurnId);
+          } else {
+            for (const l of this.listeners) {
+              l({
+                type: "provider.notice",
+                level: "info",
+                message:
+                  "Provider-initiated turn started (goal continuation) — per-turn detail is not itemized for provider-managed turns.",
+              });
+            }
           }
         }
       }
@@ -410,6 +421,10 @@ export class CodexAgentSession implements AgentSession {
   subscribe(listener: (e: AgentEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onProviderTurn(handler: (providerTurnId: string) => string | null): void {
+    this.providerTurnHandler = handler;
   }
 
   async getRuntimeInfo(): Promise<RuntimeInfo> {

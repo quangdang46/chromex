@@ -311,7 +311,53 @@ export class SessionManager {
       task.conversationKey,
       session.subscribe((e) => this.#handleAgentEvent(task.taskId, e)),
     );
+    // provider-initiated turns (goal-loop continuations) arrive without
+    // a gateway identity — let the session adopt them as real turns.
+    session.onProviderTurn?.((providerTurnId) =>
+      this.#adoptProviderTurn(task.taskId, providerTurnId),
+    );
     return live;
+  }
+
+  /**
+   * Mint a gateway turn for a provider-initiated turn (codex goal-loop
+   * continuation). Returns the turnId the session binds, or null when
+   * adoption isn't safe (task gone / our own turn running — the single
+   * mapper binding must never fight a dispatched turn).
+   */
+  #adoptProviderTurn(taskId: string, providerTurnId: string): string | null {
+    const task = this.opts.store.getTask(taskId);
+    if (!task || this.activeTurns.has(taskId)) return null;
+    const turnId = this.#id();
+    const now = Date.now();
+    // Same persist-first shape as #dispatchTurn 1a/1b: queued row, then
+    // running + gateway-owned turn.started. The adapter's own
+    // bindTurn-emitted turn.started is then deduped by startedAt like
+    // every dispatched turn — the Gateway owns turn boundaries.
+    this.opts.store.upsertTurn({
+      turnId,
+      taskId,
+      status: "queued",
+      clientMessageId: `provider-${providerTurnId}`,
+      createdAt: now,
+      queuedAt: now,
+      startedAt: null,
+    });
+    const turn = this.opts.store.getTurn(turnId);
+    if (turn) {
+      this.opts.store.upsertTurn(transitionTurn(turn, "running", { startedAt: now }));
+      this.#publishLive(taskId, {
+        type: "turn.started",
+        turnId,
+      } as DurableTaskEvent);
+    }
+    // A goal loop keeps working after the user's turn completed — the
+    // task must not stay "completed" while provider turns are live
+    // (same reopen semantics as task.send).
+    if (task.status === "completed" || task.status === "failed") {
+      this.#setTaskStatus(task, "active");
+    }
+    return turnId;
   }
 
   // ---- turns ----

@@ -56,6 +56,16 @@ export interface AgentSession {
   /** sync or async — adapters may need to query runtime state */
   canStopRuntime?(): boolean | Promise<boolean>;
 
+  /**
+   * Provider-initiated turns (e.g. codex goal-loop continuations) have no
+   * gateway turn identity. When implemented, the adapter invokes the
+   * handler on turn/started for such turns; returning a gateway turnId
+   * adopts the turn so its events flow normally, returning null leaves
+   * it unadopted (adapter emits an honest provider.notice instead).
+   * Sync — called from the notification path.
+   */
+  onProviderTurn?(handler: (providerTurnId: string) => string | null): void;
+
   respondToPermission(requestId: string, response: PermissionResponse): Promise<PermissionResponseResult>;
   /** mirror only — Gateway approval store is the source of truth */
   getPendingPermissions(): PermissionRequest[];
