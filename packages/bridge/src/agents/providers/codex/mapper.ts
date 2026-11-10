@@ -423,7 +423,7 @@ function permissionOptions(p: Record<string, unknown>): Array<{
     .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
-function mapAgentGoal(goal: Record<string, unknown>, providerThreadId?: string): AgentGoalState {
+export function mapAgentGoal(goal: Record<string, unknown>, providerThreadId?: string): AgentGoalState {
   const num = (v: unknown): number | null | undefined =>
     typeof v === "number" && Number.isFinite(v) ? v : v === null ? null : undefined;
   const out: AgentGoalState = {

@@ -32,7 +32,7 @@ import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
 
 import type { CodexAppServerClient } from "../../../codex-app-server.js";
 import { requestTurnStartWithReasoningSummaryFallback } from "../../../turn-start.js";
-import { CodexEventMapper } from "./mapper.js";
+import { CodexEventMapper, mapAgentGoal } from "./mapper.js";
 
 export const CODEX_CAPABILITIES: AgentCapabilityFlags = {
   ...NO_CAPABILITIES,
@@ -211,6 +211,14 @@ export class CodexAgentSession implements AgentSession {
       })) as { thread: { id: string } };
       this.threadId = result.thread.id;
     }
+    // thread/goal/updated only fires on mutation — after a gateway or
+    // provider restart an active goal would be invisible (and
+    // un-clearable, since providerThreadId rides on that event). Rehydrate
+    // once per session so the durable stream always reflects provider truth.
+    const hydratedThreadId = this.threadId;
+    if (hydratedThreadId) {
+      void this.#hydrateGoal(hydratedThreadId).catch(() => undefined);
+    }
     // Resumability proven once thread/start|resume returns an id — the
     // rollout is written by the app-server before responding (§8.2).
     this.persistence = {
@@ -223,6 +231,20 @@ export class CodexAgentSession implements AgentSession {
         : {}),
     };
     return this.threadId;
+  }
+
+  /** Re-emit goal.updated from thread/goal/get so restart survivors
+   *  rehydrate badge + providerThreadId (see #ensureThread call site). */
+  async #hydrateGoal(threadId: string): Promise<void> {
+    const res = (await this.client.request("thread/goal/get", { threadId })) as {
+      goal?: Record<string, unknown> | null;
+    };
+    const goal = res?.goal;
+    if (!goal || typeof goal !== "object") return;
+    const state = mapAgentGoal(goal, threadId);
+    for (const l of this.listeners) {
+      l({ type: "goal.updated", goal: state });
+    }
   }
 
   async startTurn(input: TurnInput): Promise<{ accepted: true; providerTurnId?: string }> {
