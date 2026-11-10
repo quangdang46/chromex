@@ -63,6 +63,8 @@ export class CodexEventMapper {
   private readonly deltas = new Map<string, DeltaState>();
   private readonly listeners = new Set<(e: MappedAgentEvent) => void>();
   private droppedNoTurnId = 0;
+  private lastErrorNotice: string | null = null;
+  private lastErrorNoticeAt = 0;
 
   constructor(private readonly sessionKey: string) {}
 
@@ -269,6 +271,31 @@ export class CodexEventMapper {
       }
       case "thread/goal/cleared": {
         this.emitDurable({ type: "goal.cleared" });
+        return;
+      }
+      case "error": {
+        // App-server emits "error" notifications for transport/provider
+        // trouble (e.g. "Reconnecting... 1/5" on upstream 503s). Without
+        // this the UI shows a silent hang. Dedupe repeats of the same
+        // notice so a reconnect storm doesn't flood the durable stream.
+        const err = asRecord(p.error);
+        const raw = str(err?.message) ?? str(p.message) ?? "";
+        if (!raw) return;
+        const normalized = raw.replace(/\s+\d+\/\d+\s*$/u, "").trim();
+        const now = Date.now();
+        if (
+          this.lastErrorNotice === normalized &&
+          now - this.lastErrorNoticeAt < 60_000
+        ) {
+          return;
+        }
+        this.lastErrorNotice = normalized;
+        this.lastErrorNoticeAt = now;
+        this.emitDurable({
+          type: "provider.notice",
+          level: "warn",
+          message: raw.slice(0, 300),
+        });
         return;
       }
       default:
