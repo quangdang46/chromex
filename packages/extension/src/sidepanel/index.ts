@@ -5940,7 +5940,15 @@ function renderComposerGoalBadge(): string {
   const dismissLabel = isKo ? "골 모드 해제" : "Clear goal";
   const objective = goal.objective.length > 80 ? `${goal.objective.slice(0, 77)}…` : goal.objective;
   const status = typeof goal.status === "string" && goal.status ? goal.status : "";
-  const title = `${label}: ${goal.objective}${status ? ` (${status})` : ""}`;
+  const parts = [label, goal.objective];
+  if (status) parts.push(`(${status})`);
+  if (typeof goal.tokensUsed === "number" && goal.tokensUsed > 0) {
+    parts.push(`· ${Math.round(goal.tokensUsed / 1000)}k tokens`);
+  }
+  if (typeof goal.timeUsedSeconds === "number" && goal.timeUsedSeconds > 0) {
+    parts.push(`· ${Math.floor(goal.timeUsedSeconds / 60)}m${goal.timeUsedSeconds % 60}s`);
+  }
+  const title = parts.join(" ");
   return `
     <span class="composer-plan-mode-badge composer-goal-badge" title="${escapeAttribute(title)}" aria-label="${escapeAttribute(title)}">
       <span class="composer-plan-mode-badge-copy">

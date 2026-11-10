@@ -237,7 +237,20 @@ export class CodexAgentSession implements AgentSession {
         .trim();
       const objective = metaObjective || fallback;
       if (objective) {
-        await this.client.request("thread/goal/set", { threadId, objective });
+        // origin:"user" — /goal is an explicit user action; the app-server
+        // treats missing provenance as non-user (schema: "Missing
+        // provenance does not supply user authorization").
+        const rawBudget = input.ctx?.metadata?.goalTokenBudget;
+        const tokenBudget =
+          typeof rawBudget === "number" && Number.isInteger(rawBudget) && rawBudget > 0
+            ? rawBudget
+            : undefined;
+        await this.client.request("thread/goal/set", {
+          threadId,
+          objective,
+          origin: "user",
+          ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+        });
       }
     }
 

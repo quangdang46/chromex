@@ -39,7 +39,9 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
       tokenBudget: z.number().int().positive().optional(),
     }),
     appServerMethod: "thread/goal/set",
-    toParams: (p) => p as Record<string, unknown>,
+    // user-initiated RPC → honest provenance (schema requires it for
+    // user authorization); threadId/objective/tokenBudget pass through.
+    toParams: (p) => ({ ...(p as Record<string, unknown>), origin: "user" }),
   },
   "provider.feature.codex.goal.get": {
     schema: z.object({ threadId }),
@@ -49,7 +51,7 @@ export const CODEX_FEATURES: Record<string, FeatureDefinition> = {
   "provider.feature.codex.goal.clear": {
     schema: z.object({ threadId }),
     appServerMethod: "thread/goal/clear",
-    toParams: (p) => p as Record<string, unknown>,
+    toParams: (p) => ({ ...(p as Record<string, unknown>), origin: "user" }),
   },
   "provider.feature.codex.account.status": {
     schema: z.object({ refreshToken: z.boolean().optional() }),
