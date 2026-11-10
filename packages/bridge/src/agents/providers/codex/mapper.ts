@@ -34,6 +34,10 @@ interface DeltaState {
   offset: number;
 }
 
+/** Provider-initiated turns (goal continuations) can never bind — cap
+ *  buffered emissions so a long goal loop can't grow memory forever. */
+const MAX_PENDING_TURN_BUFFERS = 16;
+
 const TOOL_ITEM_TYPES = new Set([
   "commandExecution",
   "fileChange",
@@ -283,6 +287,12 @@ export class CodexEventMapper {
       if (!buf) {
         buf = { providerTurnId, deferred: [] };
         this.pending.push(buf);
+        // Provider-initiated turns (goal-loop continuations) never get a
+        // bindTurn — their buffers would grow forever. Cap the queue;
+        // the oldest unbindable buffer is dropped.
+        if (this.pending.length > MAX_PENDING_TURN_BUFFERS) {
+          this.pending.shift();
+        }
       }
       buf.deferred.push(() => {
         if (this.gatewayTurnId) captured(this.gatewayTurnId);

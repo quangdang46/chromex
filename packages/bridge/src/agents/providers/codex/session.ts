@@ -85,6 +85,10 @@ export class CodexAgentSession implements AgentSession {
   private unsubscribeNotifications: (() => void) | null = null;
   private unsubscribeRequests: (() => void) | null = null;
   private closed = false;
+  /** True while a client-requested turn/start is in flight — distinguishes
+   *  our turns from provider-initiated ones (goal-loop continuations). */
+  private startTurnInFlight = false;
+  private readonly providerTurnsNotified = new Set<string>();
 
   constructor(
     client: CodexAppServerClient,
@@ -118,9 +122,32 @@ export class CodexAgentSession implements AgentSession {
             : e.event,
         );
     });
-    this.unsubscribeNotifications = this.client.onNotification((n) =>
-      this.mapper.mapNotification(n.method, n.params),
-    );
+    this.unsubscribeNotifications = this.client.onNotification((n) => {
+      // Provider-initiated turns (goal-loop continuations) arrive without
+      // a gateway turn identity — they buffer in the mapper and never
+      // surface. Emit one honest notice per such turn so the UI isn't
+      // silently blind while the provider keeps working.
+      if (n.method === "turn/started" && !this.activeTurn && !this.startTurnInFlight) {
+        const params = n.params as Record<string, unknown> | undefined;
+        const turn = params?.turn as Record<string, unknown> | undefined;
+        const providerTurnId =
+          (typeof turn?.id === "string" && turn.id) ||
+          (typeof params?.turnId === "string" ? params.turnId : "");
+        if (providerTurnId && !this.providerTurnsNotified.has(providerTurnId)) {
+          if (this.providerTurnsNotified.size >= 32) this.providerTurnsNotified.clear();
+          this.providerTurnsNotified.add(providerTurnId);
+          for (const l of this.listeners) {
+            l({
+              type: "provider.notice",
+              level: "info",
+              message:
+                "Provider-initiated turn started (goal continuation) — per-turn detail is not itemized for provider-managed turns.",
+            });
+          }
+        }
+      }
+      this.mapper.mapNotification(n.method, n.params);
+    });
     this.unsubscribeRequests =
       this.client.onRequest?.(
         (request) => this.#handleServerRequest(request),
@@ -214,37 +241,48 @@ export class CodexAgentSession implements AgentSession {
       }
     }
 
-    const turn = await requestTurnStartWithReasoningSummaryFallback(
-      this.client,
-      async () => undefined,
-      {
-        threadId,
-        input: items,
-        ...(cwd ? { cwd } : {}),
-        ...(this.config.model ? { model: this.config.model } : {}),
-        ...(this.config.thinkingOptionId ? { effort: this.config.thinkingOptionId } : {}),
-        approvalPolicy: "never",
-        personality: "pragmatic",
-        // plan mode → collaborationMode unlocks requestUserInput (the
-        // feature-flagged ask-user path is off by default in codex-cli).
-        ...(input.ctx?.metadata?.planMode === true
-          ? {
-              collaborationMode: {
-                mode: "plan",
-                settings: {
-                  model: this.config.model ?? "",
-                  reasoning_effort: this.config.thinkingOptionId ?? "medium",
-                  developer_instructions:
-                    "In plan mode, always produce a visible plan or a visible clarification. If the user's objective is underspecified, ask exactly one concise clarification question using request_user_input or assistant text. Do not finish with only an internal/tool-only plan item. When enough context is available, return 3-7 concrete steps and wait for the user to accept or revise before execution.",
+    this.startTurnInFlight = true;
+    let turn;
+    try {
+      turn = await requestTurnStartWithReasoningSummaryFallback(
+        this.client,
+        async () => undefined,
+        {
+          threadId,
+          input: items,
+          ...(cwd ? { cwd } : {}),
+          ...(this.config.model ? { model: this.config.model } : {}),
+          ...(this.config.thinkingOptionId
+            ? { effort: this.config.thinkingOptionId }
+            : {}),
+          approvalPolicy: "never",
+          personality: "pragmatic",
+          // plan mode → collaborationMode unlocks requestUserInput (the
+          // feature-flagged ask-user path is off by default in codex-cli).
+          ...(input.ctx?.metadata?.planMode === true
+            ? {
+                collaborationMode: {
+                  mode: "plan",
+                  settings: {
+                    model: this.config.model ?? "",
+                    reasoning_effort: this.config.thinkingOptionId ?? "medium",
+                    developer_instructions:
+                      "In plan mode, always produce a visible plan or a visible clarification. If the user's objective is underspecified, ask exactly one concise clarification question using request_user_input or assistant text. Do not finish with only an internal/tool-only plan item. When enough context is available, return 3-7 concrete steps and wait for the user to accept or revise before execution.",
+                  },
                 },
-              },
-            }
-          : {}),
-      },
-    );
+              }
+            : {}),
+        },
+      );
 
-    this.activeTurn = { gatewayTurnId: input.gatewayTurnId, providerTurnId: turn.turn.id };
-    this.mapper.bindTurn(turn.turn.id, input.gatewayTurnId);
+      this.activeTurn = {
+        gatewayTurnId: input.gatewayTurnId,
+        providerTurnId: turn.turn.id,
+      };
+      this.mapper.bindTurn(turn.turn.id, input.gatewayTurnId);
+    } finally {
+      this.startTurnInFlight = false;
+    }
     return { accepted: true as const, providerTurnId: turn.turn.id };
   }
 
