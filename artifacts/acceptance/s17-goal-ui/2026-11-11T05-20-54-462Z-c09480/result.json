@@ -1,0 +1,26 @@
+{
+  "scenario": "s17-goal-ui",
+  "runId": "2026-11-11T05-20-54-462Z-c09480",
+  "status": "FAIL",
+  "summary": "goal-capable provider did not expose Goal mode in attachment menu",
+  "durationMs": 30438,
+  "details": {
+    "diag": {
+      "agentProviders": [
+        {
+          "id": "codex",
+          "label": "Codex",
+          "supportsGoalMode": true
+        }
+      ],
+      "providerId": "fakegoal",
+      "gatewayMode": true
+    }
+  },
+  "notes": [
+    "[2026-11-11T05:21:20.221Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-11T05:21:20.221Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-11T05:21:24.833Z] ui.init diag: {\"agentProviders\":[{\"id\":\"codex\",\"label\":\"Codex\",\"supportsGoalMode\":true}],\"providerId\":\"fakegoal\",\"gatewayMode\":true}",
+    "[2026-11-11T05:21:24.892Z] fakegoal goal menu item present=false"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-11T06-05-26-485Z-1e25e6",
+  "status": "FAIL",
+  "summary": "harness error: page.goto: net::ERR_BLOCKED_BY_CLIENT at chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\nCall log:\n\u001b[2m  - navigating to \"chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\", waiting until \"domcontentloaded\"\u001b[22m\n",
+  "durationMs": 52356,
+  "error": "page.goto: net::ERR_BLOCKED_BY_CLIENT at chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\nCall log:\n\u001b[2m  - navigating to \"chrome-extension://menmlhahmendmkiicbjihgjhppkgaeom/sidepanel.html?mode=popup&debug=1\", waiting until \"domcontentloaded\"\u001b[22m\n\n    at runScenario.needsBrowser (C:\\Users\\ADMIN\\Documents\\Projects\\chromex\\scripts\\acceptance\\s12-sw-turn-recovery.mjs:144:16)\n    at async runScenario (C:\\Users\\ADMIN\\Documents\\Projects\\chromex\\scripts\\acceptance\\lib\\harness.mjs:874:20)\n    at async file:///C:/Users/ADMIN/Documents/Projects/chromex/scripts/acceptance/s12-sw-turn-recovery.mjs:18:1",
+  "notes": [
+    "[2026-11-11T06:05:31.855Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T06:05:32.430Z] usage notice accept clicked=false",
+    "[2026-11-11T06:05:36.327Z] turn 1 active",
+    "[2026-11-11T06:05:48.446Z] gateway turn 1 established: task=01M74KCSDAH4ECQM8ERFYMZV6Y activeTurn=01M74KCSDT4FYRPQGEE1WHDD11",
+    "[2026-11-11T06:05:48.494Z] second message queued",
+    "[2026-11-11T06:05:48.495Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M74KCSDAH4ECQM8ERFYMZV6Y\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794377147844}]}",
+    "[2026-11-11T06:05:48.766Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-11T06:06:18.780Z] new service worker=none",
+    "[2026-11-11T06:06:18.782Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794377178781,\"uptimeMs\":51981,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M74KC4WEMNES90TBJ5CPCJW5\"},\"startup\":null},\"endpoint\":{\"path\":\"p tasks={\"tasks\":[{\"taskId\":\"01M74KCSDAH4ECQM8ERFYMZV6Y\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794377147844}]}"
+  ]
+}

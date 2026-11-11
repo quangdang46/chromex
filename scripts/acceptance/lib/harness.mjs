@@ -241,9 +241,11 @@ async function waitForExtensionServiceWorker(context, timeoutMs = 15_000) {
  * native-messaging host (a child of the browser) inherits the isolated
  * gateway home.
  */
-export async function launchChromiumWithExtension({ gatewayHome, headless, prepareProfile } = {}) {
+export async function launchChromiumWithExtension({ gatewayHome, headless, prepareProfile, userDataDir: reuseUserDataDir } = {}) {
   const staged = await stageExtension();
-  const userDataDir = await mkdtemp(join(tmpdir(), "chromex-accept-profile-"));
+  // reuseUserDataDir: cold-start/relaunch scenarios keep the same profile
+  // (chrome.storage + NM manifest survive); the caller owns cleanup.
+  const userDataDir = reuseUserDataDir ?? await mkdtemp(join(tmpdir(), "chromex-accept-profile-"));
   // Playwright/Chromium resolves native-messaging manifests inside the
   // profile: <user-data-dir>/NativeMessagingHosts/<host>.json (verified on
   // Chromium 129 — user-level ~/Library dirs are NOT consulted).
@@ -332,27 +334,51 @@ export async function installAcceptanceNativeHost(gatewayHome) {
   await cp(join(REPO_ROOT, "packages/native-host/dist"), hostDir, { recursive: true });
   await writeFile(join(nmRoot, "package.json"), JSON.stringify({ type: "module" }, null, 2));
   // dist has no bundled deps (fs-ext, @codex-sidepanel/shared) — ESM ignores
-  // NODE_PATH, so symlink the repo's node_modules for resolution.
+  // NODE_PATH, so link the repo's node_modules for resolution. Windows
+  // directory symlinks need developer mode; junctions do not.
   const { symlink } = await import("node:fs/promises");
-  await symlink(join(REPO_ROOT, "node_modules"), join(nmRoot, "node_modules"), "dir").catch(() => {});
+  await symlink(join(REPO_ROOT, "node_modules"), join(nmRoot, "node_modules"), process.platform === "win32" ? "junction" : "dir").catch(() => {});
 
   const nodeDir = dirname(process.execPath);
-  const launcherPath = join(nmRoot, "run-accept");
+  const isWin = process.platform === "win32";
+  const launcherPath = join(nmRoot, isWin ? "run-accept.cmd" : "run-accept");
   const bridgeEntry = join(REPO_ROOT, "packages/bridge/dist/cli.js");
-  const launcher = [
-    "#!/bin/sh",
-    `export BRIDGE_ENTRY="${bridgeEntry}"`,
-    "export CHROMEX_GATEWAY_MODE=1",
-    `export GATEWAY_ENTRY="${GATEWAY_BIN}"`,
-    // isolated gateway home — baked per run; never the user's ~/.chromex
-    `export CHROMEX_GATEWAY_HOME="${gatewayHome}"`,
-    `export PATH="${nodeDir}:$PATH"`,
-    `exec "${process.execPath}" "${join(hostDir, "bin.js")}" "$@"`,
-    "",
-  ].join("\n");
-  await writeFile(launcherPath, launcher, { mode: 0o755 });
-  const { chmod } = await import("node:fs/promises");
-  await chmod(launcherPath, 0o755);
+  // Windows: Chrome launches the manifest path via CreateProcess — a
+  // #!/bin/sh script never starts, so the native host silently never
+  // registers. Mirror install-native-host.mjs and emit a .cmd wrapper.
+  const launcher = isWin
+    ? [
+        "@echo off",
+        `set "BRIDGE_ENTRY=${bridgeEntry}"`,
+        "set \"CHROMEX_GATEWAY_MODE=1\"",
+        "set \"CHROMEX_NM_DEBUG=1\"",
+        `set "GATEWAY_ENTRY=${GATEWAY_BIN}"`,
+        // isolated gateway home — baked per run; never the user's ~/.chromex
+        `set "CHROMEX_GATEWAY_HOME=${gatewayHome}"`,
+        `set "PATH=${nodeDir};%PATH%"`,
+        `echo GATEWAY_HOME=%CHROMEX_GATEWAY_HOME% >> "${join(tmpdir(), "chromex-accept-nm-host.log")}"`,
+        // Chrome discards host stderr — keep it for postmortems
+        `"${process.execPath}" "${join(hostDir, "bin.js")}" %* 2>> "${join(tmpdir(), "chromex-accept-nm-host.log")}"`,
+        `echo HOST_EXIT=%ERRORLEVEL% >> "${join(tmpdir(), "chromex-accept-nm-host.log")}"`,
+        "",
+      ].join("\r\n")
+    : [
+        "#!/bin/sh",
+        `export BRIDGE_ENTRY="${bridgeEntry}"`,
+        "export CHROMEX_GATEWAY_MODE=1",
+        "export CHROMEX_NM_DEBUG=1",
+        `export GATEWAY_ENTRY="${GATEWAY_BIN}"`,
+        // isolated gateway home — baked per run; never the user's ~/.chromex
+        `export CHROMEX_GATEWAY_HOME="${gatewayHome}"`,
+        `export PATH="${nodeDir}:$PATH"`,
+        `exec "${process.execPath}" "${join(hostDir, "bin.js")}" "$@"`,
+        "",
+      ].join("\n");
+  await writeFile(launcherPath, launcher, { mode: isWin ? undefined : 0o755 });
+  if (!isWin) {
+    const { chmod } = await import("node:fs/promises");
+    await chmod(launcherPath, 0o755);
+  }
 
   // extension id is fixed by the manifest key
   const manifestJson = JSON.parse(await readFile(join(EXTENSION_DIST, "manifest.json"), "utf8"));
@@ -394,6 +420,39 @@ export async function installAcceptanceNativeHost(gatewayHome) {
     await writeFile(mp, JSON.stringify(manifest, null, 2));
   }
 
+  // Windows: Chromium-family browsers resolve NM hosts through HKCU
+  // registry keys — profile-folder NativeMessagingHosts is ignored
+  // (same reason install-native-host.mjs registers via `reg add`).
+  // Never touch Software\Google\Chrome* keys: that would hijack the
+  // user's real Chrome host registration.
+  const registryTargets = [];
+  if (isWin) {
+    const { execFileSync } = await import("node:child_process");
+    const manifestPath = join(nmRoot, `${NM_HOST_NAME}.json`);
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    for (const key of [
+      `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${NM_HOST_NAME}`,
+      `HKCU\\Software\\Google\\Chrome for Testing\\NativeMessagingHosts\\${NM_HOST_NAME}`,
+    ]) {
+      for (const view of ["/reg:32", "/reg:64"]) {
+        let backup = null;
+        try {
+          const out = execFileSync("reg", ["query", key, "/ve", view], { encoding: "utf8" });
+          const m = out.match(/REG_SZ\s+(\S.*)/u);
+          if (m) backup = m[1].trim();
+        } catch {
+          /* key absent */
+        }
+        try {
+          execFileSync("reg", ["add", key, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f", view]);
+          registryTargets.push({ key, view, backup });
+        } catch (e) {
+          console.error(`!!! failed to register NM host ${key} ${view}: ${e?.message ?? e}`);
+        }
+      }
+    }
+  }
+
   // Profile-local manifest: Playwright Chromium reads
   // <user-data-dir>/NativeMessagingHosts, not the ~/Library dirs above.
   // installIntoProfile() is invoked by launchChromiumWithExtension via
@@ -421,6 +480,17 @@ export async function installAcceptanceNativeHost(gatewayHome) {
           else await writeFile(mp, backup);
         } catch (e) {
           console.error(`!!! failed to restore NM manifest ${mp}: ${e?.message ?? e}`);
+        }
+      }
+      if (isWin) {
+        const { execFileSync } = await import("node:child_process");
+        for (const { key, view, backup } of registryTargets) {
+          try {
+            if (backup === null) execFileSync("reg", ["delete", key, "/ve", "/f", view]);
+            else execFileSync("reg", ["add", key, "/ve", "/t", "REG_SZ", "/d", backup, "/f", view]);
+          } catch (e) {
+            console.error(`!!! failed to restore NM registry ${key} ${view}: ${e?.message ?? e}`);
+          }
         }
       }
       await rm(nmRoot, { recursive: true, force: true }).catch(() => {});
@@ -806,6 +876,14 @@ export async function runScenario(
       if (authed < 2) evidence.note("WARNING: extension native host never registered with the isolated gateway");
     }
     const result = await fn({ runner, browser, evidence, gateway: gw });
+    // Preserve the isolated gateway's own log — it is deleted with
+    // dataDir on cleanup and is the only record of NM-host connect
+    // failures / duplicate spawns.
+    if (gw?.dataDir) {
+      for (const f of ["gateway.log", "run/gateway.json"]) {
+        await cp(join(gw.dataDir, f), join(evidence.dir, `gw-${f.replaceAll("/", "_")}`)).catch(() => {});
+      }
+    }
     const out = {
       status: result.status,
       summary: result.summary ?? "",

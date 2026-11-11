@@ -39,6 +39,9 @@ const TOKENLESS = new Set([
   "s11-ui-queue-flush",
   "s12-sw-turn-recovery",
   "s13-risk-preflight",
+  "s15-goal-mode",
+  "s16-goal-live",
+  "s17-goal-ui",
   "tab-close-last",
   "task-purge",
   "tool-reconcile",
@@ -71,11 +74,16 @@ const ALL = [
   "s12-sw-turn-recovery",
   "s13-risk-preflight",
   "s14-windows",
+  "s15-goal-mode",
+  "s16-goal-live",
+  "s17-goal-ui",
+  "s18-claude-browser",
+  "s19-claude-multitab",
   "tab-close-last",
   "task-purge",
   "tool-reconcile",
 ];
-const LIVE = new Set(["s1-build-feature", "s1-cdp-live", "s2-debug-live"]);
+const LIVE = new Set(["s1-build-feature", "s1-cdp-live", "s2-debug-live", "s16-goal-live", "s18-claude-browser", "s19-claude-multitab"]);
 
 const args = process.argv.slice(2);
 const onlyEnv = process.env.CHROMEX_ACCEPTANCE_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);

@@ -1,0 +1,22 @@
+{
+  "scenario": "s18-claude-browser",
+  "runId": "2026-11-11T07-03-09-955Z-bd4124",
+  "status": "FAIL",
+  "summary": "turn=timeout browserTools=0 count=null",
+  "durationMs": 331927,
+  "details": {
+    "taskId": "01M74PPA19JMN9790Q58JNYYB1",
+    "terminal": null,
+    "toolCalls": 25,
+    "browserTools": [],
+    "countText": null
+  },
+  "notes": [
+    "[2026-11-11T07:03:14.876Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T07:03:15.568Z] usage notice accept clicked=false",
+    "[2026-11-11T07:03:18.116Z] claude prompt sent",
+    "[2026-11-11T07:03:26.566Z] gateway task=01M74PPA19JMN9790Q58JNYYB1",
+    "[2026-11-11T07:08:26.654Z] turn=timeout toolCalls=25 browserTools=0 seq=task.created>task.status_changed>user.message.created>turn.started>tool.started>permission.requested>task.attention_changed>permission.resolved>task.attention_changed>tool.completed>tool.started>tool.completed>tool.started>permission.requested>task.attention_changed>permission.resolved>task.attention_changed>tool.completed>tool.started>tool.completed>tool.started>tool.completed>tool.started>tool.c",
+    "[2026-11-11T07:08:41.876Z] counter #count=null"
+  ]
+}

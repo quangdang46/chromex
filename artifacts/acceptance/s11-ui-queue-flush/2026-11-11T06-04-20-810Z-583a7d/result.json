@@ -1,0 +1,31 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-11T06-04-20-810Z-583a7d",
+  "status": "PASS",
+  "summary": "turn.completed auto-flushed the queued message exactly once as the next turn",
+  "durationMs": 62026,
+  "details": {
+    "queueGone": true,
+    "completed": 2,
+    "userMsgs": 2,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{}}"
+  },
+  "notes": [
+    "[2026-11-11T06:04:26.260Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T06:04:26.932Z] usage notice accept clicked=false",
+    "[2026-11-11T06:04:30.832Z] turn 1 active",
+    "[2026-11-11T06:04:30.850Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794377070847-6der96\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\"}",
+    "[2026-11-11T06:04:30.884Z] second message queued",
+    "[2026-11-11T06:04:43.233Z] task 01M74KASE023EPF7NA3N7RTJJQ",
+    "[2026-11-11T06:04:43.238Z] active turn restored post-reload (#stop-turn visible)",
+    "[2026-11-11T06:04:44.253Z] post-reload: {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794377070847-6der96\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"auto-flush me after turn one\\\"}]}}\",\"queuePresent\":true,\"composerValue\":\"\",\"frameClass\":\"composer-frame   \",\"approvalPanel\":false,\"footerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to-bottom-icon\\\" aria-hidden=\\\"true\\\">\\n    <svg class=\\\"lucide ui-lucide-icon arrow-down\\\" data-ui-icon=\\\"arrow-down\\\" viewBox=\\\"0 0 24 24\\\" aria-hidden=\\\"true\\\" fill=\\\"none\\\" stroke=\\\"currentColor\\\" stroke-width=\\\"2\\\" \",\"bgCurrentConv\":\"{\\\"codex.sidepanel.currentConversationId\\\":\\\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\\\"}\",\"dbgEvents\":{},\"chatIds\":[],\"uiInit\":\"{\\\"convId\\\":\\\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\\\",\\\"activeTurn\\\":{\\\"turnId\\\":\\\"01M74KASEPJY6E8V8CMVQGHSKH\\\",\\\"threadId\\\":\\\"01M74KASE023EPF7NA3N7RTJJQ\\\"},\\\"recentCount\\\":1}\",\"dbg\":{\"currentConversationId\":\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\",\"activeTurn\":{\"turnId\":\"01M74KASEPJY6E8V8CMVQGHSKH\",\"threadId\":\"01M74KASE023EPF7NA3N7RTJJQ\"},\"promptActivity\":true,\"queued\":{\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\":[{\"fileAttachments\":[],\"id\":\"queued-1794377070847-6der96\",\"profileId\":\"default\",\"text\":\"auto-flush me after turn one\"}]},\"lastFlushDecision\":{\"conversationId\":\"7b9e16c1-b8e5-4b1f-a39e-8e666f20558b\",\"boundThreadId\":\"\",\"stateThreadId\":\"\",\"mappedThreadId\":null,\"queuedThreadId\":null,\"activeTurn\":null,\"promptActivity\":false,\"gwEnabled\":true,\"gwTasks\":[],\"at\":1794377079684}}}",
+    "[2026-11-11T06:04:44.253Z] queue console: []",
+    "[2026-11-11T06:04:44.260Z] queue survived sidepanel reload while turn still active",
+    "[2026-11-11T06:05:22.778Z] final: queueGone=true completed=2 cancelled=0 failed=0 unknown=0 userMsgs=2 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed>user.message.created>turn.started>assistant.message>turn.completed",
+    "[2026-11-11T06:05:22.824Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{}}",
+    "[2026-11-11T06:05:22.824Z] queue console final: []"
+  ]
+}

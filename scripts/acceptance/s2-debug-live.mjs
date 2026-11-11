@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { runScenario, sleep } from "./lib/harness.mjs";
+import { runScenario, sleep, GATEWAY_BIN } from "./lib/harness.mjs";
 
 const SCENARIO = "s2-debug-live";
 const PROVIDER = process.env.CHROMEX_E2E_PROVIDER || "codex";
@@ -59,8 +59,8 @@ await runScenario(
       }
       evidence.note(`task ${taskId}`);
 
-      // Same MCP stdio fallback as s1 — codex 0.165 exposes MCP servers
-      // as empty namespaces, so give the agent the concrete descriptor.
+      // Same MCP fallback as s1 — the maintained mcp-call.js CLI (the
+      // codex session injects it itself; this covers older descriptors).
       let mcpDesc = null;
       try {
         mcpDesc = await runner.conn.request("browser.mcp.spawn", { taskId });
@@ -68,9 +68,13 @@ await runScenario(
       } catch (e) {
         evidence.note(`browser.mcp.spawn failed: ${e?.message ?? e}`);
       }
+      const mcpCall = path.join(path.dirname(GATEWAY_BIN), "..", "browser", "mcp-call.js");
       const mcpFallback = mcpDesc
         ? [
-            `If the browser tools are not callable as functions, drive the same MCP server yourself: run \`${mcpDesc.command} ${mcpDesc.args.join(" ")}\` with env CHROMEX_MCP_SCOPE_FILE=${mcpDesc.scopeFile} — it speaks MCP JSON-RPC on stdio; tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_extract, browser_page_click.`,
+            `If the chromex_browser MCP tools are not callable as functions, use the maintained CLI instead:`,
+            `node "${mcpCall}" --list --scope "${mcpDesc.scopeFile}"`,
+            `node "${mcpCall}" <tool_name> '<json_args>' --scope "${mcpDesc.scopeFile}"`,
+            `Tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_extract, browser_page_click, browser_page_screenshot.`,
           ]
         : [];
 
@@ -96,6 +100,18 @@ await runScenario(
       await sleep(500);
       await evidence.screenshot(page, "s2-final");
 
+      // latency attribution: turn wall-time vs measured browser tool
+      // execution — model/MCP overhead vs Chrome dispatch.
+      let diag = null;
+      try {
+        diag = (await runner.conn.request("diagnostics.snapshot", {}))?.diagnostics;
+        evidence.note(
+          `latency turn=${diag?.turns?.durationMs?.last ?? "?"}ms tools=${diag?.tools?.latencyMs?.last ?? "?"}ms approvalWait=${diag?.tools?.approvalWaitMs?.last ?? "?"}ms`,
+        );
+      } catch (e) {
+        evidence.note(`diagnostics.snapshot failed: ${e?.message ?? e}`);
+      }
+
       const onDisk = readFileSync(indexPath, "utf8");
       const served = await fetch(BASE).then((r) => r.text()).catch(() => "");
       const events = await runner.syncEvents(taskId);
@@ -116,7 +132,7 @@ await runScenario(
         summary: pass
           ? "agent edited code, re-drove real browser, verified token end-to-end"
           : `terminal=${terminal?.type ?? "timeout"} disk=${onDisk.includes(TOKEN)} served=${served.includes(TOKEN)} nav=${navCount} obs=${observes}`,
-        details: { taskId, turnId, terminal: terminal?.type, actions, onDiskHasToken: onDisk.includes(TOKEN), servedHasToken: served.includes(TOKEN) },
+        details: { taskId, turnId, terminal: terminal?.type, actions, onDiskHasToken: onDisk.includes(TOKEN), servedHasToken: served.includes(TOKEN), latency: diag ? { turnMs: diag.turns?.durationMs, toolMs: diag.tools?.latencyMs, approvalWaitMs: diag.tools?.approvalWaitMs } : null },
       };
     } finally {
       server.close();

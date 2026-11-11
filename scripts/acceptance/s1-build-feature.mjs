@@ -4,8 +4,9 @@
 // backend (not playwright-isolated). PASS = turn.completed + ≥3
 // browser.tool.classified + observe→act→observe ordering.
 // BLOCKED when the provider cannot run (no creds/binary) — never faked.
-import { runScenario, sleep, TERMINAL_TURN } from "./lib/harness.mjs";
+import { runScenario, sleep, TERMINAL_TURN, GATEWAY_BIN } from "./lib/harness.mjs";
 import { startFixtureServer } from "./fixtures/server.mjs";
+import { dirname, join } from "node:path";
 
 const SCENARIO = "s1-build-feature";
 const PROVIDER = process.env.CHROMEX_E2E_PROVIDER || "codex";
@@ -53,9 +54,13 @@ await runScenario(
 
       const mcpFallback = mcpDesc
         ? [
-            `If those tools are not callable as functions, the same MCP server is available as a stdio process you can drive yourself:`,
-            `run \`${mcpDesc.command} ${mcpDesc.args.join(" ")}\` with env CHROMEX_MCP_SCOPE_FILE=${mcpDesc.scopeFile}`,
-            `It speaks MCP JSON-RPC on stdio (initialize → tools/list → tools/call). Tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_click, browser_page_extract, browser_page_screenshot.`,
+            // Same fallback the codex session injects itself: the
+            // maintained mcp-call.js CLI (discovery + error recovery +
+            // artifact paths), never hand-rolled JSON-RPC.
+            `If the chromex_browser MCP tools are not callable as functions, use the maintained CLI instead:`,
+            `node "${join(dirname(GATEWAY_BIN), "..", "browser", "mcp-call.js")}" --list --scope "${mcpDesc.scopeFile}"`,
+            `node "${join(dirname(GATEWAY_BIN), "..", "browser", "mcp-call.js")}" <tool_name> '<json_args>' --scope "${mcpDesc.scopeFile}"`,
+            `Tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_extract, browser_page_click, browser_page_screenshot.`,
           ]
         : [];
 
@@ -80,6 +85,18 @@ await runScenario(
 
       const terminal = await runner.waitTerminal(taskId, turnId, TURN_DEADLINE_MS);
       await evidence.screenshot(page, "s1-final");
+
+      // latency attribution: turn wall-time vs measured browser tool
+      // execution — the split the review asked for (model/MCP vs Chrome).
+      let diag = null;
+      try {
+        diag = (await runner.conn.request("diagnostics.snapshot", {}))?.diagnostics;
+        evidence.note(
+          `latency turn=${diag?.turns?.durationMs?.last ?? "?"}ms tools=${diag?.tools?.latencyMs?.last ?? "?"}ms approvalWait=${diag?.tools?.approvalWaitMs?.last ?? "?"}ms`,
+        );
+      } catch (e) {
+        evidence.note(`diagnostics.snapshot failed: ${e?.message ?? e}`);
+      }
 
       const events = await runner.syncEvents(taskId);
       const classified = events.filter((e) => e.type === "browser.tool.classified");
@@ -107,7 +124,7 @@ await runScenario(
         summary: pass
           ? "provider iterated real-extension browser tools observe→act→observe"
           : `terminal=${terminal?.type ?? "timeout"} classified=${classified.length} browserDone=${browserSucceeded}/${browserDone.length} mcpDone=${mcpDone.length} oao=${observeActObserve}`,
-        details: { taskId, turnId, terminal: terminal?.type, actions, classified: classified.length, browserDone: browserDone.length, browserSucceeded, mcpDone: mcpDone.length },
+        details: { taskId, turnId, terminal: terminal?.type, actions, classified: classified.length, browserDone: browserDone.length, browserSucceeded, mcpDone: mcpDone.length, latency: diag ? { turnMs: diag.turns?.durationMs, toolMs: diag.tools?.latencyMs, approvalWaitMs: diag.tools?.approvalWaitMs } : null },
       };
     } finally {
       await fixture.close();

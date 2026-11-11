@@ -1,0 +1,36 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-11T06-36-03-963Z-f3c1b9",
+  "status": "FAIL",
+  "summary": "restart=browser-relaunch newSw=true queueGone=false completed=1 userMsgs=1 failed=0 cancelled=0 unknown=0",
+  "durationMs": 175069,
+  "details": {
+    "restartMode": "browser-relaunch",
+    "newSw": true,
+    "queueGone": false,
+    "completed": 1,
+    "userMsgs": 1,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{\"257b72c4-74e4-4dff-b70b-7d47930e5244\":[{\"fileAttachments\":[],\"id\":\"queued-1794378986485-iebqq0\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74N4WD42K60ZXDGTNRF00HZ\"}]}}"
+  },
+  "notes": [
+    "[2026-11-11T06:36:09.748Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T06:36:10.462Z] usage notice accept clicked=false",
+    "[2026-11-11T06:36:14.363Z] turn 1 active",
+    "[2026-11-11T06:36:26.473Z] gateway turn 1 established: task=01M74N4WD42K60ZXDGTNRF00HZ activeTurn=01M74N4WDKBE16BJKD99Q1ENZX",
+    "[2026-11-11T06:36:26.526Z] second message queued",
+    "[2026-11-11T06:36:26.526Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M74N4WD42K60ZXDGTNRF00HZ\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794378985917}]}",
+    "[2026-11-11T06:36:26.784Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-11T06:36:35.376Z] new service worker=none",
+    "[2026-11-11T06:36:35.377Z] runtime.reload did not recover — relaunching browser on same profile + gateway home",
+    "[2026-11-11T06:37:06.971Z] post-relaunch authed gateway connections=1",
+    "[2026-11-11T06:37:06.972Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794379026972,\"uptimeMs\":62677,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M74N47A3P573WWK5ER4FV2EM\"},\"startup\":null},\"endpoint\":{\"path\":\"p tasks={\"tasks\":[{\"taskId\":\"01M74N4WD42K60ZXDGTNRF00HZ\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794378985917}]}",
+    "[2026-11-11T06:37:28.574Z] post-reload: stopSeen=false {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"257b72c4-74e4-4dff-b70b-7d47930e5244\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794378986485-iebqq0\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\",\\\"threadId\\\":\\\"01M74N4WD42K60ZXDGTNRF00HZ\\\"}]}}\",\"queuePresent\":true,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"257b72c4-74e4-4dff-b70b-7d47930e5244\\\",\\\"threadId\\\":\\\"01M74N4WD42K60ZXDGTNRF00HZ\\\",\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"[]\"}",
+    "[2026-11-11T06:37:28.577Z] queue strip present post-reload=true",
+    "[2026-11-11T06:37:28.577Z] task 01M74N4WD42K60ZXDGTNRF00HZ",
+    "[2026-11-11T06:38:58.843Z] final: queueGone=false completed=1 cancelled=0 failed=0 unknown=0 userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed",
+    "[2026-11-11T06:38:58.893Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{\"257b72c4-74e4-4dff-b70b-7d47930e5244\":[{\"fileAttachments\":[],\"id\":\"queued-1794378986485-iebqq0\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74N4WD42K60ZXDGTNRF00HZ\"}]}}"
+  ]
+}

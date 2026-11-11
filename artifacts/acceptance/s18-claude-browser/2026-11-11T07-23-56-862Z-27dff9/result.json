@@ -1,0 +1,31 @@
+{
+  "scenario": "s18-claude-browser",
+  "runId": "2026-11-11T07-23-56-862Z-27dff9",
+  "status": "PASS",
+  "summary": "real claude turn via extension UI → chromex_browser MCP tools → counter page clicked exactly once (#count=1)",
+  "durationMs": 81378,
+  "details": {
+    "taskId": "01M74QWCVANQ9ZE0B937ZXZ4TB",
+    "terminal": "turn.completed",
+    "toolCalls": 9,
+    "browserTools": [
+      "browser.tab.create:succeeded",
+      "mcp__chromex_browser__browser_tab_create:succeeded",
+      "browser.page.snapshot:succeeded",
+      "mcp__chromex_browser__browser_page_snapshot:succeeded",
+      "browser.page.click:succeeded",
+      "mcp__chromex_browser__browser_page_click:succeeded",
+      "browser.page.extract:succeeded",
+      "mcp__chromex_browser__browser_page_extract:succeeded"
+    ],
+    "countText": "1"
+  },
+  "notes": [
+    "[2026-11-11T07:24:02.510Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T07:24:03.196Z] usage notice accept clicked=false",
+    "[2026-11-11T07:24:05.775Z] claude prompt sent",
+    "[2026-11-11T07:24:13.856Z] gateway task=01M74QWCVANQ9ZE0B937ZXZ4TB",
+    "[2026-11-11T07:25:18.233Z] turn=turn.completed toolCalls=9 browserTools=8 seq=task.created>task.status_changed>user.message.created>turn.started>tool.started>tool.completed>tool.started>permission.requested>task.attention_changed>permission.resolved>task.attention_changed>tool.started>browser.tool.classified>tool.completed>tool.completed>tool.started>permission.requested>task.attention_changed>permission.resolved>task.attention_changed>tool.started>browser.tool.classified>p",
+    "[2026-11-11T07:25:18.237Z] counter #count=1"
+  ]
+}

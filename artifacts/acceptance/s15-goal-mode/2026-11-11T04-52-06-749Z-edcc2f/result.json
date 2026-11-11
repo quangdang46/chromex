@@ -1,0 +1,9 @@
+{
+  "scenario": "s15-goal-mode",
+  "runId": "2026-11-11T04-52-06-749Z-edcc2f",
+  "status": "FAIL",
+  "summary": "harness error: gateway exited during startup (code 1, signal none)",
+  "durationMs": 844,
+  "error": "GatewayClientError: gateway exited during startup (code 1, signal none)\n    at ensureGateway (file:///C:/Users/ADMIN/Documents/Projects/chromex/packages/native-host/dist/gateway-client.js:421:27)\n    at async ensureIsolatedGateway (file:///C:/Users/ADMIN/Documents/Projects/chromex/scripts/acceptance/lib/harness.mjs:466:18)\n    at async runScenario (file:///C:/Users/ADMIN/Documents/Projects/chromex/scripts/acceptance/lib/harness.mjs:772:28)\n    at async file:///C:/Users/ADMIN/Documents/Projects/chromex/scripts/acceptance/s15-goal-mode.mjs:25:1",
+  "notes": []
+}

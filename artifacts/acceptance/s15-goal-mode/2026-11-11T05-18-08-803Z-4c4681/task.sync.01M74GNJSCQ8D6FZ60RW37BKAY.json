@@ -1,0 +1,96 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+      "seq": 1,
+      "ts": 1794374290230,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+        "profileId": "fakeacp",
+        "providerId": "fakeacp",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+      "seq": 2,
+      "ts": 1794374290238,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+      "seq": 3,
+      "ts": 1794374290251,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M74GNJT7M8ASPM9V2Z7DE8FN",
+        "message": {
+          "gatewayTurnId": "01M74GNJT7M8ASPM9V2Z7DE8FN",
+          "clientMessageId": "s15-goal-1794374290243",
+          "content": [
+            {
+              "type": "text",
+              "text": "achieve the objective"
+            }
+          ],
+          "ctx": {
+            "metadata": {
+              "useGoal": true,
+              "goalObjective": "achieve the objective"
+            }
+          }
+        },
+        "clientMessageId": "s15-goal-1794374290243"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74GNJSCQ8D6FZ60RW37BKAY",
+      "seq": 4,
+      "ts": 1794374290267,
+      "type": "turn.failed",
+      "payload": {
+        "type": "turn.failed",
+        "turnId": "01M74GNJT7M8ASPM9V2Z7DE8FN",
+        "error": {
+          "code": "proto.unsupported",
+          "message": "provider fakeacp does not support goal mode",
+          "retryable": true,
+          "requiresUserAction": false,
+          "sideEffectState": "unknown"
+        }
+      }
+    }
+  ],
+  "nextSeq": 4,
+  "hasMore": false
+}

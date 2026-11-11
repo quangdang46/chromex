@@ -1,0 +1,16 @@
+{
+  "scenario": "s11-ui-queue-flush",
+  "runId": "2026-11-11T06-00-31-560Z-ae9fe8",
+  "status": "FAIL",
+  "summary": "harness error: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n",
+  "durationMs": 39213,
+  "error": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.composer-queue') to be visible\u001b[22m\n\n    at runScenario.needsBrowser (C:\\Users\\ADMIN\\Documents\\Projects\\chromex\\scripts\\acceptance\\s11-ui-queue-flush.mjs:88:18)\n    at async runScenario (C:\\Users\\ADMIN\\Documents\\Projects\\chromex\\scripts\\acceptance\\lib\\harness.mjs:874:20)\n    at async file:///C:/Users/ADMIN/Documents/Projects/chromex/scripts/acceptance/s11-ui-queue-flush.mjs:14:1",
+  "notes": [
+    "[2026-11-11T06:00:57.017Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-11T06:00:57.017Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-11T06:00:57.648Z] usage notice accept clicked=false",
+    "[2026-11-11T06:01:00.729Z] turn 1 active",
+    "[2026-11-11T06:01:00.753Z] early after send2: {\"queuePresent\":false,\"queueText\":\"\",\"stored\":\"{}\"}",
+    "[2026-11-11T06:01:10.765Z] diag: {\"composerValue\":\"\",\"queuePresent\":false,\"stopVisible\":false,\"msgLog\":[{\"type\":\"conversation.save\",\"ok\":true,\"err\":null},{\"type\":\"prompt.send\",\"ok\":false,\"err\":\"Error when communicating with the native messaging host.\"},{\"type\":\"conversation.save\",\"ok\":true,\"err\":null},{\"type\":\"gateway.tasks\",\"ok\":true,\"err\":null},{\"type\":\"page.image-prompt-hover.install\",\"ok\":true,\"err\":null},{\"type\":\"image.prompt.error.pending.take\",\"ok\":true,\"err\":null},{\"type\":\"image.prompt.pending.take\",\"ok\":true,\"err\":null},{\"type\":\"conversation.save\",\"ok\":true,\"err\":null},{\"type\":\"prompt.send\",\"ok\":false,\"err\":\"Error when communicating with the native messaging host.\"},{\"type\":\"conversation.save\",\"ok\":true,\"err\":null}]}"
+  ]
+}

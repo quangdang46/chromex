@@ -1,0 +1,9 @@
+{
+  "transport": "pipe",
+  "path": "\\\\.\\pipe\\chromex-gateway-709f119d29f46536",
+  "gatewayPid": 9688,
+  "startedAt": 1794379226362,
+  "gatewayVersion": "0.1.0",
+  "tokenRef": "auth/token",
+  "fence": "01M74NC76SJQAGF4J9M23HN1A4"
+}

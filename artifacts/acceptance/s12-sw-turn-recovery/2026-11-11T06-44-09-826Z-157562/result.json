@@ -1,0 +1,36 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-11T06-44-09-826Z-157562",
+  "status": "FAIL",
+  "summary": "restart=browser-relaunch newSw=true queueGone=false completed=1 userMsgs=1 failed=0 cancelled=0 unknown=0",
+  "durationMs": 176131,
+  "details": {
+    "restartMode": "browser-relaunch",
+    "newSw": true,
+    "queueGone": false,
+    "completed": 1,
+    "userMsgs": 1,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{\"dacbfef0-fd42-40fd-9c91-8c405daee061\":[{\"fileAttachments\":[],\"id\":\"queued-1794379471823-7sdo2y\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74NKPB98JB1VD2DT8MGC17Q\"}]}}"
+  },
+  "notes": [
+    "[2026-11-11T06:44:15.127Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T06:44:15.790Z] usage notice accept clicked=false",
+    "[2026-11-11T06:44:19.699Z] turn 1 active",
+    "[2026-11-11T06:44:31.809Z] gateway turn 1 established: task=01M74NKPB98JB1VD2DT8MGC17Q activeTurn=01M74NKPBRKAWDT8T4D78WSGQ7",
+    "[2026-11-11T06:44:31.858Z] second message queued",
+    "[2026-11-11T06:44:31.859Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M74NKPB98JB1VD2DT8MGC17Q\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794379471233}]}",
+    "[2026-11-11T06:44:32.108Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-11T06:44:40.690Z] new service worker=none",
+    "[2026-11-11T06:44:40.690Z] runtime.reload did not recover — relaunching browser on same profile + gateway home",
+    "[2026-11-11T06:45:13.532Z] post-relaunch authed gateway connections=1",
+    "[2026-11-11T06:45:13.536Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794379513534,\"uptimeMs\":63210,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M74NK1Y9030ST68JMG33SFGE\"},\"startup\":null},\"endpoint\":{\"path\":\"p tasks={\"tasks\":[{\"taskId\":\"01M74NKPB98JB1VD2DT8MGC17Q\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794379471233}]}",
+    "[2026-11-11T06:45:35.217Z] post-reload: stopSeen=false {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"dacbfef0-fd42-40fd-9c91-8c405daee061\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794379471823-7sdo2y\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\",\\\"threadId\\\":\\\"01M74NKPB98JB1VD2DT8MGC17Q\\\"}]}}\",\"queuePresent\":true,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"dacbfef0-fd42-40fd-9c91-8c405daee061\\\",\\\"threadId\\\":\\\"01M74NKPB98JB1VD2DT8MGC17Q\\\",\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"{\\\"enabled\\\":true,\\\"state\\\":\\\"disconnected\\\",\\\"tasks\\\":[]}\",\"gwDebug\":\"{\\\"rt\\\":\\\"{\\\\\\\"stage\\\\\\\":\\\\\\\"build:ready-failed\\\\\\\",\\\\\\\"at\\\\\\\":1794379483471,\\\\\\\"error\\\\\\\":\\\\\\\"Error when communicating with the native messaging host.\\\\\\\",\\\\\\\"state\\\\\\\":\\\\\\\"disconnected\\\\\\\"}\\\",\\\"client\\\":\\\"06:44:12.586 connect:start attempt=0\\\\n06:44:13.264 connect:ready\\\\n06:44:43.425 connect:start attempt=0\\\\n06:44:43.472 teardown: Error when communicating with the native messaging host.\\\\n06:44:43.844 connect:start attempt=1\\\\n06:44:43.881 connect:start attempt=1\\\\n06:44:43.919 teardown: Error when communicating with the native messaging host.\\\\n06:44:44.478 connect:start attempt=1\\\\n06:44:44.520 teardown: Error when communicating with the native messaging host.\\\\n06:44:46.533 connect:start attempt=2\\\\n06:44:46.576 teardown: Error when communicating with the native messaging host.\\\\n06:44:50.590 connect:start attempt=3\\\\n06:44:50.651 teardown: Error when communicating with the native messaging host.\\\\n06:44:58.650 connect:start attempt=4\\\\n06:44:58.686 teardown: Error when communicating with the native messaging host.\\\\n06:45:14.493 connect:start attempt=5\\\\n06:45:14.530 teardown: Error when communicating with the native messaging host.\\\\n06:45:14.695 connect:start attempt=5\\\\n06:45:14.755 teardown: Error when communicating with the native messaging host.\\\\n06:45:34.264 connect:start attempt=6\\\\n06:45:34.305 teardown: Error when communicating with the native messaging host.\\\"}\"}",
+    "[2026-11-11T06:45:35.223Z] queue strip present post-reload=true",
+    "[2026-11-11T06:45:35.223Z] task 01M74NKPB98JB1VD2DT8MGC17Q",
+    "[2026-11-11T06:47:05.709Z] final: queueGone=false completed=1 cancelled=0 failed=0 unknown=0 userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed",
+    "[2026-11-11T06:47:05.782Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{\"dacbfef0-fd42-40fd-9c91-8c405daee061\":[{\"fileAttachments\":[],\"id\":\"queued-1794379471823-7sdo2y\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74NKPB98JB1VD2DT8MGC17Q\"}]}}"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "scenario": "s16-goal-live",
+  "runId": "2026-11-11T05-07-14-872Z-3ab6e8",
+  "status": "BLOCKED",
+  "summary": "task.send failed (provider unavailable?): internal: Error: Invalid request: unknown variant `thread/goal/set`, expected one of `initialize`, `thread/start`, `thread/resume`, `thread/fork`, `thread/archive`, `thread/unsubscribe`, `thread/increment_elicitation`, `thread/decrement_elicitation`, `thread/name/set`, `thread/metadata/update`, `thread/unarchive`, `thread/compact/start`, `thread/shellCommand`, `thread/backgroundTerminals/clean`, `thread/rollback`, `thread/list`, `thread/loaded/list`, `thread/read`, `skills/list`, `plugin/list`, `plugin/read`, `app/list`, `fs/readFile`, `fs/writeFile`, `fs/createDirectory`, `fs/getMetadata`, `fs/readDirectory`, `fs/remove`, `fs/copy`, `fs/watch`, `fs/unwatch`, `skills/config/write`, `plugin/install`, `plugin/uninstall`, `turn/start`, `turn/steer`, `turn/interrupt`, `thread/realtime/start`, `thread/realtime/appendAudio`, `thread/realtime/appendText`, `thread/realtime/stop`, `review/start`, `model/list`, `experimentalFeature/list`, `experimentalFeature/enablement/set`, `collaborationMode/list`, `mock/experimentalMethod`, `mcpServer/oauth/login`, `config/mcpServer/reload`, `mcpServerStatus/list`, `windowsSandbox/setupStart`, `account/login/start`, `account/login/cancel`, `account/logout`, `account/rateLimits/read`, `feedback/upload`, `command/exec`, `command/exec/write`, `command/exec/terminate`, `command/exec/resize`, `config/read`, `externalAgentConfig/detect`, `externalAgentConfig/import`, `config/value/write`, `config/batchWrite`, `configRequirements/read`, `account/read`, `getConversationSummary`, `gitDiffToRemote`, `getAuthStatus`, `fuzzyFileSearch`, `fuzzyFileSearch/sessionStart`, `fuzzyFileSearch/sessionUpdate`, `fuzzyFileSearch/sessionStop`",
+  "durationMs": 2468,
+  "details": {
+    "taskId": "01M74G1MXPN1HXCA6BD8XYE5GH"
+  },
+  "notes": [
+    "[2026-11-11T05:07:17.027Z] catalog codex.capabilities.goalMode=true",
+    "[2026-11-11T05:07:17.089Z] task 01M74G1MXPN1HXCA6BD8XYE5GH provider=codex model=xxx"
+  ]
+}

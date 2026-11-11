@@ -1,0 +1,18 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-11T06-49-19-758Z-d45b4d",
+  "status": "FAIL",
+  "summary": "turn 1 never became a gateway turn before reload — prompt.send did not reach task.create",
+  "durationMs": 89743,
+  "details": {
+    "gwTaskId": null,
+    "activeTurnId": null
+  },
+  "notes": [
+    "[2026-11-11T06:49:45.395Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-11T06:49:45.395Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-11T06:49:46.003Z] usage notice accept clicked=false",
+    "[2026-11-11T06:49:49.059Z] turn 1 active",
+    "[2026-11-11T06:50:49.484Z] gateway turn 1 established: task=null activeTurn=null"
+  ]
+}

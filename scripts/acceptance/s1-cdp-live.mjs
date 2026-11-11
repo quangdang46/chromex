@@ -5,7 +5,8 @@
 // browser. Proves the provider→MCP→gateway→connectOverCDP chain with a
 // real agent, not a scripted caller.
 import { chromium } from "playwright-core";
-import { runScenario } from "./lib/harness.mjs";
+import { dirname, join } from "node:path";
+import { runScenario, GATEWAY_BIN } from "./lib/harness.mjs";
 import { startFixtureServer } from "./fixtures/server.mjs";
 
 const SCENARIO = "s1-cdp-live";
@@ -61,11 +62,13 @@ await runScenario(
       } catch (e) {
         evidence.note(`browser.mcp.spawn failed: ${e?.message ?? e}`);
       }
+      const mcpCall = join(dirname(GATEWAY_BIN), "..", "browser", "mcp-call.js");
       const mcpFallback = mcpDesc
         ? [
-            `If those tools are not callable as functions, the same MCP server is available as a stdio process you can drive yourself:`,
-            `run \`${mcpDesc.command} ${mcpDesc.args.join(" ")}\` with env CHROMEX_MCP_SCOPE_FILE=${mcpDesc.scopeFile}`,
-            `It speaks MCP JSON-RPC on stdio (initialize → tools/list → tools/call). Tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_click, browser_page_extract, browser_page_screenshot.`,
+            `If the chromex_browser MCP tools are not callable as functions, use the maintained CLI instead:`,
+            `node "${mcpCall}" --list --scope "${mcpDesc.scopeFile}"`,
+            `node "${mcpCall}" <tool_name> '<json_args>' --scope "${mcpDesc.scopeFile}"`,
+            `Tool names are browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_extract, browser_page_click, browser_page_screenshot.`,
           ]
         : [];
 

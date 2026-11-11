@@ -1,0 +1,43 @@
+{
+  "scenario": "s19-claude-multitab",
+  "runId": "2026-11-11T07-26-00-224Z-c75e01",
+  "status": "PASS",
+  "summary": "real claude turn → two task-scoped tabs → each counter clicked exactly once (11 and 21)",
+  "durationMs": 85257,
+  "details": {
+    "taskId": "01M74R052QJXND88H8J34H5HNZ",
+    "terminal": "turn.completed",
+    "toolCalls": 17,
+    "creates": 4,
+    "clicks": 4,
+    "counts": {
+      "A": "11",
+      "B": "21"
+    },
+    "browserTools": [
+      "browser.tab.create:succeeded",
+      "mcp__chromex_browser__browser_tab_create:succeeded",
+      "browser.tab.create:succeeded",
+      "mcp__chromex_browser__browser_tab_create:succeeded",
+      "browser.page.snapshot:succeeded",
+      "mcp__chromex_browser__browser_page_snapshot:succeeded",
+      "browser.page.snapshot:succeeded",
+      "mcp__chromex_browser__browser_page_snapshot:succeeded",
+      "browser.page.click:succeeded",
+      "mcp__chromex_browser__browser_page_click:succeeded",
+      "browser.page.click:succeeded",
+      "mcp__chromex_browser__browser_page_click:succeeded",
+      "browser.page.extract:succeeded",
+      "mcp__chromex_browser__browser_page_extract:succeeded",
+      "browser.page.extract:succeeded",
+      "mcp__chromex_browser__browser_page_extract:succeeded"
+    ]
+  },
+  "notes": [
+    "[2026-11-11T07:26:05.725Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T07:26:09.034Z] claude prompt sent",
+    "[2026-11-11T07:26:17.107Z] gateway task=01M74R052QJXND88H8J34H5HNZ",
+    "[2026-11-11T07:27:25.473Z] turn=turn.completed toolCalls=17 browserTools=16 creates=4 clicks=4",
+    "[2026-11-11T07:27:25.479Z] counts A(start=10)=11 B(start=20)=21"
+  ]
+}

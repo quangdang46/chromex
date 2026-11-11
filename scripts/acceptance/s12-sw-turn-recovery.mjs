@@ -8,7 +8,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
-import { runScenario, sleep } from "./lib/harness.mjs";
+import { runScenario, sleep, launchChromiumWithExtension } from "./lib/harness.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FAKE_AGENT = join(here, "fixtures", "fake-acp-agent.mjs");
@@ -17,8 +17,10 @@ const SIDEPANEL_URL = (id, debug = true) =>
 
 await runScenario(
   "s12-sw-turn-recovery",
-  async ({ runner, browser, evidence }) => {
+  async ({ runner, browser, evidence, gateway }) => {
     let sp = await browser.context.newPage();
+    let relaunched = null;
+    let restartMode = "runtime.reload";
     try {
       await sp.goto(SIDEPANEL_URL(browser.extensionId), { waitUntil: "domcontentloaded", timeout: 20_000 });
       await sp.evaluate(() => {
@@ -116,16 +118,59 @@ await runScenario(
       await reloader.close().catch(() => {});
       evidence.note(`chrome.runtime.reload() triggered (sws before=${swsBefore.length})`);
 
-      // wait for a NEW service worker
+      // wait for a NEW service worker — bail early if the SW list stays
+      // empty. On Chromium-for-Testing (Windows AND headful) a
+      // chrome.runtime.reload() permanently kills the extension: no new
+      // SW ever registers and every chrome-extension:// navigation fails
+      // ERR_BLOCKED_BY_CLIENT (probe-sw-reload.mjs). sw-restart.mjs shows
+      // the reload path recovering on platforms where CfT supports it.
       const swDeadline = Date.now() + 30_000;
       let newSw = null;
+      let emptySince = null;
       while (Date.now() < swDeadline) {
         const sws = browser.context.serviceWorkers();
         newSw = sws.find((w) => !swsBefore.includes(w) && w.url().includes(browser.extensionId));
         if (newSw) break;
+        if (sws.length === 0) {
+          emptySince ??= Date.now();
+          if (Date.now() - emptySince > 8_000) break;
+        } else {
+          emptySince = null;
+        }
         await sleep(500);
       }
       evidence.note(`new service worker=${newSw ? "up" : "none"}`);
+
+      if (!newSw) {
+        // Cold-start equivalent: relaunch the browser on the SAME profile
+        // (chrome.storage queue survives) and SAME isolated gateway home
+        // (task + active turn survive). Strictly stronger than an SW
+        // restart — the whole extension process is gone.
+        evidence.note("runtime.reload did not recover — relaunching browser on same profile + gateway home");
+        await browser.context.close().catch(() => {});
+        const b2 = await launchChromiumWithExtension({
+          gatewayHome: gateway.dataDir,
+          headless: true,
+          userDataDir: browser.userDataDir,
+        });
+        relaunched = b2;
+        browser = b2;
+        restartMode = "browser-relaunch";
+        newSw = b2.context.serviceWorkers()[0] ?? "relaunch";
+        // the respawned SW must re-register its NM host before ui.init
+        // sees the real provider catalog
+        const reReg = Date.now() + 120_000;
+        let authed = 0;
+        while (Date.now() < reReg) {
+          try {
+            const d = await runner.conn.request("diagnostics.snapshot", {});
+            authed = d?.diagnostics?.endpoint?.authedConnections ?? d?.endpoint?.authedConnections ?? 0;
+          } catch {}
+          if (authed >= 2) break;
+          await sleep(500);
+        }
+        evidence.note(`post-relaunch authed gateway connections=${authed}`);
+      }
 
       // gateway must still be alive and holding the task — the extension
       // reload must not have taken it down
@@ -138,10 +183,21 @@ await runScenario(
         await sleep(2000);
       }
 
-      // reopen the sidepanel — fresh JS context, state only from storage
+      // reopen the sidepanel — fresh JS context, state only from storage.
+      // chrome-extension:// navigations transiently fail with
+      // ERR_BLOCKED_BY_CLIENT while the reloaded extension settles — retry.
       await sp.close().catch(() => {});
       sp = await browser.context.newPage();
-      await sp.goto(SIDEPANEL_URL(browser.extensionId), { waitUntil: "domcontentloaded", timeout: 20_000 });
+      const navDeadline = Date.now() + 45_000;
+      for (;;) {
+        try {
+          await sp.goto(SIDEPANEL_URL(browser.extensionId), { waitUntil: "domcontentloaded", timeout: 20_000 });
+          break;
+        } catch (e) {
+          if (Date.now() >= navDeadline) throw e;
+          await sleep(1000);
+        }
+      }
       await sp.waitForSelector("#composer", { timeout: 30_000 });
 
       // turn 1 is still running gateway-side → the restored panel must
@@ -171,7 +227,11 @@ await runScenario(
           .catch((e) => `err:${e}`),
         gwTasks: await chrome.runtime
           .sendMessage({ type: "gateway.tasks" })
-          .then((p) => JSON.stringify((p?.tasks ?? []).map((t) => ({ id: t.taskId, status: t.status, activeTurnId: t.activeTurnId }))))
+          .then((p) => JSON.stringify({ enabled: p?.enabled, state: p?.state, tasks: (p?.tasks ?? []).map((t) => ({ id: t.taskId, status: t.status, activeTurnId: t.activeTurnId })) }))
+          .catch((e) => `err:${e}`),
+        gwDebug: await chrome.storage.local
+          .get(["chromex.debug.gwRuntime", "chromex.debug.gwClient"])
+          .then((r) => JSON.stringify({ rt: r?.["chromex.debug.gwRuntime"] ?? null, client: r?.["chromex.debug.gwClient"] ?? null }))
           .catch((e) => `err:${e}`),
       }));
       evidence.note(`post-reload: stopSeen=${stopSeen} ${JSON.stringify(postReload)}`);
@@ -220,12 +280,17 @@ await runScenario(
       return {
         status: pass ? "PASS" : "FAIL",
         summary: pass
-          ? "extension reload mid-turn → activeTurn restored via gateway hello → queue survived → flushed exactly once on turn.completed"
-          : `newSw=${!!newSw} queueGone=${queueGone} completed=${completed} userMsgs=${userMsgs} failed=${failed} cancelled=${cancelled} unknown=${unknown}`,
-        details: { newSw: !!newSw, queueGone, completed, userMsgs, failed, cancelled, unknown, storedQueue },
+          ? `${restartMode === "browser-relaunch" ? "browser relaunch (runtime.reload unrecoverable on this Chromium)" : "extension reload"} mid-turn → activeTurn restored via gateway hello → queue survived → flushed exactly once on turn.completed`
+          : `restart=${restartMode} newSw=${!!newSw} queueGone=${queueGone} completed=${completed} userMsgs=${userMsgs} failed=${failed} cancelled=${cancelled} unknown=${unknown}`,
+        details: { restartMode, newSw: !!newSw, queueGone, completed, userMsgs, failed, cancelled, unknown, storedQueue },
       };
     } finally {
       await sp.close().catch(() => {});
+      if (relaunched) {
+        await relaunched.context.close().catch(() => {});
+        const { rm } = await import("node:fs/promises");
+        await rm(relaunched.staged.root, { recursive: true, force: true }).catch(() => {});
+      }
     }
   },
   {

@@ -1,0 +1,161 @@
+{
+  "mode": "replay",
+  "stream": "task",
+  "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+  "events": [
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 1,
+      "ts": 1794375841314,
+      "type": "task.created",
+      "payload": {
+        "type": "task.created",
+        "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+        "profileId": "fakegoal",
+        "providerId": "fakegoal",
+        "backend": {
+          "backendId": "chrome-extension",
+          "pinnedBy": "default"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 2,
+      "ts": 1794375841325,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "queued",
+        "to": "active"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 3,
+      "ts": 1794375841342,
+      "type": "user.message.created",
+      "payload": {
+        "type": "user.message.created",
+        "turnId": "01M74J4XHSJHV94MSQQ2NQXB4X",
+        "message": {
+          "gatewayTurnId": "01M74J4XHSJHV94MSQQ2NQXB4X",
+          "clientMessageId": "prompt-1794375828292-33nncn6anme",
+          "content": [
+            {
+              "type": "text",
+              "text": "s17 armed goal message"
+            }
+          ],
+          "ctx": {
+            "metadata": {
+              "useGoal": true,
+              "goalObjective": "s17 armed goal message"
+            }
+          }
+        },
+        "clientMessageId": "prompt-1794375828292-33nncn6anme"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 4,
+      "ts": 1794375841359,
+      "type": "turn.started",
+      "payload": {
+        "type": "turn.started",
+        "turnId": "01M74J4XHSJHV94MSQQ2NQXB4X"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 5,
+      "ts": 1794375843058,
+      "type": "assistant.message",
+      "payload": {
+        "type": "assistant.message",
+        "turnId": "01M74J4XHSJHV94MSQQ2NQXB4X",
+        "text": "startingworking… working… "
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 6,
+      "ts": 1794375843073,
+      "type": "turn.completed",
+      "payload": {
+        "type": "turn.completed",
+        "turnId": "01M74J4XHSJHV94MSQQ2NQXB4X",
+        "stopReason": "end_turn"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 7,
+      "ts": 1794375843091,
+      "type": "task.status_changed",
+      "payload": {
+        "type": "task.status_changed",
+        "from": "active",
+        "to": "completed"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 8,
+      "ts": 1794375843100,
+      "type": "task.attention_changed",
+      "payload": {
+        "type": "task.attention_changed",
+        "attention": "turn_finished"
+      }
+    },
+    {
+      "v": 1,
+      "kind": "event",
+      "reliability": "durable",
+      "stream": "task",
+      "taskId": "01M74J4XGVZ70A8TKFWQFJRCAE",
+      "seq": 9,
+      "ts": 1794375843108,
+      "type": "task.completed",
+      "payload": {
+        "type": "task.completed"
+      }
+    }
+  ],
+  "nextSeq": 9,
+  "hasMore": false
+}

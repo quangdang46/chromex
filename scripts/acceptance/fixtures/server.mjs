@@ -328,6 +328,11 @@ fetch('/api/ping').then((r) => r.json()).then((j) => {
 <h1>Counter Page</h1>
 <button id="inc" onclick="document.getElementById('count').textContent=String((parseInt(document.getElementById('count').textContent,10)||0)+1)">inc</button>
 <p id="count">0</p>
+<script>
+// ?start=N seeds the counter so parallel tabs are distinguishable
+var s = new URLSearchParams(location.search).get('start');
+if (s !== null) document.getElementById('count').textContent = s;
+</script>
 </body></html>`,
 
   // iframe proof: child frame with an observable button + text field.

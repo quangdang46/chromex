@@ -1,0 +1,16 @@
+{
+  "scenario": "s17-goal-ui",
+  "runId": "2026-11-11T05-38-43-160Z-e30d70",
+  "status": "FAIL",
+  "summary": "armed send did not produce a completed goal turn (turnDone=true useGoal=null)",
+  "durationMs": 25658,
+  "notes": [
+    "[2026-11-11T05:38:48.729Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T05:38:51.003Z] NM probe: {\"result\":\"disconnected\",\"lastError\":\"Native host has exited.\"}",
+    "[2026-11-11T05:38:52.966Z] ui.init diag: {\"agentProviders\":[{\"id\":\"codex\",\"label\":\"Codex\",\"supportsGoalMode\":false},{\"id\":\"fakeacp\",\"label\":\"fakeacp\",\"supportsGoalMode\":false},{\"id\":\"fakegoal\",\"label\":\"fakegoal\",\"supportsGoalMode\":true}],\"providerId\":\"fakegoal\",\"gatewayMode\":true}",
+    "[2026-11-11T05:38:53.048Z] fakegoal goal menu item present=true",
+    "[2026-11-11T05:38:53.133Z] armed badge visible, menu aria-pressed=null",
+    "[2026-11-11T05:38:54.659Z] armed badge after send=false (expect false — consumed once)",
+    "[2026-11-11T05:39:08.810Z] turnDone=true useGoal in durable ctx=null"
+  ]
+}

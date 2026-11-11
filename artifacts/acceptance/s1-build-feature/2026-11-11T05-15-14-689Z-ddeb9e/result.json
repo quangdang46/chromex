@@ -1,0 +1,45 @@
+{
+  "scenario": "s1-build-feature",
+  "runId": "2026-11-11T05-15-14-689Z-ddeb9e",
+  "status": "FAIL",
+  "summary": "terminal=turn.failed classified=0 browserDone=0/0 mcpDone=0 oao=false",
+  "durationMs": 39679,
+  "details": {
+    "taskId": "01M74GH1X6BK2PAAMN7Q5DHYGM",
+    "turnId": "01M74GH1XK40K60E331YY5B48X",
+    "terminal": "turn.failed",
+    "actions": [],
+    "classified": 0,
+    "browserDone": 0,
+    "browserSucceeded": 0,
+    "mcpDone": 0,
+    "latency": {
+      "turnMs": {
+        "count": 1,
+        "total": 12118,
+        "max": 12118,
+        "last": 12118
+      },
+      "toolMs": {
+        "count": 0,
+        "total": 0,
+        "max": 0,
+        "last": null
+      },
+      "approvalWaitMs": {
+        "count": 0,
+        "total": 0,
+        "max": 0,
+        "last": null
+      }
+    }
+  },
+  "notes": [
+    "[2026-11-11T05:15:41.595Z] authed gateway connections=1 (1=client, 2+=browser host)",
+    "[2026-11-11T05:15:41.595Z] WARNING: extension native host never registered with the isolated gateway",
+    "[2026-11-11T05:15:41.870Z] task 01M74GH1X6BK2PAAMN7Q5DHYGM provider=codex model=xxx",
+    "[2026-11-11T05:15:41.873Z] mcp descriptor scopeFile=C:\\Users\\ADMIN\\AppData\\Local\\Temp\\chromex-accept-gw-1dGpoa\\mcp\\01M74GH1X6BK2PAAMN7Q5DHYGM.json",
+    "[2026-11-11T05:15:42.244Z] turn 01M74GH1XK40K60E331YY5B48X",
+    "[2026-11-11T05:15:54.365Z] latency turn=12118ms tools=?ms approvalWait=?ms"
+  ]
+}

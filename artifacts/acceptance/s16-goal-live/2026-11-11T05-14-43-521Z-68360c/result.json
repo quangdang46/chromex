@@ -1,0 +1,13 @@
+{
+  "scenario": "s16-goal-live",
+  "runId": "2026-11-11T05-14-43-521Z-68360c",
+  "status": "BLOCKED",
+  "summary": "provider codex catalog does not advertise goalMode — nothing to exercise",
+  "durationMs": 1537,
+  "details": {
+    "catalogGoalMode": false
+  },
+  "notes": [
+    "[2026-11-11T05:14:45.061Z] catalog codex.capabilities.goalMode=false"
+  ]
+}

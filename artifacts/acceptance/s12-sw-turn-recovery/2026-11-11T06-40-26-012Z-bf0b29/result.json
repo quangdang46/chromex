@@ -1,0 +1,36 @@
+{
+  "scenario": "s12-sw-turn-recovery",
+  "runId": "2026-11-11T06-40-26-012Z-bf0b29",
+  "status": "FAIL",
+  "summary": "restart=browser-relaunch newSw=true queueGone=false completed=1 userMsgs=1 failed=0 cancelled=0 unknown=0",
+  "durationMs": 174397,
+  "details": {
+    "restartMode": "browser-relaunch",
+    "newSw": true,
+    "queueGone": false,
+    "completed": 1,
+    "userMsgs": 1,
+    "failed": 0,
+    "cancelled": 0,
+    "unknown": 0,
+    "storedQueue": "{\"chromex.sidepanel.queuedComposerMessages\":{\"e35c0c34-263e-431b-9eff-ab4bdf5ebb57\":[{\"fileAttachments\":[],\"id\":\"queued-1794379248243-c2zp4r\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74NCVZG87ZJAAQC2S2JT6EV\"}]}}"
+  },
+  "notes": [
+    "[2026-11-11T06:40:31.520Z] authed gateway connections=2 (1=client, 2+=browser host)",
+    "[2026-11-11T06:40:32.229Z] usage notice accept clicked=false",
+    "[2026-11-11T06:40:36.126Z] turn 1 active",
+    "[2026-11-11T06:40:48.230Z] gateway turn 1 established: task=01M74NCVZG87ZJAAQC2S2JT6EV activeTurn=01M74NCW02WTZ4Y289T4BCB275",
+    "[2026-11-11T06:40:48.279Z] second message queued",
+    "[2026-11-11T06:40:48.279Z] pre-reload task.list: {\"tasks\":[{\"taskId\":\"01M74NCVZG87ZJAAQC2S2JT6EV\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794379247626}]}",
+    "[2026-11-11T06:40:48.552Z] chrome.runtime.reload() triggered (sws before=1)",
+    "[2026-11-11T06:40:57.106Z] new service worker=none",
+    "[2026-11-11T06:40:57.107Z] runtime.reload did not recover — relaunching browser on same profile + gateway home",
+    "[2026-11-11T06:41:28.180Z] post-relaunch authed gateway connections=1",
+    "[2026-11-11T06:41:28.182Z] post-reload gw check 0: diag={\"diagnostics\":{\"at\":1794379288180,\"uptimeMs\":61848,\"locks\":{\"lifetime\":{\"held\":true,\"fence\":\"01M74NC76SJQAGF4J9M23HN1A4\"},\"startup\":null},\"endpoint\":{\"path\":\"p tasks={\"tasks\":[{\"taskId\":\"01M74NCVZG87ZJAAQC2S2JT6EV\",\"status\":\"active\",\"title\":null,\"profileId\":\"fakeacp\",\"providerId\":\"fakeacp\",\"lastSeq\":4,\"updatedAt\":1794379247626}]}",
+    "[2026-11-11T06:41:49.809Z] post-reload: stopSeen=false {\"stored\":\"{\\\"chromex.sidepanel.queuedComposerMessages\\\":{\\\"e35c0c34-263e-431b-9eff-ab4bdf5ebb57\\\":[{\\\"fileAttachments\\\":[],\\\"id\\\":\\\"queued-1794379248243-c2zp4r\\\",\\\"profileId\\\":\\\"default\\\",\\\"text\\\":\\\"flush me after the extension reload\\\",\\\"threadId\\\":\\\"01M74NCVZG87ZJAAQC2S2JT6EV\\\"}]}}\",\"queuePresent\":true,\"composerHtml\":\"\\n        \\n    <button id=\\\"scroll-to-bottom\\\" class=\\\"scroll-to-bottom-button\\\" type=\\\"button\\\" aria-label=\\\"Jump to latest message\\\" title=\\\"Jump to latest message\\\" tabindex=\\\"-1\\\">\\n      <span class=\\\"scroll-to\",\"uiInit\":\"{\\\"convId\\\":\\\"e35c0c34-263e-431b-9eff-ab4bdf5ebb57\\\",\\\"threadId\\\":\\\"01M74NCVZG87ZJAAQC2S2JT6EV\\\",\\\"activeTurn\\\":null,\\\"initError\\\":null}\",\"gwTasks\":\"{\\\"enabled\\\":true,\\\"state\\\":\\\"disconnected\\\",\\\"tasks\\\":[]}\",\"gwDebug\":\"{\\\"stage\\\":\\\"build:ready-failed\\\",\\\"at\\\":1794379258408,\\\"error\\\":\\\"Error when communicating with the native messaging host.\\\",\\\"state\\\":\\\"disconnected\\\"}\"}",
+    "[2026-11-11T06:41:49.813Z] queue strip present post-reload=true",
+    "[2026-11-11T06:41:49.813Z] task 01M74NCVZG87ZJAAQC2S2JT6EV",
+    "[2026-11-11T06:43:20.226Z] final: queueGone=false completed=1 cancelled=0 failed=0 unknown=0 userMsgs=1 seq=task.created>task.status_changed>user.message.created>turn.started>assistant.message>turn.completed>task.status_changed>task.attention_changed>task.completed",
+    "[2026-11-11T06:43:20.266Z] storedQueue={\"chromex.sidepanel.queuedComposerMessages\":{\"e35c0c34-263e-431b-9eff-ab4bdf5ebb57\":[{\"fileAttachments\":[],\"id\":\"queued-1794379248243-c2zp4r\",\"profileId\":\"default\",\"text\":\"flush me after the extension reload\",\"threadId\":\"01M74NCVZG87ZJAAQC2S2JT6EV\"}]}}"
+  ]
+}

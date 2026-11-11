@@ -1,0 +1,19 @@
+{
+  "scenario": "s15-goal-mode",
+  "runId": "2026-11-11T05-18-08-803Z-4c4681",
+  "status": "FAIL",
+  "summary": "harness error: internal: Error: provider fakegoal does not support goal mode",
+  "durationMs": 7534,
+  "error": "GatewayClientError: internal: Error: provider fakegoal does not support goal mode\n    at errorFromProtocol (file:///C:/Users/ADMIN/Documents/Projects/chromex/packages/native-host/dist/gateway-client.js:345:20)\n    at GatewayConnection.onData (file:///C:/Users/ADMIN/Documents/Projects/chromex/packages/native-host/dist/gateway-client.js:311:34)\n    at Socket.<anonymous> (file:///C:/Users/ADMIN/Documents/Projects/chromex/packages/native-host/dist/gateway-client.js:148:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)",
+  "notes": [
+    "[2026-11-11T05:18:10.243Z] task 01M74GNJSCQ8D6FZ60RW37BKAY (provider=fakeacp, goalMode unsupported)",
+    "[2026-11-11T05:18:10.272Z] useGoal send → err=internal: Error: provider fakeacp does not support goal mode turnId=null",
+    "[2026-11-11T05:18:10.272Z] goal turn terminal → turn.failed",
+    "[2026-11-11T05:18:10.275Z] turn.failed error.code=proto.unsupported",
+    "[2026-11-11T05:18:15.920Z] plain turn → turn.completed",
+    "[2026-11-11T05:18:15.922Z] goal.clear → err protocol proto.unsupported: provider fakeacp has no feature RPCs",
+    "[2026-11-11T05:18:16.272Z] catalog fakeacp.capabilities.goalMode=false",
+    "[2026-11-11T05:18:16.299Z] task 01M74GNRPJ0MKAVNF0F5NHZHBJ (provider=fakegoal, goalMode declared)",
+    "[2026-11-11T05:18:16.299Z] catalog fakegoal.capabilities.goalMode=true"
+  ]
+}

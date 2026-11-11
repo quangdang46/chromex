@@ -1,0 +1,23 @@
+{
+  "scenario": "s15-goal-mode",
+  "runId": "2026-11-11T04-53-56-293Z-704007",
+  "status": "PASS",
+  "summary": "useGoal on unsupported provider → turn.failed proto.unsupported (no silent chat turn); plain turn unaffected; goal.clear → honest error; catalog goalMode flag absent",
+  "durationMs": 7271,
+  "details": {
+    "taskId": "01M74F984J26VRF50K87A9X348",
+    "goalErrorCode": "proto.unsupported",
+    "plainTerminal": "turn.completed",
+    "clearError": "proto.unsupported: provider fakeacp has no feature RPCs",
+    "catalogGoalMode": false
+  },
+  "notes": [
+    "[2026-11-11T04:53:57.577Z] task 01M74F984J26VRF50K87A9X348 (provider=fakeacp, goalMode unsupported)",
+    "[2026-11-11T04:53:57.626Z] useGoal send → err=internal: Error: provider fakeacp does not support goal mode turnId=null",
+    "[2026-11-11T04:53:57.626Z] goal turn terminal → turn.failed",
+    "[2026-11-11T04:53:57.631Z] turn.failed error.code=proto.unsupported",
+    "[2026-11-11T04:54:02.994Z] plain turn → turn.completed",
+    "[2026-11-11T04:54:02.996Z] goal.clear → err protocol proto.unsupported: provider fakeacp has no feature RPCs",
+    "[2026-11-11T04:54:03.567Z] catalog fakeacp.capabilities.goalMode=false"
+  ]
+}

@@ -1,0 +1,12 @@
+{"seq":1,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"task.created","payload":{"type":"task.created","taskId":"01M74HVX97F0779NJTQDQGX70V","profileId":"fakegoal","providerId":"fakegoal","backend":{"backendId":"chrome-extension","pinnedBy":"default"}},"at":1794375546164}
+{"seq":2,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"task.status_changed","payload":{"type":"task.status_changed","from":"queued","to":"active"},"at":1794375546177}
+{"seq":3,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"user.message.created","payload":{"type":"user.message.created","turnId":"01M74HVXA6PS3M24WDA1H7WP65","message":{"gatewayTurnId":"01M74HVXA6PS3M24WDA1H7WP65","clientMessageId":"prompt-1794375533155-j6s4dfj1ly","content":[{"type":"text","text":"s17 armed goal message"}],"ctx":{"metadata":{"useGoal":true,"goalObjective":"s17 armed goal message"}}},"clientMessageId":"prompt-1794375533155-j6s4dfj1ly"},"at":1794375546194}
+{"seq":4,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"turn.started","payload":{"type":"turn.started","turnId":"01M74HVXA6PS3M24WDA1H7WP65"},"at":1794375546212}
+{"seq":null,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"assistant.delta","payload":{},"at":1794375546487}
+{"seq":null,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"assistant.delta","payload":{},"at":1794375546985}
+{"seq":null,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"assistant.delta","payload":{},"at":1794375547499}
+{"seq":5,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"assistant.message","payload":{"type":"assistant.message","turnId":"01M74HVXA6PS3M24WDA1H7WP65","text":"startingworking… working… "},"at":1794375547942}
+{"seq":6,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"turn.completed","payload":{"type":"turn.completed","turnId":"01M74HVXA6PS3M24WDA1H7WP65","stopReason":"end_turn"},"at":1794375547960}
+{"seq":8,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"task.attention_changed","payload":{"type":"task.attention_changed","attention":"turn_finished"},"at":1794375547960}
+{"seq":7,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"task.status_changed","payload":{"type":"task.status_changed","from":"active","to":"completed"},"at":1794375547960}
+{"seq":9,"taskId":"01M74HVX97F0779NJTQDQGX70V","type":"task.completed","payload":{"type":"task.completed"},"at":1794375547960}
