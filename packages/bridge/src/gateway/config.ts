@@ -12,6 +12,8 @@ import path from "node:path";
 
 import {
   MAX_ENVELOPE_BYTES_HARD,
+  NO_CAPABILITIES,
+  type AgentCapabilityFlags,
   type AgentEgressDestination,
 } from "@codex-sidepanel/shared";
 
@@ -27,6 +29,10 @@ export interface GatewayProviderConfig {
 /** Phase 4: extra ACP agent entries (docs/adr/acp-provider.md). */
 export interface GatewayAcpProviderConfig extends GatewayProviderConfig {
   args: string[] | null;
+  /** declared capability overrides — e.g. {"goalMode": true} for an
+   *  agent whose orchestration loop implements goal semantics. Only
+   *  known AgentCapabilityFlags keys are honored. */
+  capabilities: Partial<AgentCapabilityFlags> | null;
 }
 
 export interface GatewayConfig {
@@ -209,7 +215,20 @@ function acpProviderConfig(raw: unknown): GatewayAcpProviderConfig {
     defaultModel: null,
   });
   const args = isRecord(raw) ? strListOrNull(raw.args) : null;
-  return { ...base, args };
+  const capabilities = isRecord(raw) ? capabilityFlags(raw.capabilities) : null;
+  return { ...base, args, capabilities };
+}
+
+/** Whitelist-pick boolean capability flags — unknown keys and
+ *  non-boolean values are dropped, never coerced. */
+function capabilityFlags(raw: unknown): Partial<AgentCapabilityFlags> | null {
+  if (!isRecord(raw)) return null;
+  const out: Partial<AgentCapabilityFlags> = {};
+  for (const key of Object.keys(NO_CAPABILITIES) as Array<keyof AgentCapabilityFlags>) {
+    const v = raw[key];
+    if (typeof v === "boolean") out[key] = v;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function providerConfig(raw: unknown, dflt: GatewayProviderConfig): GatewayProviderConfig {

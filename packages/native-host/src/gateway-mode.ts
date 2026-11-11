@@ -60,6 +60,14 @@ export interface GatewayModeOptions {
 
 const HOST_INSTANCE_ID = randomUUID();
 
+/** Acceptance/debug aid: CHROMEX_NM_DEBUG=1 logs relay phases + errors
+ *  to stderr (native hosts have no other log channel; Chrome pipes
+ *  stderr nowhere useful). */
+const NM_DEBUG = process.env.CHROMEX_NM_DEBUG === "1";
+function nmDebug(msg: string): void {
+  if (NM_DEBUG) console.error(`[nm-debug] ${msg}`);
+}
+
 export class GatewayModeRelay {
   readonly #decoder = new NativeMessageStreamDecoder();
   #conn: GatewayConnection | null = null;
@@ -88,6 +96,7 @@ export class GatewayModeRelay {
   }
 
   async start(input: Readable): Promise<void> {
+    nmDebug(`relay start pid=${process.pid} gatewayMode=1`);
     // NO eager gateway connect and NO hello here: the server allows
     // exactly one hello per connection and it must be the EXTENSION's
     // (with host-injected token + ids). The gateway connection is
@@ -96,8 +105,14 @@ export class GatewayModeRelay {
     this.#wireStdin(input);
     process.on("SIGTERM", () => this.#shutdown());
     process.on("SIGINT", () => this.#shutdown());
-    input.on("end", () => this.#shutdown());
-    process.stdout.on("error", () => this.#shutdown());
+    input.on("end", () => {
+      nmDebug(`stdin end pid=${process.pid}`);
+      this.#shutdown();
+    });
+    process.stdout.on("error", () => {
+      nmDebug(`stdout error pid=${process.pid}`);
+      this.#shutdown();
+    });
   }
 
   #wireStdin(input: NodeJS.ReadableStream): void {
@@ -139,8 +154,11 @@ export class GatewayModeRelay {
   }
 
   async #connectGateway(): Promise<GatewayConnection> {
+    nmDebug("connectGateway: reading token");
     this.#token = await readGatewayToken(this.#opts.dataDir);
+    nmDebug("connectGateway: resolving browserInstanceId");
     this.#browserInstanceId = await resolveBrowserInstanceId({ dataDir: this.#opts.dataDir });
+    nmDebug("connectGateway: ensureGateway");
     const conn = await ensureGateway(this.#opts.dataDir, {
       ...(this.#opts.gatewayBin !== undefined ? { gatewayBin: this.#opts.gatewayBin } : {}),
       ...(this.#opts.startupTimeoutMs !== undefined
@@ -151,6 +169,7 @@ export class GatewayModeRelay {
     conn.onEvent((env) => this.#writeEnvelope(env));
     conn.onClose(() => this.#onGatewayConnClosed(conn));
     this.#conn = conn;
+    nmDebug("connectGateway: established");
     return conn;
   }
 
@@ -201,10 +220,12 @@ export class GatewayModeRelay {
     // ({id,method,params}, no v/kind) goes to the bridge sidecar
     // child; Envelope-shaped messages go to the gateway.
     if (isLegacyBridgeRequest(raw)) {
+      nmDebug(`legacy request ${raw.method}`);
       this.#sidecar.handleRequest(raw);
       return;
     }
     const env = raw as Envelope;
+    nmDebug(`envelope ${env.kind} ${(env as { method?: string }).method ?? "-"}`);
     try {
       const conn = await this.#ensureGatewayConn();
       if (conn.isClosed) {
@@ -224,6 +245,7 @@ export class GatewayModeRelay {
       }
       // gateway→extension event envelopes never arrive from the client
     } catch (err) {
+      nmDebug(`handle ${env.kind} ${(env as { method?: string }).method ?? "-"} failed: ${err instanceof Error ? err.message : String(err)}`);
       const pe =
         err instanceof GatewayClientError
           ? {

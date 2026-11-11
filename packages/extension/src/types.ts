@@ -79,6 +79,10 @@ export interface ContentProbeResult {
 export interface AgentProviderOption {
   id: string;
   label: string;
+  /** provider catalog capabilities.goalMode — Goal Mode UI must be
+   *  gated on this; absent means unknown (treated as unsupported for
+   *  non-codex providers, supported for codex legacy fallback). */
+  supportsGoalMode?: boolean;
 }
 
 export interface UiInitPayload {

@@ -101,8 +101,30 @@ class GatewayIpc {
     }
   }
 
-  #connect(): Promise<net.Socket> {
-    if (this.#socket && !this.#socket.destroyed) return Promise.resolve(this.#socket);
+  // The MCP child can start before the gateway's IPC listener is
+  // accepting (or while it is restarting). A bare net.connect fails
+  // immediately with ENOENT (Windows named pipe) / ECONNREFUSED
+  // (unix socket) — retry transient connect errors with backoff so a
+  // cold gateway doesn't surface as gateway.unavailable to the agent.
+  async #connect(): Promise<net.Socket> {
+    if (this.#socket && !this.#socket.destroyed) return this.#socket;
+    const deadline = Date.now() + 15_000;
+    let attempt = 0;
+    for (;;) {
+      try {
+        return await this.#connectOnce();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        const transient =
+          code === "ENOENT" || code === "ECONNREFUSED" || code === "EPIPE";
+        if (!transient || Date.now() >= deadline) throw err;
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, Math.min(250 * attempt, 1000)));
+      }
+    }
+  }
+
+  #connectOnce(): Promise<net.Socket> {
     return new Promise((resolve, reject) => {
       const sock = net.createConnection(this.endpoint);
       sock.once("error", reject);

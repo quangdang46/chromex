@@ -21,6 +21,7 @@ import type {
   LaunchContext,
   ProviderCatalog,
 } from "@codex-sidepanel/shared";
+import { protocolError } from "@codex-sidepanel/shared";
 
 import { CLAUDE_CAPABILITIES, ClaudeAgentSession } from "./session.js";
 
@@ -148,7 +149,11 @@ export class ClaudeAgentProvider implements AgentProvider {
 
   async callFeature(_method: string, _payload: unknown): Promise<unknown> {
     // No provider.feature.* methods registered for Claude yet (P3-04+).
-    throw new Error("claude provider has no registered feature methods");
+    // Coded error so goal.* and friends fail honestly, not as a 500.
+    throw protocolError(
+      "proto.unsupported",
+      `claude provider has no registered feature methods (${_method})`,
+    );
   }
 
   async shutdown(): Promise<void> {

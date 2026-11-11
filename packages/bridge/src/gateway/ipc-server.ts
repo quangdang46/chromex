@@ -155,8 +155,22 @@ export class GatewayIpcServer {
     const tmp = path.join(dir, "gateway.json.tmp");
     const final = path.join(dir, "gateway.json");
     await fs.writeFile(tmp, JSON.stringify(endpoint, null, 2), { mode: 0o600 });
-    await fs.rename(tmp, final);
-    return endpoint;
+    // Windows denies the rename briefly while a just-killed predecessor's
+    // handle on gateway.json drains (EPERM/EBUSY) — retry a few times
+    // before failing startup; POSIX never hits this path.
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        await fs.rename(tmp, final);
+        return endpoint;
+      } catch (err) {
+        lastErr = err;
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw err;
+        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
   }
 
   async listen(): Promise<GatewayEndpoint> {

@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 
 import { listSettingsSections } from "../src/sidepanel/settings-panel.js";
 
-const sidepanelSource = readFileSync(resolve(process.cwd(), "src/sidepanel/index.ts"), "utf8");
+// normalize CRLF — the checkout is CRLF on Windows and multiline
+// source assertions below match on "\n"
+const sidepanelSource = readFileSync(resolve(process.cwd(), "src/sidepanel/index.ts"), "utf8").replace(/\r\n/g, "\n");
 const backgroundSource = readFileSync(resolve(process.cwd(), "src/background/index.ts"), "utf8");
 const storageSource = readFileSync(resolve(process.cwd(), "src/background/storage.ts"), "utf8");
 const css = readFileSync(resolve(process.cwd(), "public/sidepanel.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");

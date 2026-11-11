@@ -191,6 +191,15 @@ export interface SessionManagerOptions {
    *  agent-reported dev servers. Prepended to ctx.instructions at
    *  dispatch/steer — harness-trusted, never inside untrusted fences. */
   appContextForTask?: (taskId: string) => string | null;
+  /** fired once per turn reaching a terminal store status with a
+   *  measurable duration — feeds diagnostics.turns so a slow turn can
+   *  be split into model/MCP time vs browser tool time. */
+  onTurnTerminal?: (info: {
+    taskId: string;
+    turnId: string;
+    status: TurnStatus;
+    durationMs: number;
+  }) => void;
 }
 
 const INTERRUPT_TIMEOUT_MS = 30_000;
@@ -423,6 +432,27 @@ export class SessionManager {
   async #dispatchTurn(task: TaskRecord, turn: TurnRecord, input: SendMessageInput): Promise<SendMessageResult> {
     const store = this.opts.store;
     const live = await this.ensureConversation(task);
+
+    // Goal mode is a capability contract, not a metadata hint: a
+    // provider without `goalMode` (claude/acp today) must fail the
+    // turn honestly instead of silently dropping useGoal and running
+    // a plain chat turn while the UI believes a goal is active.
+    if (
+      input.ctx?.metadata?.useGoal === true &&
+      live.session.capabilities.goalMode !== true
+    ) {
+      const err = new Error(`provider ${task.providerId} does not support goal mode`);
+      const failed = transitionTurn(turn, "failed", {
+        error: toProtocolError(err, "proto.unsupported"),
+      });
+      store.upsertTurn(failed);
+      this.#publishLive(task.taskId, {
+        type: "turn.failed",
+        turnId: turn.turnId,
+        error: failed.error!,
+      } as DurableTaskEvent);
+      throw err;
+    }
 
     // 1b: turn.started + started_at BEFORE provider call (§4.4.1 step 5)
     const started = transitionTurn(turn, "running", { startedAt: Date.now() });
@@ -928,6 +958,14 @@ export class SessionManager {
     if (!to || turn.status === to || !TURN_TRANSITIONS[turn.status].has(to)) return;
 
     const patch: Partial<TurnRecord> = { endedAt: Date.now() };
+    if (typeof turn.startedAt === "number") {
+      this.opts.onTurnTerminal?.({
+        taskId,
+        turnId: turn.turnId,
+        status: to,
+        durationMs: Math.max(0, patch.endedAt! - turn.startedAt),
+      });
+    }
     if (event.type === "turn.failed") {
       patch.error = (event as { error?: ProtocolError }).error ?? null;
       patch.stopReason = "provider_error";
@@ -1096,10 +1134,19 @@ export class SessionManager {
     const turn = this.opts.store.getTurn(turnId);
     if (!turn) return;
     this.#clearTurnTimeout(turnId);
+    const endedAt = Date.now();
     if (TURN_TRANSITIONS[turn.status].has("unknown")) {
       this.opts.store.upsertTurn(transitionTurn(turn, "unknown", { stopReason: reason }));
     } else if (turn.status === "running") {
-      this.opts.store.upsertTurn({ ...turn, status: "unknown", endedAt: Date.now(), stopReason: reason });
+      this.opts.store.upsertTurn({ ...turn, status: "unknown", endedAt, stopReason: reason });
+    }
+    if (typeof turn.startedAt === "number") {
+      this.opts.onTurnTerminal?.({
+        taskId,
+        turnId,
+        status: "unknown",
+        durationMs: Math.max(0, endedAt - turn.startedAt),
+      });
     }
     this.#publishLive(taskId, { type: "turn.unknown", turnId, reason } as DurableTaskEvent);
   }

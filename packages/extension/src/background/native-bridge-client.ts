@@ -35,6 +35,12 @@ export class NativeBridgeClient {
    *  them to its bridge sidecar child (chromex-rzf). null delegate =
    *  legacy NM path for everything. */
   #gatewayDelegate: GatewayRequestDelegate | null = null;
+  /** Cold-SW race guard: agent requests can arrive before the one-time
+   *  getGatewayRuntime() delegate install resolves. When no delegate is
+   *  set yet, consult this resolver (which awaits the runtime) instead
+   *  of silently falling back to the legacy sidecar path — a legacy
+   *  round-trip for a gatewayMode provider fails outright. */
+  #gatewayDelegateResolver: (() => Promise<GatewayRequestDelegate | null>) | null = null;
   #lastDisconnectError: string | null = null;
   #pending = new Map<string, PendingBridgeRequest>();
   #listeners = new Set<(event: unknown) => void>();
@@ -48,23 +54,29 @@ export class NativeBridgeClient {
     this.#gatewayDelegate = delegate;
   }
 
+  setGatewayDelegateResolver(resolver: (() => Promise<GatewayRequestDelegate | null>) | null): void {
+    this.#gatewayDelegateResolver = resolver;
+  }
+
   async request<TResult = unknown>(
     method: string,
     params: Record<string, unknown> = {},
     options: BridgeRequestOptions = {},
   ): Promise<TResult> {
-    if (this.#gatewayDelegate && !isSidecarMethod(method)) {
-      const delegate = this.#gatewayDelegate;
-      const call = delegate.request(method, params);
-      if (!options.timeoutMs || options.timeoutMs <= 0) {
-        return call.then((v) => v as TResult);
+    if (!isSidecarMethod(method)) {
+      const delegate = this.#gatewayDelegate ?? (await this.#gatewayDelegateResolver?.().catch(() => null)) ?? null;
+      if (delegate) {
+        const call = delegate.request(method, params);
+        if (!options.timeoutMs || options.timeoutMs <= 0) {
+          return call.then((v) => v as TResult);
+        }
+        return Promise.race([
+          call.then((v) => v as TResult),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(options.timeoutMessage ?? `${method} did not respond in time.`)), options.timeoutMs),
+          ),
+        ]);
       }
-      return Promise.race([
-        call.then((v) => v as TResult),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(options.timeoutMessage ?? `${method} did not respond in time.`)), options.timeoutMs),
-        ),
-      ]);
     }
     const port = this.#ensurePort();
     const id = crypto.randomUUID();

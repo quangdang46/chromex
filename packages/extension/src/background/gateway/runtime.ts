@@ -95,11 +95,24 @@ export function setAgentBadge(
   renderBadge();
 }
 
+async function gwDebug(stage: string, extra?: Record<string, unknown>): Promise<void> {
+  try {
+    await chrome.storage.local.set({
+      "chromex.debug.gwRuntime": JSON.stringify({ stage, at: Date.now(), ...extra }),
+    });
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 async function build(): Promise<GatewayRuntime | null> {
+  await gwDebug("build:start");
   const settings = await getStoredSettings();
+  await gwDebug("build:settings", { gatewayMode: settings.gatewayMode });
   if (!settings.gatewayMode) return null;
 
   const identity = await loadOrCreateIdentity(chrome.storage.local);
+  await gwDebug("build:identity");
   const listeners = new Set<(env: Envelope) => void>();
   const snapshotListeners = new Set<(taskId: string, snapshot: InlineTaskSnapshot) => void>();
 
@@ -196,15 +209,17 @@ async function build(): Promise<GatewayRuntime | null> {
   // durable events + rebuilds pruned snapshots. Lazy: runs once at
   // startup when the flag is on; failures leave client in
   // starting/unresponsive and the next request() retries.
+  await gwDebug("build:client-created");
   const readyPromise = client
     .connect()
     .then((hello) => tasks.onHello(hello))
     .then(() => tasks.syncAll())
-    .then(() => undefined)
-    .catch(() => {
-      /* connect failure is surfaced via client.state + next request retry */
+    .then(() => gwDebug("build:ready"))
+    .catch((err) => {
+      void gwDebug("build:ready-failed", { error: String(err?.message ?? err), state: client.state });
     });
   void readyPromise;
+  await gwDebug("build:returning");
 
   return {
     client,
@@ -232,7 +247,10 @@ export async function getGatewayRuntime(): Promise<GatewayRuntime | null> {
         runtime = rt;
         return rt;
       })
-      .catch(() => null);
+      .catch(async (err) => {
+        await gwDebug("build:threw", { error: String(err?.stack ?? err) });
+        return null;
+      });
   }
   return initPromise;
 }

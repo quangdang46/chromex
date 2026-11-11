@@ -23,6 +23,10 @@ export interface AgentCapabilityFlags {
   permissionPrompts: boolean;
   /** provider can consume MCP tools */
   mcpTools: boolean;
+  /** provider supports goal-driven autonomous turns (thread goal /
+   *  equivalent lifecycle). UI must not offer Goal Mode when false —
+   *  the flag is the contract, not a hint. */
+  goalMode: boolean;
   /** image content parts in TurnInput */
   imageInput: boolean;
   slashCommands: boolean;
@@ -43,6 +47,7 @@ export const NO_CAPABILITIES: AgentCapabilityFlags = {
   thinkingOption: false,
   permissionPrompts: false,
   mcpTools: false,
+  goalMode: false,
   imageInput: false,
   slashCommands: false,
   usage: false,

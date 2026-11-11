@@ -30,6 +30,8 @@ import type {
 } from "@codex-sidepanel/shared";
 import { NO_CAPABILITIES } from "@codex-sidepanel/shared";
 
+import { fileURLToPath } from "node:url";
+
 import type { CodexAppServerClient } from "../../../codex-app-server.js";
 import { requestTurnStartWithReasoningSummaryFallback } from "../../../turn-start.js";
 import { CodexEventMapper, mapAgentGoal } from "./mapper.js";
@@ -47,11 +49,33 @@ export const CODEX_CAPABILITIES: AgentCapabilityFlags = {
   thinkingOption: true,
   permissionPrompts: true,
   mcpTools: true,
+  goalMode: true, // thread/goal/* lifecycle (set/get/clear + goal loop)
   imageInput: true,
   slashCommands: false,
   usage: false,
   streamHistory: true,
 };
+
+/** thread/goal/* only exists on newer codex app-servers — probe the
+ *  shared client once per provider process instead of trusting the
+ *  static flag. "unknown variant/method" means the RPC surface lacks
+ *  goals; ANY other error (bogus threadId, thread not found, …) means
+ *  the method exists → supported. Probe failure stays optimistic: the
+ *  per-turn goal.set path still fails honestly if the binary lies. */
+export async function probeCodexGoalSupport(
+  client: CodexAppServerClient,
+): Promise<boolean> {
+  try {
+    await client.request("thread/goal/get", { threadId: "__chromex_probe__" });
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/unknown variant|unknown method|method not found|unsupported/i.test(msg)) {
+      return false;
+    }
+    return true;
+  }
+}
 
 interface PendingUserInput {
   request: PermissionRequest;
@@ -70,7 +94,14 @@ interface CodexTurnInputItem {
 export class CodexAgentSession implements AgentSession {
   readonly provider: ProviderId = "codex";
   readonly sessionKey: string;
-  readonly capabilities: AgentCapabilityFlags = CODEX_CAPABILITIES;
+  /** provider probes the shared app-server once and sets this before
+   *  handing the session out — older binaries lack thread/goal/*. */
+  goalModeSupported = true;
+  get capabilities(): AgentCapabilityFlags {
+    return this.goalModeSupported
+      ? CODEX_CAPABILITIES
+      : { ...CODEX_CAPABILITIES, goalMode: false };
+  }
 
   private readonly client: CodexAppServerClient;
   private readonly config: AgentSessionConfig;
@@ -252,7 +283,7 @@ export class CodexAgentSession implements AgentSession {
     if (this.activeTurn) throw new Error("turn already active — steer or interrupt first");
 
     const threadId = await this.#ensureThread();
-    const items = buildCodexInputItems(input);
+    const items = buildCodexInputItems(this.#withBrowserToolFallback(input));
     const cwd = this.ctx.cwd;
 
     // Goal mode (legacy /goal parity): set the thread goal BEFORE the
@@ -332,11 +363,59 @@ export class CodexAgentSession implements AgentSession {
     return { accepted: true as const, providerTurnId: turn.turn.id };
   }
 
+  /**
+   * Browser-tool resilience note appended to turn instructions when the
+   * session carries an MCP spawn descriptor. Some codex app-server
+   * versions expose the spawned server's tools under an empty
+   * namespace, leaving the model unable to call them as functions —
+   * the same stdio MCP endpoint then has to be driven through the
+   * shell. Documenting BOTH paths up front keeps the browser loop
+   * working without a per-task harness hack; the note is conditional
+   * ("if not callable") so healthy native tools stay preferred.
+   */
+  #withBrowserToolFallback(input: TurnInput): TurnInput {
+    const note = this.#browserMcpFallbackNote();
+    if (!note) return input;
+    const existing = input.ctx?.instructions?.trim() ?? "";
+    return {
+      ...input,
+      ctx: {
+        ...(input.ctx ?? {}),
+        instructions: existing ? `${existing}\n\n${note}` : note,
+      },
+    };
+  }
+
+  #browserMcpFallbackNote(): string | null {
+    const servers = this.config.options?.mcpServers as
+      | Record<string, { command?: string; args?: string[]; env?: Record<string, string> }>
+      | undefined;
+    if (!servers) return null;
+    for (const [name, srv] of Object.entries(servers)) {
+      const scopeFile = srv?.env?.CHROMEX_MCP_SCOPE_FILE;
+      if (!srv?.command || !scopeFile) continue;
+      // mcp-call.js is the maintained MCP client CLI shipped next to
+      // mcp-stdio.js — it resolves the scope file itself (--scope /
+      // CHROMEX_MCP_SCOPE_FILE / newest in the gateway mcp dir) and
+      // self-corrects on unknown tool names, so the model only needs a
+      // shell command, not hand-rolled JSON-RPC framing.
+      const callCli = fileURLToPath(new URL("../../../browser/mcp-call.js", import.meta.url));
+      return [
+        `Browser tools: prefer the native MCP tools from the "${name}" server`,
+        `(browser_page_navigate, browser_page_snapshot, browser_page_get, browser_page_click, browser_page_extract, browser_page_screenshot, and the rest of the browser_* surface).`,
+        `If those tools are not callable as functions in this session, drive the same server through the chromex-call CLI with your shell/exec tool:`,
+        `\`node "${callCli}" --list --scope "${scopeFile}"\` prints the exact tool names,`,
+        `then \`node "${callCli}" <tool_name> '<json_args>' --scope "${scopeFile}"\` runs a call.`,
+      ].join(" ");
+    }
+    return null;
+  }
+
   async steer(input: TurnInput): Promise<{ status: "accepted" | "unavailable" }> {
     if (!this.activeTurn?.providerTurnId || !this.threadId) {
       return { status: "unavailable" };
     }
-    const items = buildCodexInputItems(input);
+    const items = buildCodexInputItems(this.#withBrowserToolFallback(input));
     await this.client.request("turn/steer", {
       threadId: this.threadId,
       expectedTurnId: this.activeTurn.providerTurnId,

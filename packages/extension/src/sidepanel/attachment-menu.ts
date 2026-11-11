@@ -4,6 +4,7 @@ import { getUiStrings } from "./i18n.js";
 export type AttachmentMenuAction =
   | "add-files"
   | "toggle-plan-mode"
+  | "toggle-goal-mode"
   | "attach-tabs"
   | "attach-screenshot"
   | "saved-prompts";
@@ -11,15 +12,19 @@ export type AttachmentMenuAction =
 export interface AttachmentMenuItem {
   action: AttachmentMenuAction;
   label: string;
-  icon: "paperclip" | "list-checks" | "video" | "scan" | "bookmark";
+  icon: "paperclip" | "list-checks" | "target" | "video" | "scan" | "bookmark";
   section: "primary";
   enabled: boolean;
   kind?: "button" | "toggle";
   hasSubmenu?: boolean;
 }
 
-export function listAttachmentMenuItems(locale: UiLocale): AttachmentMenuItem[] {
+export function listAttachmentMenuItems(
+  locale: UiLocale,
+  options: { goalModeSupported?: boolean } = {},
+): AttachmentMenuItem[] {
   const strings = getUiStrings(locale);
+  const goalSupported = options.goalModeSupported !== false;
   return [
     {
       action: "add-files",
@@ -36,6 +41,18 @@ export function listAttachmentMenuItems(locale: UiLocale): AttachmentMenuItem[] 
       enabled: true,
       kind: "toggle",
     },
+    ...(goalSupported
+      ? [
+          {
+            action: "toggle-goal-mode" as const,
+            label: locale === "ko" ? "골 모드" : "Goal mode",
+            icon: "target" as const,
+            section: "primary" as const,
+            enabled: true,
+            kind: "toggle" as const,
+          },
+        ]
+      : []),
     {
       action: "attach-tabs",
       label: strings.actions.attachTabs,

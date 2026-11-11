@@ -7,10 +7,18 @@ describe("attachment menu", () => {
     expect(listAttachmentMenuItems("ko").map((item) => item.action)).toEqual([
       "add-files",
       "toggle-plan-mode",
+      "toggle-goal-mode",
       "attach-tabs",
       "attach-screenshot",
       "saved-prompts",
     ]);
+  });
+
+  test("hides goal mode when the provider does not support it", () => {
+    const actions = listAttachmentMenuItems("en", { goalModeSupported: false }).map((item) => item.action);
+
+    expect(actions).not.toContain("toggle-goal-mode");
+    expect(actions).toContain("toggle-plan-mode");
   });
 
   test("does not expose unsupported or project actions", () => {

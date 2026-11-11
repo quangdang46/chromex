@@ -123,7 +123,7 @@ export class AcpAgentProvider implements AgentProvider {
         : undefined;
     return new AcpAgentSession(
       this.id,
-      {},
+      this.capabilities,
       config,
       { ...ctx, ...(mergedEnv ? { env: mergedEnv } : {}) },
       sessionKey,

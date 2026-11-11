@@ -71,6 +71,20 @@ export class GatewayClient {
     return this.#helloResponse;
   }
 
+  /** acceptance/debug aid: append a line to a storage ring buffer —
+   *  SW console is invisible to Playwright, storage is not. */
+  async #dbg(msg: string): Promise<void> {
+    try {
+      const key = "chromex.debug.gwClient";
+      const got = await chrome.storage.local.get(key);
+      const lines = String(got?.[key] ?? "").split("\n").filter(Boolean);
+      lines.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+      await chrome.storage.local.set({ [key]: lines.slice(-40).join("\n") });
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
   #setState(s: GatewayConnectionState): void {
     if (this.#state === s) return;
     this.#state = s;
@@ -94,7 +108,14 @@ export class GatewayClient {
 
   async #doConnect(): Promise<void> {
     this.#setState("connecting");
-    const port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    void this.#dbg(`connect:start attempt=${this.#reconnectAttempt}`);
+    let port: chrome.runtime.Port;
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    } catch (err) {
+      void this.#dbg(`connectNative threw: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
     this.#port = port;
     port.onMessage.addListener((message: unknown) => this.#handleMessage(message as Envelope));
     port.onDisconnect.addListener(() => {
@@ -112,8 +133,10 @@ export class GatewayClient {
       this.#helloResponse = result;
       this.#reconnectAttempt = 0;
       this.#setState("ready");
+      void this.#dbg("connect:ready");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      void this.#dbg(`connect:hello-failed ${msg}`);
       if (/starting|not_ready/i.test(msg)) this.#setState("starting");
       else this.#setState("unresponsive");
       this.#teardown(err instanceof Error ? err : new Error(msg));
@@ -249,6 +272,7 @@ export class GatewayClient {
   }
 
   #teardown(err: Error): void {
+    void this.#dbg(`teardown: ${err.message}`);
     for (const [, p] of this.#pending) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(err);

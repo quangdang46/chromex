@@ -1557,6 +1557,14 @@ setGatewayServerRequestHandler(async (method, payload) => {
 // P1-08: when gatewayMode is on, route agent-domain bridge.request calls
 // through the Gateway runtime (compat layer returns legacy shapes).
 // Events/delta streaming migration is P1-10 — request path only.
+// Cold-SW race: agent requests can arrive before the runtime promise
+// below resolves. The resolver awaits the same cached getGatewayRuntime()
+// so they still reach the gateway instead of silently falling back to
+// the legacy sidecar (which cannot serve non-codex providers).
+bridge.setGatewayDelegateResolver(async () => {
+  const r = await getGatewayRuntime();
+  return r ? { request: (m, p) => r.request(m, p) } : null;
+});
 void getGatewayRuntime().then((rt) => {
   bridge.setGatewayDelegate(rt ? { request: (m, p) => rt.request(m, p) } : null);
   // P1-10 interim: translate gateway envelopes into legacy bridge.event
@@ -2407,9 +2415,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // provider session and emits permission.resolved durably.
           sendResponse(await bridge.request("permission.respond", message.payload ?? {}));
           return;
-        case "goal.clear":
-          sendResponse(await bridge.request("goal.clear", message.payload ?? {}));
+        case "goal.clear": {
+          // goal.* RPCs are provider-scoped: the legacy goal.clear compat
+          // entry always targets the CODEX provider, which would clear a
+          // codex thread goal even while the user chats with claude/acp.
+          // In gateway mode route to the selected provider's feature RPC —
+          // providers without goal support fail honestly instead of
+          // silently hitting codex. Legacy sidecar mode is codex-only.
+          const settings = await getStoredSettings().catch(() => null);
+          const providerId = settings?.agentProviderId || state.selectedProviderId || "codex";
+          const method = settings?.gatewayMode
+            ? `provider.feature.${providerId}.goal.clear`
+            : "goal.clear";
+          sendResponse(await bridge.request(method, message.payload ?? {}));
           return;
+        }
         case "turn.interrupt":
           sendResponse(await handleTurnInterrupt(message.threadId, message.turnId));
           return;
@@ -3064,6 +3084,19 @@ async function handlePromptSend(payload: PromptRequestPayload) {
   }
 
   const settings = await getStoredSettings();
+  // Goal mode is a provider capability, not a UI convention: refuse
+  // useGoal up front for providers whose catalog says goalMode=false
+  // instead of letting the turn silently degrade to plain chat.
+  if (payload.useGoal) {
+    const goalProviderId = settings.agentProviderId || state.selectedProviderId || "codex";
+    const goalProvider = state.agentProviders.find((p) => p.id === goalProviderId);
+    const goalSupported = goalProvider?.supportsGoalMode ?? goalProviderId === "codex";
+    if (!goalSupported) {
+      return {
+        error: "The selected provider does not support Goal Mode.",
+      };
+    }
+  }
   const prepared = await buildPromptRequest(payload, settings, (phase, workflow) => emitPromptStatus(payload, phase, workflow));
   if (!prepared.ok) {
     return prepared.response;
@@ -6191,24 +6224,33 @@ async function refreshAppServerCatalog(
   }
   if (catalogSettings?.gatewayMode) {
     const catalogs = await bridge
-      .request<{ catalogs?: Array<{ providerId: string; displayName?: string }> }>(
-        "provider.catalog",
-        {},
-      )
+      .request<{
+        catalogs?: Array<{
+          providerId: string;
+          displayName?: string;
+          capabilities?: { goalMode?: boolean };
+        }>;
+      }>("provider.catalog", {})
       .then((r) => r.catalogs ?? [])
       .catch((error) => {
         degradedReport("provider.catalog", "provider.catalog failed; falling back to built-in providers", error);
-        return [] as Array<{ providerId: string; displayName?: string }>;
+        return [] as Array<{
+          providerId: string;
+          displayName?: string;
+          capabilities?: { goalMode?: boolean };
+        }>;
       });
     const providers = catalogs.map((c) => ({
       id: c.providerId,
       label: c.displayName ?? c.providerId,
+      supportsGoalMode: c.capabilities?.goalMode === true,
     }));
     state.agentProviders = providers.length
       ? providers
-      : [{ id: "codex", label: "Codex" }];
+      : [{ id: "codex", label: "Codex", supportsGoalMode: true }];
   } else {
-    state.agentProviders = [{ id: "codex", label: "Codex" }];
+    // Legacy sidecar mode is codex-only — goal mode is supported there.
+    state.agentProviders = [{ id: "codex", label: "Codex", supportsGoalMode: true }];
   }
   const [models, serverThreads, appServerSkills, connectedApps, appServerPlugins, mcpServers, rateLimits] = await Promise.all([
     bridge.request<CodexModelOption[]>("model.list", {

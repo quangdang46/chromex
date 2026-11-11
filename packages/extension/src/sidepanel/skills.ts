@@ -59,6 +59,7 @@ export function listSlashCommandOptions(
   profiles: ProfileTemplate[] = [],
   locale: UiLocale = "en",
   activeProfileId = "",
+  options: { goalModeSupported?: boolean } = {},
 ): SlashCommandOption[] {
   const normalized = query.trim().toLowerCase();
   const profileOptions = profiles
@@ -74,6 +75,7 @@ export function listSlashCommandOptions(
     .filter((option) => matchesSlashOption(option, normalized));
 
   const strings = getUiStrings(locale);
+  const goalSupported = options.goalModeSupported !== false;
   const goalOption: SlashCommandOption = {
     id: "goal",
     kind: "goal",
@@ -90,7 +92,7 @@ export function listSlashCommandOptions(
 
   return [
     ...profileOptions.sort((left, right) => Number(Boolean(right.active)) - Number(Boolean(left.active))),
-    ...(matchesSlashOption(goalOption, normalized) ? [goalOption] : []),
+    ...(goalSupported && matchesSlashOption(goalOption, normalized) ? [goalOption] : []),
     createProfileOption,
   ];
 }

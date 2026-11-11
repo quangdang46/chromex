@@ -1046,6 +1046,7 @@ const state = {
   latestDiff: null as CodexTurnDiff | null,
   latestReroute: null as CodexModelReroute | null,
   activeGoal: null as SidepanelThreadGoal | null,
+  goalModeArmed: false,
   voiceOptions: listCodexRealtimeVoiceOptions(),
   initError: "",
   actionStatus: "",
@@ -3726,6 +3727,7 @@ function renderNow(): void {
                       aria-label="${escapeAttribute(strings.actions.attachFiles)}"
                     >${renderUiIcon("plus")}</button>
                     ${state.settings.planModeEnabled ? renderComposerPlanModeBadge() : ""}
+                    ${state.goalModeArmed && providerSupportsGoalMode() && !state.activeGoal ? renderComposerGoalArmedBadge() : ""}
                     ${state.activeGoal ? renderComposerGoalBadge() : ""}
                     ${renderComposerBrowserActionPermissionControl(strings)}
                   </div>
@@ -5872,8 +5874,18 @@ function renderComposerCommandPill(pill: ComposerCommandPill): string {
   `;
 }
 
+function providerSupportsGoalMode(): boolean {
+  const providerId = state.settings.agentProviderId || state.selectedProviderId || "codex";
+  const provider = state.agentProviders.find((p) => p.id === providerId);
+  // Absent flag = unknown; only codex is assumed capable (legacy
+  // sidecar catalogs predate the capability field).
+  return provider?.supportsGoalMode ?? providerId === "codex";
+}
+
 function renderAttachmentMenu(strings: ReturnType<typeof getUiStrings>): string {
-  const items = listAttachmentMenuItems(state.uiLocale);
+  const items = listAttachmentMenuItems(state.uiLocale, {
+    goalModeSupported: providerSupportsGoalMode(),
+  });
   return `
     <div class="attachment-menu" role="menu" aria-label="${escapeAttribute(strings.actions.attachFiles)}">
       ${items
@@ -5883,13 +5895,14 @@ function renderAttachmentMenu(strings: ReturnType<typeof getUiStrings>): string 
               class="attachment-menu-item ${item.kind === "toggle" ? "is-toggle" : ""}"
               data-attachment-menu-action="${escapeAttribute(item.action)}"
               ${item.action === "toggle-plan-mode" ? `aria-pressed="${state.settings.planModeEnabled ? "true" : "false"}"` : ""}
+              ${item.action === "toggle-goal-mode" ? `aria-pressed="${state.goalModeArmed ? "true" : "false"}"` : ""}
               role="menuitem"
             >
               ${renderAttachmentMenuIcon(item.icon)}
               <span>${escapeHtml(item.label)}</span>
               ${
                 item.kind === "toggle"
-                  ? `<span class="attachment-menu-switch ${state.settings.planModeEnabled ? "on" : ""}" aria-hidden="true"><span></span></span>`
+                  ? `<span class="attachment-menu-switch ${(item.action === "toggle-goal-mode" ? state.goalModeArmed : state.settings.planModeEnabled) ? "on" : ""}" aria-hidden="true"><span></span></span>`
                   : ""
               }
             </button>
@@ -5904,6 +5917,7 @@ function renderAttachmentMenuIcon(icon: ReturnType<typeof listAttachmentMenuItem
   const icons: Record<typeof icon, UiIconName> = {
     paperclip: "paperclip",
     "list-checks": "list-checks",
+    target: "target",
     video: "video",
     scan: "scan",
     bookmark: "bookmark",
@@ -5933,6 +5947,31 @@ function renderComposerPlanModeBadge(): string {
   `;
 }
 
+function renderComposerGoalArmedBadge(): string {
+  const isKo = state.uiLocale === "ko";
+  const label = isKo ? "골 모드" : "Goal mode";
+  const hint = isKo ? "다음 메시지가 목표로 실행됩니다" : "Next message runs as a goal";
+  const dismissLabel = isKo ? "골 모드 해제" : "Disarm goal mode";
+  const title = `${label} — ${hint}`;
+  return `
+    <span class="composer-plan-mode-badge composer-goal-badge composer-goal-armed" title="${escapeAttribute(title)}" aria-label="${escapeAttribute(title)}">
+      <span class="composer-plan-mode-badge-copy">
+        ${renderUiIcon("target")}
+        <span class="composer-goal-badge-objective">${escapeHtml(label)}</span>
+      </span>
+      <button
+        type="button"
+        class="composer-plan-mode-dismiss"
+        data-goal-disarm
+        aria-label="${escapeAttribute(dismissLabel)}"
+        title="${escapeAttribute(dismissLabel)}"
+      >
+        ${renderUiIcon("x")}
+      </button>
+    </span>
+  `;
+}
+
 function renderComposerGoalBadge(): string {
   const goal = state.activeGoal;
   if (!goal?.objective) {
@@ -5952,11 +5991,15 @@ function renderComposerGoalBadge(): string {
     parts.push(`· ${Math.floor(goal.timeUsedSeconds / 60)}m${goal.timeUsedSeconds % 60}s`);
   }
   const title = parts.join(" ");
+  const statusChip = status
+    ? `<span class="composer-goal-badge-status${goal.budgetLimited ? " composer-goal-badge-status--limited" : ""}">${escapeHtml(status)}</span>`
+    : "";
   return `
     <span class="composer-plan-mode-badge composer-goal-badge" title="${escapeAttribute(title)}" aria-label="${escapeAttribute(title)}">
       <span class="composer-plan-mode-badge-copy">
         ${renderUiIcon("target")}
         <span class="composer-goal-badge-objective">${escapeHtml(objective)}</span>
+        ${statusChip}
       </span>
       <button
         type="button"
@@ -13227,6 +13270,7 @@ function getSlashOptionsForState(): SlashCommandOption[] {
     state.profiles,
     state.uiLocale,
     state.selectedProfileId,
+    { goalModeSupported: providerSupportsGoalMode() },
   );
   const createProfileOption = options.find((option) => option.kind === "create-profile");
   const commandOptions = options.filter((option) => option.kind !== "profile" && option.kind !== "create-profile");
@@ -14083,6 +14127,13 @@ function bindEvents(): void {
 
   root.querySelector<HTMLButtonElement>("[data-goal-dismiss]")?.addEventListener("click", () => {
     void clearActiveGoal();
+  });
+
+  root.querySelector<HTMLButtonElement>("[data-goal-disarm]")?.addEventListener("click", () => {
+    state.goalModeArmed = false;
+    state.actionStatus = "";
+    render();
+    restoreComposerFocus(true);
   });
 
   root.querySelector<HTMLButtonElement>("#create-profile")?.addEventListener("click", () => {
@@ -15437,6 +15488,25 @@ async function handleAttachmentMenuAction(action: AttachmentMenuAction): Promise
       await setPlanModeEnabled(!state.settings.planModeEnabled, { focusComposer: true });
       return;
     }
+    case "toggle-goal-mode": {
+      if (!providerSupportsGoalMode()) {
+        state.actionStatus =
+          state.uiLocale === "ko"
+            ? "선택한 제공자는 Goal Mode를 지원하지 않습니다."
+            : "The selected provider does not support Goal Mode.";
+        render();
+        return;
+      }
+      state.goalModeArmed = !state.goalModeArmed;
+      state.actionStatus = state.goalModeArmed
+        ? state.uiLocale === "ko"
+          ? "다음 메시지가 목표로 실행됩니다."
+          : "Next message runs as a goal."
+        : "";
+      render();
+      restoreComposerFocus(true);
+      return;
+    }
     case "attach-tabs":
       state.attachmentMenuOpen = false;
       state.browserActionPermissionMenuOpen = false;
@@ -16091,6 +16161,14 @@ async function sendPrompt(
     scheduleConversationPersist();
 
     const goalCommand = parseGoalCommand(message);
+    // Armed Goal Mode turns the whole message into the objective; an
+    // explicit "/goal ..." command still wins and parses as before.
+    const goalArmedSend = state.goalModeArmed && !sendAsTurnSteer && !goalCommand;
+    // Consume-once: a failed send leaves the mode disarmed rather than
+    // silently re-arming the next unrelated message as a goal.
+    if (goalArmedSend) {
+      state.goalModeArmed = false;
+    }
     const runtimeMessage = goalCommand?.objective ?? message;
     const generatedImageAttachments = sendAsTurnSteer
       ? []
@@ -16124,8 +16202,10 @@ async function sendPrompt(
         resetThread: options.resetThread,
         suppressPageContext: transcriptQuestionContextActive || isCurrentTabContextDismissed(),
         conversationMessageCount: state.messages.length,
-        ...(state.settings.planModeEnabled && !sendAsTurnSteer ? { planMode: true } : {}),
-        ...(goalCommand && !sendAsTurnSteer ? { useGoal: true, goalObjective: goalCommand.objective } : {}),
+        ...(state.settings.planModeEnabled && !sendAsTurnSteer && !goalArmedSend ? { planMode: true } : {}),
+        ...((goalCommand || goalArmedSend) && !sendAsTurnSteer
+          ? { useGoal: true, goalObjective: goalCommand?.objective ?? runtimeMessage }
+          : {}),
       },
     });
     if (cancelledPromptRequestIds.delete(clientRequestId)) {

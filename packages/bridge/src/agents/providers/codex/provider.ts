@@ -25,7 +25,7 @@ import { CodexAgenticRouterPlane } from "../../../agentic-router.js";
 import { CodexBrowserActionPlane } from "../../../browser-actions.js";
 import { CodexAppServerClient } from "../../../codex-app-server.js";
 import { BridgeHarnessRuntime } from "../../../harness.js";
-import { CODEX_CAPABILITIES, CodexAgentSession } from "./session.js";
+import { CODEX_CAPABILITIES, CodexAgentSession, probeCodexGoalSupport } from "./session.js";
 import { invokeCodexFeature } from "./features.js";
 
 /** Minimal secret-store surface the provider needs for the legacy
@@ -73,6 +73,10 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly onAccountLoginCompleted: CodexProviderOptions["onAccountLoginCompleted"];
   private unsubscribeAppServer: (() => void) | null = null;
   private sessionCounter = 0;
+  /** one app-server probe per provider process — thread/goal/* is a
+   *  version-dependent RPC surface, so the catalog/session capability
+   *  flag reflects the actual binary, not a static assumption. */
+  private goalProbe: Promise<boolean> | null = null;
   private routePlane?: CodexAgenticRouterPlane;
   private browserActionPlane?: CodexBrowserActionPlane;
   private planningHarness?: BridgeHarnessRuntime;
@@ -124,7 +128,18 @@ export class CodexAgentProvider implements AgentProvider {
     }
   }
 
+  /** Memoized thread/goal/* probe — true unless the app-server
+   *  explicitly lacks the methods (older codex binaries). */
+  private goalModeSupported(): Promise<boolean> {
+    this.goalProbe ??= probeCodexGoalSupport(this.client).catch(() => true);
+    return this.goalProbe;
+  }
+
   async fetchCatalog(_opts: FetchCatalogOptions): Promise<ProviderCatalog> {
+    const capabilities = {
+      ...CODEX_CAPABILITIES,
+      goalMode: await this.goalModeSupported(),
+    };
     // Live app-server model/list — no session created (§8.4). Models the
     // configured model_provider cannot serve are filtered downstream by
     // the §5.8 `models` allowlist in the registry.
@@ -175,7 +190,7 @@ export class CodexAgentProvider implements AgentProvider {
         modes: [],
         defaultModel,
         fetchedAt: Date.now(),
-        capabilities: { ...CODEX_CAPABILITIES },
+        capabilities,
       };
     } catch {
       return {
@@ -184,7 +199,7 @@ export class CodexAgentProvider implements AgentProvider {
         models: [],
         modes: [],
         fetchedAt: Date.now(),
-        capabilities: { ...CODEX_CAPABILITIES },
+        capabilities,
       };
     }
   }
@@ -195,7 +210,9 @@ export class CodexAgentProvider implements AgentProvider {
   ): Promise<AgentSession> {
     this.sessionCounter += 1;
     const sessionKey = `codex-${Date.now().toString(36)}-${this.sessionCounter}`;
-    return new CodexAgentSession(this.client, config, ctx, sessionKey);
+    const session = new CodexAgentSession(this.client, config, ctx, sessionKey);
+    session.goalModeSupported = await this.goalModeSupported();
+    return session;
   }
 
   async resumeSession(

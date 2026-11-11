@@ -119,7 +119,7 @@ function makeProvider(capabilities: Partial<AgentCapabilityFlags> = {}): AgentPr
   };
 }
 
-async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void; providerCapabilities?: Partial<AgentCapabilityFlags>; browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null>; appContextForTask?: (taskId: string) => string | null } = {}) {
+async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeoutMs?: number; turnTimeoutMs?: number; onTaskStop?: (taskId: string) => void; presetSession?: (s: MockSession) => void; providerCapabilities?: Partial<AgentCapabilityFlags>; browserMcpSpawn?: (task: TaskRecord) => Promise<Record<string, unknown> | null>; appContextForTask?: (taskId: string) => string | null; onTurnTerminal?: (info: { taskId: string; turnId: string; status: string; durationMs: number }) => void } = {}) {
   sessions.length = 0;
   sessionConfigs.length = 0;
   sessionPreset = opts.presetSession ?? null;
@@ -139,6 +139,7 @@ async function makeManager(opts: { queueWhileRunning?: boolean; interruptTimeout
     ...(opts.onTaskStop ? { onTaskStop: opts.onTaskStop } : {}),
     ...(opts.browserMcpSpawn ? { browserMcpSpawn: opts.browserMcpSpawn } : {}),
     ...(opts.appContextForTask ? { appContextForTask: opts.appContextForTask } : {}),
+    ...(opts.onTurnTerminal ? { onTurnTerminal: opts.onTurnTerminal } : {}),
   });
   return { sm, store, registry, published, sessions };
 }
@@ -202,6 +203,61 @@ describe("SessionManager", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(sessionConfigs.at(-1)?.options?.mcpServers).toEqual(servers);
+  });
+
+  test("useGoal without goalMode capability → turn.failed proto.unsupported, provider never sees the turn", async () => {
+    const { sm, store, sessions } = await makeManager();
+    const task = sm.createTask(taskParams());
+    await expect(
+      sm.sendMessage(task.taskId, {
+        ...INPUT,
+        ctx: { metadata: { useGoal: true } },
+      }),
+    ).rejects.toThrow(/goal mode/);
+
+    const turn = store.listTurns(task.taskId)[0]!;
+    expect(turn.status).toBe("failed");
+    expect(turn.error?.code).toBe("proto.unsupported");
+    // honest failure happens BEFORE startTurn — no silent plain-chat turn
+    expect(sessions[0]!.turns).toHaveLength(0);
+    const types = store.taskEventsAfter(task.taskId, 0, 100).events.map((e) => e.type);
+    expect(types).toContain("turn.failed");
+    expect(types).not.toContain("turn.started");
+  });
+
+  test("useGoal with goalMode capability → turn dispatches normally", async () => {
+    const { sm, sessions } = await makeManager({
+      presetSession: (s) => {
+        s.capabilities.goalMode = true;
+      },
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, {
+      ...INPUT,
+      ctx: { metadata: { useGoal: true } },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sessions[0]!.turns).toHaveLength(1);
+  });
+
+  test("onTurnTerminal fires once per terminal turn with measurable duration", async () => {
+    const terminals: Array<{ turnId: string; status: string; durationMs: number }> = [];
+    const { sm, store } = await makeManager({
+      onTurnTerminal: (info) => terminals.push(info),
+    });
+    const task = sm.createTask(taskParams());
+    await sm.sendMessage(task.taskId, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const turn = store.listTurns(task.taskId)[0]!;
+    expect(turn.status).toBe("completed");
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]!.turnId).toBe(turn.turnId);
+    expect(terminals[0]!.status).toBe("completed");
+    expect(terminals[0]!.durationMs).toBeGreaterThanOrEqual(0);
+    expect(terminals[0]!.durationMs).toBeLessThanOrEqual(
+      (turn.endedAt ?? 0) - (turn.startedAt ?? 0) + 1,
+    );
   });
 
   test("appContextForTask injects PRIVATE APP CONTEXT into turn ctx.instructions (chromex-p21)", async () => {

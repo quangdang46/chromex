@@ -162,6 +162,28 @@ describe("gateway config (§5.8)", () => {
         .approvalMode,
     ).toBe("ask");
   });
+
+  test("providers.acp.<id>.capabilities whitelists boolean flags only", () => {
+    const cfg = resolveGatewayConfig({
+      providers: {
+        acp: {
+          fakegoal: {
+            enabled: true,
+            command: "node",
+            args: ["agent.mjs"],
+            capabilities: { goalMode: true, bogusFlag: true, streaming: "yes" },
+          },
+        },
+      },
+    });
+    const acp = cfg.providers.acp.fakegoal;
+    expect(acp.capabilities).toEqual({ goalMode: true });
+    // absent capabilities → null, not an empty object
+    const bare = resolveGatewayConfig({
+      providers: { acp: { other: { enabled: true } } },
+    });
+    expect(bare.providers.acp.other.capabilities).toBeNull();
+  });
 });
 
 describe("gateway IPC + hello", () => {

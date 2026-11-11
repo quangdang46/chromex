@@ -53,18 +53,21 @@ async function parentStartTime(ppid: number): Promise<string> {
     // Windows: CIM creation date; fall back to empty (PID reuse window
     // accepted — documented limitation).
     try {
-      const { stdout } = await execFileP("powershell", [
-        "-NoProfile",
-        "-Command",
-        `(Get-Process -Id ${ppid}).StartTime.ToString('o')`,
-      ]);
+      // timeout: a cold/AV-scanned powershell under a Chrome-spawned
+      // host can stall for tens of seconds — unbounded here stalls the
+      // whole lazy gateway connect past the client's hello timeout.
+      const { stdout } = await execFileP(
+        "powershell",
+        ["-NoProfile", "-Command", `(Get-Process -Id ${ppid}).StartTime.ToString('o')`],
+        { timeout: 5_000 },
+      );
       return stdout.trim();
     } catch {
       return "";
     }
   }
   try {
-    const { stdout } = await execFileP("ps", ["-o", "lstart=", "-p", String(ppid)]);
+    const { stdout } = await execFileP("ps", ["-o", "lstart=", "-p", String(ppid)], { timeout: 5_000 });
     return stdout.trim();
   } catch {
     return "";

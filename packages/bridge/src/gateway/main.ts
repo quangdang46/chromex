@@ -246,6 +246,7 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
             command: acpCfg.command,
             ...(acpCfg.args ? { args: acpCfg.args } : {}),
             ...(Object.keys(acpCfg.env).length ? { env: acpCfg.env } : {}),
+            ...(acpCfg.capabilities ? { capabilities: acpCfg.capabilities } : {}),
           }),
       );
     }
@@ -284,6 +285,9 @@ export async function startGateway(options: GatewayOptions = {}): Promise<Runnin
       // P2-06: interrupt/cancel propagates browser.tool.cancel to
       // in-flight tool calls; unconfirmed stops resolve `unknown`.
       onTaskStop: (taskId) => toolServer.cancelForTask(taskId),
+      // turn wall-time for diagnostics.turns — with tools.latencyMs this
+      // separates provider/model+MCP overhead from browser execution.
+      onTurnTerminal: (info) => diagnostics.recordTurnTerminal(info),
       publish: (taskId, event, ephemeral) => {
         if (ephemeral) {
           // §4.1/§4.6: deltas are RAM-only — wrapped as
@@ -1049,7 +1053,7 @@ function parsePayload<S extends { safeParse: (v: unknown) => { success: boolean;
 /** Same derivation as GatewayIpcServer.endpointPath — kept in sync. */
 function ipcEndpointPath(dataDir: string): string {
   const hash = createHash("sha256").update(dataDir).digest("hex").slice(0, 16);
-  if (process.platform === "win32") return `\\.\pipe\chromex-gateway-${hash}`;
+  if (process.platform === "win32") return `\\\\.\\pipe\\chromex-gateway-${hash}`;
   return path.join(dataDir, "run", `gw-${hash}.sock`);
 }
 
@@ -1549,6 +1553,7 @@ async function handleGatewayRequest(
             ? { output: browserToolOutputPayload(outcome) }
             : {}),
           verified: outcome.verified === undefined ? "unknown" : outcome.verified,
+          ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
         });
       }
       return outcome;
@@ -1574,6 +1579,7 @@ async function handleGatewayRequest(
           source: "browser",
           outcome: "cancelled",
           verified: "unknown",
+          ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
         });
       }
       return { cancelled: outcome !== null, outcome: outcome ?? null };

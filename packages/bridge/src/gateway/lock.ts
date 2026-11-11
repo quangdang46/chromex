@@ -16,7 +16,7 @@
  * stale owners detect their old fence and must refuse writes/self-shutdown.
  */
 
-import { constants as fsConstants, readFileSync } from "node:fs";
+import { constants as fsConstants, fstatSync, readFileSync, readSync } from "node:fs";
 import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
@@ -168,8 +168,28 @@ export async function acquireOwnershipLock(
 
   let held = true;
   const checkFence = (): boolean => {
+    let raw: string;
     try {
-      const raw = readFileSync(filePath, "utf8");
+      raw = readFileSync(filePath, "utf8");
+    } catch {
+      // Windows: the LockFile byte-range lock denies a SECOND handle even
+      // within this process, so the path re-read above always throws.
+      // Read through our own locked fd instead — safe on Windows because
+      // a locked file cannot be deleted/replaced, so the fd can never
+      // point at a stale generation the way an unlinked POSIX inode can.
+      try {
+        const size = fstatSync(handle.fd).size;
+        const buf = Buffer.alloc(size);
+        let off = 0;
+        while (off < size) {
+          off += readSync(handle.fd, buf, off, size - off, off);
+        }
+        raw = buf.toString("utf8");
+      } catch {
+        return false;
+      }
+    }
+    try {
       const parsed = JSON.parse(raw) as OwnershipMetadata;
       return parsed.fence === fence;
     } catch {

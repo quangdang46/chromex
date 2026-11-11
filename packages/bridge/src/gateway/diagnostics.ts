@@ -41,11 +41,25 @@ export interface GatewayDiagnosticsSnapshot {
     total: number;
     byStatus: Record<string, number>;
     byTool: Record<string, number>;
+    /** execute() wall-time across finished calls — separates browser
+     *  dispatch cost from model/MCP round-trips when reading a slow
+     *  turn. Only calls that reached finish() with a start stamp count. */
+    latencyMs: { count: number; total: number; max: number; last: number | null };
+    /** subset of latencyMs spent inside the approval hook. */
+    approvalWaitMs: { count: number; total: number; max: number; last: number | null };
   };
   approvals: {
     requested: number;
     resolved: number;
     latencyMs: { count: number; total: number; max: number; last: number | null };
+  };
+  /** wall-time from turn.started → terminal store status. Combined with
+   *  tools.latencyMs this splits a slow turn into provider/model+MCP
+   *  overhead vs measured browser execution. */
+  turns: {
+    total: number;
+    byStatus: Record<string, number>;
+    durationMs: { count: number; total: number; max: number; last: number | null };
   };
   deltas: { droppedTurns: number };
 }
@@ -64,7 +78,21 @@ export class GatewayDiagnostics {
   private approvalLatencyMax = 0;
   private approvalLatencyLast: number | null = null;
   private approvalLatencyCount = 0;
+  private toolLatencyCount = 0;
+  private toolLatencyTotal = 0;
+  private toolLatencyMax = 0;
+  private toolLatencyLast: number | null = null;
+  private toolApprovalWaitCount = 0;
+  private toolApprovalWaitTotal = 0;
+  private toolApprovalWaitMax = 0;
+  private toolApprovalWaitLast: number | null = null;
   private recovery: { turnsUnknown: number; tasksPaused: number; scannedAt: number } | null = null;
+  private turnTotal = 0;
+  private readonly turnByStatus = new Map<string, number>();
+  private turnDurationCount = 0;
+  private turnDurationTotal = 0;
+  private turnDurationMax = 0;
+  private turnDurationLast: number | null = null;
   private deltaDroppedTurns = 0;
 
   recordToolOutcome(outcome: ToolCallOutcome): void {
@@ -79,6 +107,21 @@ export class GatewayDiagnostics {
         if (i++ >= excess) break;
         this.toolByName.delete(key);
       }
+    }
+    if (typeof outcome.durationMs === "number" && Number.isFinite(outcome.durationMs)) {
+      this.toolLatencyCount += 1;
+      this.toolLatencyTotal += outcome.durationMs;
+      this.toolLatencyMax = Math.max(this.toolLatencyMax, outcome.durationMs);
+      this.toolLatencyLast = outcome.durationMs;
+    }
+    if (
+      typeof outcome.approvalWaitMs === "number" &&
+      Number.isFinite(outcome.approvalWaitMs)
+    ) {
+      this.toolApprovalWaitCount += 1;
+      this.toolApprovalWaitTotal += outcome.approvalWaitMs;
+      this.toolApprovalWaitMax = Math.max(this.toolApprovalWaitMax, outcome.approvalWaitMs);
+      this.toolApprovalWaitLast = outcome.approvalWaitMs;
     }
   }
 
@@ -97,6 +140,19 @@ export class GatewayDiagnostics {
 
   recordRecovery(turnsUnknown: number, tasksPaused: number): void {
     this.recovery = { turnsUnknown, tasksPaused, scannedAt: Date.now() };
+  }
+
+  /** turn.started → terminal store status wall-time (provider + MCP +
+   *  tool dispatch + approvals all inside this window). */
+  recordTurnTerminal(info: { status: string; durationMs: number }): void {
+    this.turnTotal += 1;
+    this.turnByStatus.set(info.status, (this.turnByStatus.get(info.status) ?? 0) + 1);
+    if (Number.isFinite(info.durationMs) && info.durationMs >= 0) {
+      this.turnDurationCount += 1;
+      this.turnDurationTotal += info.durationMs;
+      this.turnDurationMax = Math.max(this.turnDurationMax, info.durationMs);
+      this.turnDurationLast = info.durationMs;
+    }
   }
 
   recordDeltaDropped(): void {
@@ -126,6 +182,18 @@ export class GatewayDiagnostics {
         total: this.toolTotal,
         byStatus: Object.fromEntries(this.toolByStatus),
         byTool: Object.fromEntries(this.toolByName),
+        latencyMs: {
+          count: this.toolLatencyCount,
+          total: this.toolLatencyTotal,
+          max: this.toolLatencyMax,
+          last: this.toolLatencyLast,
+        },
+        approvalWaitMs: {
+          count: this.toolApprovalWaitCount,
+          total: this.toolApprovalWaitTotal,
+          max: this.toolApprovalWaitMax,
+          last: this.toolApprovalWaitLast,
+        },
       },
       approvals: {
         requested: this.approvalsRequested,
@@ -135,6 +203,16 @@ export class GatewayDiagnostics {
           total: this.approvalLatencyTotal,
           max: this.approvalLatencyMax,
           last: this.approvalLatencyLast,
+        },
+      },
+      turns: {
+        total: this.turnTotal,
+        byStatus: Object.fromEntries(this.turnByStatus),
+        durationMs: {
+          count: this.turnDurationCount,
+          total: this.turnDurationTotal,
+          max: this.turnDurationMax,
+          last: this.turnDurationLast,
         },
       },
       deltas: { droppedTurns: this.deltaDroppedTurns },

@@ -236,6 +236,13 @@ export interface ToolCallOutcome {
    *  (recorded "unknown" downstream), never optimistically true
    *  (chromex-0fza). */
   verified?: boolean | "unknown";
+  /** wall-clock ms inside execute(): token/scope validation, policy
+   *  classification, approval wait, and host dispatch combined. */
+  durationMs?: number;
+  /** subset of durationMs spent waiting on the approval hook — lets
+   *  latency analysis separate "agent waited for the user" from
+   *  "dispatch was slow". */
+  approvalWaitMs?: number;
 }
 
 /** Minimal host channel: send a tool request to a registered host and
@@ -699,6 +706,13 @@ export class BrowserToolServer {
     { taskId: string; turnId?: string; tool: string }
   >();
   private readonly pending = new Map<string, { resolve: (o: ToolCallOutcome) => void; timer: NodeJS.Timeout; taskId: string; host: ToolHostChannel; req: ToolCallRequest }>();
+  /** toolCallId → execute() entry timestamp — finish() turns it into
+   *  outcome.durationMs. Entries are deleted on finish; calls that
+   *  never reach finish (duplicate reject) never set one. */
+  private readonly callStartedAt = new Map<string, number>();
+  /** toolCallId → approval-hook wait, attached to the outcome at
+   *  finish() so dispatch latency stays separable from user wait. */
+  private readonly approvalWaitMs = new Map<string, number>();
   /** SEC chromex-9e3: runtime taskId→tabIds scope (chrome-extension
    *  backend only — playwright backends isolate tabs per task already). */
   private readonly tabScope = new TaskTabScope();
@@ -761,8 +775,12 @@ export class BrowserToolServer {
     }
   }
 
+  #now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
   async execute(req: ToolCallRequest): Promise<ToolCallOutcome> {
-    const now = this.deps.now?.() ?? Date.now();
+    const now = this.#now();
 
     // 1. Token verify (signature, exp, skew, scope).
     try {
@@ -800,6 +818,10 @@ export class BrowserToolServer {
     if (HARD_BLOCKED_TOOLS.has(req.tool)) {
       return this.finish({ toolCallId: req.toolCallId, tool: req.tool, status: "failed", error: { code: "browser.tool_blocked", message: "tool is hard-blocked" } });
     }
+    // Timing starts once the call is known-unique — pre-dispatch
+    // rejects (blocked/gate/no_host/scope) still record honest
+    // durationMs; duplicates return above without touching the map.
+    this.callStartedAt.set(req.toolCallId, now);
 
     // 3b. §6.6 backend gate — pinned backend vs tool requirements.
     const gate = this.deps.backendGate?.(req);
@@ -975,6 +997,7 @@ export class BrowserToolServer {
         (egressScope !== undefined &&
           (await this.deps.egressTaskGranted?.(req.taskId, egressScope)) === true);
       if (!alreadyGranted) {
+        const approvalWaitStart = this.#now();
         const approval = await this.deps.requestApproval?.({
           taskId: req.taskId,
           ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
@@ -1000,6 +1023,7 @@ export class BrowserToolServer {
             ...(egressScope !== undefined ? { egressTaskScope: egressScope } : {}),
           },
         });
+        this.approvalWaitMs.set(req.toolCallId, this.#now() - approvalWaitStart);
         const approved = approval?.verdict === "approved";
         if (!approved) {
           return this.finish({
@@ -1359,9 +1383,23 @@ export class BrowserToolServer {
   }
 
   private finish(outcome: ToolCallOutcome): ToolCallOutcome {
-    this.#recordOutcome(outcome);
-    this.deps.onOutcome?.(outcome);
-    return outcome;
+    const startedAt = this.callStartedAt.get(outcome.toolCallId);
+    this.callStartedAt.delete(outcome.toolCallId);
+    const approvalWait = this.approvalWaitMs.get(outcome.toolCallId);
+    this.approvalWaitMs.delete(outcome.toolCallId);
+    const finished: ToolCallOutcome =
+      startedAt === undefined && approvalWait === undefined
+        ? outcome
+        : {
+            ...outcome,
+            ...(startedAt !== undefined
+              ? { durationMs: Math.max(0, this.#now() - startedAt) }
+              : {}),
+            ...(approvalWait !== undefined ? { approvalWaitMs: approvalWait } : {}),
+          };
+    this.#recordOutcome(finished);
+    this.deps.onOutcome?.(finished);
+    return finished;
   }
 
   /** Build the §4.8 ActionContext for an upcoming tool call. Fail-closed:

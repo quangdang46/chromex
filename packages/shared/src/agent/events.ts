@@ -51,6 +51,10 @@ export type AgentEvent =
       output?: unknown;
       outputArtifactRef?: string;
       verified?: VerificationResult;
+      /** wall-clock ms the call spent inside the tool server
+       *  (validate → classify → approval wait → dispatch). Absent on
+       *  events emitted before timing landed or by non-server paths. */
+      durationMs?: number;
     }
   // DURABLE amendment: a call recorded `unknown` (host/result lost) was
   // later reconciled against the host's outcome buffer — carries the
